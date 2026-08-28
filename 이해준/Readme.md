@@ -60,7 +60,7 @@
 - [ ] 설문조사 작성 완료하기
 
 **참고 링크**
--
+- https://app.notion.com/p/Komit-3b8d7fe30d3c80ab8c8ccb22daf8f771
 
 ---
 
