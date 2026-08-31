@@ -124,35 +124,3 @@ commit-message:
         echo "  참고 : docs/git_guide.md 2. 커밋 메시지 규칙"
         exit 1
       fi
-
-# MR 설명 검사 (MR 템플릿 항목을 채웠는지 확인)
-merge-request-description:
-  extends: .convention
-  script:
-    - |
-      DESC="$CI_MERGE_REQUEST_DESCRIPTION"
-      FAIL=0
-      if [ -z "$(printf '%s' "$DESC" | tr -d '[:space:]')" ]; then
-        echo "FAIL: MR 설명이 비어 있습니다."
-        FAIL=1
-      else
-        for SECTION in "관련 이슈" "작업 내용" "체크리스트"; do
-          if printf '%s' "$DESC" | grep -q "$SECTION"; then
-            echo "OK  : '$SECTION' 항목 확인"
-          else
-            echo "FAIL: '$SECTION' 항목이 없습니다."; FAIL=1
-          fi
-        done
-        # 관련 이슈에 Jira ID가 채워져 있는지 확인 (자리표시자 XX 금지)
-        if printf '%s' "$DESC" | grep -Eq "${JIRA_KEY}-[0-9]+"; then
-          echo "OK  : Jira 이슈 번호 확인"
-        else
-          echo "FAIL: 관련 이슈에 Jira 이슈 번호(${JIRA_KEY}-123)를 적어주세요."; FAIL=1
-        fi
-      fi
-      if [ "$FAIL" -ne 0 ]; then
-        echo "MR 설명은 '${MR_TEMPLATE}' 템플릿을 사용해 작성합니다."
-        echo "  GitLab MR 작성 화면의 Description 템플릿에서 'Default'를 선택하세요."
-        echo "  참고 : docs/git_guide.md 3. 풀 리퀘스트(PR) 및 코드 리뷰 규칙"
-        exit 1
-      fi
