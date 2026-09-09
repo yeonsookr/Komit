@@ -1,25 +1,33 @@
 """FE 개발용 목 서버 — DB 연결도 비즈니스 로직도 없다.
 
 응답은 API 명세의 예시 JSON을 그대로 반환한다.
+
+코밋 서버와 에스크로 서버는 실제로 분리되므로 목에서도 앱을 나눠 마운트한다.
+마운트 경로는 ASGI root_path로 각 앱에 전달되므로 문서도 자기 경로 기준으로 뜬다.
+문서 상단 드롭다운으로 두 문서를 오갈 수 있다.
+
+    /service   코밋 서버 목
+    /escrow    에스크로 서버 목
+
+nginx가 /mock 아래로 넘기므로 밖에서는 /mock/service/..., /mock/escrow/... 가 된다.
 """
 
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
 
-from .routers import ROUTERS
+from .factory import create_app
+from .routers import ESCROW_ROUTERS, SERVICE_ROUTERS
 
-app = FastAPI(title="Komit BE Mock Server", version="0.1.0")
+# 문서 상단 드롭다운에 실을 목록. (표시 이름, 마운트 경로)
+DOCS = [("코밋", "service"), ("에스크로", "escrow")]
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1)(:\d+)?",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# 루트는 서브 앱을 붙이기만 한다. 자체 문서는 두지 않는다.
+app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
-for router in ROUTERS:
-    app.include_router(router)
+service_app = create_app("Komit Service Mock Server", "service", SERVICE_ROUTERS, DOCS)
+escrow_app = create_app("Komit Escrow Mock Server", "escrow", ESCROW_ROUTERS, DOCS)
+
+app.mount("/service", service_app)
+app.mount("/escrow", escrow_app)
 
 
 @app.get("/health")

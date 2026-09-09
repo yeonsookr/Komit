@@ -3,14 +3,24 @@
 FE 개발용 목 서버. 이 디렉터리에서 작업하는 에이전트는 아래 세 가지를 반드시 지킨다.
 **이 프로젝트는 개인 프로젝트가 아니라 정해진 구조와 컨벤션을 지켜야 하는 팀 프로젝트다.**
 
+코밋 서버와 에스크로 서버는 **분리된 두 앱**이다. 어느 쪽 작업인지 먼저 정하고 시작한다.
+
+| | 앱 | 라우터 | 라우터 목록 | ERD |
+|---|---|---|---|---|
+| 코밋 | `/service` | `routers/default.py` 외 | `SERVICE_ROUTERS` | 서비스 ERD |
+| 에스크로 | `/escrow` | `routers/escrow.py` 외 | `ESCROW_ROUTERS` | 에스크로 ERD |
+
 ---
 
 ## 1. 데이터의 출처는 ERD다
 
 ERD는 **ERD Cloud MCP**로 조회한다. 참고 주소:
 
-- [서비스 ERD](https://www.erdcloud.com/d/8MwYuDGzhN9ZwCqyi)
-- [에스크로 ERD](https://www.erdcloud.com/d/DCGEGoSqXrYyEj9hr)
+- [서비스 ERD](https://www.erdcloud.com/d/8MwYuDGzhN9ZwCqyi) — 코밋(`/service`) 앱
+- [에스크로 ERD](https://www.erdcloud.com/d/DCGEGoSqXrYyEj9hr) — 에스크로(`/escrow`) 앱
+
+**ERD는 앱마다 따로다.** 코밋 앱의 응답은 서비스 ERD에서만, 에스크로 앱의 응답은 에스크로
+ERD에서만 가져온다. 두 ERD에 이름이 같은 테이블·속성이 있어도 서로 빌려 쓰지 않는다.
 
 ### 절대 규칙
 
@@ -22,6 +32,20 @@ ERD는 **ERD Cloud MCP**로 조회한다. 참고 주소:
 - **바꿀 수 있는 건 표기 컨벤션뿐이다.** `snake_case` ↔ `camelCase` 같은 표기 변환은 허용되고,
   단어 자체를 바꾸거나 빼거나 더하는 것은 허용되지 않는다.
   (예: ERD `created_at` → 응답 `createdAt` ○ / 응답 `createdDate` ✗)
+
+### 예외 — 에스크로에 한해 SSAFY 금융망 API 대응
+
+에스크로(`/escrow`) 앱은 SSAFY 금융권 API와 주고받아야 하므로, **그 API가 요구하는
+속성이라면 ERD에 없어도 쓸 수 있다.** 이 예외는 에스크로 앱에만 적용되고 코밋(`/service`)
+앱에는 적용되지 않는다.
+
+**단, 쓰기 전에 반드시 사용자의 승인을 받는다.**
+
+1. 어떤 속성이 왜 필요한지, SSAFY API의 어느 요청·응답 때문인지 밝힌다
+2. 사용자가 승인하기 전에는 응답에 넣지 않는다. 임의로 먼저 넣고 나중에 알리지 않는다
+3. 승인받은 속성은 docs의 description에 **ERD에 없는 SSAFY API 대응 필드임을 적는다**
+
+승인 없이 추가된 필드는 ERD에 없는 데이터를 지어낸 것과 같다.
 
 ### 혼동이 우려되는 필드는 문서에 못 박는다
 
@@ -39,8 +63,9 @@ ERD는 **ERD Cloud MCP**로 조회한다. 참고 주소:
 - 형식이나 코드를 바꿔야 할 이유가 생기면 목 서버에서 임의로 바꾸지 말고 **팀 합의를 먼저 거친다.**
   목 서버가 먼저 어긋나면 FE가 그 어긋난 모양에 맞춰 화면을 짜고, 실제 BE가 붙을 때 다시 뜯게 된다.
 
-규약의 기준은 **`app/routers/default.py`의 default API**다. 응답 형식·상태코드·description
-작성 방식을 이 API에 맞춘다. 규약이 바뀌면 default API를 먼저 고치고 나머지를 따라 맞춘다.
+규약의 기준은 각 앱의 **default API**다. 코밋은 `app/routers/default.py`, 에스크로는
+`app/routers/escrow.py`에 있다. 응답 형식·상태코드·description 작성 방식을 이 API에 맞춘다.
+규약이 바뀌면 두 default API를 먼저 고치고 나머지를 따라 맞춘다 — **둘이 서로 달라지면 안 된다.**
 
 ---
 
@@ -78,4 +103,7 @@ ERD는 **ERD Cloud MCP**로 조회한다. 참고 주소:
 
 - **DB 연결 없음 · 비즈니스 로직 없음.** 응답은 하드코딩한다.
 - 상태를 저장하지 않는다. 호출 순서에 따라 응답이 달라지면 안 된다.
-- 라우터는 명세 영역 단위로 쪼개고 `app/routers/__init__.py`의 `ROUTERS`에 등록한다.
+- 라우터는 명세 영역 단위로 쪼개고 `app/routers/__init__.py`의 `SERVICE_ROUTERS` 또는
+  `ESCROW_ROUTERS` 중 맞는 쪽에 등록한다. 잘못 넣으면 다른 서버의 문서에 API가 나타난다.
+- 라우터의 prefix에는 `/service`·`/escrow`를 적지 않는다. 마운트 경로가 붙여준다.
+- 문서 페이지(`app/factory.py`)는 손대지 않는다. 고쳐야 하면 두 앱에 같이 반영한다.
