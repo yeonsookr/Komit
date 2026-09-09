@@ -1,0 +1,27 @@
+# 목적: 배포 서버에 두는 compose 파일의 참고본.
+#
+# 이미지는 CI가 굽고 Docker Hub에 올린 것을 받아 쓴다 (build 하지 않는다).
+# 서버에 소스를 두지 않아도 되고, 검증한 것과 배포한 것이 같은 바이너리가 된다.
+#
+# 서버에서 직접 띄울 때:
+#   MOCK_IMAGE=<계정>/komit-mock:latest docker compose pull && docker compose up -d
+
+name: komit
+
+services:
+  mock:
+    image: ${MOCK_IMAGE:?MOCK_IMAGE must be set}
+    restart: unless-stopped
+    expose:
+      - '8080'
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import urllib.request;
+          urllib.request.urlopen('http://localhost:8080/health')"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    mem_limit: 256m

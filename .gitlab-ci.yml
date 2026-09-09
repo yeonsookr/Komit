@@ -1,10 +1,14 @@
 stages:
   - connect
   - convention
+  - build
+  - deploy
 
 variables:
   JIRA_KEY: "S15P21A201"                                        # Jira 프로젝트 키
   MR_TEMPLATE: ".gitlab/merge_request_templates/Default.md"     # MR 설명 템플릿
+  MOCK_IMAGE_NAME: "komit-mock"                                 # 목 서버 이미지 이름
+  DEPLOY_DIR: "~/komit"                                         # 배포 서버의 compose 파일 위치
 
 # MR이 열려 있으면 MR 파이프라인만 (중복 방지)
 workflow:
@@ -124,3 +128,135 @@ commit-message:
         echo "  참고 : docs/git_guide.md 2. 커밋 메시지 규칙"
         exit 1
       fi
+
+### 목 서버 파이프라인 ###
+# 레지스트리(Docker Hub)·SSH 값은 GitLab CI/CD Variables에서 주입한다.
+#   DOCKER_REGISTRY / DOCKER_REGISTRY_USERNAME / DOCKER_REGISTRY_TOKEN
+#   SSH_ADDRESS / SSH_PRIVATE_KEY
+# 자세한 내용은 deploy/README.md
+
+# Docker 레지스트리 로그인 공통 설정
+.docker:
+  image: docker:29.6.2-cli
+  services:
+    - name: docker:29.6.2-dind
+      alias: docker
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+  tags:
+    - "CI/CD"
+  allow_failure: false
+
+# MR에서 이미지가 빌드되는지만 확인 (push 하지 않음)
+mock-docker-build:
+  extends: .docker
+  stage: build
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - mock/**/*
+    - when: never
+  script:
+    - docker build --pull --tag "${MOCK_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}" mock
+    - echo "목 서버 이미지 빌드 완료"
+
+# develop에 반영되면 이미지를 굽고 레지스트리에 올린다
+mock-docker-build-push:
+  extends: .docker
+  stage: deploy
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
+      changes:
+        - mock/**/*
+    - when: never
+  before_script:
+    - |
+      test -n "$DOCKER_REGISTRY" || {
+        echo "DOCKER_REGISTRY CI/CD variable is required"
+        exit 1
+      }
+      test -n "$DOCKER_REGISTRY_USERNAME" || {
+        echo "DOCKER_REGISTRY_USERNAME CI/CD variable is required"
+        exit 1
+      }
+      test -n "$DOCKER_REGISTRY_TOKEN" || {
+        echo "DOCKER_REGISTRY_TOKEN CI/CD variable is required"
+        exit 1
+      }
+
+      case "$DOCKER_REGISTRY" in
+        *://*|*/)
+          echo "DOCKER_REGISTRY must be a registry host without a scheme or trailing slash"
+          exit 1
+          ;;
+      esac
+
+      printf '%s' "$DOCKER_REGISTRY_TOKEN" |
+        docker login "$DOCKER_REGISTRY" \
+          --username "$DOCKER_REGISTRY_USERNAME" \
+          --password-stdin
+  script:
+    - |
+      IMAGE_REPOSITORY="${DOCKER_REGISTRY}/${DOCKER_REGISTRY_USERNAME}/${MOCK_IMAGE_NAME}"
+      COMMIT_IMAGE="${IMAGE_REPOSITORY}:${CI_COMMIT_SHORT_SHA}"
+      LATEST_IMAGE="${IMAGE_REPOSITORY}:latest"
+
+      docker build --pull --tag "$COMMIT_IMAGE" mock
+      docker push "$COMMIT_IMAGE"
+
+      docker tag "$COMMIT_IMAGE" "$LATEST_IMAGE"
+      docker push "$LATEST_IMAGE"
+
+      echo "Published Docker image: $COMMIT_IMAGE"
+  after_script:
+    - docker logout "$DOCKER_REGISTRY" >/dev/null 2>&1 || true
+
+# SSH로 배포 서버에 접속해 Docker Compose 갱신
+mock-deploy:
+  stage: deploy
+  image: alpine:3.22
+  needs:
+    - job: mock-docker-build-push
+  tags:
+    - "CI/CD"
+  allow_failure: false
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
+      changes:
+        - mock/**/*
+    - when: never
+  before_script:
+    - apk add --no-cache openssh-client
+    - |
+      test -n "$SSH_ADDRESS" || {
+        echo "SSH_ADDRESS CI/CD variable is required (for example: ubuntu@example.com)"
+        exit 1
+      }
+      test -n "$SSH_PRIVATE_KEY" || {
+        echo "SSH_PRIVATE_KEY CI/CD variable is required"
+        exit 1
+      }
+
+      install -d -m 700 "$HOME/.ssh"
+
+      if [ -f "$SSH_PRIVATE_KEY" ]; then
+        cp "$SSH_PRIVATE_KEY" "$HOME/.ssh/id_deploy"
+      else
+        printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/id_deploy"
+      fi
+
+      chmod 600 "$HOME/.ssh/id_deploy"
+  script:
+    - |
+      MOCK_IMAGE="${DOCKER_REGISTRY}/${DOCKER_REGISTRY_USERNAME}/${MOCK_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}"
+
+      ssh \
+        -i "$HOME/.ssh/id_deploy" \
+        -o BatchMode=yes \
+        -o StrictHostKeyChecking=accept-new \
+        "$SSH_ADDRESS" \
+        "cd ${DEPLOY_DIR} &&
+        MOCK_IMAGE='${MOCK_IMAGE}' docker compose pull &&
+        MOCK_IMAGE='${MOCK_IMAGE}' docker compose up -d &&
+        MOCK_IMAGE='${MOCK_IMAGE}' docker compose ps"
