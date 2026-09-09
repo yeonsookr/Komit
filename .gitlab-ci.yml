@@ -46,7 +46,7 @@ branch-name:
       if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "develop" ]; then
         echo "보호 브랜치 → 통과"; exit 0
       fi
-      PARTS="fe-web|fe-app|be-api|be-escrow|ai-app|ai-web|infra|common"
+      PARTS="fe|be-api|be-escrow|ai|infra|common"
       TYPES="feature|fix|hotfix|docs"
       PATTERN="^${JIRA_KEY}-[0-9]+/(${PARTS})/(${TYPES})/[a-z0-9]+(-[a-z0-9]+)*$"
       if printf '%s' "$BRANCH" | grep -Eq "$PATTERN"; then
