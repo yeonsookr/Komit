@@ -46,9 +46,9 @@ branch-name:
       if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "develop" ]; then
         echo "보호 브랜치 → 통과"; exit 0
       fi
-      PARTS="fe-web|fe-app|be-api|be-escrow|ai-app|ai-web|infra|common"
+      PARTS="fe|be-api|be-escrow|ai|infra|common"
       TYPES="feature|fix|hotfix|docs"
-      PATTERN="^${JIRA_KEY}-[0-9]+/(${PARTS})/(${TYPES})/[a-z0-9]+(-[a-z0-9]+)*$"
+      PATTERN="^${JIRA_KEY}-[0-9]+/(${PARTS})/(${TYPES})/[A-Za-z0-9_-]+$"
       if printf '%s' "$BRANCH" | grep -Eq "$PATTERN"; then
         echo "OK: 브랜치 이름 규칙 통과"
       else
@@ -56,7 +56,7 @@ branch-name:
         echo "  형식 : ${JIRA_KEY}-<이슈번호>/<파트>/<유형>/<설명>"
         echo "  파트  : ${PARTS}"
         echo "  유형  : ${TYPES}"
-        echo "  설명  : 영문 소문자와 하이픈(-)"
+        echo "  설명  : 영문·숫자와 하이픈(-)·언더스코어(_)"
         echo "  예)   ${JIRA_KEY}-123/be-api/feature/request-price-comparison"
         echo "  참고 : docs/git_guide.md 1. 브랜치 전략"
         exit 1
