@@ -6,12 +6,13 @@
 
 from datetime import datetime
 import re
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Body, Request
 from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 router = APIRouter(prefix="/api", tags=["default"])
 
@@ -344,6 +345,32 @@ def _validate_request_header(
     return None
 
 
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """요청 본문 검증 실패를 SSAFY 금융망 공통 실패 응답으로 바꾼다.
+
+    FastAPI 기본 422 응답은 SSAFY 형식과 다르므로 앱에 이 핸들러를 등록한다
+    (app/main.py). 값을 보고 갈리는 오류(H1001~H1010)는 각 엔드포인트가 판정하고,
+    여기서는 구조 오류만 다룬다.
+
+    - H1000: Body가 없거나 `Header`가 없거나 Object가 아닐 때
+    - Q1001: 그 밖의 JSON 형식·필수 속성·타입 오류
+    """
+    for error in exc.errors():
+        location = error.get("loc", ())
+        if error.get("type") == "json_invalid":
+            break
+        if location in {("body",), ("body", "Header")}:
+            return _error_response(400, "H1000", "HEADER 정보가 유효하지 않습니다.")
+
+    return _error_response(
+        400,
+        "Q1001",
+        "요청 본문의 형식이 잘못되었습니다. JSON 형식 또는 데이터 타입을 확인해 주세요.",
+    )
+
+
 @router.post(
     "/default",
     response_model=DefaultResponse,
@@ -362,17 +389,6 @@ def _validate_request_header(
             "description": "Q1000 코드와 공통 Header를 포함한 서버 오류 응답",
             "content": {"application/json": {"example": SERVER_ERROR_EXAMPLE}},
         },
-    },
-    openapi_extra={
-        "requestBody": {
-            "required": True,
-            "content": {
-                "application/json": {
-                    "schema": DefaultRequest.model_json_schema(),
-                    "example": REQUEST_EXAMPLE,
-                }
-            },
-        }
     },
     summary="에스크로 공통 응답 조회",
     description=(
@@ -399,31 +415,8 @@ def _validate_request_header(
     ),
 )
 async def get_default(
-    request: Request,
+    payload: Annotated[DefaultRequest, Body(examples=[REQUEST_EXAMPLE])],
 ) -> DefaultResponse | JSONResponse:
-    try:
-        raw_payload = await request.json()
-    except ValueError:
-        return _error_response(
-            400,
-            "Q1001",
-            "요청 본문의 형식이 잘못되었습니다. JSON 형식 또는 데이터 타입을 확인해 주세요.",
-        )
-
-    if not isinstance(raw_payload, dict) or not isinstance(
-        raw_payload.get("Header"), dict
-    ):
-        return _error_response(400, "H1000", "HEADER 정보가 유효하지 않습니다.")
-
-    try:
-        payload = DefaultRequest.model_validate(raw_payload)
-    except ValidationError:
-        return _error_response(
-            400,
-            "Q1001",
-            "요청 본문의 형식이 잘못되었습니다. JSON 형식 또는 데이터 타입을 확인해 주세요.",
-        )
-
     header_error = _validate_request_header(payload.Header)
     if header_error:
         response_code = header_error[0]

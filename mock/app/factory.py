@@ -2,7 +2,10 @@
 
 import json
 
+from typing import Callable
+
 from fastapi import APIRouter, FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -61,9 +64,20 @@ def _docs_page(title: str, mount: str, docs: list[tuple[str, str]]) -> str:
     )
 
 
-def create_app(title: str, mount: str, routers: list[APIRouter], docs: list) -> FastAPI:
+def create_app(
+    title: str,
+    mount: str,
+    routers: list[APIRouter],
+    docs: list,
+    validation_error_handler: Callable | None = None,
+) -> FastAPI:
     # 기본 문서 페이지는 끄고 아래에서 직접 만든다.
     app = FastAPI(title=title, version="0.1.0", docs_url=None)
+
+    # 검증 실패 응답을 그 앱의 형식으로 바꿔야 하면 핸들러를 받는다.
+    # 넘기지 않으면 FastAPI 기본 422 응답을 그대로 쓴다.
+    if validation_error_handler is not None:
+        app.add_exception_handler(RequestValidationError, validation_error_handler)
 
     app.add_middleware(
         CORSMiddleware,

@@ -7,7 +7,7 @@ FE 개발용 목 서버. 이 디렉터리에서 작업하는 에이전트는 아
 
 | | 앱 | 라우터 | 라우터 목록 | ERD |
 |---|---|---|---|---|
-| 코밋 | `/service` | `routers/default.py` 외 | `SERVICE_ROUTERS` | 서비스 ERD |
+| 코밋 | `/service` | `routers/service.py` 외 | `SERVICE_ROUTERS` | 서비스 ERD |
 | 에스크로 | `/escrow` | `routers/escrow.py` 외 | `ESCROW_ROUTERS` | 에스크로 ERD |
 
 ---
@@ -63,9 +63,23 @@ ERD에서만 가져온다. 두 ERD에 이름이 같은 테이블·속성이 있�
 - 형식이나 코드를 바꿔야 할 이유가 생기면 목 서버에서 임의로 바꾸지 말고 **팀 합의를 먼저 거친다.**
   목 서버가 먼저 어긋나면 FE가 그 어긋난 모양에 맞춰 화면을 짜고, 실제 BE가 붙을 때 다시 뜯게 된다.
 
-규약의 기준은 각 앱의 **default API**다. 코밋은 `app/routers/default.py`, 에스크로는
-`app/routers/escrow.py`에 있다. 응답 형식·상태코드·description 작성 방식을 이 API에 맞춘다.
-규약이 바뀌면 두 default API를 먼저 고치고 나머지를 따라 맞춘다 — **둘이 서로 달라지면 안 된다.**
+규약의 기준은 각 앱의 **default API**다. 코밋은 `app/routers/service.py`, 에스크로는
+`app/routers/escrow.py`에 있다. 응답 형식·상태코드·description 작성 방식을 그 앱의 기준 API에
+맞춘다. 규약이 바뀌면 기준 API를 먼저 고치고 그 앱의 나머지를 따라 맞춘다.
+
+**두 앱의 형식은 서로 다르다.** 코밋은 자체 형식(`{"message": ...}`), 에스크로는 SSAFY 금융망
+형식(`{"Header": {"responseCode": ...}, "REC": ...}`)을 따른다. 한쪽 형식을 다른 쪽에
+가져다 쓰지 않는다. **같아야 하는 것은 한 앱 안에서의 일관성이다.**
+
+### 검증 실패는 엔드포인트에서 처리하지 않는다
+
+요청 본문·파라미터 검증 실패는 각 앱에 등록된 `validation_exception_handler`가 처리한다
+(`routers/service.py`, `routers/escrow.py`에 있고 `app/main.py`에서 등록한다).
+
+- 요청 본문은 **반드시 모델로 선언해서 받는다.** `Request`로 직접 읽어 파싱하지 않는다.
+- `openapi_extra`로 요청 스키마를 손으로 넣지 않는다. Pydantic이 만든 스키마는 `$defs`를
+  쓰는데 OpenAPI는 `components/schemas`를 써서 참조가 깨진다.
+- 값을 보고 갈리는 오류(에스크로의 `H1001`~`H1010` 등)만 엔드포인트 안에서 판정한다.
 
 ---
 

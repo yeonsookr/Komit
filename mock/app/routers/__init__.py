@@ -3,7 +3,7 @@
 앱이 둘로 갈리므로 라우터도 어느 쪽에 붙는지에 따라 목록을 나눈다.
 """
 
-from . import default, escrow
+from . import escrow, service
 
-SERVICE_ROUTERS = [default.router]
+SERVICE_ROUTERS = [service.router]
 ESCROW_ROUTERS = [escrow.router]

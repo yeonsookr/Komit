@@ -16,6 +16,8 @@ from fastapi import FastAPI
 
 from .factory import create_app
 from .routers import ESCROW_ROUTERS, SERVICE_ROUTERS
+from .routers.service import validation_exception_handler as service_validation_handler
+from .routers.escrow import validation_exception_handler as escrow_validation_handler
 
 # 문서 상단 드롭다운에 실을 목록. (표시 이름, 마운트 경로)
 DOCS = [("코밋", "service"), ("에스크로", "escrow")]
@@ -23,8 +25,20 @@ DOCS = [("코밋", "service"), ("에스크로", "escrow")]
 # 루트는 서브 앱을 붙이기만 한다. 자체 문서는 두지 않는다.
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
-service_app = create_app("Komit Service Mock Server", "service", SERVICE_ROUTERS, DOCS)
-escrow_app = create_app("Komit Escrow Mock Server", "escrow", ESCROW_ROUTERS, DOCS)
+service_app = create_app(
+    "Komit Service Mock Server",
+    "service",
+    SERVICE_ROUTERS,
+    DOCS,
+    validation_error_handler=service_validation_handler,
+)
+escrow_app = create_app(
+    "Komit Escrow Mock Server",
+    "escrow",
+    ESCROW_ROUTERS,
+    DOCS,
+    validation_error_handler=escrow_validation_handler,
+)
 
 app.mount("/service", service_app)
 app.mount("/escrow", escrow_app)

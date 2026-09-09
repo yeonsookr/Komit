@@ -52,7 +52,7 @@ app/
 ├── factory.py           서브 앱 생성기 — CORS, /health, Swagger UI 페이지
 └── routers/
     ├── __init__.py      SERVICE_ROUTERS / ESCROW_ROUTERS
-    ├── default.py       코밋 기준 API
+    ├── service.py       코밋 기준 API
     └── escrow.py        에스크로 기준 API
 ```
 
@@ -67,4 +67,19 @@ app/
 
 - 응답은 명세 예시 JSON을 그대로 반환한다. 경로 파라미터는 응답의 해당 필드에 echo한다.
 - `PATCH`류는 보낸 필드만 응답에 반영한다 (저장은 하지 않음).
-- 에러 분기 없음 — 어떤 ID로 호출해도 성공 응답을 준다.
+- 상태를 저장하지 않는다. 호출 순서에 따라 응답이 달라지면 안 된다.
+- **에러는 명세에 있는 것만 재현한다.** 실패 응답이 필요하면 명세가 정한 예약값으로 고른다.
+  (예: 코밋은 `id=2` → 500, 에스크로는 `userKey=invalid-user-key` → `H1009`)
+
+## 실패 응답 형식
+
+두 앱은 형식이 다르다. 코밋은 자체 형식, 에스크로는 SSAFY 금융망 형식을 따른다.
+
+| | 코밋 | 에스크로 |
+|---|---|---|
+| 본문 | `{"message": "..."}` | `{"Header": {"responseCode": "...", ...}}` |
+| 검증 실패 | 422 | 400 `H1000` / `Q1001` |
+
+요청 검증 실패는 엔드포인트에서 try/except 하지 않는다. 각 앱에 등록한
+`validation_exception_handler`(`routers/service.py`, `routers/escrow.py`)가 FastAPI의
+`RequestValidationError`를 그 앱의 형식으로 바꾼다.
