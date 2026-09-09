@@ -6,6 +6,7 @@ stages:
 variables:
   JIRA_KEY: "S15P21A201"                                        # Jira 프로젝트 키
   MR_TEMPLATE: ".gitlab/merge_request_templates/Default.md"     # MR 설명 템플릿
+  GET_SOURCES_ATTEMPTS: 3                                       # 깃랩 CI/CD 재시도 횟수
 
 # MR이 열려 있으면 MR 파이프라인만 (중복 방지)
 workflow:
