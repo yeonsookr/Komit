@@ -1,14 +1,11 @@
 stages:
   - connect
   - convention
-  - build
   - deploy
 
 variables:
   JIRA_KEY: "S15P21A201"                                        # Jira 프로젝트 키
   MR_TEMPLATE: ".gitlab/merge_request_templates/Default.md"     # MR 설명 템플릿
-  MOCK_IMAGE_NAME: "komit-mock"                                 # 목 서버 이미지 이름
-  DEPLOY_DIR: "~/komit"                                         # 배포 서버의 compose 파일 위치
 
 # MR이 열려 있으면 MR 파이프라인만 (중복 방지)
 workflow:
@@ -129,14 +126,11 @@ commit-message:
         exit 1
       fi
 
-### 목 서버 파이프라인 ###
-# 레지스트리(Docker Hub)·SSH 값은 GitLab CI/CD Variables에서 주입한다.
-#   DOCKER_REGISTRY / DOCKER_REGISTRY_USERNAME / DOCKER_REGISTRY_TOKEN
-#   SSH_ADDRESS / SSH_PRIVATE_KEY
-# 자세한 내용은 deploy/README.md
-
-# Docker 레지스트리 로그인 공통 설정
-.docker:
+### 목 서버 Docker 이미지 빌드/푸시 파이프라인 ###
+# 레지스트리 정보와 인증값은 GitLab CI/CD Variables에서 주입
+# 목 서버 도커 빌드/도커허브 푸시
+mock-docker-build-push:
+  stage: deploy
   image: docker:29.6.2-cli
   services:
     - name: docker:29.6.2-dind
@@ -147,24 +141,6 @@ commit-message:
   tags:
     - "CI/CD"
   allow_failure: false
-
-# MR에서 이미지가 빌드되는지만 확인 (push 하지 않음)
-mock-docker-build:
-  extends: .docker
-  stage: build
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      changes:
-        - mock/**/*
-    - when: never
-  script:
-    - docker build --pull --tag "${MOCK_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}" mock
-    - echo "목 서버 이미지 빌드 완료"
-
-# develop에 반영되면 이미지를 굽고 레지스트리에 올린다
-mock-docker-build-push:
-  extends: .docker
-  stage: deploy
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
       changes:
@@ -198,22 +174,24 @@ mock-docker-build-push:
           --password-stdin
   script:
     - |
-      IMAGE_REPOSITORY="${DOCKER_REGISTRY}/${DOCKER_REGISTRY_USERNAME}/${MOCK_IMAGE_NAME}"
+      IMAGE_REPOSITORY="${DOCKER_REGISTRY}/${DOCKER_REGISTRY_USERNAME}/komit-mock"
       COMMIT_IMAGE="${IMAGE_REPOSITORY}:${CI_COMMIT_SHORT_SHA}"
-      LATEST_IMAGE="${IMAGE_REPOSITORY}:latest"
 
       docker build --pull --tag "$COMMIT_IMAGE" mock
       docker push "$COMMIT_IMAGE"
 
-      docker tag "$COMMIT_IMAGE" "$LATEST_IMAGE"
-      docker push "$LATEST_IMAGE"
+      if [ "$CI_COMMIT_BRANCH" = "develop" ]; then
+        LATEST_IMAGE="${IMAGE_REPOSITORY}:latest"
+        docker tag "$COMMIT_IMAGE" "$LATEST_IMAGE"
+        docker push "$LATEST_IMAGE"
+      fi
 
       echo "Published Docker image: $COMMIT_IMAGE"
   after_script:
     - docker logout "$DOCKER_REGISTRY" >/dev/null 2>&1 || true
 
-# SSH로 배포 서버에 접속해 Docker Compose 갱신
-mock-deploy:
+# SSH로 배포 서버에 접속 후 Docker Compose
+mock-docker-deploy:
   stage: deploy
   image: alpine:3.22
   needs:
@@ -230,7 +208,7 @@ mock-deploy:
     - apk add --no-cache openssh-client
     - |
       test -n "$SSH_ADDRESS" || {
-        echo "SSH_ADDRESS CI/CD variable is required (for example: ubuntu@example.com)"
+        echo "SSH_ADDRESS CI/CD variable is required (for example: user@example.com)"
         exit 1
       }
       test -n "$SSH_PRIVATE_KEY" || {
@@ -249,14 +227,11 @@ mock-deploy:
       chmod 600 "$HOME/.ssh/id_deploy"
   script:
     - |
-      MOCK_IMAGE="${DOCKER_REGISTRY}/${DOCKER_REGISTRY_USERNAME}/${MOCK_IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}"
-
       ssh \
         -i "$HOME/.ssh/id_deploy" \
         -o BatchMode=yes \
         -o StrictHostKeyChecking=accept-new \
         "$SSH_ADDRESS" \
-        "cd ${DEPLOY_DIR} &&
-        MOCK_IMAGE='${MOCK_IMAGE}' docker compose pull &&
-        MOCK_IMAGE='${MOCK_IMAGE}' docker compose up -d &&
-        MOCK_IMAGE='${MOCK_IMAGE}' docker compose ps"
+        'cd "$HOME/mock" &&
+        sudo -n docker compose up -d --pull always &&
+        sudo -n docker compose ps'
