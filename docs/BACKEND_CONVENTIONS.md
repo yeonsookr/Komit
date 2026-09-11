@@ -12,8 +12,7 @@
 - 각 서버의 2개 이상 인스턴스 운영을 위한 이중화 원칙
 - DDD 스타일의 도메인 중심 패키지 구조
 - Controller, Service, Repository, Entity, DTO의 책임
-- API 경로·요청·응답·에러 규격
-- `mock` 서버를 이용한 API 계약 관리 방식
+- `mock` 서버 Swagger를 단일 기준으로 하는 API 계약 관리 방식
 - PostgreSQL 스키마 변경과 Flyway 마이그레이션
 - 보안, 로깅, 테스트, 브랜치와 리뷰 기준
 
@@ -43,6 +42,7 @@ ERD에 없는 필드가 API 구현에 필요하면 임의로 추가하지 않습
 | API 구현 문서 | springdoc-openapi | **3.1.1** |
 | 빌드 도구 | Gradle Wrapper | **9.7.1** |
 | 데이터베이스 | PostgreSQL | **18.x**, 최초 고정 이미지 **18.6** |
+| 동적 쿼리 | QueryDSL(jakarta) | **5.1.0** |
 | DB 마이그레이션 | Flyway | Spring Boot BOM 사용 |
 | 테스트 | JUnit 5, Spring Boot Test, Testcontainers | Spring Boot BOM 사용 |
 | 코드 보조 | Lombok | Spring Boot BOM 사용 |
@@ -94,6 +94,11 @@ dependencies {
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
     implementation 'org.flywaydb:flyway-core'
     implementation 'org.flywaydb:flyway-database-postgresql'
+
+    implementation 'com.querydsl:querydsl-jpa:5.1.0:jakarta'
+    annotationProcessor 'com.querydsl:querydsl-apt:5.1.0:jakarta'
+    annotationProcessor 'jakarta.annotation:jakarta.annotation-api'
+    annotationProcessor 'jakarta.persistence:jakarta.persistence-api'
 
     runtimeOnly 'org.postgresql:postgresql'
 
@@ -389,7 +394,7 @@ DeveloperErrorCode
 
 - 기본적으로 `JpaRepository<Entity, Id>`를 상속하는 인터페이스로 둡니다.
 - 복잡한 조회는 쿼리 메서드, `@EntityGraph`, JPQL `@Query` 순서로 해결합니다.
-- QueryDSL 또는 별도 조회 계층이 필요하면 도입 전에 팀과 논의합니다.
+- 위 방법으로 표현할 수 없는 동적 조건, 복합 검색, 통계성 조회는 QueryDSL로 작성합니다. 기준은 13.3입니다.
 - Controller가 Repository를 직접 호출하지 않습니다.
 
 ### Entity
@@ -433,247 +438,43 @@ public record DeveloperSummaryResponse(
 
 - Controller의 body DTO에는 반드시 `@Valid`를 붙입니다.
 - 필수 여부, 문자열 길이, 숫자 범위는 Bean Validation으로 검증합니다.
-- Komit의 데이터 형식 검증은 422, 이미 유효한 값을 이용한 비즈니스 규칙 위반은 400 또는 409로 구분합니다. Escrow 검증 실패는 별도의 금융망 규약에 따라 400과 `H1000`·`H1001`~`H1010`·`Q1001`을 사용합니다.
+- 데이터 형식 검증 실패와 이미 유효한 값을 이용한 비즈니스 규칙 위반을 구분해 처리합니다. 각 서버가 반환할 상태 코드와 응답 코드는 목 명세를 따릅니다.
 - 검증 에러에는 사용자가 입력한 실제 값을 되돌려주지 않습니다.
 
-## 11. 서버별 API 요청 규격
+## 11. API 규격과 mock 서버
 
-Komit와 Escrow는 요청 형식과 인증 정보가 다릅니다. 한 서버의 요청 규격을 다른 서버에 적용하지 않습니다.
+요청과 응답의 구체적인 규격은 이 문서가 정하지 않습니다. **`mock` 서버 Swagger가 단일 기준입니다.** 5.2의 원칙을 그대로 따릅니다.
 
-### 11.1 공통 전송 규칙
+- Komit 기준: [`mock/app/routers/service.py`](../mock/app/routers/service.py), Swagger `/service/docs`
+- Escrow 기준: [`mock/app/routers/escrow.py`](../mock/app/routers/escrow.py), Swagger `/escrow/docs`
+
+목 Swagger에서 확인하고 그대로 구현할 항목입니다.
+
+- HTTP method와 `/api` 이후 경로
+- 요청 body, query·path parameter, 인증 정보를 싣는 위치
+- 성공 응답 body와 HTTP 상태 코드
+- 에러 응답 body, HTTP 상태 코드, 응답 코드 목록
+- 페이지네이션과 정렬 parameter 형식
+
+Komit와 Escrow는 요청·응답 형식이 서로 다릅니다. Komit는 리소스 직접 반환과 `{code, message}` 에러 형식을, Escrow는 SSAFY 금융망의 `Header`/`REC` 형식을 사용합니다. 한 서버의 형식을 다른 서버에 적용하지 않으며, 같아야 하는 것은 두 서버의 모양이 아니라 각 서버 내부의 일관성입니다.
+
+명세에 없는 필드가 필요하면 코드부터 고치지 않습니다. ERD와 목 명세를 먼저 수정하고 합의한 뒤 구현합니다. 실제 응답이 목 명세와 다르면 어느 쪽이 합의된 계약인지 확인하고 맞추며, 프런트엔드가 보정하도록 두지 않습니다.
+
+### 11.1 목 명세가 다루지 않는 구현 규칙
 
 - Content-Type은 `application/json`을 사용합니다.
-- JSON에 명세되지 않은 필드를 임의로 추가하지 않습니다.
-- ERD 필드는 단어를 바꾸지 않고 `snake_case`에서 `camelCase`로 표기만 변환할 수 있습니다.
-- 금액은 원 단위 정수로 전달합니다.
+- 명세에 없는 필드를 응답에 임의로 추가하지 않습니다.
+- ERD 필드는 단어를 바꾸지 않고 `snake_case`에서 `camelCase`로 표기만 변환합니다.
+- 금액은 원 단위 정수로 다루고 Java `long`/`Long`을 사용합니다. 소수 통화가 실제 요구사항에 추가될 때만 `BigDecimal`을 검토합니다.
+- 일시는 서버 내부에서 `Instant` 또는 `OffsetDateTime`으로 다루고 API 경계에서 명확한 offset을 제공합니다.
+- Komit의 데이터 형식 검증 실패와 비즈니스 규칙 위반은 서로 다른 상태 코드로 구분합니다. 구체적인 코드는 목 명세를 따릅니다.
 - 로그에 token, API key, user key, 비밀번호, 계좌번호 전체를 남기지 않습니다.
 
-### 11.2 Komit 요청 규격
-
-- 인증: `Authorization: Bearer <accessToken>`
-- JSON 필드: `camelCase`
-- 날짜: `YYYY-MM-DD`
-- 일시: ISO 8601 offset 형식, 예: `2026-09-11T14:30:00+09:00`
-- 페이지: `page` 기본 1
-- 페이지 크기: `size` 기본 20, 최대 100
-- 정렬: `sort=field,asc` 또는 `sort=field,desc`
-
-서버 내부에서는 일시를 `Instant` 또는 `OffsetDateTime`으로 다루고, API 경계에서 명확한 offset을 제공합니다. 금액이 원 단위 정수라면 Java `long`/`Long`을 사용합니다. 소수 통화가 실제 요구사항에 추가될 때만 `BigDecimal`을 검토합니다.
-
-### 11.3 Escrow 요청 규격
-
-Escrow의 기준은 [`mock/app/routers/escrow.py`](../mock/app/routers/escrow.py)의 `/api/default`입니다. 모든 요청은 JSON body 안에 대문자 `Header` 공통부를 포함합니다. 이는 HTTP header가 아닙니다.
-
-```json
-{
-  "Header": {
-    "apiName": "default",
-    "transmissionDate": "20260909",
-    "transmissionTime": "120000",
-    "institutionCode": "00100",
-    "fintechAppNo": "001",
-    "apiServiceCode": "default",
-    "institutionTransactionUniqueNo": "20260909120000000001",
-    "apiKey": "<apiKey>",
-    "userKey": "<userKey>"
-  }
-}
-```
-
-| 필드 | 규칙 |
-| --- | --- |
-| `apiName` | 호출 API 이름, URI의 API 이름과 일치, 최대 30자 |
-| `transmissionDate` | `YYYYMMDD` 형식의 8자리 날짜 |
-| `transmissionTime` | `HHmmss` 형식의 6자리 시각, 금융망 허용 시간 범위 준수 |
-| `institutionCode` | `00100` 고정 |
-| `fintechAppNo` | `001` 고정 |
-| `apiServiceCode` | `apiName`과 일치 |
-| `institutionTransactionUniqueNo` | 호출마다 새로 생성하는 숫자 20자리 고유번호 |
-| `apiKey` | 앱 관리자에게 발급된 API key, 최대 40자 |
-| `userKey` | 앱 사용자에게 발급된 user key, 최대 40자 |
-
-기능별 요청 데이터가 필요하면 각 Escrow API 명세가 정한 body 영역에 추가합니다. `Header` 필드의 이름과 대소문자를 바꾸지 않습니다.
-
-## 12. Komit 응답 규격
-
-Komit의 기준은 [`mock/app/routers/service.py`](../mock/app/routers/service.py)의 default API입니다. 성공 응답에는 공통 래퍼를 사용하지 않습니다.
-
-### 12.1 성공 응답
-
-단건 조회·생성·수정은 리소스를 직접 반환합니다.
-
-```json
-{
-  "requestId": 12,
-  "title": "결제 연동 붙여주세요"
-}
-```
-
-목록만 페이지 정보로 감쌉니다.
-
-```json
-{
-  "content": [],
-  "page": 1,
-  "size": 20,
-  "totalElements": 137,
-  "totalPages": 7
-}
-```
-
-| 상태 코드 | 사용 시점 |
-| --- | --- |
-| 200 OK | 조회 또는 수정 성공 |
-| 201 Created | 리소스 생성 성공 |
-| 204 No Content | 성공했지만 응답 body가 없음 |
-
-201 응답은 가능하면 생성된 리소스의 URI를 `Location` header에 제공합니다. 204 응답에는 body를 넣지 않습니다.
-
-### 12.2 에러 응답
-
-기본 에러:
-
-```json
-{
-  "code": "REQUEST_NOT_FOUND",
-  "message": "요청서를 찾을 수 없습니다."
-}
-```
-
-검증 에러:
-
-```json
-{
-  "code": "INVALID_REQUEST",
-  "message": "요청 형식이 올바르지 않습니다.",
-  "errors": [
-    {
-      "field": "title",
-      "reason": "필수 항목입니다."
-    }
-  ]
-}
-```
-
-| 상태 코드 | 사용 시점 |
-| --- | --- |
-| 400 Bad Request | 스키마는 유효하지만 비즈니스 규칙을 위반함 |
-| 401 Unauthorized | 인증되지 않았거나 token이 유효하지 않음 |
-| 403 Forbidden | 인증되었지만 공개 리소스에 대한 권한이 없음 |
-| 404 Not Found | 리소스가 없거나 존재 자체가 민감한 리소스에 접근함 |
-| 409 Conflict | 중복 신청, 이미 완료된 계약 등 현재 상태와 충돌함 |
-| 422 Unprocessable Entity | 요청 스키마·필드 유효성 검증에 실패함 |
-| 500 Internal Server Error | 처리되지 않은 서버 내부 오류 |
-
-### 12.3 Komit 에러 정보 노출 통제
-
-- `message`에는 사용자에게 그대로 보여줄 수 있는 문장만 담습니다.
-- 스택 트레이스, 예외 클래스, SQL, 테이블·컬럼, 파일 경로, 내부 서비스명·호스트·포트, 라이브러리 버전, 설정값을 응답에 넣지 않습니다.
-- 500은 아래 고정 문구를 사용하고 실제 원인은 서버 로그에서 확인합니다.
-
-```json
-{
-  "code": "INTERNAL_ERROR",
-  "message": "요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요."
-}
-```
-
-문의 추적이 필요하면 의미 없는 임의 식별자인 `traceId`만 추가합니다. 로그인과 비밀번호 재설정에서는 계정 존재 여부를 구분해 알려주지 않습니다.
-
-```json
-{
-  "code": "LOGIN_FAILED",
-  "message": "이메일 또는 비밀번호가 올바르지 않습니다."
-}
-```
-
-다른 사용자의 요청서, 계약, 정산, 채팅처럼 존재 자체가 민감한 리소스는 접근 권한이 없어도 404를 반환합니다. 공개 프로필과 공개 목록처럼 존재가 이미 공개된 리소스만 403을 사용합니다.
-
-`errors`에는 필드명과 사유만 넣고 입력값을 넣지 않습니다. 에러 코드는 `USER_TABLE_FK_VIOLATION` 같은 구현 용어가 아니라 `CONTRACT_ALREADY_ACCEPTED` 같은 도메인 용어를 사용합니다.
-
-## 13. Escrow 응답 규격
-
-Escrow는 일부 endpoint만 예외적으로 금융망 형식을 쓰는 것이 아닙니다. **Escrow 서버 전체가 SSAFY 금융망의 `Header`/`REC` 규격을 기본으로 사용합니다.** Komit의 `{code, message}` 또는 422 검증 응답을 Escrow에 사용하지 않습니다.
-
-### 13.1 성공 응답
-
-성공은 HTTP 200과 `Header.responseCode`의 `H0000`으로 표현하고, 기능별 응답 데이터는 대문자 `REC`에 담습니다. `REC`는 API에 따라 object 또는 array가 될 수 있습니다.
-
-```json
-{
-  "Header": {
-    "responseCode": "H0000",
-    "responseMessage": "정상처리 되었습니다.",
-    "apiName": "default",
-    "transmissionDate": "20260909",
-    "transmissionTime": "120000",
-    "institutionCode": "00100",
-    "fintechAppNo": "001",
-    "apiServiceCode": "default",
-    "institutionTransactionUniqueNo": "20260909120000000001"
-  },
-  "REC": {
-    "message": "escrow"
-  }
-}
-```
-
-### 13.2 실패 응답
-
-실패 응답은 `Header`만 반환하며 `REC`를 포함하지 않습니다.
-
-```json
-{
-  "Header": {
-    "responseCode": "H1009",
-    "responseMessage": "USER KEY가 유효하지 않습니다.",
-    "apiName": "default",
-    "transmissionDate": "20260909",
-    "transmissionTime": "120000",
-    "institutionCode": "00100",
-    "fintechAppNo": "001",
-    "apiServiceCode": "default",
-    "institutionTransactionUniqueNo": "20260909120000000001"
-  }
-}
-```
-
-| HTTP | 응답 코드 | 사용 시점 |
-| --- | --- | --- |
-| 200 | `H0000` | 정상 처리 |
-| 400 | `H1000` | body 또는 `Header`가 없거나 `Header`가 object가 아님 |
-| 400 | `H1001` | `apiName` 오류 |
-| 400 | `H1002` | `transmissionDate` 오류 |
-| 400 | `H1003` | `transmissionTime` 오류 |
-| 400 | `H1004` | `institutionCode` 오류 |
-| 400 | `H1005` | `fintechAppNo` 오류 |
-| 400 | `H1006` | `apiServiceCode` 오류 |
-| 400 | `H1007` | 기관거래고유번호 중복 |
-| 400 | `H1008` | `apiKey` 오류 |
-| 400 | `H1009` | `userKey` 오류 |
-| 400 | `H1010` | 기관거래고유번호 형식 오류 |
-| 400 | `Q1001` | JSON 형식, 필수 필드 또는 데이터 타입 오류 |
-| 500 | `Q1000` | 분류되지 않은 서버 오류 |
-
-기능별 도메인 오류 코드와 `REC` 상세 구조는 해당 Escrow API의 목 Swagger에서 별도로 정의합니다. 기준 코드 목록에 없는 코드를 임의로 만들지 않습니다.
-
-### 13.3 Escrow 구현 규칙
-
-- 요청 구조 검증 실패는 공통 Escrow validation handler에서 400 응답으로 변환합니다.
-- body/`Header` 자체 문제는 `H1000`, 그 밖의 JSON·필수 필드·타입 문제는 `Q1001`을 사용합니다.
-- 값에 따른 header 오류는 `H1001`~`H1010` 중 해당 코드를 사용합니다.
-- 500은 `Q1000`과 안전한 메시지만 반환하며 내부 예외 정보를 넣지 않습니다.
-- 요청에서 응답으로 되돌려야 하는 공통 header 필드는 목 기준 API와 동일하게 처리합니다.
-- `apiKey`와 `userKey`는 성공·실패 응답에 포함하지 않습니다.
-- `Header`와 `REC`의 대소문자를 바꾸거나 Komit 응답 wrapper와 혼합하지 않습니다.
-- Escrow의 ERD 외 금융망 필드는 SSAFY API 대응 필드임을 Swagger description에 명시합니다.
-- 실제 Spring 서버의 전역 예외 처리기는 FastAPI 목 서버와 동일한 HTTP 상태, 응답 코드와 JSON 구조를 생성해야 합니다.
-
-## 14. 예외 처리
+## 12. 예외 처리
 
 두 서버는 예외를 같은 JSON으로 변환하지 않습니다. 예외 클래스와 내부 처리 방식은 Spring 공통 패턴을 사용할 수 있지만, 최종 HTTP 상태와 body는 각 서버의 목 기준 API와 같아야 합니다.
 
-### 14.1 Komit 예외 처리
+### 12.1 Komit 예외 처리
 
 공통 예외는 `common/exception`에서 관리합니다.
 
@@ -704,18 +505,32 @@ public enum ContractErrorCode implements ErrorCode {
 
 도메인마다 내용이 거의 같은 Exception 클래스를 반복 생성하지 않습니다. 기본은 `ErrorCode`와 공통 `BusinessException` 조합이며, 별도의 타입이 실제 처리 흐름을 바꿀 때만 도메인 예외 클래스를 만듭니다.
 
-### 14.2 Escrow 예외 처리
+Komit 에러 응답은 노출 범위를 통제합니다.
 
-- Escrow 전역 예외 처리기는 실패 응답을 `Header` 형태로 생성합니다.
-- Bean Validation 및 JSON parsing 오류도 기본 Spring 400 body로 내보내지 않고 `H1000` 또는 `Q1001`로 변환합니다.
-- 금융망 공통 header의 값 오류는 `H1001`~`H1010`으로 변환합니다.
+- `message`에는 사용자에게 그대로 보여줄 수 있는 문장만 담습니다.
+- 스택 트레이스, 예외 클래스, SQL, 테이블·컬럼, 파일 경로, 내부 서비스명·호스트·포트, 라이브러리 버전, 설정값을 응답에 넣지 않습니다.
+- 500은 고정된 안전한 문구를 사용하고 실제 원인은 서버 로그에서 확인합니다. 문의 추적이 필요하면 의미 없는 임의 식별자인 `traceId`만 추가합니다.
+- 로그인과 비밀번호 재설정에서는 계정 존재 여부를 구분해 알려주지 않습니다.
+- 다른 사용자의 요청서, 계약, 정산, 채팅처럼 존재 자체가 민감한 리소스는 접근 권한이 없어도 404를 반환합니다. 공개 프로필과 공개 목록처럼 존재가 이미 공개된 리소스만 403을 사용합니다.
+- 검증 에러 목록에는 필드명과 사유만 넣고 사용자가 입력한 실제 값을 넣지 않습니다.
+- 에러 코드는 `USER_TABLE_FK_VIOLATION` 같은 구현 용어가 아니라 `CONTRACT_ALREADY_ACCEPTED` 같은 도메인 용어를 사용합니다.
+
+
+### 12.2 Escrow 예외 처리
+
+- Escrow 전역 예외 처리기는 실패 응답을 목 명세의 `Header` 형태로 생성합니다. 응답 코드와 HTTP 상태의 대응은 목 Swagger를 따릅니다.
+- Bean Validation 및 JSON parsing 오류도 기본 Spring 400 body로 내보내지 않고 목 명세가 정한 응답 코드로 변환합니다.
 - 실패 응답에 `REC`, stack trace, 예외 클래스명 또는 내부 구현 정보를 넣지 않습니다.
+- `apiKey`와 `userKey`는 성공·실패 응답에 포함하지 않습니다.
+- `Header`와 `REC`의 대소문자를 바꾸거나 Komit 응답 wrapper와 혼합하지 않습니다.
 - Komit의 `ErrorResponse`, `INVALID_REQUEST`, `errors[]` 구조를 재사용하지 않습니다.
 - Java 내부에서 이름이 같은 `ErrorCode` interface를 사용하더라도 Escrow 응답 DTO와 변환기는 Escrow 서버 안에 독립적으로 둡니다.
+- 기준 코드 목록에 없는 응답 코드를 임의로 만들지 않습니다. 필요하면 목 명세에 먼저 추가합니다.
+- 실제 Spring 서버의 전역 예외 처리기는 FastAPI 목 서버와 동일한 HTTP 상태, 응답 코드와 JSON 구조를 생성해야 합니다.
 
-## 15. PostgreSQL과 JPA 규칙
+## 13. PostgreSQL과 JPA 규칙
 
-### 15.1 개발 환경 일치
+### 13.1 개발 환경 일치
 
 - local과 prod 모두 PostgreSQL을 사용합니다.
 - 로컬은 Docker Compose의 PostgreSQL 18.6을 사용합니다.
@@ -723,7 +538,7 @@ public enum ContractErrorCode implements ErrorCode {
 - H2는 PostgreSQL과 SQL 문법, 타입, 제약조건, 정렬 동작이 달라 사용하지 않습니다.
 - 단위 테스트는 DB 없이 실행 가능하도록 도메인 로직을 분리합니다.
 
-### 15.2 Entity 기본
+### 13.2 Entity 기본
 
 ```java
 @Getter
@@ -761,7 +576,48 @@ public class Contract {
 - 컬렉션과 연관 Entity를 JSON으로 직접 직렬화하지 않습니다.
 - N+1 가능성이 있는 조회는 fetch join 또는 `@EntityGraph`로 명시적으로 해결하고 쿼리 수를 확인합니다.
 
-### 15.3 스키마 변경
+### 13.3 QueryDSL 사용 기준
+
+바닐라 JPA로 표현할 수 없는 조회는 **QueryDSL**로 작성합니다. 네이티브 SQL 문자열이나 조건마다 분기하는 JPQL 문자열 조립으로 해결하지 않습니다.
+
+QueryDSL을 사용하는 경우는 다음과 같습니다.
+
+- 검색 필터처럼 조건 개수가 요청에 따라 달라지는 동적 조회
+- 여러 Entity를 조인해 화면 단위 데이터를 한 번에 만드는 조회
+- 집계, 그룹핑, 서브쿼리가 필요한 통계성 조회
+- 정렬 기준과 페이지 조건이 조합으로 바뀌는 목록 조회
+
+다음은 QueryDSL로 바꾸지 않습니다. 단순 조회는 Spring Data JPA 쿼리 메서드로 충분합니다.
+
+- 단건 조회와 단순 조건 조회
+- `@EntityGraph`나 fetch join으로 해결되는 N+1 문제
+
+구조는 다음과 같이 둡니다. QueryDSL 구현체는 해당 도메인의 `repository` 안에 두고 다른 도메인에서 참조하지 않습니다.
+
+```text
+domain/developer/repository/
+├── DeveloperRepository.java              # JpaRepository + DeveloperRepositoryCustom
+├── DeveloperRepositoryCustom.java        # QueryDSL 조회 메서드 선언
+└── DeveloperRepositoryImpl.java          # JPAQueryFactory 구현
+```
+
+#### 성능 규칙
+
+QueryDSL 쿼리는 필요한 정보만 가져오도록 작성합니다.
+
+- **필요한 컬럼만 조회합니다.** Entity 전체를 가져와 DTO로 변환하지 말고 `Projections` 또는 `@QueryProjection`으로 조회 전용 DTO에 직접 담습니다.
+- 화면에 쓰지 않는 연관 Entity를 조인하거나 가져오지 않습니다.
+- 컬렉션 조인으로 행이 늘어나는 조회는 `distinct`로 덮지 말고 조회를 분리하거나 `batch size`를 사용합니다.
+- 목록 조회는 반드시 `limit`과 `offset`을 적용합니다. 전체 결과를 메모리에 올린 뒤 자르지 않습니다.
+- count 쿼리는 필요할 때만 실행하고, 정렬과 불필요한 조인을 제거한 형태로 분리해 작성합니다.
+- 조건이 없는 필터는 `null`을 반환하는 `BooleanExpression` 메서드로 표현해 `where` 절에서 빠지게 합니다. 항상 참인 조건을 넣지 않습니다.
+- 조회 결과를 애플리케이션에서 반복문으로 다시 필터링하거나 집계하지 않습니다. DB에서 끝냅니다.
+- 인덱스를 타지 않는 조건(선행 와일드카드 `LIKE`, 컬럼 가공)을 피하고, 필요하면 인덱스를 migration에 추가합니다.
+- 반복 실행되는 조회는 `EXPLAIN`으로 실행 계획과 쿼리 수를 확인하고 결과를 PR에 적습니다.
+
+`JPAQueryFactory`는 `config`에서 빈으로 등록해 주입받아 사용하고, 구현체마다 새로 생성하지 않습니다. 생성된 Q 클래스는 빌드 산출물이므로 커밋하지 않습니다.
+
+### 13.4 스키마 변경
 
 - 운영 스키마는 Flyway로만 변경합니다.
 - `spring.jpa.hibernate.ddl-auto`는 local/prod에서 `validate`를 사용합니다.
@@ -779,7 +635,7 @@ src/main/resources/db/migration/
 
 PostgreSQL의 `jsonb`, `timestamptz`, partial index 같은 기능은 실제 조회 요구가 있을 때 사용합니다. 특정 DB 기능 도입은 Repository 테스트로 동작을 검증하고 문서화합니다.
 
-## 16. 설정과 프로필
+## 14. 설정과 프로필
 
 ```text
 src/main/resources/
@@ -811,7 +667,7 @@ spring:
           time_zone: UTC
 ```
 
-## 17. 보안 규칙
+## 15. 보안 규칙
 
 - 각 서버는 자신의 Spring Security 설정을 독립적으로 관리합니다.
 - Komit 사용자 API는 `Authorization: Bearer <accessToken>`을 기준으로 인증합니다.
@@ -824,7 +680,7 @@ spring:
 - CORS 허용 origin은 환경별 명시 목록으로 관리하며 `*`와 credential을 함께 사용하지 않습니다.
 - 인증 실패 문구와 처리 시간 차이로 계정 존재 여부가 드러나지 않게 합니다.
 
-## 18. 트랜잭션과 동시성
+## 16. 트랜잭션과 동시성
 
 - 트랜잭션 경계는 Service에 둡니다.
 - 외부 API 호출을 DB 트랜잭션 안에서 오래 유지하지 않습니다.
@@ -834,9 +690,9 @@ spring:
 - 이벤트 발행이 DB commit과 함께 보장되어야 하면 Outbox 패턴 도입을 검토합니다.
 - Writer 역할은 장애 전환으로 다른 인스턴스로 이동할 수 있으므로 JVM 내부 lock을 정합성 수단으로 사용하지 않습니다.
 
-## 19. API 문서화 규칙
+## 17. API 문서화 규칙
 
-### 19.1 목 서버 Swagger
+### 17.1 목 서버 Swagger
 
 Komit은 `/service/docs`, Escrow는 `/escrow/docs`를 사용합니다. 응답 스키마를 작성할 때는 같은 앱의 default API만 참고하고 다른 앱의 default API를 복사하지 않습니다.
 
@@ -850,7 +706,7 @@ Komit은 `/service/docs`, Escrow는 `/escrow/docs`를 사용합니다. 응답 �
 
 테이블명, SQL, 내부 클래스, 서버 경로 같은 구현 상세는 설명에 넣지 않습니다. Komit 라우터는 Komit 서비스 등록 목록에, Escrow 라우터는 Escrow 등록 목록에만 연결합니다.
 
-### 19.2 실제 Spring API
+### 17.2 실제 Spring API
 
 ```java
 @Tag(name = "Developer", description = "개발자 검색 및 프로필 API")
@@ -874,7 +730,7 @@ public class DeveloperController {
 - API 변경 PR에는 목 명세 변경과 실제 구현 변경을 함께 연결합니다.
 - 불일치는 실제 서버 구현에 맞춰 프런트엔드를 임의 수정하지 말고, 먼저 합의된 계약이 무엇인지 확인합니다.
 
-## 20. 로깅과 관측성
+## 18. 로깅과 관측성
 
 - 로깅은 Lombok `@Slf4j`와 parameterized logging을 사용합니다.
 - 정상 흐름을 `error`로 기록하지 않습니다.
@@ -890,7 +746,7 @@ log.info("Contract accepted. contractId={}, actorId={}", contractId, actorId);
 
 문자열 연결 방식인 `log.info("id=" + id)`는 사용하지 않습니다.
 
-## 21. 테스트 규칙
+## 19. 테스트 규칙
 
 ### 단위 테스트
 
@@ -907,8 +763,8 @@ log.info("Contract accepted. contractId={}, actorId={}", contractId, actorId);
 ### Controller와 계약 테스트
 
 - `MockMvc`로 method, URL, 인증, validation, 상태 코드와 JSON schema를 검증합니다.
-- Komit은 단건·목록·`{code, message}`·422 응답이 Komit 목 Swagger와 같은지 확인합니다.
-- Escrow는 성공 `Header`/`REC`, 실패 `Header` 단독, 400 응답 코드 및 500 `Q1000`이 Escrow 목 Swagger와 같은지 확인합니다.
+- 각 서버의 성공·실패 응답이 해당 서버의 목 Swagger와 같은 상태 코드, 응답 코드, JSON 구조인지 확인합니다.
+- Escrow는 실패 응답에 `REC`가 포함되지 않는지 확인합니다.
 - 타인의 민감한 리소스 접근이 404로 가려지는지 확인합니다.
 
 ### 이중화 역할 테스트
@@ -928,7 +784,7 @@ log.info("Contract accepted. contractId={}, actorId={}", contractId, actorId);
 
 Windows에서는 각각 `gradlew.bat test`, `gradlew.bat build`를 사용합니다. PR을 열기 전에 최소한 변경 도메인의 테스트와 전체 build를 통과시킵니다.
 
-## 22. 협업과 Git 규칙
+## 20. 협업과 Git 규칙
 
 브랜치와 커밋 형식은 저장소의 [`docs/git_guide.md`](./git_guide.md)를 따릅니다.
 
@@ -946,9 +802,10 @@ PR 설명에는 다음을 포함합니다.
 - ERD 또는 Flyway 변경 여부
 - 인증·인가 영향
 - 테스트한 항목과 결과
+- SonarQube Quality Gate 결과와 남겨 둔 이슈
 - 배포 또는 환경 변수 변경 사항
 
-## 23. 코드 리뷰 체크리스트
+## 21. 코드 리뷰 체크리스트
 
 - [ ] 패키지가 계층이 아니라 도메인부터 나뉘어 있는가?
 - [ ] 다른 도메인의 Entity/Repository를 직접 참조하지 않는가?
@@ -963,6 +820,8 @@ PR 설명에는 다음을 포함합니다.
 - [ ] 에러 응답에 내부 정보나 입력값이 노출되지 않는가?
 - [ ] 타인의 민감한 리소스가 404로 처리되는가?
 - [ ] N+1과 불필요한 EAGER 조회가 없는가?
+- [ ] 바닐라 JPA로 표현할 수 없는 조회를 문자열 SQL이 아니라 QueryDSL로 작성했는가?
+- [ ] QueryDSL 조회가 필요한 컬럼만 DTO로 가져오고 페이지 조건을 적용하는가?
 - [ ] PostgreSQL 기반 통합 테스트가 필요한 변경인가?
 - [ ] 스키마 변경이 새 Flyway migration으로 작성되었는가?
 - [ ] 조회 요청을 어느 인스턴스가 받아도 동작하는 무상태 구현인가?
@@ -975,8 +834,10 @@ PR 설명에는 다음을 포함합니다.
 - [ ] 롤링 배포 중 구버전과 신버전이 공존할 수 있는 변경인가?
 - [ ] secret 또는 개인정보가 코드·설정·로그에 포함되지 않았는가?
 - [ ] 정상·실패·권한 테스트가 작성되었는가?
+- [ ] SonarQube에서 이번 변경으로 새로 생긴 이슈와 보안 핫스팟을 확인했는가?
+- [ ] 남겨 둔 이슈에 대해 남기는 이유가 설명되어 있는가?
 
-## 24. 완료 정의(Definition of Done)
+## 22. 완료 정의(Definition of Done)
 
 백엔드 API 한 건은 다음을 모두 만족해야 완료로 봅니다.
 
@@ -989,4 +850,5 @@ PR 설명에는 다음을 포함합니다.
 7. 필요 시 Flyway migration과 ERD가 함께 갱신되었습니다.
 8. 단위·통합·Controller 테스트가 변경 위험에 맞게 작성되었습니다.
 9. `gradlew build`가 통과합니다.
-10. API·DB·보안·이중화 영향이 PR 설명에 기록되어 있습니다.
+10. SonarQube 분석 결과를 확인했습니다. Quality Gate가 통과하고, 이번 변경으로 새로 생긴 이슈와 보안 핫스팟이 정리되어 있습니다.
+11. API·DB·보안·이중화 영향이 PR 설명에 기록되어 있습니다.
