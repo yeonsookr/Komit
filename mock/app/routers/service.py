@@ -2186,10 +2186,6 @@ class DeveloperSummaryResponse(BaseModel):
         description="개발자가 적은 한 줄 소개.",
         examples=["간단한 상담도 받습니다. 용어부터 풀어서 설명합니다."],
     )
-    yearsOfExperience: float | None = Field(
-        description="경력 연차. 등록하지 않았으면 null이다.",
-        examples=[5.0],
-    )
     field: CodeResponse | None = Field(
         description=(
             "주로 담당하는 개발 분야. 코드 분류 `DEV_FIELD`의 항목이며, "
@@ -2318,6 +2314,13 @@ class DeveloperDetailResponse(DeveloperSummaryResponse):
     description: str | None = Field(
         description="개발자 소개 글. 적지 않았으면 null이다.",
         examples=["작은 가게 서비스를 주로 맡습니다."],
+    )
+    yearsOfExperience: float | None = Field(
+        description=(
+            "경력 연차. 등록하지 않았으면 null이다. 목록에는 내려가지 않고 상세에만 "
+            "담는다. 어떤 일로 쌓은 연차인지는 `careers`의 `role`이 말한다."
+        ),
+        examples=[5.0],
     )
     activeFrom: str | None = Field(
         description="주로 활동하는 시간대의 시작. 정하지 않았으면 null이다.",
@@ -2584,7 +2587,6 @@ DEVELOPERS = [
         "name": "이준",
         "profileImageFileId": None,
         "intro": "간단한 상담도 받습니다. 용어부터 풀어서 설명합니다.",
-        "yearsOfExperience": 5.0,
         "field": {"codeId": 42, "codeName": "DB 연결"},
         "isCareerVerified": True,
         "devRating": {"score": 4.4, "reviewCount": 13},
@@ -2600,7 +2602,6 @@ DEVELOPERS = [
         "name": "정하",
         "profileImageFileId": None,
         "intro": "짧게 방향만 잡아드려요.",
-        "yearsOfExperience": 4.0,
         "field": {"codeId": 41, "codeName": "인터넷에 올리기"},
         "isCareerVerified": True,
         "devRating": {"score": 4.2, "reviewCount": 9},
@@ -2616,7 +2617,6 @@ DEVELOPERS = [
         "name": "한서",
         "profileImageFileId": None,
         "intro": "급한 장애 대응 잘합니다. 새벽도 괜찮습니다.",
-        "yearsOfExperience": 6.0,
         "field": {"codeId": 47, "codeName": "버그 잡기"},
         "isCareerVerified": False,
         "devRating": {"score": 4.7, "reviewCount": 22},
@@ -2634,6 +2634,7 @@ TOTAL_DEVELOPERS = 128
 DEVELOPER_DETAIL = {
     **DEVELOPERS[0],
     "description": "작은 가게 서비스를 주로 맡습니다.",
+    "yearsOfExperience": 5.0,
     "activeFrom": "10:00",
     "activeTo": "19:00",
     "careers": [
