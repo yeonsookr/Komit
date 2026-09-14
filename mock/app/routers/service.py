@@ -2734,7 +2734,22 @@ ROOMS = [
         "chatRefId": "room-92-chat",
         "openedAt": "2026-08-22T11:40:00+09:00",
     },
+    {
+        "roomId": 93,
+        "recommendationItemId": 502,
+        "type": "DEVELOPMENT",
+        "status": "OPEN",
+        "projectId": 8,
+        "projectName": "수제 비누 가게",
+        "counterpartName": "한서",
+        "chatRefId": "room-93-chat",
+        "openedAt": "2026-08-25T14:05:00+09:00",
+    },
 ]
+
+# 상담방에서 갈래를 정하면 열리는 방. 고른 갈래에 따라 어느 쪽이 열리는지 갈린다.
+CONVERTED_CONSULTING_ROOM_ID = 92
+CONVERTED_DEVELOPMENT_ROOM_ID = 93
 
 # 추천을 거치지 않고 직접 찾아 연 방. 추천 항목이 없어 recommendationItemId가 비어 있다.
 DIRECT_ROOM = {
@@ -3358,7 +3373,11 @@ def get_room(
         201: {
             "content": {
                 "application/json": {
-                    "example": {**ROOM_DETAIL, "status": "CLOSED", "convertedRoomId": 92}
+                    "example": {
+                        **ROOM_DETAIL,
+                        "status": "CLOSED",
+                        "convertedRoomId": CONVERTED_CONSULTING_ROOM_ID,
+                    }
                 }
             }
         },
@@ -3413,8 +3432,13 @@ def convert_room(
         return _error_response(404, ROOM_NOT_FOUND)
     if roomId == CONVERTED_ROOM_ID:
         return _error_response(409, ROOM_ALREADY_CONVERTED)
+    converted_room_id = (
+        CONVERTED_CONSULTING_ROOM_ID
+        if request.targetType == "CONSULTING"
+        else CONVERTED_DEVELOPMENT_ROOM_ID
+    )
     return RoomDetailResponse(
-        **{**ROOM_DETAIL, "status": "CLOSED", "convertedRoomId": 92}
+        **{**ROOM_DETAIL, "status": "CLOSED", "convertedRoomId": converted_room_id}
     )
 
 
