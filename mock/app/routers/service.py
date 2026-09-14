@@ -694,6 +694,16 @@ FEATURED_SIZE_ERROR_EXAMPLE = {
     "errors": [{"field": "size", "reason": "10 이하여야 합니다."}],
 }
 
+# 카카오 로그인은 code·redirectUri가 둘 다 필수다. 빈 바디를 보내면 두 항목이 함께 온다.
+KAKAO_LOGIN_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [
+        {"field": "code", "reason": "필수 항목입니다."},
+        {"field": "redirectUri", "reason": "필수 항목입니다."},
+    ],
+}
+
 
 # --------------------------------------------------------------------------- #
 # 영역 1 — 목 데이터
@@ -921,7 +931,12 @@ def get_featured_developers(
             "description": "카카오 서비스에 연결하지 못함",
             "content": {"application/json": {"example": KAKAO_UNAVAILABLE_EXAMPLE}},
         },
-        **AREA1_ERRORS,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": KAKAO_LOGIN_ERROR_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
     },
     summary="카카오 로그인",
     description=(
