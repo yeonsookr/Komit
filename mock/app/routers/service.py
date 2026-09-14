@@ -2327,6 +2327,28 @@ class ReviewListResponse(BaseModel):
     totalPages: int = Field(description="전체 페이지 수.", examples=[1])
 
 
+class PriceCatalogItemResponse(BaseModel):
+    """가격표 한 줄. 개발자가 등록한 작업마다 한 행이다."""
+
+    priceId: int = Field(description="가격표 식별자.", examples=[61])
+    taskType: Literal["CONSULT", "DEVELOP"] = Field(
+        description="작업 종류. CONSULT는 컨설팅 세션, DEVELOP은 개발 작업이다.",
+        examples=["DEVELOP"],
+    )
+    taskName: str = Field(
+        description=(
+            "작업 이름. 컨설팅은 '30분 · 한 가지 주제'처럼 시간을, 개발은 "
+            "'로그인 붙이기'처럼 할 일을 적는다."
+        ),
+        examples=["로그인 붙이기"],
+    )
+    price: int = Field(description="가격. 원 단위 정수다.", examples=[400000])
+    periodDays: int | None = Field(
+        description="예상 작업 기간(일). 컨설팅 세션은 null이다.",
+        examples=[4],
+    )
+
+
 class DeveloperDetailResponse(DeveloperSummaryResponse):
     """개발자 프로필 상세. 목록에 쓰는 값에 소개글과 이력을 더한다."""
 
@@ -2353,6 +2375,13 @@ class DeveloperDetailResponse(DeveloperSummaryResponse):
     )
     careers: list[CareerResponse] = Field(description="등록한 경력.")
     portfolioItems: list[PortfolioItemResponse] = Field(description="등록한 작업물.")
+    priceCatalog: list[PriceCatalogItemResponse] = Field(
+        description=(
+            "등록한 가격표 전부. 화면의 '컨설팅'과 '개발 · 작업별 요금'을 이 목록으로 "
+            "그린다. 목록 응답의 `prices`는 카드에 쓰는 유형별 최저가라 줄 단위 금액과 "
+            "기간은 여기에만 있다. 가격표를 등록하지 않았으면 빈 배열이다."
+        ),
+    )
 
 
 class RecommendationItemResponse(BaseModel):
@@ -2668,8 +2697,62 @@ DEVELOPERS = [
 
 TOTAL_DEVELOPERS = 128
 
+# 개발자 한 명의 가격표. 컨설팅은 세션 길이로, 개발은 할 일로 줄을 나눈다.
+PRICE_CATALOG = [
+    {
+        "priceId": 60,
+        "taskType": "CONSULT",
+        "taskName": "30분 · 한 가지 주제",
+        "price": 50000,
+        "periodDays": None,
+    },
+    {
+        "priceId": 61,
+        "taskType": "CONSULT",
+        "taskName": "60분 · 이어지는 두세 가지",
+        "price": 90000,
+        "periodDays": None,
+    },
+    {
+        "priceId": 62,
+        "taskType": "DEVELOP",
+        "taskName": "인터넷에 올리기",
+        "price": 200000,
+        "periodDays": 1,
+    },
+    {
+        "priceId": 63,
+        "taskType": "DEVELOP",
+        "taskName": "저장되게 하기",
+        "price": 350000,
+        "periodDays": 3,
+    },
+    {
+        "priceId": 64,
+        "taskType": "DEVELOP",
+        "taskName": "사둔 주소 연결",
+        "price": 100000,
+        "periodDays": 1,
+    },
+    {
+        "priceId": 65,
+        "taskType": "DEVELOP",
+        "taskName": "로그인 붙이기",
+        "price": 400000,
+        "periodDays": 4,
+    },
+    {
+        "priceId": 66,
+        "taskType": "DEVELOP",
+        "taskName": "버그 하나 고치기",
+        "price": 100000,
+        "periodDays": 2,
+    },
+]
+
 DEVELOPER_DETAIL = {
     **DEVELOPERS[0],
+    "priceCatalog": PRICE_CATALOG,
     "description": "작은 가게 서비스를 주로 맡습니다.",
     "yearsOfExperience": 5.0,
     "activeFrom": "10:00",
@@ -6660,38 +6743,10 @@ class WithdrawalCheckResponse(BaseModel):
 # --------------------------------------------------------------------------- #
 
 
-class MyPriceResponse(BaseModel):
-    """내 가격표 한 줄."""
-
-    priceId: int = Field(description="가격표 식별자.", examples=[61])
-    taskType: Literal["CONSULT", "DEVELOP"] = Field(
-        description="작업 종류. CONSULT는 컨설팅 세션, DEVELOP은 개발 작업이다.",
-        examples=["DEVELOP"],
-    )
-    taskName: str = Field(
-        description=(
-            "작업 이름. 컨설팅은 '30분 화상'처럼 시간을, 개발은 '로그인 붙이기'처럼 "
-            "할 일을 적는다."
-        ),
-        examples=["로그인 붙이기"],
-    )
-    price: int = Field(description="가격. 원 단위 정수다.", examples=[400000])
-    periodDays: int | None = Field(
-        description="예상 작업 기간(일). 컨설팅 세션은 null이다.",
-        examples=[4],
-    )
-
-
 class MyDeveloperProfileResponse(DeveloperDetailResponse):
     """내 프로필 편집 화면이 쓰는 값. 남에게 보이는 상세에 가격표와 리뷰를 더한다."""
 
     isPublished: bool = Field(description="프로필이 공개 중인지.", examples=[True])
-    myPrices: list[MyPriceResponse] = Field(
-        description=(
-            "내가 등록한 가격표 전부. 남에게 보이는 상세의 `prices`는 유형별 최저가만 "
-            "담지만, 편집 화면은 줄마다 고쳐야 하므로 전부 내려준다."
-        ),
-    )
     reviews: list[ReviewResponse] = Field(
         description="받은 리뷰. 새로운 것이 먼저다. 답글을 여기서 단다.",
     )
@@ -7143,36 +7198,7 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
         },
     ],
     "isPublished": True,
-    "myPrices": [
-        {
-            "priceId": 60,
-            "taskType": "CONSULT",
-            "taskName": "30분 화상",
-            "price": 50000,
-            "periodDays": None,
-        },
-        {
-            "priceId": 61,
-            "taskType": "CONSULT",
-            "taskName": "60분 화상",
-            "price": 90000,
-            "periodDays": None,
-        },
-        {
-            "priceId": 62,
-            "taskType": "DEVELOP",
-            "taskName": "인터넷에 올리기",
-            "price": 200000,
-            "periodDays": 1,
-        },
-        {
-            "priceId": 63,
-            "taskType": "DEVELOP",
-            "taskName": "로그인 붙이기",
-            "price": 400000,
-            "periodDays": 4,
-        },
-    ],
+    "priceCatalog": PRICE_CATALOG,
     "reviews": [
         {
             "reviewId": 88,
@@ -7626,7 +7652,7 @@ def withdraw() -> WithdrawalResultResponse | JSONResponse:
         "편집 화면이 쓰는 값을 한 번에 내려준다. 남에게 보이는 개발자 상세에 가격표 "
         "전부와 받은 리뷰를 더한 모양이다.\n\n"
         "`prices`는 남에게 보이는 것과 같은 유형별 최저가이고, 편집에 쓰는 줄 단위 "
-        "가격표는 `myPrices`에 있다.\n\n"
+        "가격표는 개발자 상세에서 물려받은 `priceCatalog`에 있다.\n\n"
         "평점은 읽기 전용이다. 유료 거래를 마친 의뢰인의 리뷰로만 매겨지므로 저장 "
         "요청으로 바꿀 수 없다.\n\n"
         "- **200**: 항상\n"
