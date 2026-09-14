@@ -6050,7 +6050,8 @@ def confirm_milestone(
         "- **400 / FILE_TOO_LARGE**: 허용 용량을 넘겼을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 계약의 개발자가 아닐 때\n"
-        "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableId`가 404일 때\n"
+        "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableId`가 404일 때. 없는 인계물이거나 이 "
+        "계약의 당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 준다\n"
         "- **500 / INTERNAL_ERROR**: 올리지 못했을 때"
     ),
 )
