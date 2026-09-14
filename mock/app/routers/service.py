@@ -2208,8 +2208,16 @@ class DeveloperSummaryResponse(BaseModel):
     field: CodeResponse | None = Field(
         description=(
             "주로 담당하는 개발 분야. 코드 분류 `DEV_FIELD`의 항목이며, "
-            "등록하지 않았으면 null이다."
+            "**한 명에 하나다.** 등록하지 않았으면 null이다. 카드 머리에 연차와 나란히 "
+            "`DB 연결 · 5년`으로 붙는다."
         ),
+    )
+    yearsOfExperience: float | None = Field(
+        description=(
+            "경력 연차. 등록하지 않았으면 null이다. 카드 머리에서 분야 옆에 붙는다. "
+            "어떤 일로 쌓은 연차인지는 상세의 `careers`가 말한다."
+        ),
+        examples=[5.0],
     )
     isCareerVerified: bool = Field(
         description=(
@@ -2220,7 +2228,10 @@ class DeveloperSummaryResponse(BaseModel):
     devRating: RatingResponse = Field(description="개발력 평점과 리뷰 수.")
     explanatoryRating: RatingResponse = Field(description="설명력 평점과 리뷰 수.")
     techCategories: list[CodeResponse] = Field(
-        description="이 개발자가 다룰 수 있는 기술. 등록 전이면 빈 배열이다.",
+        description=(
+            "이 개발자가 다룰 수 있는 기술. 코드 분류 `TECH_CATEGORY`의 항목이며 "
+            "여럿일 수 있다. **카드 아래 칩이 이 목록이다.** 등록 전이면 빈 배열이다."
+        ),
     )
     prices: list[TaskPriceResponse] = Field(
         description="작업 유형별 최저가. 가격표를 등록하지 않은 유형은 빠진다.",
@@ -2358,13 +2369,6 @@ class DeveloperDetailResponse(DeveloperSummaryResponse):
     description: str | None = Field(
         description="개발자 소개 글. 적지 않았으면 null이다.",
         examples=["작은 가게 서비스를 주로 맡습니다."],
-    )
-    yearsOfExperience: float | None = Field(
-        description=(
-            "경력 연차. 등록하지 않았으면 null이다. 목록에는 내려가지 않고 상세에만 "
-            "담는다. 어떤 일로 쌓은 연차인지는 `careers`의 `role`이 말한다."
-        ),
-        examples=[5.0],
     )
     activeFrom: str | None = Field(
         description="주로 활동하는 시간대의 시작. 정하지 않았으면 null이다.",
@@ -2685,6 +2689,7 @@ DEVELOPERS = [
         "profileImageFileId": None,
         "intro": "간단한 상담도 받습니다. 용어부터 풀어서 설명합니다.",
         "field": {"codeId": 42, "codeName": "DB 연결"},
+        "yearsOfExperience": 5.0,
         "isCareerVerified": True,
         "devRating": {"score": 4.4, "reviewCount": 13},
         "explanatoryRating": {"score": 4.9, "reviewCount": 20},
@@ -2700,6 +2705,7 @@ DEVELOPERS = [
         "profileImageFileId": None,
         "intro": "짧게 방향만 잡아드려요.",
         "field": {"codeId": 41, "codeName": "인터넷에 올리기"},
+        "yearsOfExperience": 4.0,
         "isCareerVerified": True,
         "devRating": {"score": 4.2, "reviewCount": 9},
         "explanatoryRating": {"score": 4.4, "reviewCount": 11},
@@ -2715,6 +2721,7 @@ DEVELOPERS = [
         "profileImageFileId": None,
         "intro": "급한 장애 대응 잘합니다. 새벽도 괜찮습니다.",
         "field": {"codeId": 47, "codeName": "버그 잡기"},
+        "yearsOfExperience": 6.0,
         "isCareerVerified": False,
         "devRating": {"score": 4.7, "reviewCount": 22},
         "explanatoryRating": {"score": 4.1, "reviewCount": 18},
@@ -2785,7 +2792,6 @@ DEVELOPER_DETAIL = {
     **DEVELOPERS[0],
     "priceCatalog": PRICE_CATALOG,
     "description": "작은 가게 서비스를 주로 맡습니다.",
-    "yearsOfExperience": 5.0,
     "activeFrom": "10:00",
     "activeTo": "19:00",
     "careers": [
@@ -3070,6 +3076,10 @@ def get_codes(
         "`name`은 이름으로 바로 찾는다.\n\n"
         "`totalDevelopers`는 조건을 걸지 않았을 때의 전체 수라, 화면의 "
         "'128명 중 5명'에서 앞 숫자에 해당한다.\n\n"
+        "**카드 머리는 `field`와 `yearsOfExperience`, 칩은 `techCategories`다.** 분야는 "
+        "한 명에 하나라 `DB 연결 · 5년`처럼 연차와 붙여 한 줄로 쓰고, 여럿일 수 있는 "
+        "기술을 카드 아래 칩으로 늘어놓는다. 거르는 기준은 분야이고 칩은 기술이라 서로 "
+        "다른 것을 가리킨다.\n\n"
         "**`page`는 1부터 센다.** 0이 첫 장이 아니다.\n\n"
         "- **200**: 항상. 조건에 맞는 사람이 없으면 `content`가 빈 배열이다\n"
         "- **422 / INVALID_REQUEST**: `searchMode`나 `sort`가 허용된 값이 아니거나 "
@@ -3100,7 +3110,9 @@ def find_developers(
             description=(
                 "분야 코드 식별자. 여러 개를 보내면 그중 하나라도 맞는 개발자를 찾는다. "
                 "여럿을 보낼 때는 `?fieldCodeIds=41&fieldCodeIds=42`처럼 같은 이름을 "
-                "거듭 적는다."
+                "거듭 적는다. **`DEV_FIELD`의 항목이 아닌 값은 조용히 무시한다** — "
+                "쓰지 않기로 내린 분야가 담긴 옛 주소로 들어와도 나머지 조건으로 "
+                "결과가 나오게 하기 위해서다."
             ),
             examples=[[41, 42]],
         ),
@@ -3109,7 +3121,10 @@ def find_developers(
         Literal["devRating,desc", "explanatoryRating,desc", "price,asc", "contract,desc"],
         Query(
             description=(
-                "정렬 기준. 차례로 실력 높은 순, 설명력 높은 순, 비용 낮은 순, 계약 많은 순이다."
+                "정렬 기준. 차례로 실력 높은 순, 설명력 높은 순, 비용 낮은 순, 계약 많은 "
+                "순이다. **비용은 가격표 전체의 최저가로 견준다** — 컨설팅과 개발을 "
+                "가리지 않고 그 개발자가 받는 가장 싼 금액이며, 카드에 나란히 적히는 "
+                "두 금액 중 작은 쪽이다."
             ),
             examples=["devRating,desc"],
         ),
