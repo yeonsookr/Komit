@@ -5298,7 +5298,8 @@ class SubmitMilestoneRequest(BaseModel):
 
     message: str | None = Field(
         default=None,
-        description="의뢰인에게 함께 남길 말. 적지 않아도 된다.",
+        max_length=300,
+        description="의뢰인에게 함께 남길 말. 적지 않아도 된다. 300자까지 받는다.",
         examples=[None],
     )
 
@@ -5568,6 +5569,13 @@ CONTRACT_ID_ERROR_EXAMPLE = {
     "code": "INVALID_REQUEST",
     "message": "요청 형식이 올바르지 않습니다.",
     "errors": [{"field": "contractId", "reason": "정수여야 합니다."}],
+}
+
+# 확인 요청 바디는 message 하나뿐이고 300자 제한이 유일한 검증 조건이다.
+SUBMIT_MESSAGE_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [{"field": "message", "reason": "300자 이하여야 합니다."}],
 }
 
 STARTED_CONTRACT_ID = 409
@@ -5847,13 +5855,21 @@ def get_deposit(
                 }
             },
         },
-        **MILESTONE_ERRORS,
+        404: MILESTONE_ERRORS[404],
+        **AREA1_UNAUTHORIZED,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": SUBMIT_MESSAGE_ERROR_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
     },
     summary="작업 확인 요청",
     description=(
         "**화면 — `5_개발자_확인` › 확인 요청 보내기 · 확인 요청 다시 보내기**\n\n"
         "착수한 작업을 마치고 의뢰인에게 확인을 요청한다. 이때부터 **3일**을 세고, "
         "의뢰인이 답하지 않으면 자동으로 통과된다. 다시 보내면 기한도 다시 시작한다.\n\n"
+        "남길 말이 없으면 바디를 생략해도 된다. 빈 바디는 `{}`와 같게 처리한다.\n\n"
         "응답의 `autoPassAt`이 자동 통과 시각이다. 화면은 이 값으로 '9월 1일 자동 통과'를 "
         "보여준다.\n\n"
         "- **201**: 확인 요청을 보냈을 때. 상태가 SUBMITTED가 되고 `submittedAt`이 채워진다\n"
@@ -5861,6 +5877,7 @@ def get_deposit(
         "- **404 / MILESTONE_NOT_FOUND**: `milestoneId`가 404일 때\n"
         "- **409 / MILESTONE_STATE_CONFLICT**: `milestoneId`가 409일 때. 이미 통과된 "
         "작업이다\n"
+        "- **422 / INVALID_REQUEST**: `message`가 300자를 넘을 때\n"
         "- **500 / INTERNAL_ERROR**: 보내지 못했을 때"
     ),
 )
@@ -5874,7 +5891,8 @@ def submit_milestone(
             examples=[302],
         ),
     ],
-    request: SubmitMilestoneRequest,
+    # message가 선택이라 보낼 것이 없으면 바디를 생략할 수 있다. 빈 바디는 {}와 같게 본다.
+    request: SubmitMilestoneRequest | None = None,
 ) -> MilestoneResponse | JSONResponse:
     if milestoneId == NOT_FOUND_MILESTONE_ID:
         return _error_response(404, MILESTONE_NOT_FOUND)
