@@ -5908,7 +5908,7 @@ def submit_milestone(
     tags=[AREA5_TAG],
     responses={
         201: {"content": {"application/json": {"example": MILESTONES[0]}}},
-        409: {
+        400: {
             "model": ErrorResponse,
             "description": "확인 문장을 다 체크하지 않음",
             "content": {
@@ -5916,6 +5916,18 @@ def submit_milestone(
                     "example": {
                         "code": "QA_NOT_ALL_CHECKED",
                         "message": "확인 문장을 모두 체크해야 통과시킬 수 있습니다.",
+                    }
+                }
+            },
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "지금 상태에서는 처리할 수 없음",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": "MILESTONE_STATE_CONFLICT",
+                        "message": "지금 상태에서는 처리할 수 없습니다.",
                     }
                 }
             },
@@ -5929,11 +5941,13 @@ def submit_milestone(
         "없다.** 확인 문장이 하나라도 남아 있으면 통과시킬 수 없다.\n\n"
         "대금은 여기서 나가지 않는다. 모든 작업이 통과된 뒤 한 번에 지급된다.\n\n"
         "- **201**: 통과시켰을 때. 상태가 CONFIRMED가 되고 `confirmedAt`이 채워진다\n"
+        "- **400 / QA_NOT_ALL_CHECKED**: `qaCriterionIds`에 이 작업의 확인 문장이 모두 들어 있지 "
+        "않을 때. 목에서는 201·202가 빠지면 이 응답을 준다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 계약의 의뢰인이 아닐 때. 통과 판정은 의뢰인만 한다\n"
         "- **404 / MILESTONE_NOT_FOUND**: `milestoneId`가 404일 때\n"
-        "- **409 / QA_NOT_ALL_CHECKED**: `milestoneId`가 409일 때. 아직 체크하지 않은 "
-        "확인 문장이 있다\n"
+        "- **409 / MILESTONE_STATE_CONFLICT**: `milestoneId`가 409일 때. 이미 통과됐거나 "
+        "아직 확인 요청이 오지 않은 작업이다\n"
         "- **500 / INTERNAL_ERROR**: 통과시키지 못했을 때"
     ),
 )
@@ -5942,7 +5956,7 @@ def confirm_milestone(
         int,
         Path(
             description=(
-                "작업 식별자. 404는 없음, 409는 확인 문장 미완료 재현용 예약값이다."
+                "작업 식별자. 404는 없음, 409는 상태 충돌 재현용 예약값이다."
             ),
             examples=[MILESTONE_ID],
         ),
@@ -5952,7 +5966,10 @@ def confirm_milestone(
     if milestoneId == NOT_FOUND_MILESTONE_ID:
         return _error_response(404, MILESTONE_NOT_FOUND)
     if milestoneId == CONFLICT_MILESTONE_ID:
-        return _error_response(409, QA_NOT_ALL_CHECKED)
+        return _error_response(409, MILESTONE_STATE_CONFLICT)
+    # 목 데이터의 작업 301은 확인 문장이 201·202 둘이다. 하나라도 빠지면 규칙 위반이다.
+    if not {201, 202} <= set(request.qaCriterionIds):
+        return _error_response(400, QA_NOT_ALL_CHECKED)
     return MilestoneResponse(**MILESTONES[0])
 
 
