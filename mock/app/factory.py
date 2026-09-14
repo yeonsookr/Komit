@@ -2,6 +2,7 @@
 
 import json
 
+from copy import deepcopy
 from typing import Callable
 
 from fastapi import APIRouter, FastAPI
@@ -101,6 +102,73 @@ def _docs_page(title: str, mount: str, docs: list[tuple[str, str]]) -> str:
     )
 
 
+def _restore_examples(source: dict, target: dict) -> None:
+    """한 응답의 `content`에 라우터가 적어 둔 예시를 그대로 되돌린다."""
+    for media_type, media in source.items():
+        slot = target.get("content", {}).get(media_type)
+        if slot is None:
+            continue
+        for key in ("example", "examples"):
+            if key in media:
+                slot[key] = deepcopy(media[key])
+
+
+def _iter_routes(routes) -> list:
+    """엔드포인트를 평평하게 편다.
+
+    FastAPI는 `include_router`로 받은 라우터를 앱의 routes 에 펼쳐 넣지 않고 묶음
+    하나로 들고 있다. 묶음 안에 다시 묶음이 있을 수 있어 재귀로 훑는다.
+    """
+    found = []
+    for route in routes:
+        included = getattr(route, "original_router", None)
+        if included is not None:
+            found.extend(_iter_routes(included.routes))
+        else:
+            found.append(route)
+    return found
+
+
+def _restore_route_examples(route, path_item: dict) -> None:
+    """라우터 하나가 만든 스펙 항목의 예시를 되돌린다."""
+    for method in getattr(route, "methods", ()):
+        operation = path_item.get(method.lower())
+        if not operation:
+            continue
+
+        for status, response in route.responses.items():
+            target = operation.get("responses", {}).get(str(status))
+            content = (response or {}).get("content")
+            if target and content:
+                _restore_examples(content, target)
+
+
+def _keep_null_examples(app: FastAPI) -> None:
+    """예시에서 값이 `null`인 키가 지워지는 것을 되돌린다.
+
+    FastAPI는 완성된 스펙 전체에 `exclude_none`을 걸어 내보낸다. 그래서 예시에
+    적어 둔 `null`이 값이 아니라 키째 사라지고, '등록하지 않았으면 null'을 보여주려던
+    예시가 그 칸이 아예 없는 예시로 바뀐다. 스펙을 만든 뒤 라우터에 적힌 예시를
+    그대로 다시 꽂아 원래 모양으로 되돌린다.
+    """
+    build = app.openapi
+
+    def openapi() -> dict:
+        if app.openapi_schema:
+            return app.openapi_schema
+
+        spec = build()
+        for route in _iter_routes(app.routes):
+            path_item = spec.get("paths", {}).get(getattr(route, "path", ""))
+            if path_item and getattr(route, "responses", None):
+                _restore_route_examples(route, path_item)
+
+        app.openapi_schema = spec
+        return spec
+
+    app.openapi = openapi
+
+
 def create_app(
     title: str,
     mount: str,
@@ -142,5 +210,7 @@ def create_app(
     @app.get("/health")
     def health():
         return {"status": "ok"}
+
+    _keep_null_examples(app)
 
     return app
