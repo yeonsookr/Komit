@@ -2420,6 +2420,14 @@ class RoomSummaryResponse(BaseModel):
     """방 목록 사이드바에 한 줄로 나가는 방."""
 
     roomId: int = Field(description="방 식별자.", examples=[91])
+    recommendationItemId: int | None = Field(
+        description=(
+            "이 방이 나온 추천 항목 식별자. 추천을 거치지 않고 직접 찾아 연 방이면 "
+            "null이다. 여러 개발자에게 한 번에 상담을 요청하면 방이 여러 개 열리는데, "
+            "어느 개발자의 방인지 이 값으로 맞춘다."
+        ),
+        examples=[501],
+    )
     type: Literal["INQUIRY", "CONSULTING", "DEVELOPMENT"] = Field(
         description=(
             "방 용도. INQUIRY는 무료 상담, CONSULTING은 컨설팅, DEVELOPMENT는 개발이다."
@@ -2706,6 +2714,7 @@ RECOMMENDATION_BATCH = {
 ROOMS = [
     {
         "roomId": 91,
+        "recommendationItemId": 501,
         "type": "INQUIRY",
         "status": "OPEN",
         "projectId": 8,
@@ -2716,6 +2725,7 @@ ROOMS = [
     },
     {
         "roomId": 92,
+        "recommendationItemId": 501,
         "type": "CONSULTING",
         "status": "OPEN",
         "projectId": 8,
@@ -3139,6 +3149,8 @@ def get_recommendation(
         "개발자마다 무료 상담방이 하나씩 열린다. 상담은 무료다.\n\n"
         "**개발자의 수락을 기다리지 않는다.** 요청하면 그 자리에서 방이 열리고, 개발자는 "
         "사이드바의 '받은 의뢰'에서 그 방을 본다.\n\n"
+        "열린 방은 보낸 순서가 아니라 `recommendationItemId`로 맞춘다. 그 값이 이 요청에 "
+        "담아 보낸 추천 항목과 같으므로, 화면은 어느 개발자 카드에 어느 방을 붙일지 안다.\n\n"
         "같은 요청을 다시 보내도 방이 더 생기지 않는다.\n\n"
         "- **201**: 요청을 보냈을 때. 열린 방 목록이 내려온다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
