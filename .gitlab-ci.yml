@@ -1,6 +1,9 @@
 stages:
   - connect
   - convention
+  - build
+  - test
+  - sonar
   - deploy
 
 variables:
@@ -127,10 +130,392 @@ commit-message:
         exit 1
       fi
 
-### 목 서버 Docker 이미지 빌드/푸시 파이프라인 ###
-# 레지스트리 정보와 인증값은 GitLab CI/CD Variables에서 주입
-# 목 서버 도커 빌드/도커허브 푸시
-mock-docker-build-push:
+### 빌드 파이프라인 ###
+# MR에서 해당 모듈이 바뀌었을 때만 돕니다.
+# 뒤따르는 test·sonar 잡이 여기서 나온 컴파일 결과를 아티팩트로 받아 씁니다.
+
+# Gradle 모듈 공통 설정
+.gradle-job:
+  image: eclipse-temurin:21-jdk-noble
+  tags:
+    - "CI/CD"
+  allow_failure: false
+
+# 서비스 서버 빌드
+service-build:
+  extends: .gradle-job
+  stage: build
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - service/**/*
+    - when: never
+  script:
+    - cd service
+    - chmod +x gradlew
+    - ./gradlew clean assemble --no-daemon
+  artifacts:
+    paths:
+      - service/build/libs/*.jar
+      - service/build/classes/java/main/
+    expire_in: 1 day
+
+# 에스크로 서버 빌드
+escrow-build:
+  extends: .gradle-job
+  stage: build
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - escrow/**/*
+    - when: never
+  script:
+    - cd escrow
+    - chmod +x gradlew
+    - ./gradlew clean assemble --no-daemon
+  artifacts:
+    paths:
+      - escrow/build/libs/*.jar
+      - escrow/build/classes/java/main/
+    expire_in: 1 day
+
+# 프론트엔드 빌드
+fe-build:
+  stage: build
+  image: node:24-alpine
+  tags:
+    - "CI/CD"
+  allow_failure: false
+  variables:
+    NEXT_TELEMETRY_DISABLED: "1"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - fe/**/*
+    - when: never
+  script:
+    - cd fe
+    - npm ci
+    - npm run build
+
+### 테스트 파이프라인 ###
+# 커버리지 리포트를 아티팩트로 남깁니다. 뒤의 sonar 잡이 이 파일을 읽습니다.
+
+# Spring Boot 테스트용 PostgreSQL 공통 설정
+# @SpringBootTest가 실제 DataSource를 요구하므로 서비스 컨테이너를 붙입니다.
+.gradle-test:
+  extends: .gradle-job
+  stage: test
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+  variables:
+    POSTGRES_DB: komit
+    POSTGRES_USER: komit
+    POSTGRES_PASSWORD: komit-ci
+    DB_URL: jdbc:postgresql://postgres:5432/komit
+    DB_USERNAME: komit
+    DB_PASSWORD: komit-ci
+    APP_INSTANCE_ROLE: WRITER
+
+# 서비스 서버 테스트 + JaCoCo 커버리지
+service-test:
+  extends: .gradle-test
+  needs:
+    - job: service-build
+      artifacts: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - service/**/*
+    - when: never
+  script:
+    - cd service
+    - chmod +x gradlew
+    - ./gradlew test jacocoTestReport --no-daemon
+  artifacts:
+    when: always
+    paths:
+      - service/build/reports/jacoco/test/jacocoTestReport.xml
+      - service/build/classes/java/main/
+    reports:
+      junit: service/build/test-results/test/*.xml
+    expire_in: 1 day
+
+# 에스크로 서버 테스트 + JaCoCo 커버리지
+escrow-test:
+  extends: .gradle-test
+  needs:
+    - job: escrow-build
+      artifacts: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - escrow/**/*
+    - when: never
+  script:
+    - cd escrow
+    - chmod +x gradlew
+    - ./gradlew test jacocoTestReport --no-daemon
+  artifacts:
+    when: always
+    paths:
+      - escrow/build/reports/jacoco/test/jacocoTestReport.xml
+      - escrow/build/classes/java/main/
+    reports:
+      junit: escrow/build/test-results/test/*.xml
+    expire_in: 1 day
+
+# 프론트엔드 단위 테스트 + lcov 커버리지
+fe-test:
+  stage: test
+  image: node:24-alpine
+  tags:
+    - "CI/CD"
+  allow_failure: false
+  needs:
+    - job: fe-build
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - fe/**/*
+    - when: never
+  script:
+    - cd fe
+    - npm ci
+    - npm run test:coverage
+  artifacts:
+    when: always
+    paths:
+      - fe/coverage/lcov.info
+    expire_in: 1 day
+
+### 소나큐브 분석 파이프라인 ###
+# SONAR_HOST_URL, SONAR_TOKEN은 GitLab CI/CD Variables에서 주입합니다.
+# 프로젝트 키를 모듈마다 따로 두어 한 소나큐브 서버에 세 프로젝트로 나뉘게 합니다.
+
+# 스캐너 공통 설정
+.sonar-scanner:
+  stage: sonar
+  image:
+    name: sonarsource/sonar-scanner-cli:12.1.0.3233_8.0.1
+    entrypoint: [""]
+  tags:
+    - "CI/CD"
+  allow_failure: false
+  before_script:
+    - |
+      test -n "$SONAR_TOKEN" || { echo "SONAR_TOKEN is required"; exit 1; }
+      test -n "$SONAR_HOST_URL" || { echo "SONAR_HOST_URL is required"; exit 1; }
+
+# 서비스 서버 소나큐브 분석 의뢰
+service-sonar:
+  extends: .sonar-scanner
+  needs:
+    - job: service-test
+      artifacts: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - service/**/*
+    - when: never
+  script:
+    - |
+      cd service
+      test -d build/classes/java/main || {
+        echo "컴파일된 클래스가 없습니다. service-build 아티팩트를 확인하세요."
+        exit 1
+      }
+      test -f build/reports/jacoco/test/jacocoTestReport.xml || {
+        echo "JaCoCo XML 리포트가 없습니다. service-test 아티팩트를 확인하세요."
+        exit 1
+      }
+      sonar-scanner \
+        -Dsonar.host.url="$SONAR_HOST_URL" \
+        -Dsonar.token="$SONAR_TOKEN" \
+        -Dsonar.projectKey="${CI_PROJECT_PATH_SLUG}-service" \
+        -Dsonar.projectName="${CI_PROJECT_NAME}-service" \
+        -Dsonar.projectVersion="$CI_PIPELINE_ID" \
+        -Dsonar.sources=src/main/java \
+        -Dsonar.tests=src/test/java \
+        -Dsonar.java.binaries=build/classes/java/main \
+        -Dsonar.coverage.jacoco.xmlReportPaths=build/reports/jacoco/test/jacocoTestReport.xml \
+        -Dsonar.sourceEncoding=UTF-8 \
+        -Dsonar.scm.revision="$CI_COMMIT_SHA"
+
+# 에스크로 서버 소나큐브 분석 의뢰
+escrow-sonar:
+  extends: .sonar-scanner
+  needs:
+    - job: escrow-test
+      artifacts: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - escrow/**/*
+    - when: never
+  script:
+    - |
+      cd escrow
+      test -d build/classes/java/main || {
+        echo "컴파일된 클래스가 없습니다. escrow-build 아티팩트를 확인하세요."
+        exit 1
+      }
+      test -f build/reports/jacoco/test/jacocoTestReport.xml || {
+        echo "JaCoCo XML 리포트가 없습니다. escrow-test 아티팩트를 확인하세요."
+        exit 1
+      }
+      sonar-scanner \
+        -Dsonar.host.url="$SONAR_HOST_URL" \
+        -Dsonar.token="$SONAR_TOKEN" \
+        -Dsonar.projectKey="${CI_PROJECT_PATH_SLUG}-escrow" \
+        -Dsonar.projectName="${CI_PROJECT_NAME}-escrow" \
+        -Dsonar.projectVersion="$CI_PIPELINE_ID" \
+        -Dsonar.sources=src/main/java \
+        -Dsonar.tests=src/test/java \
+        -Dsonar.java.binaries=build/classes/java/main \
+        -Dsonar.coverage.jacoco.xmlReportPaths=build/reports/jacoco/test/jacocoTestReport.xml \
+        -Dsonar.sourceEncoding=UTF-8 \
+        -Dsonar.scm.revision="$CI_COMMIT_SHA"
+
+# 프론트엔드 소나큐브 분석 의뢰
+fe-sonar:
+  extends: .sonar-scanner
+  needs:
+    - job: fe-test
+      artifacts: true
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - fe/**/*
+    - when: never
+  script:
+    - |
+      cd fe
+      test -f coverage/lcov.info || {
+        echo "lcov 리포트가 없습니다. fe-test 아티팩트를 확인하세요."
+        exit 1
+      }
+      sonar-scanner \
+        -Dsonar.host.url="$SONAR_HOST_URL" \
+        -Dsonar.token="$SONAR_TOKEN" \
+        -Dsonar.projectKey="${CI_PROJECT_PATH_SLUG}-fe" \
+        -Dsonar.projectName="${CI_PROJECT_NAME}-fe" \
+        -Dsonar.projectVersion="$CI_PIPELINE_ID" \
+        -Dsonar.sources=src \
+        -Dsonar.tests=src \
+        -Dsonar.test.inclusions="src/**/*.test.ts,src/**/*.test.tsx" \
+        -Dsonar.exclusions="**/*.d.ts" \
+        -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
+        -Dsonar.sourceEncoding=UTF-8 \
+        -Dsonar.scm.revision="$CI_COMMIT_SHA"
+
+### 퀄리티게이트 ###
+# 지금은 수동 실행 전용입니다. 파이프라인에 버튼으로만 남고 자동으로 돌지 않으며,
+# 실패해도(allow_failure) MR을 막지 않습니다.
+# 팀이 기준을 합의하면 각 잡 rules에서 when·allow_failure 두 줄만 지우면
+# 소나 뒤에 자동으로 붙는 차단 게이트가 됩니다.
+
+# 퀄리티게이트 공통 설정
+# 소나큐브 분석은 비동기라 스캐너 잡이 끝나도 결과가 바로 나오지 않습니다.
+# 이번 커밋(revision)에 해당하는 분석이 서버에 올라올 때까지 기다린 뒤 판정을 읽습니다.
+.quality-gate:
+  stage: sonar
+  image: alpine:3.22
+  tags:
+    - "CI/CD"
+  allow_failure: true
+  before_script:
+    - apk add --no-cache curl jq
+    - |
+      test -n "$SONAR_TOKEN" || { echo "SONAR_TOKEN is required"; exit 1; }
+      test -n "$SONAR_HOST_URL" || { echo "SONAR_HOST_URL is required"; exit 1; }
+      test -n "$SONAR_PROJECT_KEY" || { echo "SONAR_PROJECT_KEY job variable is required"; exit 1; }
+  script:
+    - |
+      ANALYSIS_ID=""
+
+      for ATTEMPT in $(seq 1 60); do
+        ANALYSIS_ID="$(curl --fail --silent --show-error \
+          --user "${SONAR_TOKEN}:" \
+          --get "${SONAR_HOST_URL%/}/api/project_analyses/search" \
+          --data-urlencode "project=${SONAR_PROJECT_KEY}" \
+          --data-urlencode "ps=20" |
+          jq -r --arg rev "$CI_COMMIT_SHA" \
+            'first(.analyses[] | select(.revision == $rev) | .key) // empty')" || exit 1
+
+        [ -n "$ANALYSIS_ID" ] && break
+        echo "소나큐브 분석 결과 대기 중 (${ATTEMPT}/60)..."
+        sleep 5
+      done
+
+      test -n "$ANALYSIS_ID" || {
+        echo "300초 안에 소나큐브 분석이 끝나지 않았습니다."
+        exit 1
+      }
+
+      STATUS="$(curl --fail --silent --show-error \
+        --user "${SONAR_TOKEN}:" \
+        --get "${SONAR_HOST_URL%/}/api/qualitygates/project_status" \
+        --data-urlencode "analysisId=${ANALYSIS_ID}" |
+        jq -r '.projectStatus.status')" || exit 1
+
+      echo "SonarQube Quality Gate: $STATUS"
+      test "$STATUS" = "OK"
+
+# 서비스 서버 퀄리티게이트 (수동)
+service-qg:
+  extends: .quality-gate
+  needs:
+    - job: service-sonar
+  variables:
+    SONAR_PROJECT_KEY: "${CI_PROJECT_PATH_SLUG}-service"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - service/**/*
+      when: manual
+      allow_failure: true
+    - when: never
+
+# 에스크로 서버 퀄리티게이트 (수동)
+escrow-qg:
+  extends: .quality-gate
+  needs:
+    - job: escrow-sonar
+  variables:
+    SONAR_PROJECT_KEY: "${CI_PROJECT_PATH_SLUG}-escrow"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - escrow/**/*
+      when: manual
+      allow_failure: true
+    - when: never
+
+# 프론트엔드 퀄리티게이트 (수동)
+fe-qg:
+  extends: .quality-gate
+  needs:
+    - job: fe-sonar
+  variables:
+    SONAR_PROJECT_KEY: "${CI_PROJECT_PATH_SLUG}-fe"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - fe/**/*
+      when: manual
+      allow_failure: true
+    - when: never
+
+### Docker 이미지 빌드/푸시 파이프라인 ###
+# 레지스트리 정보와 인증값은 GitLab CI/CD Variables에서 주입합니다.
+# MR에서 빌드·테스트·소나를 통과하고 develop에 병합된 뒤에만 이미지를 굽습니다.
+
+# 도커 빌드/푸시 공통 설정
+# 확장하는 잡은 IMAGE_NAME(도커허브 리포지터리 이름)과
+# BUILD_CONTEXT(Dockerfile이 있는 디렉터리)를 반드시 지정해야 합니다.
+.docker-build-push:
   stage: deploy
   image: docker:29.6.2-cli
   services:
@@ -142,11 +527,6 @@ mock-docker-build-push:
   tags:
     - "CI/CD"
   allow_failure: false
-  rules:
-    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
-      changes:
-        - mock/**/*
-    - when: never
   before_script:
     - |
       test -n "$DOCKER_REGISTRY" || {
@@ -159,6 +539,14 @@ mock-docker-build-push:
       }
       test -n "$DOCKER_REGISTRY_TOKEN" || {
         echo "DOCKER_REGISTRY_TOKEN CI/CD variable is required"
+        exit 1
+      }
+      test -n "$IMAGE_NAME" || {
+        echo "IMAGE_NAME job variable is required"
+        exit 1
+      }
+      test -n "$BUILD_CONTEXT" || {
+        echo "BUILD_CONTEXT job variable is required"
         exit 1
       }
 
@@ -175,10 +563,10 @@ mock-docker-build-push:
           --password-stdin
   script:
     - |
-      IMAGE_REPOSITORY="${DOCKER_REGISTRY}/${DOCKER_REGISTRY_USERNAME}/komit-mock"
+      IMAGE_REPOSITORY="${DOCKER_REGISTRY}/${DOCKER_REGISTRY_USERNAME}/${IMAGE_NAME}"
       COMMIT_IMAGE="${IMAGE_REPOSITORY}:${CI_COMMIT_SHORT_SHA}"
 
-      docker build --pull --tag "$COMMIT_IMAGE" mock
+      docker build --pull --tag "$COMMIT_IMAGE" "$BUILD_CONTEXT"
       docker push "$COMMIT_IMAGE"
 
       if [ "$CI_COMMIT_BRANCH" = "develop" ]; then
@@ -190,6 +578,54 @@ mock-docker-build-push:
       echo "Published Docker image: $COMMIT_IMAGE"
   after_script:
     - docker logout "$DOCKER_REGISTRY" >/dev/null 2>&1 || true
+
+# 목 서버 도커 빌드/도커허브 푸시
+mock-docker-build-push:
+  extends: .docker-build-push
+  variables:
+    IMAGE_NAME: komit-mock
+    BUILD_CONTEXT: mock
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
+      changes:
+        - mock/**/*
+    - when: never
+
+# 서비스 서버 도커 빌드/도커허브 푸시
+service-docker-build-push:
+  extends: .docker-build-push
+  variables:
+    IMAGE_NAME: komit-service
+    BUILD_CONTEXT: service
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
+      changes:
+        - service/**/*
+    - when: never
+
+# 에스크로 서버 도커 빌드/도커허브 푸시
+escrow-docker-build-push:
+  extends: .docker-build-push
+  variables:
+    IMAGE_NAME: komit-escrow
+    BUILD_CONTEXT: escrow
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
+      changes:
+        - escrow/**/*
+    - when: never
+
+# 프론트엔드 도커 빌드/도커허브 푸시
+fe-docker-build-push:
+  extends: .docker-build-push
+  variables:
+    IMAGE_NAME: komit-fe
+    BUILD_CONTEXT: fe
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
+      changes:
+        - fe/**/*
+    - when: never
 
 # SSH로 배포 서버에 접속 후 Docker Compose
 mock-docker-deploy:
