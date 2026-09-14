@@ -836,7 +836,7 @@ AREA1_UNAUTHORIZED: dict = {
     tags=["1 랜딩 · 로그인"],
     responses={
         200: {"content": {"application/json": {"example": SUMMARY_EXAMPLE}}},
-        **AREA1_ERRORS,
+        500: AREA1_ERRORS[500],
     },
     summary="랜딩 지표 조회",
     description=(
