@@ -5562,6 +5562,14 @@ DEPOSIT_REQUIRED_EXAMPLE = {
     "message": DEPOSIT_REQUIRED[1],
 }
 
+# 착수는 바디가 없어 검증 실패는 경로 변수 contractId가 정수가 아닐 때만 난다.
+# FastAPI는 파라미터가 있는 API에 422를 자동으로 문서화하므로, 빼는 대신 이 앱 형식으로 선언한다.
+CONTRACT_ID_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [{"field": "contractId", "reason": "정수여야 합니다."}],
+}
+
 STARTED_CONTRACT_ID = 409
 
 
@@ -5599,7 +5607,14 @@ STARTED_CONTRACT_ID = 409
                 }
             },
         },
-        **CONTRACT_ERRORS,
+        404: CONTRACT_ERRORS[404],
+        **AREA1_UNAUTHORIZED,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": CONTRACT_ID_ERROR_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
     },
     summary="개발 착수",
     description=(
@@ -5619,6 +5634,7 @@ STARTED_CONTRACT_ID = 409
         "- **409 / DEPOSIT_REQUIRED**: `contractId`가 402일 때. 예치가 끝나지 않아 아직 "
         "착수할 상태가 아니다\n"
         "- **409 / ALREADY_STARTED**: `contractId`가 409일 때\n"
+        "- **422 / INVALID_REQUEST**: `contractId`가 정수가 아닐 때\n"
         "- **500 / INTERNAL_ERROR**: 착수를 처리하지 못했을 때"
     ),
 )
