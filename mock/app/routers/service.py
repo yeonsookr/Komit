@@ -11,6 +11,7 @@
     - 에러 message에 내부 정보를 담지 않는다. 500은 고정 문구만 반환한다.
 """
 
+import copy
 import re
 
 from typing import Annotated, Literal
@@ -5512,6 +5513,21 @@ DEV_CONTRACT_EXAMPLE = {
     "updatedAt": "2026-08-23T10:20:00+09:00",
 }
 
+# 착수 직후의 계약서. DEV_CONTRACT_EXAMPLE을 복사해 상태만 바꾼다 — 값을 따로 적으면
+# 작업 이름·가격·확인 문장을 고칠 때 두 예시가 어긋나므로 반드시 복사로 만든다.
+# DEV_CONTRACT_EXAMPLE은 1차 통과·2차 확인 대기인 진행 중 시점이라 착수 응답으로 쓰면
+# "착수하면 1차가 이미 통과돼 있다"고 읽힌다. 착수 직후는 1차만 IN_PROGRESS, 나머지는
+# SCHEDULED이고 확인 요청·통과 시각은 아직 없다.
+STARTED_CONTRACT_EXAMPLE = copy.deepcopy(DEV_CONTRACT_EXAMPLE)
+for _index, _milestone in enumerate(STARTED_CONTRACT_EXAMPLE["development"]["milestones"]):
+    _milestone["status"] = "IN_PROGRESS" if _index == 0 else "SCHEDULED"
+    _milestone["submittedAt"] = None
+    _milestone["confirmedAt"] = None
+    _milestone["autoPassAt"] = None
+    for _criterion in _milestone["qaCriteria"]:
+        _criterion["status"] = "UNRESOLVED"
+del _index, _milestone, _criterion
+
 DEPOSIT_EXAMPLE = {
     "contractId": DEV_CONTRACT_ID,
     "amount": 650000,
@@ -5559,7 +5575,7 @@ STARTED_CONTRACT_ID = 409
     response_model=ContractResponse,
     tags=[AREA5_TAG],
     responses={
-        200: {"content": {"application/json": {"example": DEV_CONTRACT_EXAMPLE}}},
+        200: {"content": {"application/json": {"example": STARTED_CONTRACT_EXAMPLE}}},
         403: {
             "model": ErrorResponse,
             "description": "예치 전이라 착수할 수 없음",
@@ -5610,7 +5626,7 @@ def start_development(
         return _error_response(403, DEPOSIT_REQUIRED)
     if contractId == STARTED_CONTRACT_ID:
         return _error_response(409, ALREADY_STARTED)
-    return ContractResponse(**DEV_CONTRACT_EXAMPLE)
+    return ContractResponse(**STARTED_CONTRACT_EXAMPLE)
 
 
 @router.post(
