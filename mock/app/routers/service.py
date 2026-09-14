@@ -2479,6 +2479,7 @@ class ConvertRoomRequest(BaseModel):
 # --------------------------------------------------------------------------- #
 
 DEVELOPER_NOT_FOUND = ("DEVELOPER_NOT_FOUND", "개발자를 찾을 수 없습니다.")
+PROJECT_NOT_FOUND = ("PROJECT_NOT_FOUND", "프로젝트를 찾을 수 없습니다.")
 RECOMMENDATION_NOT_FOUND = ("RECOMMENDATION_NOT_FOUND", "추천 결과를 찾을 수 없습니다.")
 ROOM_NOT_FOUND = ("ROOM_NOT_FOUND", "방을 찾을 수 없습니다.")
 CONSULTATION_ALREADY_REQUESTED = (
@@ -2499,8 +2500,10 @@ CODE_GROUP_NOT_FOUND = ("CODE_GROUP_NOT_FOUND", "코드 분류를 찾을 수 없
 AREA3_TAG = "3 개발자 찾기 · 상담방"
 
 NOT_FOUND_DEVELOPER_ID = 404
+NOT_FOUND_PROJECT_ID = 404
 NOT_FOUND_BATCH_ID = 404
 NOT_FOUND_ROOM_ID = 404
+ALREADY_REQUESTED_BATCH_ID = 409
 CONVERTED_ROOM_ID = 409
 
 # 코드 항목의 식별자는 분류마다 번호대를 나눠 쓴다. 값만 보고 어느 분류인지 알 수 있고,
@@ -3001,10 +3004,8 @@ def create_recommendation(
     ],
     request: CreateRecommendationRequest,
 ) -> RecommendationBatchResponse | JSONResponse:
-    if projectId == 404:
-        return _error_response(
-            404, ("PROJECT_NOT_FOUND", "프로젝트를 찾을 수 없습니다.")
-        )
+    if projectId == NOT_FOUND_PROJECT_ID:
+        return _error_response(404, PROJECT_NOT_FOUND)
     return RecommendationBatchResponse(**RECOMMENDATION_BATCH)
 
 
@@ -3117,7 +3118,7 @@ def request_consultations(
 ) -> RoomListResponse | JSONResponse:
     if batchId == NOT_FOUND_BATCH_ID:
         return _error_response(404, RECOMMENDATION_NOT_FOUND)
-    if batchId == 409:
+    if batchId == ALREADY_REQUESTED_BATCH_ID:
         return _error_response(409, CONSULTATION_ALREADY_REQUESTED)
     if not request.recommendationItemIds:
         body = ValidationErrorResponse(
