@@ -429,10 +429,10 @@ class LandingSummaryResponse(BaseModel):
 class CodeResponse(BaseModel):
     """코드 항목 하나. 무엇의 코드인지는 이 모델을 담는 필드가 정한다."""
 
-    codeId: int = Field(description="코드 항목 식별자.", examples=[4])
+    codeId: int = Field(description="코드 항목 식별자.", examples=[41])
     codeName: str = Field(
         description="화면에 그대로 보여주는 코드 항목 이름.",
-        examples=["백엔드"],
+        examples=["인터넷에 올리기"],
     )
 
 
@@ -504,7 +504,10 @@ class FeaturedDeveloperResponse(BaseModel):
         examples=[5.0],
     )
     field: CodeResponse | None = Field(
-        description="주로 담당하는 개발 분야. 등록하지 않았으면 null이다.",
+        description=(
+            "주로 담당하는 개발 분야. 코드 분류 `DEV_FIELD`의 항목이며, "
+            "등록하지 않았으면 null이다."
+        ),
     )
     devRating: float | None = Field(
         description="개발력 평균 평점. 받은 리뷰가 없으면 null이다.",
@@ -666,7 +669,7 @@ FEATURED_DEVELOPERS = [
         "profileImageFileId": None,
         "intro": "간단한 상담도 받습니다.",
         "yearsOfExperience": 5.0,
-        "field": {"codeId": 4, "codeName": "백엔드"},
+        "field": {"codeId": 42, "codeName": "DB 연결"},
         "devRating": 4.4,
         "explanatoryRating": 4.9,
         "prices": [
@@ -680,7 +683,7 @@ FEATURED_DEVELOPERS = [
         "profileImageFileId": None,
         "intro": "급한 장애 대응 잘합니다.",
         "yearsOfExperience": 6.0,
-        "field": {"codeId": 4, "codeName": "백엔드"},
+        "field": {"codeId": 47, "codeName": "버그 잡기"},
         "devRating": 4.7,
         "explanatoryRating": 4.1,
         "prices": [
@@ -694,7 +697,7 @@ FEATURED_DEVELOPERS = [
         "profileImageFileId": None,
         "intro": "상담으로 먼저 방향을 잡아드립니다.",
         "yearsOfExperience": 8.0,
-        "field": {"codeId": 6, "codeName": "인프라"},
+        "field": {"codeId": 46, "codeName": "비용 진단"},
         "devRating": 4.9,
         "explanatoryRating": 3.4,
         "prices": [
@@ -1027,7 +1030,7 @@ def get_me() -> MeResponse:
 class TechCategoryResponse(BaseModel):
     """프로젝트가 쓰는 기술 한 줄."""
 
-    techCodeId: int = Field(description="기술 항목 식별자.", examples=[12])
+    techCodeId: int = Field(description="기술 항목 식별자.", examples=[21])
     codeName: str = Field(
         description="화면에 그대로 보여주는 기술 이름.",
         examples=["Next.js"],
@@ -1424,8 +1427,8 @@ PROJECT_EXAMPLE = {
     "description": "수제 비누를 파는 작은 온라인 가게",
     "domain": None,
     "techCategories": [
-        {"techCodeId": 12, "codeName": "Next.js"},
-        {"techCodeId": 15, "codeName": "Supabase"},
+        {"techCodeId": 21, "codeName": "Next.js"},
+        {"techCodeId": 22, "codeName": "Supabase"},
     ],
 }
 
@@ -2178,7 +2181,10 @@ class DeveloperSummaryResponse(BaseModel):
         examples=[5.0],
     )
     field: CodeResponse | None = Field(
-        description="주로 담당하는 개발 분야. 등록하지 않았으면 null이다.",
+        description=(
+            "주로 담당하는 개발 분야. 코드 분류 `DEV_FIELD`의 항목이며, "
+            "등록하지 않았으면 null이다."
+        ),
     )
     isCareerVerified: bool = Field(
         description=(
@@ -2497,6 +2503,16 @@ NOT_FOUND_BATCH_ID = 404
 NOT_FOUND_ROOM_ID = 404
 CONVERTED_ROOM_ID = 409
 
+# 코드 항목의 식별자는 분류마다 번호대를 나눠 쓴다. 값만 보고 어느 분류인지 알 수 있고,
+# 분류가 늘어도 이미 나간 번호와 겹치지 않는다. 새 분류는 비어 있는 번호대를 가져간다.
+#
+#   21~29  TECH_CATEGORY   기술
+#   41~48  DEV_FIELD       분야
+#   51~57  BANK_CODE       은행
+#   61~    CARD_COMPANY    카드사
+#   71~73  ISSUE_CATEGORY  결함 분류 (영역 2)
+#
+# 기술은 영역 2의 프로젝트 기술과 영역 8의 내 프로필에서도 같은 번호를 쓴다.
 TECH_CODES = [
     {"codeId": 21, "codeName": "Next.js"},
     {"codeId": 22, "codeName": "Supabase"},
@@ -2505,13 +2521,13 @@ TECH_CODES = [
 
 # 계좌를 등록할 때 고르는 은행. 분야·기술과 같은 코드 항목이라 코드 API 가 함께 낸다.
 BANK_CODES = [
-    {"codeId": 4, "codeName": "국민은행"},
-    {"codeId": 5, "codeName": "신한은행"},
-    {"codeId": 6, "codeName": "우리은행"},
-    {"codeId": 7, "codeName": "하나은행"},
-    {"codeId": 8, "codeName": "농협은행"},
-    {"codeId": 9, "codeName": "카카오뱅크"},
-    {"codeId": 10, "codeName": "토스뱅크"},
+    {"codeId": 51, "codeName": "국민은행"},
+    {"codeId": 52, "codeName": "신한은행"},
+    {"codeId": 53, "codeName": "우리은행"},
+    {"codeId": 54, "codeName": "하나은행"},
+    {"codeId": 55, "codeName": "농협은행"},
+    {"codeId": 56, "codeName": "카카오뱅크"},
+    {"codeId": 57, "codeName": "토스뱅크"},
 ]
 
 FIELD_CODES = [
@@ -2532,7 +2548,7 @@ DEVELOPERS = [
         "profileImageFileId": None,
         "intro": "간단한 상담도 받습니다. 용어부터 풀어서 설명합니다.",
         "yearsOfExperience": 5.0,
-        "field": {"codeId": 4, "codeName": "백엔드"},
+        "field": {"codeId": 42, "codeName": "DB 연결"},
         "isCareerVerified": True,
         "devRating": {"score": 4.4, "reviewCount": 13},
         "explanatoryRating": {"score": 4.9, "reviewCount": 20},
@@ -2548,7 +2564,7 @@ DEVELOPERS = [
         "profileImageFileId": None,
         "intro": "짧게 방향만 잡아드려요.",
         "yearsOfExperience": 4.0,
-        "field": {"codeId": 5, "codeName": "풀스택"},
+        "field": {"codeId": 41, "codeName": "인터넷에 올리기"},
         "isCareerVerified": True,
         "devRating": {"score": 4.2, "reviewCount": 9},
         "explanatoryRating": {"score": 4.4, "reviewCount": 11},
@@ -2564,7 +2580,7 @@ DEVELOPERS = [
         "profileImageFileId": None,
         "intro": "급한 장애 대응 잘합니다. 새벽도 괜찮습니다.",
         "yearsOfExperience": 6.0,
-        "field": {"codeId": 4, "codeName": "백엔드"},
+        "field": {"codeId": 47, "codeName": "버그 잡기"},
         "isCareerVerified": False,
         "devRating": {"score": 4.7, "reviewCount": 22},
         "explanatoryRating": {"score": 4.1, "reviewCount": 18},
@@ -5903,7 +5919,7 @@ def get_income() -> IncomeResponse:
 class RequestAccountVerificationRequest(BaseModel):
     """1원 보내기 요청."""
 
-    bankCodeId: int = Field(description="은행 코드 식별자.", examples=[4])
+    bankCodeId: int = Field(description="은행 코드 식별자.", examples=[51])
     accountNumber: str = Field(
         description="계좌번호. 하이픈 없는 숫자만 받는다. 원문은 보관하지 않는다.",
         examples=["11012345678842"],
@@ -6274,7 +6290,7 @@ class RegisterPaymentMethodRequest(BaseModel):
         description="결제대행사가 돌려준 카드 키. 이 값으로 다음 결제를 건다.",
         examples=["bk_2f91c0e4"],
     )
-    cardCompanyCodeId: int = Field(description="카드사 코드 식별자.", examples=[21])
+    cardCompanyCodeId: int = Field(description="카드사 코드 식별자.", examples=[61])
     maskedNumber: str = Field(
         description="결제창이 돌려준 가려진 카드번호.",
         examples=["···· 4412"],
@@ -6524,8 +6540,10 @@ class WriteDeveloperProfileRequest(BaseModel):
         examples=["AI로 만든 걸 실제로 돌아가게 만드는 일을 주로 합니다."],
     )
     fieldCodeId: int | None = Field(
-        description="주로 담당하는 개발 분야 코드 식별자.",
-        examples=[4],
+        description=(
+            "주로 담당하는 개발 분야 코드 식별자. 코드 분류 `DEV_FIELD`의 항목이다."
+        ),
+        examples=[42],
     )
     yearsOfExperience: float | None = Field(
         description="경력 연차.",
@@ -6541,7 +6559,7 @@ class WriteDeveloperProfileRequest(BaseModel):
     )
     techCodeIds: list[int] = Field(
         description="다룰 수 있는 기술의 코드 식별자. 보낸 목록이 그대로 저장된다.",
-        examples=[[31, 32, 33]],
+        examples=[[21, 22, 23]],
     )
     careers: list[WriteCareerRequest] = Field(
         description=(
@@ -6666,7 +6684,7 @@ MY_PAGE_EXAMPLE = {
             "paymentMethodId": 9,
             "methodType": "CARD",
             "maskedNumber": "···· 4412",
-            "cardCompany": {"codeId": 21, "codeName": "우리카드"},
+            "cardCompany": {"codeId": 61, "codeName": "우리카드"},
             "isDefault": True,
         }
     ],
@@ -6810,14 +6828,14 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
     "profileImageFileId": None,
     "intro": "간단한 상담도 받습니다. 용어부터 풀어서 설명합니다.",
     "yearsOfExperience": 5.0,
-    "field": {"codeId": 4, "codeName": "백엔드"},
+    "field": {"codeId": 42, "codeName": "DB 연결"},
     "isCareerVerified": True,
     "devRating": {"score": 4.8, "reviewCount": 20},
     "explanatoryRating": {"score": 4.9, "reviewCount": 20},
     "techCategories": [
-        {"codeId": 31, "codeName": "TypeScript"},
-        {"codeId": 32, "codeName": "Next.js"},
-        {"codeId": 33, "codeName": "Supabase"},
+        {"codeId": 23, "codeName": "TypeScript"},
+        {"codeId": 21, "codeName": "Next.js"},
+        {"codeId": 22, "codeName": "Supabase"},
     ],
     "prices": [
         {"taskType": "CONSULT", "price": 50000},
