@@ -704,6 +704,13 @@ KAKAO_LOGIN_ERROR_EXAMPLE = {
     ],
 }
 
+# 토큰 재발급은 refreshToken 하나만 받고, 그것이 필수다.
+TOKEN_REFRESH_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [{"field": "refreshToken", "reason": "필수 항목입니다."}],
+}
+
 
 # --------------------------------------------------------------------------- #
 # 영역 1 — 목 데이터
@@ -986,7 +993,12 @@ def login_with_kakao(request: KakaoLoginRequest) -> KakaoLoginResponse | JSONRes
                 "application/json": {"example": REFRESH_TOKEN_INVALID_EXAMPLE}
             },
         },
-        **AREA1_ERRORS,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": TOKEN_REFRESH_ERROR_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
     },
     summary="액세스 토큰 재발급",
     description=(
@@ -997,7 +1009,8 @@ def login_with_kakao(request: KakaoLoginRequest) -> KakaoLoginResponse | JSONRes
         "- **401 / REFRESH_TOKEN_INVALID**: `refreshToken`이 `expired-refresh-token`일 "
         "때. 만료되었거나 이미 다시 발급받아 쓸 수 없는 값이다. 이때는 로그인 화면으로 "
         "보낸다\n"
-        "- **422 / INVALID_REQUEST**: `refreshToken`이 없을 때"
+        "- **422 / INVALID_REQUEST**: `refreshToken`이 없을 때\n"
+        "- **500 / INTERNAL_ERROR**: 재발급을 처리하지 못했을 때"
     ),
 )
 def refresh_access_token(request: RefreshTokenRequest) -> TokenResponse | JSONResponse:
