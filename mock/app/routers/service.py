@@ -5920,6 +5920,11 @@ def submit_milestone(
                 }
             },
         },
+        403: {
+            "model": ErrorResponse,
+            "description": "이 계약의 의뢰인이 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
         409: {
             "model": ErrorResponse,
             "description": "지금 상태에서는 처리할 수 없음",
