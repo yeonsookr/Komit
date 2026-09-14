@@ -170,6 +170,11 @@ def _reason(error: dict) -> str:
     if error_type == "literal_error":
         expected = context.get("expected")
         return f"{expected} 중 하나여야 합니다." if expected else "허용되지 않는 값입니다."
+    if error_type in {"too_short", "too_long"}:
+        unit = "글자" if context.get("field_type") == "String" else "개"
+        if error_type == "too_short":
+            return f"{context.get('min_length')}{unit} 이상이어야 합니다."
+        return f"{context.get('max_length')}{unit} 이하여야 합니다."
 
     return _REASONS.get(error_type, "값이 올바르지 않습니다.")
 
@@ -2386,7 +2391,11 @@ class CreateConsultationRequest(BaseModel):
     """고른 개발자들에게 상담을 요청한다."""
 
     recommendationItemIds: list[int] = Field(
-        description="상담을 요청할 추천 항목 식별자. 여러 명에게 한 번에 보낼 수 있다.",
+        min_length=1,
+        description=(
+            "상담을 요청할 추천 항목 식별자. 여러 명에게 한 번에 보낼 수 있고, "
+            "한 명 이상 골라야 한다."
+        ),
         examples=[[501, 502]],
     )
 
@@ -3120,17 +3129,6 @@ def request_consultations(
         return _error_response(404, RECOMMENDATION_NOT_FOUND)
     if batchId == ALREADY_REQUESTED_BATCH_ID:
         return _error_response(409, CONSULTATION_ALREADY_REQUESTED)
-    if not request.recommendationItemIds:
-        body = ValidationErrorResponse(
-            code=INVALID_REQUEST[0],
-            message=INVALID_REQUEST[1],
-            errors=[
-                FieldError(
-                    field="recommendationItemIds", reason="한 명 이상 골라야 합니다."
-                )
-            ],
-        )
-        return JSONResponse(status_code=422, content=jsonable_encoder(body))
     return RoomListResponse(content=[RoomSummaryResponse(**ROOMS[0])])
 
 
