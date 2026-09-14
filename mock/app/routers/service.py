@@ -3033,13 +3033,13 @@ ROOMS = [
     },
     {
         "roomId": 93,
-        "recommendationItemId": 502,
+        "recommendationItemId": 501,
         "type": "DEVELOPMENT",
         "status": "OPEN",
         "projectId": 8,
         "projectName": "수제 비누 가게",
-        "developerId": 7,
-        "counterpartName": "한서",
+        "developerId": 3,
+        "counterpartName": "이준",
         "chatRefId": "room-93-chat",
         "openedAt": "2026-08-25T14:05:00+09:00",
     },
@@ -3067,13 +3067,85 @@ DIRECT_ROOM = {
     "openedAt": "2026-08-27T10:15:00+09:00",
 }
 
+# 방 머리에 붙는 요청서 요약. 요청서는 방이 아니라 프로젝트에 달리므로 방마다 같다.
+ROOM_REQUEST = {
+    "diagnosisId": DIAGNOSIS_ID,
+    "issueCount": 3,
+    "updatedAt": "2026-08-18T16:40:00+09:00",
+}
+
+
+def _item_room(item_id: int) -> dict:
+    """추천 항목으로 열리는 방.
+
+    상담 요청 응답과 방 조회가 같은 방을 보도록 한 곳에서 만든다.
+    """
+    item = next(
+        row
+        for row in RECOMMENDATION_BATCH["items"]
+        if row["recommendationItemId"] == item_id
+    )
+    room_id = ROOM_ID_BY_ITEM[item_id]
+    return {
+        **ROOMS[0],
+        "roomId": room_id,
+        "recommendationItemId": item_id,
+        "developerId": item["developer"]["developerId"],
+        "counterpartName": item["developer"]["name"],
+        "chatRefId": f"room-{room_id}-chat",
+    }
+
+
+def _developer_room(developer_id: int) -> dict:
+    """직접 찾은 개발자에게 요청해 열리는 방. 추천을 거치지 않아 추천 항목이 비어 있다."""
+    developer = next(row for row in DEVELOPERS if row["developerId"] == developer_id)
+    room_id = ROOM_ID_BY_DEVELOPER[developer_id]
+    return {
+        **DIRECT_ROOM,
+        "roomId": room_id,
+        "developerId": developer_id,
+        "counterpartName": developer["name"],
+        "chatRefId": f"room-{room_id}-chat",
+    }
+
+
+def _room(room_id: int) -> dict | None:
+    """방 하나를 찾는다. 목록에 있는 방과 상담 요청으로 열리는 방을 모두 본다."""
+    for room in ROOMS:
+        if room["roomId"] == room_id:
+            return room
+    for item_id, opened_id in ROOM_ID_BY_ITEM.items():
+        if opened_id == room_id:
+            return _item_room(item_id)
+    for developer_id, opened_id in ROOM_ID_BY_DEVELOPER.items():
+        if opened_id == room_id:
+            return _developer_room(developer_id)
+    return None
+
+
+def _room_detail(room: dict) -> dict:
+    """방 상세. 목록 값에 요청서 요약과 계약 식별자를 더한다.
+
+    방 하나에 계약은 하나이므로 계약서 예시의 roomId와 짝을 맞춘다. 그 예시는
+    영역 4·5에 있어 이 자리에서는 아직 없으므로 부를 때 읽는다.
+    """
+    contract_ids = {
+        CONSULTING_CONTRACT_EXAMPLE["roomId"]: CONTRACT_ID,
+        DEV_CONTRACT_EXAMPLE["roomId"]: DEV_CONTRACT_ID,
+    }
+    return {
+        **room,
+        "request": ROOM_REQUEST,
+        "contractId": contract_ids.get(room["roomId"]),
+        "convertedRoomId": None,
+        "convertedRoomType": None,
+    }
+
+
+# 방 91의 상세. 문서 예시로만 쓰며 `_room_detail(ROOMS[0])`과 같은 값이다.
 ROOM_DETAIL = {
     **ROOMS[0],
-    "request": {
-        "diagnosisId": DIAGNOSIS_ID,
-        "issueCount": 3,
-        "updatedAt": "2026-08-18T16:40:00+09:00",
-    },
+    "request": ROOM_REQUEST,
     "contractId": None,
     "convertedRoomId": None,
     "convertedRoomType": None,
@@ -3596,15 +3668,7 @@ def request_consultations(
 
     # 같은 항목을 거듭 보내도 방은 하나다. 보낸 순서는 지킨다.
     rooms = [
-        {
-            **ROOMS[0],
-            "roomId": ROOM_ID_BY_ITEM[item_id],
-            "recommendationItemId": item_id,
-            "developerId": items[item_id]["developer"]["developerId"],
-            "counterpartName": items[item_id]["developer"]["name"],
-            "chatRefId": f"room-{ROOM_ID_BY_ITEM[item_id]}-chat",
-        }
-        for item_id in dict.fromkeys(request.recommendationItemIds)
+        _item_room(item_id) for item_id in dict.fromkeys(request.recommendationItemIds)
     ]
     return RoomListResponse(content=[RoomSummaryResponse(**room) for room in rooms])
 
@@ -3682,14 +3746,7 @@ def request_direct_consultations(
 
     # 같은 개발자를 거듭 보내도 방은 하나다. 보낸 순서는 지킨다.
     rooms = [
-        {
-            **DIRECT_ROOM,
-            "roomId": ROOM_ID_BY_DEVELOPER[dev_id],
-            "developerId": dev_id,
-            "counterpartName": developers[dev_id]["name"],
-            "chatRefId": f"room-{ROOM_ID_BY_DEVELOPER[dev_id]}-chat",
-        }
-        for dev_id in dict.fromkeys(request.developerIds)
+        _developer_room(dev_id) for dev_id in dict.fromkeys(request.developerIds)
     ]
     return RoomListResponse(content=[RoomSummaryResponse(**room) for room in rooms])
 
@@ -3798,14 +3855,18 @@ def get_room(
     roomId: Annotated[
         int,
         Path(
-            description="방 식별자. 404는 없음 재현용 예약값이다.",
+            description=(
+                "방 식별자. 방 목록의 91·92·93과 상담 요청으로 열리는 94~97이 있다. "
+                "그 밖의 값은 모두 없는 방이며 404는 없음 재현용 예약값이다."
+            ),
             examples=[91],
         ),
     ],
 ) -> RoomDetailResponse | JSONResponse:
-    if roomId == NOT_FOUND_ROOM_ID:
+    room = _room(roomId)
+    if room is None:
         return _error_response(404, ROOM_NOT_FOUND)
-    return RoomDetailResponse(**ROOM_DETAIL)
+    return RoomDetailResponse(**_room_detail(room))
 
 
 @router.post(
@@ -3883,10 +3944,11 @@ def convert_room(
     ],
     request: ConvertRoomRequest,
 ) -> RoomDetailResponse | JSONResponse:
-    if roomId == NOT_FOUND_ROOM_ID:
-        return _error_response(404, ROOM_NOT_FOUND)
     if roomId == CONVERTED_ROOM_ID:
         return _error_response(409, ROOM_ALREADY_CONVERTED)
+    room = _room(roomId)
+    if room is None:
+        return _error_response(404, ROOM_NOT_FOUND)
     converted_room_id = (
         CONVERTED_CONSULTING_ROOM_ID
         if request.targetType == "CONSULTING"
@@ -3894,7 +3956,7 @@ def convert_room(
     )
     return RoomDetailResponse(
         **{
-            **ROOM_DETAIL,
+            **_room_detail(room),
             "status": "CLOSED",
             "convertedRoomId": converted_room_id,
             "convertedRoomType": request.targetType,
@@ -9904,6 +9966,11 @@ WriteDevelopmentContractRequest.model_rebuild()
 #       ⚠️ 컨설팅 방에서 개발로 다시 이어가는 길을 만들면 이 규칙이 깨진다. 한
 #       (프로젝트, 개발자)에 CONSULTING 과 DEVELOPMENT 가 함께 생겨 어느 것이 상담방의
 #       다음인지 가릴 수 없다. 그때는 rooms.parent_room_id 를 두어야 한다.
+#
+#       목 데이터는 갈래 두 쪽을 다 보여주려고 방 92(컨설팅)와 93(개발)을 같은
+#       (프로젝트 8, 개발자 3)에 함께 두었다. 실서버에서는 상담방 91 이 한 번만
+#       전환되므로 둘 중 하나만 생기지만, 목 데이터에 위 질의를 그대로 돌리면 둘 다
+#       걸린다. 목을 보고 이 추정을 검증하지 않는다.
 
 
 # =========================================================================== #
