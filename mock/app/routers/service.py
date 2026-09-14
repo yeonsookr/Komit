@@ -660,8 +660,8 @@ class MeResponse(BaseModel):
     developerId: int | None = Field(
         description=(
             "내 개발자 식별자. 개발자로 전환하지 않았으면 null이다. 방의 "
-            "`developerId`와 견주어 '받은 의뢰'를 가리는 데 쓴다 — 방의 `clientId`는 "
-            "사용자 식별자라 `userId`와, `developerId`는 이 값과 견준다."
+            "`developerId`와 견주어 '받은 의뢰'를 가린다 — 같으면 내가 개발자로 들어간 "
+            "방이고, 다르거나 이 값이 null이면 내가 의뢰인인 방이다."
         ),
         examples=[None],
     )
@@ -2590,18 +2590,14 @@ class RoomSummaryResponse(BaseModel):
     )
     projectId: int = Field(description="이 방이 달린 프로젝트 식별자.", examples=[8])
     projectName: str = Field(description="프로젝트 이름.", examples=["수제 비누 가게"])
-    clientId: int = Field(
-        description=(
-            "이 방의 의뢰인 사용자 식별자. 프로젝트를 등록한 사람이다. 내 "
-            "사용자 식별자와 같으면 사이드바의 '보낸 의뢰'에 묶인다."
-        ),
-        examples=[12],
-    )
     developerId: int = Field(
         description=(
             "이 방에 참여한 **개발자 식별자**. 사용자 식별자가 아니며, 상담을 요청할 때 "
-            "보내는 값과 같은 종류다. 같은 프로젝트라도 방마다 다를 수 있다. 내 정보의 "
-            "`developerId`와 같으면 사이드바의 '받은 의뢰'에 묶인다."
+            "보내는 값과 같은 종류다. 같은 프로젝트라도 방마다 다를 수 있다.\n\n"
+            "**보낸 의뢰와 받은 의뢰를 가르는 값이다.** 내 정보의 `developerId`와 같으면 "
+            "내가 개발자로 들어간 방이라 '받은 의뢰', 다르면 내가 의뢰인이라 '보낸 "
+            "의뢰'다. 의뢰인은 프로젝트를 등록한 사람이라 방마다 따로 적히지 않으므로 "
+            "의뢰인 식별자는 이 응답에 담지 않는다."
         ),
         examples=[3],
     )
@@ -2640,15 +2636,26 @@ class RoomListResponse(BaseModel):
 
 
 class RoomRequestSummaryResponse(BaseModel):
-    """방 머리에 붙는 요청서 요약."""
+    """방 머리에 붙는 요청서 요약.
+
+    **요청서는 방이 아니라 프로젝트에 달린다.** 상담·컨설팅·개발 방이 모두 같은 요청서를
+    보므로, 요청서를 고치면 열려 있는 모든 방의 머리가 함께 바뀐다.
+    """
 
     diagnosisId: int = Field(description="요청서의 근거가 된 진단 식별자.", examples=[31])
     issueCount: int = Field(
-        description="요청서에 담긴 요구사항 수.",
+        description=(
+            "요청서에 담긴 요구사항 수. **이번 회차에서 나온 요구사항 가운데 직접 "
+            "해결하지 않은 것**을 센다 — 해결로 내린 것은 요청서에서 빠지고, 계약에 "
+            "들어간 것은 그대로 남는다. 지난 회차의 요구사항은 세지 않는다."
+        ),
         examples=[3],
     )
     updatedAt: str = Field(
-        description="요청서를 마지막으로 고친 시각.",
+        description=(
+            "요청서를 마지막으로 고친 시각. 요구사항을 더하거나 빼도, 확인 문장만 "
+            "고쳐도 이 값이 갱신된다."
+        ),
         examples=["2026-08-18T16:40:00+09:00"],
     )
 
@@ -2657,12 +2664,31 @@ class RoomDetailResponse(RoomSummaryResponse):
     """방 상세. 목록에 쓰는 값에 요청서 요약을 더한다."""
 
     request: RoomRequestSummaryResponse | None = Field(
-        description="이 방에 딸린 요청서 요약. 요청서 없이 열린 방이면 null이다.",
+        description=(
+            "이 방에 딸린 요청서 요약. **아직 진단을 하지 않은 프로젝트의 방이면 "
+            "null이다.** 진단이 있으면 상담을 어느 길로 요청했든 요청서가 걸린다."
+        ),
+    )
+    contractId: int | None = Field(
+        description=(
+            "이 방에서 오간 계약 식별자. 아직 계약서를 쓰지 않았으면 null이고 화면은 "
+            "머리에 '없음'이라 적는다. **방 하나에 계약은 하나다.** 금액과 갱신 시각은 "
+            "이 식별자로 계약서를 조회해 채운다."
+        ),
+        examples=[None],
     )
     convertedRoomId: int | None = Field(
         description=(
             "갈래를 정해 새로 열린 방 식별자. 아직 정하지 않았으면 null이다. "
             "화면의 '컨설팅 방으로' · '개발 방으로' 버튼이 이 방으로 보낸다."
+        ),
+        examples=[None],
+    )
+    convertedRoomType: Literal["CONSULTING", "DEVELOPMENT"] | None = Field(
+        description=(
+            "새로 열린 방의 용도. `convertedRoomId`와 늘 짝으로 차고 빈다. 버튼에 "
+            "'컨설팅 방으로'라고 적을지 '개발 방으로'라고 적을지를 이 값으로 고른다 — "
+            "이것 하나 때문에 새 방을 다시 조회하지 않아도 된다."
         ),
         examples=[None],
     )
@@ -2988,7 +3014,6 @@ ROOMS = [
         "status": "OPEN",
         "projectId": 8,
         "projectName": "수제 비누 가게",
-        "clientId": 12,
         "developerId": 3,
         "counterpartName": "이준",
         "chatRefId": "room-91-chat",
@@ -3001,7 +3026,6 @@ ROOMS = [
         "status": "OPEN",
         "projectId": 8,
         "projectName": "수제 비누 가게",
-        "clientId": 12,
         "developerId": 3,
         "counterpartName": "이준",
         "chatRefId": "room-92-chat",
@@ -3014,7 +3038,6 @@ ROOMS = [
         "status": "OPEN",
         "projectId": 8,
         "projectName": "수제 비누 가게",
-        "clientId": 12,
         "developerId": 7,
         "counterpartName": "한서",
         "chatRefId": "room-93-chat",
@@ -3038,7 +3061,6 @@ DIRECT_ROOM = {
     "status": "OPEN",
     "projectId": 8,
     "projectName": "수제 비누 가게",
-    "clientId": 12,
     "developerId": 5,
     "counterpartName": "정하",
     "chatRefId": "room-94-chat",
@@ -3052,7 +3074,9 @@ ROOM_DETAIL = {
         "issueCount": 3,
         "updatedAt": "2026-08-18T16:40:00+09:00",
     },
+    "contractId": None,
     "convertedRoomId": None,
+    "convertedRoomType": None,
 }
 
 DEVELOPER_LIST_EXAMPLE = {
@@ -3689,9 +3713,10 @@ def request_direct_consultations(
         "**화면 — 영역 3~5의 모든 방 화면 › 왼쪽 사이드바의 보낸 의뢰 · 받은 의뢰**\n\n"
         "내가 들어가 있는 방을 내려준다. 의뢰인이 보면 '보낸 의뢰', 개발자가 보면 "
         "'받은 의뢰'가 된다.\n\n"
-        "**두 갈래는 견주는 값이 다르다.** `clientId`는 내 `userId`와, `developerId`는 "
-        "내 `developerId`와 견준다 — 방의 `clientId`는 사용자 식별자이고 `developerId`는 "
-        "개발자 식별자라 서로 다른 값이다. 둘 다 내 정보 조회로 받는다.\n\n"
+        "**가르는 값은 `developerId` 하나다.** 방의 `developerId`가 내 개발자 식별자와 "
+        "같으면 받은 의뢰, 아니면 보낸 의뢰다. 이 목록에는 내가 들어가 있는 방만 오고 "
+        "한 방에서 나는 의뢰인이거나 개발자 둘 중 하나이므로 비교는 한 번으로 끝난다. "
+        "의뢰인 식별자를 따로 내려주지 않는 것도 그래서다.\n\n"
         "**한 사람이 양쪽일 수 있다.** 개발자이면서 의뢰인인 사용자는 보낸 의뢰와 받은 "
         "의뢰에 방이 모두 있다. 역할별로 따로 부르는 API는 두지 않으며, 이 API가 둘 다 "
         "내려주고 화면이 가른다.\n\n"
@@ -3796,9 +3821,15 @@ def get_room(
                         **ROOM_DETAIL,
                         "status": "CLOSED",
                         "convertedRoomId": CONVERTED_CONSULTING_ROOM_ID,
+                        "convertedRoomType": "CONSULTING",
                     }
                 }
             }
+        },
+        403: {
+            "model": ErrorResponse,
+            "description": "이 방의 의뢰인이 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
         },
         404: {
             "model": ErrorResponse,
@@ -3825,10 +3856,15 @@ def get_room(
         "**화면 — `3_의뢰인_상담방_대화` › 컨설팅 계약 진행 · 개발 계약 진행**\n\n"
         "무료 상담을 마치고 컨설팅과 개발 중 하나로 이어간다. 상담방은 닫히고 고른 갈래의 "
         "방이 새로 열린다. 닫힌 상담방도 지우지 않고 남겨서 나눈 이야기를 계속 볼 수 있다.\n\n"
-        "응답의 `convertedRoomId`가 새로 열린 방이다. 화면은 '컨설팅 방으로' 또는 "
-        "'개발 방으로' 버튼으로 그 방에 보낸다. 개발자 화면에는 '개발 계약서 작성'이 뜬다.\n\n"
+        "응답의 `convertedRoomId`가 새로 열린 방이고 `convertedRoomType`이 그 방의 "
+        "용도다. 화면은 둘로 '컨설팅 방으로' 또는 '개발 방으로' 버튼을 그린다. 개발자 "
+        "화면에는 대신 '개발 계약서 작성'이 뜬다.\n\n"
+        "**갈래는 의뢰인이 정한다.** 개발자는 이 API를 부를 수 없다 — 상담을 어디로 "
+        "이어갈지는 돈을 내는 쪽이 고르기 때문이다. 개발자는 그 방의 당사자라 방이 있다는 "
+        "것을 이미 아는 상태이므로, 없는 척 감추지 않고 권한이 없다고 답한다.\n\n"
         "- **201**: 갈래를 정해 새 방이 열렸을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **403 / FORBIDDEN**: 이 방의 의뢰인이 아닐 때. 갈래는 의뢰인이 정한다\n"
         "- **404 / ROOM_NOT_FOUND**: `roomId`가 404일 때\n"
         "- **409 / ROOM_ALREADY_CONVERTED**: `roomId`가 409일 때. 이미 갈래가 정해졌다\n"
         "- **422 / INVALID_REQUEST**: `targetType`이 CONSULTING도 DEVELOPMENT도 아닐 때\n"
@@ -3857,7 +3893,12 @@ def convert_room(
         else CONVERTED_DEVELOPMENT_ROOM_ID
     )
     return RoomDetailResponse(
-        **{**ROOM_DETAIL, "status": "CLOSED", "convertedRoomId": converted_room_id}
+        **{
+            **ROOM_DETAIL,
+            "status": "CLOSED",
+            "convertedRoomId": converted_room_id,
+            "convertedRoomType": request.targetType,
+        }
     )
 
 
@@ -9431,6 +9472,41 @@ WriteDevelopmentContractRequest.model_rebuild()
 #       쓰지 않는다. 개발자 프로필 조회는 로그인 없이도 부르는 공개 API 라 어느
 #       추천에서 눌러 들어왔는지 알 수 없고, 그것을 알리자고 공개 API 에 추적 값을
 #       얹지 않는다.
+#
+# 방 상세의 값을 어디서 만드는지 — 한 컬럼으로 바로 나오지 않는 것들이다.
+#
+#   RoomSummaryResponse 에 의뢰인 식별자를 담지 않는 이유
+#       rooms 에 client_id 가 없다. 방의 의뢰인은 projects.client_id 이며 같은
+#       프로젝트의 방은 모두 같은 사람이다. 화면도 developer_id 하나로 보낸 의뢰와
+#       받은 의뢰를 가르므로 응답에 넣지 않는다.
+#   counterpartName
+#       의뢰인이 보면 rooms.developer_id -> developers.user_id -> users.name,
+#       개발자가 보면 projects.client_id -> users.name 이다. users.is_deleted 가
+#       참이면 이름 대신 '탈퇴한 사용자' 를 내보낸다.
+#   request.issueCount
+#       rooms.project_id -> diagnoses -> inspections -> issues 로 내려가 센다.
+#       **이번 회차만 센다** — inspections.diagnosis_version = diagnoses.version 인
+#       검사의 이슈만 대상이며, 그중 status 가 RESOLVED 가 아닌 것을 센다. 회차
+#       조건을 빠뜨리면 재진단한 프로젝트에서 숫자가 회차만큼 불어난다.
+#   request.updatedAt
+#       diagnoses.updated_at 을 쓴다. issues 에는 updated_at 컬럼이 없고
+#       qa_criteria 의 것만 보면 요구사항 제목을 고쳤을 때 값이 움직이지 않는다.
+#       요청서 저장이 진단 행도 함께 갱신하게 해서 한 값으로 모은다.
+#   contractId
+#       contracts.room_id = rooms.id 로 찾는다. 컬럼에 UNIQUE 가 걸려 있지 않지만
+#       방 하나에 계약은 하나로 두기로 했다. 파기 뒤 재계약을 허용하게 되면 그때
+#       어느 것을 내려줄지 다시 정해야 한다.
+#   convertedRoomId / convertedRoomType
+#       rooms 에 상담방과 이어진 방을 잇는 컬럼이 없다. 같은 프로젝트·같은 개발자의
+#       방 가운데 용도가 INQUIRY 가 아닌 것을 찾아 잇는다.
+#           WHERE project_id = ? AND developer_id = ? AND type <> 'INQUIRY'
+#       이 추정이 성립하는 근거는 두 가지다. 상담 요청이 멱등이라 (프로젝트, 개발자)
+#       마다 상담방이 하나뿐이고, 한 상담방은 한 번만 전환되므로(두 번째는 409)
+#       이어지는 방도 하나다.
+#
+#       ⚠️ 컨설팅 방에서 개발로 다시 이어가는 길을 만들면 이 규칙이 깨진다. 한
+#       (프로젝트, 개발자)에 CONSULTING 과 DEVELOPMENT 가 함께 생겨 어느 것이 상담방의
+#       다음인지 가릴 수 없다. 그때는 rooms.parent_room_id 를 두어야 한다.
 
 
 # =========================================================================== #
