@@ -1991,7 +1991,7 @@ def create_issue(
         detail=request.detail,
         location=None,
         isInput=False,
-        category=CodeResponse(codeId=request.categoryCodeId, codeName="기타"),
+        category=_issue_category(request.categoryCodeId),
         status="UNRESOLVED",
         severity=request.severity,
         fixedVersion=None,
@@ -2059,7 +2059,7 @@ def write_requirements(
             "detail": item.detail,
             "location": None,
             "isInput": False,
-            "category": {"codeId": item.categoryCodeId, "codeName": "보안"},
+            "category": jsonable_encoder(_issue_category(item.categoryCodeId)),
             "status": "UNRESOLVED",
             "severity": item.severity,
             "fixedVersion": None,
@@ -2618,8 +2618,8 @@ CONVERTED_ROOM_ID = 409
 #   21~29  TECH_CATEGORY   기술
 #   41~48  DEV_FIELD       분야
 #   51~57  BANK_CODE       은행
-#   61~    CARD_COMPANY    카드사
-#   71~73  ISSUE_CATEGORY  결함 분류 (영역 2)
+#   61~68  CARD_COMPANY    카드사 (영역 8)
+#   71~74  ISSUE_CATEGORY  결함 분류 (영역 2)
 #
 # 기술은 영역 2의 프로젝트 기술과 영역 8의 내 프로필에서도 같은 번호를 쓴다.
 TECH_CODES = [
@@ -2649,6 +2649,34 @@ FIELD_CODES = [
     {"codeId": 47, "codeName": "버그 잡기"},
     {"codeId": 48, "codeName": "결제 붙이기"},
 ]
+
+# 카드를 등록할 때 고르는 카드사. 쓰는 곳은 영역 8이지만 코드 API 가 함께 낸다.
+CARD_COMPANY_CODES = [
+    {"codeId": 61, "codeName": "우리카드"},
+    {"codeId": 62, "codeName": "국민카드"},
+    {"codeId": 63, "codeName": "신한카드"},
+    {"codeId": 64, "codeName": "삼성카드"},
+    {"codeId": 65, "codeName": "현대카드"},
+    {"codeId": 66, "codeName": "롯데카드"},
+    {"codeId": 67, "codeName": "하나카드"},
+    {"codeId": 68, "codeName": "BC카드"},
+]
+
+# 요구사항을 직접 추가할 때 고르는 결함 분류. 쓰는 곳은 영역 2다.
+ISSUE_CATEGORY_CODES = [
+    {"codeId": 71, "codeName": "보안"},
+    {"codeId": 72, "codeName": "위법"},
+    {"codeId": 73, "codeName": "결제"},
+    {"codeId": 74, "codeName": "기타"},
+]
+
+
+def _issue_category(code_id: int) -> CodeResponse:
+    """결함 분류 식별자를 코드 항목으로 바꾼다. 아는 번호가 아니면 기타로 둔다."""
+    for row in ISSUE_CATEGORY_CODES:
+        if row["codeId"] == code_id:
+            return CodeResponse(**row)
+    return CodeResponse(codeId=code_id, codeName="기타")
 
 DEVELOPERS = [
     {
@@ -2969,13 +2997,20 @@ class CodeListResponse(BaseModel):
     summary="코드 목록 조회",
     description=(
         "**화면 — `3_의뢰인_개발자찾기` · `3_펼침_분야선택` › 분야 선택 · "
-        "`8_펼침_은행선택` › 은행 선택 · `8_개발자_내프로필` › 기술 선택**\n\n"
+        "`8_펼침_은행선택` › 은행 선택 · `8_개발자_내프로필` › 기술 선택 · "
+        "`8_마이페이지` › 카드 등록의 카드사 · `2_요구사항선택` › 요구사항 추가의 "
+        "결함 분류**\n\n"
         "화면에서 고르게 할 항목을 내려준다. 분야 칩이나 은행 목록처럼 운영에서 늘고 줄 수 "
         "있는 목록이라 화면에 문구를 박지 않고 이 API로 받는다.\n\n"
         "**고르게 할 목록은 모두 이 API로 받는다.** 분류마다 API를 따로 두지 않는다.\n\n"
         "**로그인하지 않아도 부를 수 있다.** 분야 목록이 로그인 전 화면에 필요해서인데, "
         "한 API가 모든 분류를 내주므로 인증 경계를 분류마다 다르게 둘 수 없다. 로그인한 "
         "사람에게만 보여야 하는 목록은 이 API에 두지 않는다.\n\n"
+        "**여기서 빠진 항목도 이름은 그대로 나간다.** 운영에서 쓰지 않기로 내린 항목은 이 "
+        "목록에서 빠지지만, 이미 그 항목을 고른 개발자나 요구사항이 있으므로 상세 응답의 "
+        "`codeName`에는 계속 담긴다. 고를 수 없게 하는 것과 이름을 감추는 것은 다르다.\n\n"
+        "몇 달에 한 번 바뀌는 목록이라 실서버는 `Cache-Control: public, max-age=3600`을 "
+        "실어 보낸다. 화면에 들어올 때마다 다시 받지 않아도 된다.\n\n"
         "아래 200 예시는 `DEV_FIELD`를 부른 결과다.\n\n"
         "- **200**: 분류가 있을 때. 쓸 수 있는 항목만 순서대로 내려간다\n"
         "- **404 / CODE_GROUP_NOT_FOUND**: 아는 분류 키가 아닐 때. 오타나 대소문자가 "
@@ -2984,13 +3019,15 @@ class CodeListResponse(BaseModel):
     ),
 )
 def get_codes(
+    response: Response,
     groupKey: Annotated[
         str,
         Path(
             description=(
                 "코드 분류 키. 개발 분야는 `DEV_FIELD`, 기술은 `TECH_CATEGORY`, "
-                "계좌를 등록할 때 고르는 은행은 `BANK_CODE`다. 이 셋이 아닌 값은 "
-                "모두 분류 없음으로 본다."
+                "계좌를 등록할 때 고르는 은행은 `BANK_CODE`, 카드를 등록할 때 고르는 "
+                "카드사는 `CARD_COMPANY`, 요구사항을 직접 추가할 때 고르는 결함 분류는 "
+                "`ISSUE_CATEGORY`다. 이 다섯이 아닌 값은 모두 분류 없음으로 본다."
             ),
             examples=["DEV_FIELD"],
         ),
@@ -3000,9 +3037,12 @@ def get_codes(
         "DEV_FIELD": FIELD_CODES,
         "TECH_CATEGORY": TECH_CODES,
         "BANK_CODE": BANK_CODES,
+        "CARD_COMPANY": CARD_COMPANY_CODES,
+        "ISSUE_CATEGORY": ISSUE_CATEGORY_CODES,
     }.get(groupKey)
     if rows is None:
         return _error_response(404, CODE_GROUP_NOT_FOUND)
+    response.headers["Cache-Control"] = "public, max-age=3600"
     return CodeListResponse(content=[CodeResponse(**row) for row in rows])
 
 
