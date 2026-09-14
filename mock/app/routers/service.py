@@ -5585,6 +5585,11 @@ CONFIRM_QA_ERROR_EXAMPLE = {
     "errors": [{"field": "qaCriterionIds", "reason": "필수 항목입니다."}],
 }
 
+# 파일 용량 초과. 영역 5(인계물 올리기)와 영역 8(파일 올리기)이 함께 쓴다.
+# 파일 순서상 먼저 쓰는 영역 5에 둔다. 허용 용량은 아직 정해지지 않아 목은 재현하지 않는다.
+FILE_TOO_LARGE = ("FILE_TOO_LARGE", "파일이 너무 큽니다.")
+FILE_TOO_LARGE_EXAMPLE = {"code": FILE_TOO_LARGE[0], "message": FILE_TOO_LARGE[1]}
+
 STARTED_CONTRACT_ID = 409
 
 
@@ -6010,6 +6015,11 @@ def confirm_milestone(
                     }
                 }
             }
+        },
+        400: {
+            "model": ErrorResponse,
+            "description": "파일이 허용 용량을 넘음",
+            "content": {"application/json": {"example": FILE_TOO_LARGE_EXAMPLE}},
         },
         404: {
             "model": ErrorResponse,
@@ -7684,7 +7694,6 @@ NO_DEVELOPER_PROFILE = (
     "NO_DEVELOPER_PROFILE",
     "개발자 프로필이 없습니다.",
 )
-FILE_TOO_LARGE = ("FILE_TOO_LARGE", "파일이 너무 큽니다.")
 UNSUPPORTED_FILE_TYPE = ("UNSUPPORTED_FILE_TYPE", "올릴 수 없는 형식입니다.")
 UPLOAD_NOT_FOUND = ("UPLOAD_NOT_FOUND", "업로드 건을 찾을 수 없습니다.")
 UPLOAD_NOT_COMPLETED = (
@@ -7713,7 +7722,6 @@ NO_DEVELOPER_PROFILE_EXAMPLE = {
     "code": NO_DEVELOPER_PROFILE[0],
     "message": NO_DEVELOPER_PROFILE[1],
 }
-FILE_TOO_LARGE_EXAMPLE = {"code": FILE_TOO_LARGE[0], "message": FILE_TOO_LARGE[1]}
 UPLOAD_NOT_FOUND_EXAMPLE = {
     "code": UPLOAD_NOT_FOUND[0],
     "message": UPLOAD_NOT_FOUND[1],
