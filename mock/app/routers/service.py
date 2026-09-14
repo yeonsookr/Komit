@@ -5578,13 +5578,26 @@ STARTED_CONTRACT_ID = 409
         200: {"content": {"application/json": {"example": STARTED_CONTRACT_EXAMPLE}}},
         403: {
             "model": ErrorResponse,
-            "description": "예치 전이라 착수할 수 없음",
-            "content": {"application/json": {"example": DEPOSIT_REQUIRED_EXAMPLE}},
+            "description": "이 계약의 개발자가 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
         },
         409: {
             "model": ErrorResponse,
-            "description": "이미 착수한 계약",
-            "content": {"application/json": {"example": ALREADY_STARTED_EXAMPLE}},
+            "description": "지금 상태에서는 착수할 수 없음",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "deposit_required": {
+                            "summary": "예치가 끝나지 않음",
+                            "value": DEPOSIT_REQUIRED_EXAMPLE,
+                        },
+                        "already_started": {
+                            "summary": "이미 착수함",
+                            "value": ALREADY_STARTED_EXAMPLE,
+                        },
+                    }
+                }
+            },
         },
         **CONTRACT_ERRORS,
     },
@@ -5602,8 +5615,9 @@ STARTED_CONTRACT_ID = 409
         "- **200**: 착수했을 때. `development.status`가 `IN_PROGRESS`가 된다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 계약의 개발자가 아닐 때. 착수는 개발자만 한다\n"
-        "- **403 / DEPOSIT_REQUIRED**: `contractId`가 402일 때. 예치가 끝나지 않았다\n"
         "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때\n"
+        "- **409 / DEPOSIT_REQUIRED**: `contractId`가 402일 때. 예치가 끝나지 않아 아직 "
+        "착수할 상태가 아니다\n"
         "- **409 / ALREADY_STARTED**: `contractId`가 409일 때\n"
         "- **500 / INTERNAL_ERROR**: 착수를 처리하지 못했을 때"
     ),
@@ -5623,7 +5637,7 @@ def start_development(
     if contractId == NOT_FOUND_CONTRACT_ID:
         return _error_response(404, CONTRACT_NOT_FOUND)
     if contractId == NOT_DEPOSITED_CONTRACT_ID:
-        return _error_response(403, DEPOSIT_REQUIRED)
+        return _error_response(409, DEPOSIT_REQUIRED)
     if contractId == STARTED_CONTRACT_ID:
         return _error_response(409, ALREADY_STARTED)
     return ContractResponse(**STARTED_CONTRACT_EXAMPLE)
