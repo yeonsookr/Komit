@@ -165,6 +165,14 @@ def _reason(error: dict) -> str:
         return f"{context.get('ge', context.get('gt'))} 이상이어야 합니다."
     if error_type in {"less_than_equal", "less_than"}:
         return f"{context.get('le', context.get('lt'))} 이하여야 합니다."
+    if error_type == "string_too_short":
+        return f"{context.get('min_length')}자 이상이어야 합니다."
+    if error_type == "string_too_long":
+        return f"{context.get('max_length')}자 이하여야 합니다."
+    if error_type == "too_short":
+        return f"{context.get('min_length')}개 이상이어야 합니다."
+    if error_type == "too_long":
+        return f"{context.get('max_length')}개 이하여야 합니다."
     if error_type == "string_pattern_mismatch":
         return "형식이 올바르지 않습니다."
     if error_type == "literal_error":
@@ -178,9 +186,10 @@ def _field_name(location: tuple) -> str:
     """오류 위치에서 요청 필드명만 뽑는다.
 
     Pydantic은 ("query", "size")처럼 위치 종류를 앞에 붙인다. 클라이언트가 보낸
-    이름과 맞추기 위해 그 접두어를 뗀다.
+    이름과 맞추기 위해 그 접두어를 뗀다. 접두어는 언제나 첫 항목이므로 자리로
+    떼어낸다. 이름으로 거르면 `body`처럼 접두어와 같은 이름의 필드가 지워진다.
     """
-    parts = [str(part) for part in location if part not in {"body", "query", "path"}]
+    parts = [str(part) for part in location[1:]]
     return ".".join(parts) if parts else "body"
 
 
@@ -577,7 +586,11 @@ class TokenResponse(BaseModel):
     """토큰 발급 응답. 재발급도 같은 형태를 쓴다."""
 
     accessToken: str = Field(
-        description="API 호출에 쓰는 토큰. Authorization 헤더에 Bearer로 실어 보낸다.",
+        description=(
+            "API 호출에 쓰는 토큰. `Authorization` 헤더에 `Bearer <accessToken>` "
+            "형태로 실어 보낸다. 사용자 id와 만료 시각만 들어 있어, 이름이나 역할이 "
+            "필요하면 내 정보 조회로 받는다."
+        ),
         examples=["eyJhbGciOiJIUzI1NiJ9.example"],
     )
     refreshToken: str = Field(
@@ -1400,6 +1413,12 @@ SCAN_FILE_INVALID = (
     "SCAN_FILE_INVALID",
     "검사 결과 파일을 읽지 못했습니다. 받은 파일 그대로 올려주세요.",
 )
+SCAN_FILE_NAME = "komit-scan.md"
+SCAN_FILE_BODY = "# Komit 검사 파일".encode()
+SCAN_FILE_INVALID_EXAMPLE = {
+    "code": SCAN_FILE_INVALID[0],
+    "message": SCAN_FILE_INVALID[1],
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -1754,6 +1773,11 @@ def save_survey_answers(
     responses={
         201: {
             "content": {"application/json": {"example": INSPECTION_RUNNING_EXAMPLE}}
+        },
+        400: {
+            "model": ErrorResponse,
+            "description": "검사 결과 파일을 읽지 못함",
+            "content": {"application/json": {"example": SCAN_FILE_INVALID_EXAMPLE}},
         },
         409: {
             "model": ErrorResponse,
@@ -2380,6 +2404,7 @@ class CreateConsultationRequest(BaseModel):
     """고른 개발자들에게 상담을 요청한다."""
 
     recommendationItemIds: list[int] = Field(
+        min_length=1,
         description="상담을 요청할 추천 항목 식별자. 여러 명에게 한 번에 보낼 수 있다.",
         examples=[[501, 502]],
     )
@@ -2401,6 +2426,20 @@ class RoomSummaryResponse(BaseModel):
     )
     projectId: int = Field(description="이 방이 달린 프로젝트 식별자.", examples=[8])
     projectName: str = Field(description="프로젝트 이름.", examples=["수제 비누 가게"])
+    clientId: int = Field(
+        description=(
+            "이 방의 의뢰인 사용자 식별자. 프로젝트를 등록한 사람이다. 내 "
+            "사용자 식별자와 같으면 사이드바의 '보낸 의뢰'에 묶인다."
+        ),
+        examples=[12],
+    )
+    developerId: int = Field(
+        description=(
+            "이 방에 참여한 개발자 사용자 식별자. 같은 프로젝트라도 방마다 다를 수 "
+            "있다. 내 사용자 식별자와 같으면 사이드바의 '받은 의뢰'에 묶인다."
+        ),
+        examples=[30],
+    )
     counterpartName: str = Field(
         description=(
             "상대의 표시 이름. 의뢰인이 보면 개발자 이름, 개발자가 보면 의뢰인 이름이다."
@@ -2473,6 +2512,11 @@ class ConvertRoomRequest(BaseModel):
 # --------------------------------------------------------------------------- #
 
 DEVELOPER_NOT_FOUND = ("DEVELOPER_NOT_FOUND", "개발자를 찾을 수 없습니다.")
+PROJECT_NOT_FOUND = ("PROJECT_NOT_FOUND", "프로젝트를 찾을 수 없습니다.")
+PROJECT_NOT_FOUND_EXAMPLE = {
+    "code": PROJECT_NOT_FOUND[0],
+    "message": PROJECT_NOT_FOUND[1],
+}
 RECOMMENDATION_NOT_FOUND = ("RECOMMENDATION_NOT_FOUND", "추천 결과를 찾을 수 없습니다.")
 ROOM_NOT_FOUND = ("ROOM_NOT_FOUND", "방을 찾을 수 없습니다.")
 CONSULTATION_ALREADY_REQUESTED = (
@@ -2492,8 +2536,10 @@ CODE_GROUP_NOT_FOUND = ("CODE_GROUP_NOT_FOUND", "코드 분류를 찾을 수 없
 
 AREA3_TAG = "3 개발자 찾기 · 상담방"
 
+NOT_FOUND_PROJECT_ID = 404
 NOT_FOUND_DEVELOPER_ID = 404
 NOT_FOUND_BATCH_ID = 404
+ALREADY_REQUESTED_BATCH_ID = 409
 NOT_FOUND_ROOM_ID = 404
 CONVERTED_ROOM_ID = 409
 
@@ -2667,6 +2713,8 @@ ROOMS = [
         "status": "OPEN",
         "projectId": 8,
         "projectName": "수제 비누 가게",
+        "clientId": 12,
+        "developerId": 30,
         "counterpartName": "이준",
         "chatRefId": "room-91-chat",
         "openedAt": "2026-08-20T09:00:00+09:00",
@@ -2677,6 +2725,8 @@ ROOMS = [
         "status": "OPEN",
         "projectId": 8,
         "projectName": "수제 비누 가게",
+        "clientId": 12,
+        "developerId": 30,
         "counterpartName": "이준",
         "chatRefId": "room-92-chat",
         "openedAt": "2026-08-22T11:40:00+09:00",
@@ -2959,6 +3009,11 @@ def get_developer_reviews(
     tags=[AREA3_TAG],
     responses={
         201: {"content": {"application/json": {"example": RECOMMENDATION_BATCH}}},
+        404: {
+            "model": ErrorResponse,
+            "description": "프로젝트를 찾을 수 없음",
+            "content": {"application/json": {"example": PROJECT_NOT_FOUND_EXAMPLE}},
+        },
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -2985,10 +3040,8 @@ def create_recommendation(
     ],
     request: CreateRecommendationRequest,
 ) -> RecommendationBatchResponse | JSONResponse:
-    if projectId == 404:
-        return _error_response(
-            404, ("PROJECT_NOT_FOUND", "프로젝트를 찾을 수 없습니다.")
-        )
+    if projectId == NOT_FOUND_PROJECT_ID:
+        return _error_response(404, PROJECT_NOT_FOUND)
     return RecommendationBatchResponse(**RECOMMENDATION_BATCH)
 
 
@@ -3101,7 +3154,7 @@ def request_consultations(
 ) -> RoomListResponse | JSONResponse:
     if batchId == NOT_FOUND_BATCH_ID:
         return _error_response(404, RECOMMENDATION_NOT_FOUND)
-    if batchId == 409:
+    if batchId == ALREADY_REQUESTED_BATCH_ID:
         return _error_response(409, CONSULTATION_ALREADY_REQUESTED)
     if not request.recommendationItemIds:
         body = ValidationErrorResponse(
@@ -3135,7 +3188,8 @@ def request_consultations(
     description=(
         "**화면 — 영역 3~5의 모든 방 화면 › 왼쪽 사이드바의 보낸 의뢰 · 받은 의뢰**\n\n"
         "내가 들어가 있는 방을 프로젝트별로 묶어 내려준다. 의뢰인이 보면 '보낸 의뢰', "
-        "개발자가 보면 '받은 의뢰'가 된다.\n\n"
+        "개발자가 보면 '받은 의뢰'가 된다. 두 갈래는 `clientId`·`developerId`를 내 "
+        "사용자 식별자와 견주어 가른다.\n\n"
         "**마지막 메시지와 미리보기는 이 응답에 없다.** 메시지는 채팅 쪽이 다루므로 "
         "`chatRefId`로 그쪽에서 가져온다.\n\n"
         "- **200**: 항상. 들어가 있는 방이 없으면 `content`가 빈 배열이다\n"
@@ -3614,6 +3668,7 @@ class ApplySummaryChangesRequest(BaseModel):
     """요약의 변경 후보를 요청서에 반영한다."""
 
     changeIds: list[int] = Field(
+        min_length=1,
         description="반영할 변경 후보 식별자.",
         examples=[[1, 2]],
     )
@@ -3624,6 +3679,21 @@ class ApplySummaryChangesRequest(BaseModel):
 # --------------------------------------------------------------------------- #
 
 CONTRACT_NOT_FOUND = ("CONTRACT_NOT_FOUND", "계약서를 찾을 수 없습니다.")
+DELIVERABLE_NOT_FOUND = ("DELIVERABLE_NOT_FOUND", "인계물을 찾을 수 없습니다.")
+DELIVERABLE_NOT_UPLOADED = (
+    "DELIVERABLE_NOT_UPLOADED",
+    "아직 올라온 파일이 없습니다.",
+)
+DELIVERABLE_NOT_UPLOADED_EXAMPLE = {
+    "code": DELIVERABLE_NOT_UPLOADED[0],
+    "message": DELIVERABLE_NOT_UPLOADED[1],
+}
+DELIVERABLE_FILE_NAME = "komit-deliverable.zip"
+DELIVERABLE_FILE_BODY = b"komit-mock-deliverable"
+DELIVERABLE_NOT_FOUND_EXAMPLE = {
+    "code": DELIVERABLE_NOT_FOUND[0],
+    "message": DELIVERABLE_NOT_FOUND[1],
+}
 SESSION_NOT_FOUND = ("SESSION_NOT_FOUND", "세션을 찾을 수 없습니다.")
 CONTRACT_ALREADY_SIGNED = (
     "CONTRACT_ALREADY_SIGNED",
@@ -3647,6 +3717,10 @@ AREA4_TAG = "4 컨설팅"
 CONTRACT_ID = 120
 SESSION_ID = 55
 NOT_FOUND_CONTRACT_ID = 404
+NOT_FOUND_DELIVERABLE_ID = 404
+NOT_UPLOADED_DELIVERABLE_ID = 409
+REVIEWED_CONTRACT_ID = 409
+NOT_COMPLETED_CONTRACT_ID = 400
 SIGNED_CONTRACT_ID = 409
 NOT_FOUND_SESSION_ID = 404
 NOT_OPEN_SESSION_ID = 409
@@ -4599,6 +4673,10 @@ CONTRACT_NOT_COMPLETED = (
     "CONTRACT_NOT_COMPLETED",
     "계약이 끝나야 리뷰를 남길 수 있습니다.",
 )
+CONTRACT_NOT_COMPLETED_EXAMPLE = {
+    "code": CONTRACT_NOT_COMPLETED[0],
+    "message": CONTRACT_NOT_COMPLETED[1],
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -5162,8 +5240,8 @@ def confirm_milestone(
             "content": {
                 "application/json": {
                     "example": {
-                        "code": "DELIVERABLE_NOT_FOUND",
-                        "message": "인계물을 찾을 수 없습니다.",
+                        "code": DELIVERABLE_NOT_FOUND[0],
+                        "message": DELIVERABLE_NOT_FOUND[1],
                     }
                 }
             },
@@ -5194,10 +5272,8 @@ def upload_deliverable(
     ],
     file: Annotated[UploadFile, File(description="인계물 파일.")],
 ) -> DeliverableResponse | JSONResponse:
-    if deliverableId == 404:
-        return _error_response(
-            404, ("DELIVERABLE_NOT_FOUND", "인계물을 찾을 수 없습니다.")
-        )
+    if deliverableId == NOT_FOUND_DELIVERABLE_ID:
+        return _error_response(404, DELIVERABLE_NOT_FOUND)
     return DeliverableResponse(
         **{
             **DELIVERABLES[0],
@@ -5220,6 +5296,13 @@ def upload_deliverable(
     tags=[AREA5_TAG],
     responses={
         201: {"content": {"application/json": {"example": REVIEWS[0]}}},
+        400: {
+            "model": ErrorResponse,
+            "description": "계약이 아직 끝나지 않음",
+            "content": {
+                "application/json": {"example": CONTRACT_NOT_COMPLETED_EXAMPLE}
+            },
+        },
         409: {
             "model": ErrorResponse,
             "description": "이미 리뷰를 남김",
@@ -5265,9 +5348,9 @@ def write_review(
 ) -> ReviewResponse | JSONResponse:
     if contractId == NOT_FOUND_CONTRACT_ID:
         return _error_response(404, CONTRACT_NOT_FOUND)
-    if contractId == 409:
+    if contractId == REVIEWED_CONTRACT_ID:
         return _error_response(409, REVIEW_ALREADY_WRITTEN)
-    if contractId == 400:
+    if contractId == NOT_COMPLETED_CONTRACT_ID:
         return _error_response(400, CONTRACT_NOT_COMPLETED)
     return ReviewResponse(
         **{
@@ -6271,11 +6354,13 @@ class RegisterPaymentMethodRequest(BaseModel):
     """
 
     billingKey: str = Field(
+        min_length=1,
         description="결제대행사가 돌려준 카드 키. 이 값으로 다음 결제를 건다.",
         examples=["bk_2f91c0e4"],
     )
     cardCompanyCodeId: int = Field(description="카드사 코드 식별자.", examples=[21])
     maskedNumber: str = Field(
+        min_length=1,
         description="결제창이 돌려준 가려진 카드번호.",
         examples=["···· 4412"],
     )
@@ -6568,6 +6653,7 @@ class WriteReviewReplyRequest(BaseModel):
     """리뷰 답글 요청."""
 
     reply: str = Field(
+        min_length=1,
         description="답글 내용.",
         examples=["감사합니다. 도메인 만료 전에 미리 알려드리겠습니다."],
     )
@@ -7586,8 +7672,12 @@ class AdminResponse(BaseModel):
 class AdminLoginRequest(BaseModel):
     """운영 콘솔 로그인 요청."""
 
-    loginId: str = Field(description="운영자 로그인 아이디.", examples=["soomin"])
-    password: str = Field(description="비밀번호.", examples=["komit-console"])
+    loginId: str = Field(
+        min_length=1, description="운영자 로그인 아이디.", examples=["soomin"]
+    )
+    password: str = Field(
+        min_length=1, description="비밀번호.", examples=["komit-console"]
+    )
 
 
 class AdminLoginResponse(BaseModel):
@@ -7904,8 +7994,11 @@ class WriteContractTemplateRequest(BaseModel):
             examples=["DEV_STANDARD"],
         )
     )
-    title: str = Field(description="양식 제목.", examples=["개발 외주 표준계약서 v4"])
+    title: str = Field(
+        min_length=1, description="양식 제목.", examples=["개발 외주 표준계약서 v4"]
+    )
     body: str = Field(
+        min_length=1,
         description="양식 본문 HTML.",
         examples=["<h2>개발 외주 계약서</h2>"],
     )
@@ -7926,6 +8019,7 @@ class PreviewContractTemplateRequest(BaseModel):
         Field(description="양식 종류.", examples=["DEV_STANDARD"])
     )
     body: str = Field(
+        min_length=1,
         description="아직 저장하지 않은 본문 HTML.",
         examples=["<h2>개발 외주 계약서</h2>"],
     )
@@ -8723,10 +8817,119 @@ def preview_contract_template(
 ) -> ContractTemplatePreviewResponse:
     html = request.body
     for name in TEMPLATE_PLACEHOLDERS_BY_TYPE[request.type]:
-        html = html.replace(name, TEMPLATE_SAMPLE_VALUES.get(name, name))
+        html = html.replace(name, TEMPLATE_SAMPLE_VALUES[name])
     unknown = re.findall(r"\{\{[^{}]*\}\}", html)
     return ContractTemplatePreviewResponse(
         html=html, unknownPlaceholders=sorted(set(unknown))
+    )
+
+
+@router.get(
+    "/diagnoses/{diagnosisId}/scan-file",
+    response_class=Response,
+    tags=[AREA2_TAG],
+    responses={
+        200: {
+            "description": "검사 파일. 본문이 파일 내용이다.",
+            "content": {"text/markdown": {"schema": {"type": "string", "format": "binary"}}},
+        },
+        **DIAGNOSIS_ERRORS,
+        **AREA1_UNAUTHORIZED,
+        500: AREA1_ERRORS[500],
+    },
+    summary="검사 파일 내려받기",
+    description=(
+        "**화면 — `2_설문3` › ① 검사 파일 받기 · 내려받기**\n\n"
+        "의뢰인이 자기 AI 도구에서 돌릴 검사 파일을 내려받는다. 이 파일을 도구에 읽히면 "
+        "결과 파일이 만들어지고, 그 결과 파일만 다시 올린다. 소스 코드는 올리지 "
+        "않는다.\n\n"
+        "- **200**: 내려받았을 때. 본문이 파일 내용이고 파일 이름은 "
+        "`Content-Disposition`에 담긴다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **404 / DIAGNOSIS_NOT_FOUND**: `diagnosisId`가 404일 때\n"
+        "- **500 / INTERNAL_ERROR**: 내려주지 못했을 때"
+    ),
+)
+def download_scan_file(
+    diagnosisId: Annotated[
+        int,
+        Path(
+            description="진단 식별자. 404는 없음 재현용 예약값이다.",
+            examples=[DIAGNOSIS_ID],
+        ),
+    ],
+) -> Response:
+    if diagnosisId == NOT_FOUND_DIAGNOSIS_ID:
+        return _error_response(404, DIAGNOSIS_NOT_FOUND)
+    return Response(
+        content=SCAN_FILE_BODY,
+        media_type="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{SCAN_FILE_NAME}"'},
+    )
+
+@router.get(
+    "/deliverables/{deliverableId}/file",
+    response_class=Response,
+    tags=[AREA5_TAG],
+    responses={
+        200: {
+            "description": "인계물 파일. 본문이 파일 내용이다.",
+            "content": {
+                "application/octet-stream": {"schema": {"type": "string", "format": "binary"}}
+            },
+        },
+        404: {
+            "model": ErrorResponse,
+            "description": "인계물 없음",
+            "content": {
+                "application/json": {"example": DELIVERABLE_NOT_FOUND_EXAMPLE}
+            },
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "아직 인계되지 않음",
+            "content": {
+                "application/json": {"example": DELIVERABLE_NOT_UPLOADED_EXAMPLE}
+            },
+        },
+        **AREA1_UNAUTHORIZED,
+        500: AREA1_ERRORS[500],
+    },
+    summary="인계물 내려받기",
+    description=(
+        "**화면 — `5_의뢰인_확인` › 인계 · 소스 · 계정 · 설명서 › 받기**\n\n"
+        "개발자가 올린 인계물을 내려받는다. 받아본 뒤 확인 문장을 체크한다.\n\n"
+        "- **200**: 내려받았을 때. 본문이 파일 내용이고 파일 이름은 "
+        "`Content-Disposition`에 담긴다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **403 / FORBIDDEN**: 이 계약의 당사자가 아닐 때\n"
+        "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableId`가 404일 때\n"
+        "- **409 / DELIVERABLE_NOT_UPLOADED**: `deliverableId`가 409일 때. 개발자가 아직 "
+        "올리지 않아 받을 파일이 없다\n"
+        "- **500 / INTERNAL_ERROR**: 내려주지 못했을 때"
+    ),
+)
+def download_deliverable(
+    deliverableId: Annotated[
+        int,
+        Path(
+            description=(
+                "인계물 식별자. 404는 없음, 409는 미인계 재현용 예약값이다."
+            ),
+            examples=[401],
+        ),
+    ],
+) -> Response:
+    if deliverableId == NOT_FOUND_DELIVERABLE_ID:
+        return _error_response(404, DELIVERABLE_NOT_FOUND)
+    if deliverableId == NOT_UPLOADED_DELIVERABLE_ID:
+        return _error_response(409, DELIVERABLE_NOT_UPLOADED)
+    return Response(
+        content=DELIVERABLE_FILE_BODY,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{DELIVERABLE_FILE_NAME}"'
+        },
     )
 
 
@@ -8762,9 +8965,16 @@ SERVICE_TAGS = [
             "**화면** `1_랜딩홈` · `1_로그인`\n\n"
             "랜딩 홈은 히어로 · 증상별로 찾기 · 추천 개발자 · 진행 순서 · 사전 점검 · "
             "푸터 여섯 섹션이 한 페이지에 들어간다.\n\n"
-            "**여러 영역이 함께 쓰는 API가 여기 있다.** 토큰 재발급, 로그아웃, 내 정보는 "
-            "전 영역에서 부르지만 처음 나온 이 영역에만 적는다. 뒤 영역에서는 반복하지 "
-            "않으니, 영역을 검토할 때 이 셋은 여기서 확인한다."
+            "**여러 영역이 함께 쓰는 API가 여기 있다.** 토큰 재발급, 로그아웃, 내 정보는 전 영역에서 부르지만 처음 나온 이 영역에만 "
+            "적는다.\n\n"
+            "---\n\n"
+            "### 인증\n\n"
+            "로그인과 재발급을 뺀 모든 API는 헤더에 `Authorization: Bearer <accessToken>`을 실어 부른다.\n\n"
+            "**토큰에는 사용자 id와 만료 시각만 들어 있다.**\n\n"
+            "**리프레시 토큰은 액세스 토큰을 다시 받을 때만 쓴다.** 다시 받으면 리프레시 토큰도 새 값이 되고 이전 값은 못 쓴다.\n\n"
+            "**운영 콘솔은 토큰이 따로다.** `9 운영 콘솔`의 로그인으로 받으며, 사용자 토큰으로는 운영 API를 부를 수 없다.\n\n"
+            "⚠️ 이 목 서버는 토큰을 검사하지 않는다. 헤더 없이 불러도 성공 응답이 나온다. 각 API에 적힌 `401`은 실서버 기준 "
+            "명세다."
         ),
     },
     {
@@ -8777,8 +8987,7 @@ SERVICE_TAGS = [
             "**요청서는 따로 저장되는 문서가 아니다.** 고르고 다듬은 요구사항과 그 확인 "
             "문장을 모아 부르는 이름이라, 조회는 결함 목록 API가 그대로 맡고 저장은 요청서 "
             "저장 API 하나가 통째로 받는다. 요구사항 줄이나 확인 문장마다 API를 두지 "
-            "않는다. **'보내기'도 없다** — 요청서는 방에 걸려 있어 개발자가 언제든 같은 "
-            "것을 보므로, 저장하면 그 자리에서 최신 내용이 된다.\n\n"
+            "않는다.\n\n"
             "**설문1~3은 모든 프로젝트에 같은 고정 문항**이라 화면이 문구를 갖고 있다. "
             "**설문4는 검사 결과에서 나온 질문**이라 프로젝트마다 다르고 반드시 설문 조회로 "
             "받아 그린다.\n\n"
