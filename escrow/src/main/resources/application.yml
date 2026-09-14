@@ -1,0 +1,44 @@
+spring:
+  application:
+    name: escrow
+  profiles:
+    default: local
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    enabled: true
+    baseline-on-migrate: true
+
+server:
+  port: ${SERVER_PORT:8081}
+  shutdown: graceful
+
+app:
+  # WRITER | READER. 배포 환경 값으로만 주입하며 프로필과 섞지 않습니다.
+  instance-role: ${APP_INSTANCE_ROLE}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+springdoc:
+  swagger-ui:
+    path: /docs
+  api-docs:
+    path: /v3/api-docs
+
+logging:
+  level:
+    com.a501: INFO

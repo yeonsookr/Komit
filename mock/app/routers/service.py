@@ -141,6 +141,17 @@ def _error_response(status_code: int, code_message: tuple[str, str]) -> JSONResp
     return JSONResponse(status_code=status_code, content=jsonable_encoder(error))
 
 
+def _field_error(field: str, reason: str) -> JSONResponse:
+    """스키마로는 거를 수 없고 값을 들여다봐야 아는 검증 실패를 422로 돌려준다."""
+    code, message = INVALID_REQUEST
+    body = ValidationErrorResponse(
+        code=code,
+        message=message,
+        errors=[FieldError(field=field, reason=reason)],
+    )
+    return JSONResponse(status_code=422, content=jsonable_encoder(body))
+
+
 # Pydantic 오류 종류를 사용자 문구로 옮긴다. 보낸 값은 문구에 넣지 않는다.
 _REASONS: dict[str, str] = {
     "missing": "필수 항목입니다.",
@@ -438,10 +449,10 @@ class LandingSummaryResponse(BaseModel):
 class CodeResponse(BaseModel):
     """코드 항목 하나. 무엇의 코드인지는 이 모델을 담는 필드가 정한다."""
 
-    codeId: int = Field(description="코드 항목 식별자.", examples=[4])
+    codeId: int = Field(description="코드 항목 식별자.", examples=[41])
     codeName: str = Field(
         description="화면에 그대로 보여주는 코드 항목 이름.",
-        examples=["백엔드"],
+        examples=["인터넷에 올리기"],
     )
 
 
@@ -513,7 +524,10 @@ class FeaturedDeveloperResponse(BaseModel):
         examples=[5.0],
     )
     field: CodeResponse | None = Field(
-        description="주로 담당하는 개발 분야. 등록하지 않았으면 null이다.",
+        description=(
+            "주로 담당하는 개발 분야. 코드 분류 `DEV_FIELD`의 항목이며, "
+            "등록하지 않았으면 null이다."
+        ),
     )
     devRating: float | None = Field(
         description="개발력 평균 평점. 받은 리뷰가 없으면 null이다.",
@@ -643,6 +657,14 @@ class MeResponse(BaseModel):
         description="개발자 프로필 보유 여부. 헤더의 의뢰인·개발자 전환 노출을 정한다.",
         examples=[False],
     )
+    developerId: int | None = Field(
+        description=(
+            "내 개발자 식별자. 개발자로 전환하지 않았으면 null이다. 방의 "
+            "`developerId`와 견주어 '받은 의뢰'를 가린다 — 같으면 내가 개발자로 들어간 "
+            "방이고, 다르거나 이 값이 null이면 내가 의뢰인인 방이다."
+        ),
+        examples=[None],
+    )
     unreadNotificationCount: int = Field(
         description="아직 읽지 않은 알림 수. 헤더 알림 배지에 쓴다.",
         examples=[3],
@@ -679,7 +701,7 @@ FEATURED_DEVELOPERS = [
         "profileImageFileId": None,
         "intro": "간단한 상담도 받습니다.",
         "yearsOfExperience": 5.0,
-        "field": {"codeId": 4, "codeName": "백엔드"},
+        "field": {"codeId": 42, "codeName": "DB 연결"},
         "devRating": 4.4,
         "explanatoryRating": 4.9,
         "prices": [
@@ -693,7 +715,7 @@ FEATURED_DEVELOPERS = [
         "profileImageFileId": None,
         "intro": "급한 장애 대응 잘합니다.",
         "yearsOfExperience": 6.0,
-        "field": {"codeId": 4, "codeName": "백엔드"},
+        "field": {"codeId": 47, "codeName": "버그 잡기"},
         "devRating": 4.7,
         "explanatoryRating": 4.1,
         "prices": [
@@ -707,7 +729,7 @@ FEATURED_DEVELOPERS = [
         "profileImageFileId": None,
         "intro": "상담으로 먼저 방향을 잡아드립니다.",
         "yearsOfExperience": 8.0,
-        "field": {"codeId": 6, "codeName": "인프라"},
+        "field": {"codeId": 46, "codeName": "비용 진단"},
         "devRating": 4.9,
         "explanatoryRating": 3.4,
         "prices": [
@@ -759,6 +781,7 @@ ME_EXAMPLE = {
     "name": "김미미",
     "profileImageFileId": None,
     "hasDevProfile": False,
+    "developerId": None,
     "unreadNotificationCount": 3,
 }
 
@@ -1040,7 +1063,7 @@ def get_me() -> MeResponse:
 class TechCategoryResponse(BaseModel):
     """프로젝트가 쓰는 기술 한 줄."""
 
-    techCodeId: int = Field(description="기술 항목 식별자.", examples=[12])
+    techCodeId: int = Field(description="기술 항목 식별자.", examples=[21])
     codeName: str = Field(
         description="화면에 그대로 보여주는 기술 이름.",
         examples=["Next.js"],
@@ -1443,8 +1466,8 @@ PROJECT_EXAMPLE = {
     "description": "수제 비누를 파는 작은 온라인 가게",
     "domain": None,
     "techCategories": [
-        {"techCodeId": 12, "codeName": "Next.js"},
-        {"techCodeId": 15, "codeName": "Supabase"},
+        {"techCodeId": 21, "codeName": "Next.js"},
+        {"techCodeId": 22, "codeName": "Supabase"},
     ],
 }
 
@@ -1988,7 +2011,7 @@ def create_issue(
         detail=request.detail,
         location=None,
         isInput=False,
-        category=CodeResponse(codeId=request.categoryCodeId, codeName="기타"),
+        category=_issue_category(request.categoryCodeId),
         status="UNRESOLVED",
         severity=request.severity,
         fixedVersion=None,
@@ -2056,7 +2079,7 @@ def write_requirements(
             "detail": item.detail,
             "location": None,
             "isInput": False,
-            "category": {"codeId": item.categoryCodeId, "codeName": "보안"},
+            "category": jsonable_encoder(_issue_category(item.categoryCodeId)),
             "status": "UNRESOLVED",
             "severity": item.severity,
             "fixedVersion": None,
@@ -2162,6 +2185,11 @@ def update_issue_status(
 #   GET /api/users/me            전 영역 헤더
 #   GET /api/diagnoses/{id}      요청서 요약에 쓰는 진단 정보
 #
+# 상담 요청은 들어온 길에 따라 API가 갈린다. 추천에서 고른 개발자는 추천 회차의 상담 요청
+# API로, 직접 찾은 개발자는 프로젝트 상담 요청 API로 보낸다. 뒤쪽은 회차를 만들지 않아
+# 방의 recommendationItemId가 비어 있다.
+# 개발자의 수락·거절은 없고, 요청하면 그 자리에서 방이 열린다.
+#
 # 채팅 메시지는 이 API가 다루지 않는다. 방 응답의 chatRefId로 채팅 쪽에 넘긴다.
 # =========================================================================== #
 
@@ -2172,13 +2200,23 @@ def update_issue_status(
 
 
 class RatingResponse(BaseModel):
-    """평점 하나와 그 근거가 된 리뷰 수."""
+    """평점 하나와 그 근거가 된 리뷰 수.
+
+    **리뷰 하나는 개발력과 설명력을 둘 다 받는다.** 한쪽만 매기고 넘어갈 수 없으므로
+    두 평점의 reviewCount는 언제나 같고, 그 값이 곧 이 개발자가 받은 리뷰 총 건수다.
+    화면의 '리뷰 N개 모두 보기'가 이 수를 쓴다.
+    """
 
     score: float | None = Field(
         description="평균 평점. 받은 리뷰가 없으면 null이다.",
         examples=[4.4],
     )
-    reviewCount: int = Field(description="집계에 들어간 리뷰 수.", examples=[13])
+    reviewCount: int = Field(
+        description=(
+            "집계에 들어간 리뷰 수. 개발력과 설명력이 같은 값이며 리뷰 총 건수와도 같다."
+        ),
+        examples=[20],
+    )
 
 
 class DeveloperSummaryResponse(BaseModel):
@@ -2197,12 +2235,19 @@ class DeveloperSummaryResponse(BaseModel):
         description="개발자가 적은 한 줄 소개.",
         examples=["간단한 상담도 받습니다. 용어부터 풀어서 설명합니다."],
     )
-    yearsOfExperience: float | None = Field(
-        description="경력 연차. 등록하지 않았으면 null이다.",
-        examples=[5.0],
-    )
     field: CodeResponse | None = Field(
-        description="주로 담당하는 개발 분야. 등록하지 않았으면 null이다.",
+        description=(
+            "주로 담당하는 개발 분야. 코드 분류 `DEV_FIELD`의 항목이며, "
+            "**한 명에 하나다.** 등록하지 않았으면 null이다. 카드 머리에 연차와 나란히 "
+            "`DB 연결 · 5년`으로 붙는다."
+        ),
+    )
+    yearsOfExperience: float | None = Field(
+        description=(
+            "경력 연차. 등록하지 않았으면 null이다. 카드 머리에서 분야 옆에 붙는다. "
+            "어떤 일로 쌓은 연차인지는 상세의 `careers`가 말한다."
+        ),
+        examples=[5.0],
     )
     isCareerVerified: bool = Field(
         description=(
@@ -2213,10 +2258,21 @@ class DeveloperSummaryResponse(BaseModel):
     devRating: RatingResponse = Field(description="개발력 평점과 리뷰 수.")
     explanatoryRating: RatingResponse = Field(description="설명력 평점과 리뷰 수.")
     techCategories: list[CodeResponse] = Field(
-        description="이 개발자가 다룰 수 있는 기술. 등록 전이면 빈 배열이다.",
+        description=(
+            "이 개발자가 다룰 수 있는 기술. 코드 분류 `TECH_CATEGORY`의 항목이며 "
+            "여럿일 수 있다. **카드 아래 칩이 이 목록이다.** 등록 전이면 빈 배열이다."
+        ),
     )
     prices: list[TaskPriceResponse] = Field(
         description="작업 유형별 최저가. 가격표를 등록하지 않은 유형은 빠진다.",
+    )
+    contractCount: int = Field(
+        description=(
+            "이 개발자가 마친 계약 수. 컨설팅과 개발을 합쳐 세며, 완료된 계약만 든다 — "
+            "진행 중이거나 파기된 계약은 빠진다. 카드의 'N건 완료'와 `contract,desc` "
+            "정렬이 이 값을 쓴다."
+        ),
+        examples=[23],
     )
 
 
@@ -2275,7 +2331,10 @@ class PortfolioItemResponse(BaseModel):
         examples=[None],
     )
     linkUrl: str | None = Field(
-        description="배포 사이트나 저장소 주소. 없으면 null이다.",
+        description=(
+            "배포 사이트나 저장소 주소. 없으면 null이고, 화면은 그 자리에 '비공개'라고 "
+            "적는다."
+        ),
         examples=["https://example.com"],
     )
     thumbnailFileId: int | None = Field(
@@ -2289,17 +2348,38 @@ class ReviewResponse(BaseModel):
 
     reviewId: int = Field(description="리뷰 식별자.", examples=[88])
     clientName: str = Field(
-        description="리뷰를 쓴 의뢰인의 표시 이름.",
-        examples=["김미미"],
+        description=(
+            "리뷰를 쓴 의뢰인의 표시 이름. **서버가 가려서 내보낸다** — 첫 글자와 끝 "
+            "글자만 남기고 가운데를 `O`로 바꾸며, 두 글자면 끝 글자를 바꾼다. 개발자가 "
+            "자기 프로필에서 볼 때도 같은 값이라 화면이 따로 가릴 것은 없다. 리뷰를 쓴 "
+            "뒤 탈퇴한 의뢰인이면 `탈퇴한 사용자`가 들어온다."
+        ),
+        examples=["김O미"],
     )
-    devScore: int = Field(description="개발력 점수. 1에서 5 사이다.", examples=[5])
-    commScore: int = Field(description="설명력 점수. 1에서 5 사이다.", examples=[5])
+    contractType: Literal["CONSULTING", "DEVELOPMENT"] = Field(
+        description=(
+            "이 리뷰가 나온 계약의 종류. 어떤 거래에서 받은 평가인지 구분하는 데 쓴다. "
+            "어느 프로젝트였는지는 의뢰인의 사업 정보라 담지 않는다."
+        ),
+        examples=["DEVELOPMENT"],
+    )
+    devScore: int = Field(
+        description="개발력 점수. 1에서 5 사이이며 비울 수 없다.",
+        examples=[5],
+    )
+    commScore: int = Field(
+        description=(
+            "설명력 점수. 1에서 5 사이이며 비울 수 없다. 컨설팅 계약이든 개발 계약이든 "
+            "리뷰 하나는 두 점수를 다 받는다."
+        ),
+        examples=[5],
+    )
     content: str | None = Field(
-        description="리뷰 내용. 점수만 주고 글을 안 썼으면 null이다.",
+        description="리뷰 내용. 1000자까지 받는다. 점수만 주고 글을 안 썼으면 null이다.",
         examples=["말이 잘 통했습니다."],
     )
     reply: str | None = Field(
-        description="개발자가 단 답글. 없으면 null이다.",
+        description="개발자가 단 답글. 1000자까지 받는다. 없으면 null이다.",
         examples=[None],
     )
     createdAt: str = Field(
@@ -2316,8 +2396,39 @@ class ReviewListResponse(BaseModel):
     )
     page: int = Field(description="현재 페이지 번호.", examples=[1])
     size: int = Field(description="한 페이지에 담긴 최대 항목 수.", examples=[20])
-    totalElements: int = Field(description="전체 리뷰 수.", examples=[20])
+    totalElements: int = Field(
+        description=(
+            "전체 리뷰 수. 개발자 프로필의 `devRating.reviewCount`와 언제나 같은 값이다."
+        ),
+        examples=[20],
+    )
     totalPages: int = Field(description="전체 페이지 수.", examples=[1])
+
+
+class PriceCatalogItemResponse(BaseModel):
+    """가격표 한 줄. 개발자가 등록한 작업마다 한 행이다."""
+
+    priceId: int = Field(description="가격표 식별자.", examples=[61])
+    taskType: Literal["CONSULT", "DEVELOP"] = Field(
+        description="작업 종류. CONSULT는 컨설팅 세션, DEVELOP은 개발 작업이다.",
+        examples=["DEVELOP"],
+    )
+    taskName: str = Field(
+        description=(
+            "작업 이름. 컨설팅은 '30분 · 한 가지 주제'처럼 시간을, 개발은 "
+            "'로그인 붙이기'처럼 할 일을 적는다."
+        ),
+        examples=["로그인 붙이기"],
+    )
+    price: int = Field(description="가격. 원 단위 정수다.", examples=[400000])
+    periodDays: int | None = Field(
+        description=(
+            "예상 작업 기간(일). **컨설팅 세션은 언제나 null이다.** 가격표는 세션 시간을 "
+            "담지 않으므로, 몇 분짜리 세션인지는 `taskName`에 적힌 글이 전부다. 실제 "
+            "세션 시간은 계약서를 쓸 때 분 단위로 따로 정한다."
+        ),
+        examples=[4],
+    )
 
 
 class DeveloperDetailResponse(DeveloperSummaryResponse):
@@ -2337,8 +2448,22 @@ class DeveloperDetailResponse(DeveloperSummaryResponse):
         ),
         examples=["19:00"],
     )
-    careers: list[CareerResponse] = Field(description="등록한 경력.")
-    portfolioItems: list[PortfolioItemResponse] = Field(description="등록한 작업물.")
+    careers: list[CareerResponse] = Field(
+        description="등록한 경력. 시작일이 늦은 것, 곧 최근 경력이 먼저 내려간다.",
+    )
+    portfolioItems: list[PortfolioItemResponse] = Field(
+        description=(
+            "등록한 작업물. 등록한 순서대로 내려간다. 줄 순서를 바꾸는 기능은 없다."
+        ),
+    )
+    priceCatalog: list[PriceCatalogItemResponse] = Field(
+        description=(
+            "등록한 가격표 전부. 화면의 '컨설팅'과 '개발 · 작업별 요금'을 이 목록으로 "
+            "그린다. 목록 응답의 `prices`는 카드에 쓰는 유형별 최저가라 줄 단위 금액과 "
+            "기간은 여기에만 있다. 컨설팅이 먼저 오고 그 안에서 가격이 싼 것부터 "
+            "내려간다. 가격표를 등록하지 않았으면 빈 배열이다."
+        ),
+    )
 
 
 class RecommendationItemResponse(BaseModel):
@@ -2349,20 +2474,21 @@ class RecommendationItemResponse(BaseModel):
         examples=[501],
     )
     rank: int = Field(description="노출 순위. 1부터 시작한다.", examples=[1])
-    developer: DeveloperSummaryResponse = Field(description="추천된 개발자.")
-    contractCount: int = Field(
-        description="이 개발자가 마친 계약 수. 카드의 'N건 완료'에 쓴다.",
-        examples=[23],
-    )
-    status: Literal["ACCEPTED", "REJECTED", "EXPIRED"] | None = Field(
+    developer: DeveloperSummaryResponse = Field(
         description=(
-            "상담 요청에 대한 개발자 응답. 아직 요청하지 않았으면 null이다. "
-            "ACCEPTED는 수락, REJECTED는 거절, EXPIRED는 답이 없어 만료된 것이다."
+            "추천된 개발자. **언제나 지금 값이다.** 서버는 추천 시점의 프로필을 따로 "
+            "보관하지만 그것은 알고리즘 성과를 견주는 내부 자료이고, 응답에는 나가지 "
+            "않는다. 옛 회차를 다시 열어도 평점과 가격은 현재 프로필을 따른다 — 카드에 "
+            "적힌 금액과 상담에서 듣는 금액이 달라지면 안 되기 때문이다."
         ),
-        examples=[None],
     )
     roomId: int | None = Field(
-        description="상담이 시작되어 열린 방 식별자. 시작 전이면 null이다.",
+        description=(
+            "상담을 요청해 열린 방 식별자. 아직 요청하지 않았으면 null이다. "
+            "**이 값 하나가 요청 여부를 말한다.** 상담 요청에 개발자의 수락은 없어서 "
+            "요청하면 그 자리에서 방이 열리므로, 요청했는데 방이 없는 상태는 없다. "
+            "화면은 null이면 '상담 요청', 값이 있으면 '방으로 가기'를 보여준다."
+        ),
         examples=[None],
     )
 
@@ -2376,8 +2502,19 @@ class RecommendationBatchResponse(BaseModel):
         examples=[1],
     )
     projectId: int = Field(description="추천 대상 프로젝트 식별자.", examples=[8])
+    projectName: str = Field(
+        description="프로젝트 이름. 화면 머리에 쓴다.",
+        examples=["수제 비누 가게"],
+    )
+    diagnosisVersion: int = Field(
+        description=(
+            "이 추천을 만든 시점의 진단 회차. 재진단한 뒤 옛 추천을 열었을 때 무엇을 "
+            "근거로 뽑은 결과인지 알려준다."
+        ),
+        examples=[2],
+    )
     candidateCount: int = Field(
-        description="점수를 매긴 개발자 수.",
+        description="점수를 매긴 개발자 수. 순위를 매기기 전 모집단이다.",
         examples=[128],
     )
     items: list[RecommendationItemResponse] = Field(
@@ -2388,15 +2525,31 @@ class RecommendationBatchResponse(BaseModel):
 class CreateRecommendationRequest(BaseModel):
     """추천 회차 생성 요청."""
 
-    diagnosisId: int | None = Field(
-        default=None,
-        description="어느 진단을 근거로 찾을지. 진단 없이 찾으면 비운다.",
+    diagnosisId: int = Field(
+        description="어느 진단을 근거로 찾을지. 이 API는 진단 없이 부를 수 없다.",
         examples=[31],
     )
     issueIds: list[int] = Field(
-        default_factory=list,
-        description="요청서에 담을 요구사항 식별자. 진단을 거치지 않았으면 빈 배열이다.",
+        min_length=1,
+        description=(
+            "요청서에 담을 요구사항 식별자. 한 건 이상 골라야 하며, 모두 이 진단에서 "
+            "나온 것이어야 한다. 진단을 거치지 않고 개발자를 고르는 길은 프로젝트 상담 "
+            "요청 API가 맡는다."
+        ),
         examples=[[311, 312]],
+    )
+
+
+class CreateDirectConsultationRequest(BaseModel):
+    """직접 찾은 개발자에게 상담을 요청한다."""
+
+    developerIds: list[int] = Field(
+        min_length=1,
+        description=(
+            "상담을 요청할 개발자 식별자. 여러 명에게 한 번에 보낼 수 있고, "
+            "한 명 이상 골라야 한다."
+        ),
+        examples=[[5]],
     )
 
 
@@ -2405,7 +2558,10 @@ class CreateConsultationRequest(BaseModel):
 
     recommendationItemIds: list[int] = Field(
         min_length=1,
-        description="상담을 요청할 추천 항목 식별자. 여러 명에게 한 번에 보낼 수 있다.",
+        description=(
+            "상담을 요청할 추천 항목 식별자. 여러 명에게 한 번에 보낼 수 있고, "
+            "한 명 이상 골라야 한다."
+        ),
         examples=[[501, 502]],
     )
 
@@ -2414,6 +2570,14 @@ class RoomSummaryResponse(BaseModel):
     """방 목록 사이드바에 한 줄로 나가는 방."""
 
     roomId: int = Field(description="방 식별자.", examples=[91])
+    recommendationItemId: int | None = Field(
+        description=(
+            "이 방이 나온 추천 항목 식별자. 추천을 거치지 않고 직접 찾아 연 방이면 "
+            "null이다. 여러 개발자에게 한 번에 상담을 요청하면 방이 여러 개 열리는데, "
+            "어느 개발자의 방인지 이 값으로 맞춘다."
+        ),
+        examples=[501],
+    )
     type: Literal["INQUIRY", "CONSULTING", "DEVELOPMENT"] = Field(
         description=(
             "방 용도. INQUIRY는 무료 상담, CONSULTING은 컨설팅, DEVELOPMENT는 개발이다."
@@ -2426,23 +2590,21 @@ class RoomSummaryResponse(BaseModel):
     )
     projectId: int = Field(description="이 방이 달린 프로젝트 식별자.", examples=[8])
     projectName: str = Field(description="프로젝트 이름.", examples=["수제 비누 가게"])
-    clientId: int = Field(
-        description=(
-            "이 방의 의뢰인 사용자 식별자. 프로젝트를 등록한 사람이다. 내 "
-            "사용자 식별자와 같으면 사이드바의 '보낸 의뢰'에 묶인다."
-        ),
-        examples=[12],
-    )
     developerId: int = Field(
         description=(
-            "이 방에 참여한 개발자 사용자 식별자. 같은 프로젝트라도 방마다 다를 수 "
-            "있다. 내 사용자 식별자와 같으면 사이드바의 '받은 의뢰'에 묶인다."
+            "이 방에 참여한 **개발자 식별자**. 사용자 식별자가 아니며, 상담을 요청할 때 "
+            "보내는 값과 같은 종류다. 같은 프로젝트라도 방마다 다를 수 있다.\n\n"
+            "**보낸 의뢰와 받은 의뢰를 가르는 값이다.** 내 정보의 `developerId`와 같으면 "
+            "내가 개발자로 들어간 방이라 '받은 의뢰', 다르면 내가 의뢰인이라 '보낸 "
+            "의뢰'다. 의뢰인은 프로젝트를 등록한 사람이라 방마다 따로 적히지 않으므로 "
+            "의뢰인 식별자는 이 응답에 담지 않는다."
         ),
-        examples=[30],
+        examples=[3],
     )
     counterpartName: str = Field(
         description=(
-            "상대의 표시 이름. 의뢰인이 보면 개발자 이름, 개발자가 보면 의뢰인 이름이다."
+            "상대의 표시 이름. 의뢰인이 보면 개발자 이름, 개발자가 보면 의뢰인 이름이다. "
+            "상대가 탈퇴했으면 `탈퇴한 사용자`가 들어온다."
         ),
         examples=["이준"],
     )
@@ -2460,23 +2622,40 @@ class RoomSummaryResponse(BaseModel):
 
 
 class RoomListResponse(BaseModel):
-    """방 목록."""
+    """방 목록.
+
+    **페이지 정보로 감싸지 않는다.** 사이드바가 프로젝트별로 묶어 한 번에 늘어놓는
+    구조라 페이지를 넘길 자리가 없어서다. 방이 몇 개든 전부 내려가며 상한을 두지 않는다.
+    """
 
     content: list[RoomSummaryResponse] = Field(
-        description="조건에 맞는 방. 없으면 빈 배열이다.",
+        description=(
+            "조건에 맞는 방. 마지막으로 움직인 것이 먼저다. 없으면 빈 배열이다."
+        ),
     )
 
 
 class RoomRequestSummaryResponse(BaseModel):
-    """방 머리에 붙는 요청서 요약."""
+    """방 머리에 붙는 요청서 요약.
+
+    **요청서는 방이 아니라 프로젝트에 달린다.** 상담·컨설팅·개발 방이 모두 같은 요청서를
+    보므로, 요청서를 고치면 열려 있는 모든 방의 머리가 함께 바뀐다.
+    """
 
     diagnosisId: int = Field(description="요청서의 근거가 된 진단 식별자.", examples=[31])
     issueCount: int = Field(
-        description="요청서에 담긴 요구사항 수.",
+        description=(
+            "요청서에 담긴 요구사항 수. **이번 회차에서 나온 요구사항 가운데 직접 "
+            "해결하지 않은 것**을 센다 — 해결로 내린 것은 요청서에서 빠지고, 계약에 "
+            "들어간 것은 그대로 남는다. 지난 회차의 요구사항은 세지 않는다."
+        ),
         examples=[3],
     )
     updatedAt: str = Field(
-        description="요청서를 마지막으로 고친 시각.",
+        description=(
+            "요청서를 마지막으로 고친 시각. 요구사항을 더하거나 빼도, 확인 문장만 "
+            "고쳐도 이 값이 갱신된다."
+        ),
         examples=["2026-08-18T16:40:00+09:00"],
     )
 
@@ -2485,12 +2664,31 @@ class RoomDetailResponse(RoomSummaryResponse):
     """방 상세. 목록에 쓰는 값에 요청서 요약을 더한다."""
 
     request: RoomRequestSummaryResponse | None = Field(
-        description="이 방에 딸린 요청서 요약. 요청서 없이 열린 방이면 null이다.",
+        description=(
+            "이 방에 딸린 요청서 요약. **아직 진단을 하지 않은 프로젝트의 방이면 "
+            "null이다.** 진단이 있으면 상담을 어느 길로 요청했든 요청서가 걸린다."
+        ),
+    )
+    contractId: int | None = Field(
+        description=(
+            "이 방에서 오간 계약 식별자. 아직 계약서를 쓰지 않았으면 null이고 화면은 "
+            "머리에 '없음'이라 적는다. **방 하나에 계약은 하나다.** 금액과 갱신 시각은 "
+            "이 식별자로 계약서를 조회해 채운다."
+        ),
+        examples=[None],
     )
     convertedRoomId: int | None = Field(
         description=(
             "갈래를 정해 새로 열린 방 식별자. 아직 정하지 않았으면 null이다. "
             "화면의 '컨설팅 방으로' · '개발 방으로' 버튼이 이 방으로 보낸다."
+        ),
+        examples=[None],
+    )
+    convertedRoomType: Literal["CONSULTING", "DEVELOPMENT"] | None = Field(
+        description=(
+            "새로 열린 방의 용도. `convertedRoomId`와 늘 짝으로 차고 빈다. 버튼에 "
+            "'컨설팅 방으로'라고 적을지 '개발 방으로'라고 적을지를 이 값으로 고른다 — "
+            "이것 하나 때문에 새 방을 다시 조회하지 않아도 된다."
         ),
         examples=[None],
     )
@@ -2519,10 +2717,6 @@ PROJECT_NOT_FOUND_EXAMPLE = {
 }
 RECOMMENDATION_NOT_FOUND = ("RECOMMENDATION_NOT_FOUND", "추천 결과를 찾을 수 없습니다.")
 ROOM_NOT_FOUND = ("ROOM_NOT_FOUND", "방을 찾을 수 없습니다.")
-CONSULTATION_ALREADY_REQUESTED = (
-    "CONSULTATION_ALREADY_REQUESTED",
-    "이미 상담을 요청한 개발자입니다.",
-)
 ROOM_ALREADY_CONVERTED = (
     "ROOM_ALREADY_CONVERTED",
     "이미 갈래가 정해진 상담입니다.",
@@ -2536,13 +2730,22 @@ CODE_GROUP_NOT_FOUND = ("CODE_GROUP_NOT_FOUND", "코드 분류를 찾을 수 없
 
 AREA3_TAG = "3 개발자 찾기 · 상담방"
 
-NOT_FOUND_PROJECT_ID = 404
 NOT_FOUND_DEVELOPER_ID = 404
+NOT_FOUND_PROJECT_ID = 404
 NOT_FOUND_BATCH_ID = 404
-ALREADY_REQUESTED_BATCH_ID = 409
 NOT_FOUND_ROOM_ID = 404
 CONVERTED_ROOM_ID = 409
 
+# 코드 항목의 식별자는 분류마다 번호대를 나눠 쓴다. 값만 보고 어느 분류인지 알 수 있고,
+# 분류가 늘어도 이미 나간 번호와 겹치지 않는다. 새 분류는 비어 있는 번호대를 가져간다.
+#
+#   21~29  TECH_CATEGORY   기술
+#   41~48  DEV_FIELD       분야
+#   51~57  BANK_CODE       은행
+#   61~68  CARD_COMPANY    카드사 (영역 8)
+#   71~74  ISSUE_CATEGORY  결함 분류 (영역 2)
+#
+# 기술은 영역 2의 프로젝트 기술과 영역 8의 내 프로필에서도 같은 번호를 쓴다.
 TECH_CODES = [
     {"codeId": 21, "codeName": "Next.js"},
     {"codeId": 22, "codeName": "Supabase"},
@@ -2551,13 +2754,13 @@ TECH_CODES = [
 
 # 계좌를 등록할 때 고르는 은행. 분야·기술과 같은 코드 항목이라 코드 API 가 함께 낸다.
 BANK_CODES = [
-    {"codeId": 4, "codeName": "국민은행"},
-    {"codeId": 5, "codeName": "신한은행"},
-    {"codeId": 6, "codeName": "우리은행"},
-    {"codeId": 7, "codeName": "하나은행"},
-    {"codeId": 8, "codeName": "농협은행"},
-    {"codeId": 9, "codeName": "카카오뱅크"},
-    {"codeId": 10, "codeName": "토스뱅크"},
+    {"codeId": 51, "codeName": "국민은행"},
+    {"codeId": 52, "codeName": "신한은행"},
+    {"codeId": 53, "codeName": "우리은행"},
+    {"codeId": 54, "codeName": "하나은행"},
+    {"codeId": 55, "codeName": "농협은행"},
+    {"codeId": 56, "codeName": "카카오뱅크"},
+    {"codeId": 57, "codeName": "토스뱅크"},
 ]
 
 FIELD_CODES = [
@@ -2571,61 +2774,158 @@ FIELD_CODES = [
     {"codeId": 48, "codeName": "결제 붙이기"},
 ]
 
+# 카드를 등록할 때 고르는 카드사. 쓰는 곳은 영역 8이지만 코드 API 가 함께 낸다.
+CARD_COMPANY_CODES = [
+    {"codeId": 61, "codeName": "우리카드"},
+    {"codeId": 62, "codeName": "국민카드"},
+    {"codeId": 63, "codeName": "신한카드"},
+    {"codeId": 64, "codeName": "삼성카드"},
+    {"codeId": 65, "codeName": "현대카드"},
+    {"codeId": 66, "codeName": "롯데카드"},
+    {"codeId": 67, "codeName": "하나카드"},
+    {"codeId": 68, "codeName": "BC카드"},
+]
+
+# 요구사항을 직접 추가할 때 고르는 결함 분류. 쓰는 곳은 영역 2다.
+ISSUE_CATEGORY_CODES = [
+    {"codeId": 71, "codeName": "보안"},
+    {"codeId": 72, "codeName": "위법"},
+    {"codeId": 73, "codeName": "결제"},
+    {"codeId": 74, "codeName": "기타"},
+]
+
+
+def _issue_category(code_id: int) -> CodeResponse:
+    """결함 분류 식별자를 코드 항목으로 바꾼다. 아는 번호가 아니면 기타로 둔다."""
+    for row in ISSUE_CATEGORY_CODES:
+        if row["codeId"] == code_id:
+            return CodeResponse(**row)
+    return CodeResponse(codeId=code_id, codeName="기타")
+
 DEVELOPERS = [
     {
         "developerId": 3,
         "name": "이준",
         "profileImageFileId": None,
         "intro": "간단한 상담도 받습니다. 용어부터 풀어서 설명합니다.",
+        "field": {"codeId": 42, "codeName": "DB 연결"},
         "yearsOfExperience": 5.0,
-        "field": {"codeId": 4, "codeName": "백엔드"},
         "isCareerVerified": True,
-        "devRating": {"score": 4.4, "reviewCount": 13},
-        "explanatoryRating": {"score": 4.9, "reviewCount": 20},
+        "devRating": {"score": 4.4, "reviewCount": 2},
+        "explanatoryRating": {"score": 4.9, "reviewCount": 2},
         "techCategories": TECH_CODES,
         "prices": [
             {"taskType": "CONSULT", "price": 50000},
             {"taskType": "DEVELOP", "price": 100000},
         ],
+        "contractCount": 23,
     },
     {
         "developerId": 5,
         "name": "정하",
         "profileImageFileId": None,
         "intro": "짧게 방향만 잡아드려요.",
+        "field": {"codeId": 41, "codeName": "인터넷에 올리기"},
         "yearsOfExperience": 4.0,
-        "field": {"codeId": 5, "codeName": "풀스택"},
         "isCareerVerified": True,
-        "devRating": {"score": 4.2, "reviewCount": 9},
-        "explanatoryRating": {"score": 4.4, "reviewCount": 11},
+        "devRating": {"score": 4.2, "reviewCount": 2},
+        "explanatoryRating": {"score": 4.4, "reviewCount": 2},
         "techCategories": TECH_CODES[1:],
         "prices": [
             {"taskType": "CONSULT", "price": 40000},
             {"taskType": "DEVELOP", "price": 90000},
         ],
+        "contractCount": 41,
     },
     {
         "developerId": 7,
         "name": "한서",
         "profileImageFileId": None,
         "intro": "급한 장애 대응 잘합니다. 새벽도 괜찮습니다.",
+        "field": {"codeId": 47, "codeName": "버그 잡기"},
         "yearsOfExperience": 6.0,
-        "field": {"codeId": 4, "codeName": "백엔드"},
         "isCareerVerified": False,
-        "devRating": {"score": 4.7, "reviewCount": 22},
-        "explanatoryRating": {"score": 4.1, "reviewCount": 18},
+        "devRating": {"score": 4.7, "reviewCount": 2},
+        "explanatoryRating": {"score": 4.1, "reviewCount": 2},
         "techCategories": TECH_CODES[:1],
         "prices": [
             {"taskType": "CONSULT", "price": 60000},
             {"taskType": "DEVELOP", "price": 120000},
         ],
+        "contractCount": 11,
     },
 ]
 
 TOTAL_DEVELOPERS = 128
 
+
+def _rating_key(rating: dict) -> tuple:
+    """평점 내림차순 정렬 키. 평점이 없으면 뒤로 보낸다."""
+    score = rating.get("score")
+    return (score is None, -(score or 0))
+
+
+def _lowest_price(row: dict) -> int:
+    """가격표 전체의 최저가. 등록한 가격이 없으면 맨 뒤로 간다."""
+    prices = [price["price"] for price in row["prices"]]
+    return min(prices) if prices else 10**9
+
+# 개발자 한 명의 가격표. 컨설팅은 세션 길이로, 개발은 할 일로 줄을 나눈다.
+PRICE_CATALOG = [
+    {
+        "priceId": 60,
+        "taskType": "CONSULT",
+        "taskName": "30분 · 한 가지 주제",
+        "price": 50000,
+        "periodDays": None,
+    },
+    {
+        "priceId": 61,
+        "taskType": "CONSULT",
+        "taskName": "60분 · 이어지는 두세 가지",
+        "price": 90000,
+        "periodDays": None,
+    },
+    {
+        "priceId": 62,
+        "taskType": "DEVELOP",
+        "taskName": "인터넷에 올리기",
+        "price": 200000,
+        "periodDays": 1,
+    },
+    {
+        "priceId": 63,
+        "taskType": "DEVELOP",
+        "taskName": "저장되게 하기",
+        "price": 350000,
+        "periodDays": 3,
+    },
+    {
+        "priceId": 64,
+        "taskType": "DEVELOP",
+        "taskName": "사둔 주소 연결",
+        "price": 100000,
+        "periodDays": 1,
+    },
+    {
+        "priceId": 65,
+        "taskType": "DEVELOP",
+        "taskName": "로그인 붙이기",
+        "price": 400000,
+        "periodDays": 4,
+    },
+    {
+        "priceId": 66,
+        "taskType": "DEVELOP",
+        "taskName": "버그 하나 고치기",
+        "price": 100000,
+        "periodDays": 2,
+    },
+]
+
 DEVELOPER_DETAIL = {
     **DEVELOPERS[0],
+    "priceCatalog": PRICE_CATALOG,
     "description": "작은 가게 서비스를 주로 맡습니다.",
     "activeFrom": "10:00",
     "activeTo": "19:00",
@@ -2663,7 +2963,8 @@ DEVELOPER_DETAIL = {
 REVIEWS = [
     {
         "reviewId": 88,
-        "clientName": "김미미",
+        "clientName": "김O미",
+        "contractType": "DEVELOPMENT",
         "devScore": 5,
         "commScore": 5,
         "content": "말이 잘 통했습니다.",
@@ -2672,7 +2973,8 @@ REVIEWS = [
     },
     {
         "reviewId": 87,
-        "clientName": "최수진",
+        "clientName": "최O진",
+        "contractType": "CONSULTING",
         "devScore": 4,
         "commScore": 5,
         "content": None,
@@ -2685,22 +2987,20 @@ RECOMMENDATION_BATCH = {
     "batchId": 61,
     "sequenceNo": 1,
     "projectId": 8,
+    "projectName": "수제 비누 가게",
+    "diagnosisVersion": 2,
     "candidateCount": TOTAL_DEVELOPERS,
     "items": [
         {
             "recommendationItemId": 501,
             "rank": 1,
             "developer": DEVELOPERS[0],
-            "contractCount": 23,
-            "status": None,
             "roomId": None,
         },
         {
             "recommendationItemId": 502,
             "rank": 2,
             "developer": DEVELOPERS[2],
-            "contractCount": 11,
-            "status": None,
             "roomId": None,
         },
     ],
@@ -2709,45 +3009,153 @@ RECOMMENDATION_BATCH = {
 ROOMS = [
     {
         "roomId": 91,
+        "recommendationItemId": 501,
         "type": "INQUIRY",
         "status": "OPEN",
         "projectId": 8,
         "projectName": "수제 비누 가게",
-        "clientId": 12,
-        "developerId": 30,
+        "developerId": 3,
         "counterpartName": "이준",
         "chatRefId": "room-91-chat",
         "openedAt": "2026-08-20T09:00:00+09:00",
     },
     {
         "roomId": 92,
+        "recommendationItemId": 501,
         "type": "CONSULTING",
         "status": "OPEN",
         "projectId": 8,
         "projectName": "수제 비누 가게",
-        "clientId": 12,
-        "developerId": 30,
+        "developerId": 3,
         "counterpartName": "이준",
         "chatRefId": "room-92-chat",
         "openedAt": "2026-08-22T11:40:00+09:00",
     },
+    {
+        "roomId": 93,
+        "recommendationItemId": 501,
+        "type": "DEVELOPMENT",
+        "status": "OPEN",
+        "projectId": 8,
+        "projectName": "수제 비누 가게",
+        "developerId": 3,
+        "counterpartName": "이준",
+        "chatRefId": "room-93-chat",
+        "openedAt": "2026-08-25T14:05:00+09:00",
+    },
 ]
 
+# 상담 요청으로 열리는 방. 같은 개발자에게 다시 요청해도 같은 방을 돌려주도록 고정해 둔다.
+ROOM_ID_BY_ITEM = {501: 91, 502: 95}
+ROOM_ID_BY_DEVELOPER = {3: 96, 5: 94, 7: 97}
+
+# 상담방에서 갈래를 정하면 열리는 방. 고른 갈래에 따라 어느 쪽이 열리는지 갈린다.
+CONVERTED_CONSULTING_ROOM_ID = 92
+CONVERTED_DEVELOPMENT_ROOM_ID = 93
+
+# 추천을 거치지 않고 직접 찾아 연 방. 추천 항목이 없어 recommendationItemId가 비어 있다.
+DIRECT_ROOM = {
+    "roomId": 94,
+    "recommendationItemId": None,
+    "type": "INQUIRY",
+    "status": "OPEN",
+    "projectId": 8,
+    "projectName": "수제 비누 가게",
+    "developerId": 5,
+    "counterpartName": "정하",
+    "chatRefId": "room-94-chat",
+    "openedAt": "2026-08-27T10:15:00+09:00",
+}
+
+# 방 머리에 붙는 요청서 요약. 요청서는 방이 아니라 프로젝트에 달리므로 방마다 같다.
+ROOM_REQUEST = {
+    "diagnosisId": DIAGNOSIS_ID,
+    "issueCount": 3,
+    "updatedAt": "2026-08-18T16:40:00+09:00",
+}
+
+
+def _item_room(item_id: int) -> dict:
+    """추천 항목으로 열리는 방.
+
+    상담 요청 응답과 방 조회가 같은 방을 보도록 한 곳에서 만든다.
+    """
+    item = next(
+        row
+        for row in RECOMMENDATION_BATCH["items"]
+        if row["recommendationItemId"] == item_id
+    )
+    room_id = ROOM_ID_BY_ITEM[item_id]
+    return {
+        **ROOMS[0],
+        "roomId": room_id,
+        "recommendationItemId": item_id,
+        "developerId": item["developer"]["developerId"],
+        "counterpartName": item["developer"]["name"],
+        "chatRefId": f"room-{room_id}-chat",
+    }
+
+
+def _developer_room(developer_id: int) -> dict:
+    """직접 찾은 개발자에게 요청해 열리는 방. 추천을 거치지 않아 추천 항목이 비어 있다."""
+    developer = next(row for row in DEVELOPERS if row["developerId"] == developer_id)
+    room_id = ROOM_ID_BY_DEVELOPER[developer_id]
+    return {
+        **DIRECT_ROOM,
+        "roomId": room_id,
+        "developerId": developer_id,
+        "counterpartName": developer["name"],
+        "chatRefId": f"room-{room_id}-chat",
+    }
+
+
+def _room(room_id: int) -> dict | None:
+    """방 하나를 찾는다. 목록에 있는 방과 상담 요청으로 열리는 방을 모두 본다."""
+    for room in ROOMS:
+        if room["roomId"] == room_id:
+            return room
+    for item_id, opened_id in ROOM_ID_BY_ITEM.items():
+        if opened_id == room_id:
+            return _item_room(item_id)
+    for developer_id, opened_id in ROOM_ID_BY_DEVELOPER.items():
+        if opened_id == room_id:
+            return _developer_room(developer_id)
+    return None
+
+
+def _room_detail(room: dict) -> dict:
+    """방 상세. 목록 값에 요청서 요약과 계약 식별자를 더한다.
+
+    방 하나에 계약은 하나이므로 계약서 예시의 roomId와 짝을 맞춘다. 그 예시는
+    영역 4·5에 있어 이 자리에서는 아직 없으므로 부를 때 읽는다.
+    """
+    contract_ids = {
+        CONSULTING_CONTRACT_EXAMPLE["roomId"]: CONTRACT_ID,
+        DEV_CONTRACT_EXAMPLE["roomId"]: DEV_CONTRACT_ID,
+    }
+    return {
+        **room,
+        "request": ROOM_REQUEST,
+        "contractId": contract_ids.get(room["roomId"]),
+        "convertedRoomId": None,
+        "convertedRoomType": None,
+    }
+
+
+# 방 91의 상세. 문서 예시로만 쓰며 `_room_detail(ROOMS[0])`과 같은 값이다.
 ROOM_DETAIL = {
     **ROOMS[0],
-    "request": {
-        "diagnosisId": DIAGNOSIS_ID,
-        "issueCount": 3,
-        "updatedAt": "2026-08-18T16:40:00+09:00",
-    },
+    "request": ROOM_REQUEST,
+    "contractId": None,
     "convertedRoomId": None,
+    "convertedRoomType": None,
 }
 
 DEVELOPER_LIST_EXAMPLE = {
-    "content": DEVELOPERS[:1],
+    "content": DEVELOPERS,
     "page": 1,
     "size": 20,
-    "totalElements": 5,
+    "totalElements": len(DEVELOPERS),
     "totalPages": 1,
     "totalDevelopers": TOTAL_DEVELOPERS,
 }
@@ -2756,7 +3164,7 @@ REVIEW_LIST_EXAMPLE = {
     "content": REVIEWS,
     "page": 1,
     "size": 20,
-    "totalElements": 20,
+    "totalElements": len(REVIEWS),
     "totalPages": 1,
 }
 
@@ -2806,33 +3214,52 @@ class CodeListResponse(BaseModel):
     summary="코드 목록 조회",
     description=(
         "**화면 — `3_의뢰인_개발자찾기` · `3_펼침_분야선택` › 분야 선택 · "
-        "`8_펼침_은행선택` › 은행 선택**\n\n"
+        "`8_펼침_은행선택` › 은행 선택 · `8_개발자_내프로필` › 기술 선택 · "
+        "`8_마이페이지` › 카드 등록의 카드사 · `2_요구사항선택` › 요구사항 추가의 "
+        "결함 분류**\n\n"
         "화면에서 고르게 할 항목을 내려준다. 분야 칩이나 은행 목록처럼 운영에서 늘고 줄 수 "
         "있는 목록이라 화면에 문구를 박지 않고 이 API로 받는다.\n\n"
         "**고르게 할 목록은 모두 이 API로 받는다.** 분류마다 API를 따로 두지 않는다.\n\n"
+        "**로그인하지 않아도 부를 수 있다.** 분야 목록이 로그인 전 화면에 필요해서인데, "
+        "한 API가 모든 분류를 내주므로 인증 경계를 분류마다 다르게 둘 수 없다. 로그인한 "
+        "사람에게만 보여야 하는 목록은 이 API에 두지 않는다.\n\n"
+        "**여기서 빠진 항목도 이름은 그대로 나간다.** 운영에서 쓰지 않기로 내린 항목은 이 "
+        "목록에서 빠지지만, 이미 그 항목을 고른 개발자나 요구사항이 있으므로 상세 응답의 "
+        "`codeName`에는 계속 담긴다. 고를 수 없게 하는 것과 이름을 감추는 것은 다르다.\n\n"
+        "몇 달에 한 번 바뀌는 목록이라 실서버는 `Cache-Control: public, max-age=3600`을 "
+        "실어 보낸다. 화면에 들어올 때마다 다시 받지 않아도 된다.\n\n"
+        "아래 200 예시는 `DEV_FIELD`를 부른 결과다.\n\n"
         "- **200**: 분류가 있을 때. 쓸 수 있는 항목만 순서대로 내려간다\n"
-        "- **404 / CODE_GROUP_NOT_FOUND**: `groupKey`가 `UNKNOWN`일 때\n"
+        "- **404 / CODE_GROUP_NOT_FOUND**: 아는 분류 키가 아닐 때. 오타나 대소문자가 "
+        "다른 키도 여기에 걸린다\n"
         "- **500 / INTERNAL_ERROR**: 목록을 읽지 못했을 때"
     ),
 )
 def get_codes(
+    response: Response,
     groupKey: Annotated[
         str,
         Path(
             description=(
                 "코드 분류 키. 개발 분야는 `DEV_FIELD`, 기술은 `TECH_CATEGORY`, "
-                "계좌를 등록할 때 고르는 은행은 `BANK_CODE`다. `UNKNOWN`은 분류 없음 "
-                "재현용 예약값이다."
+                "계좌를 등록할 때 고르는 은행은 `BANK_CODE`, 카드를 등록할 때 고르는 "
+                "카드사는 `CARD_COMPANY`, 요구사항을 직접 추가할 때 고르는 결함 분류는 "
+                "`ISSUE_CATEGORY`다. 이 다섯이 아닌 값은 모두 분류 없음으로 본다."
             ),
             examples=["DEV_FIELD"],
         ),
     ],
 ) -> CodeListResponse | JSONResponse:
-    if groupKey == "UNKNOWN":
+    rows = {
+        "DEV_FIELD": FIELD_CODES,
+        "TECH_CATEGORY": TECH_CODES,
+        "BANK_CODE": BANK_CODES,
+        "CARD_COMPANY": CARD_COMPANY_CODES,
+        "ISSUE_CATEGORY": ISSUE_CATEGORY_CODES,
+    }.get(groupKey)
+    if rows is None:
         return _error_response(404, CODE_GROUP_NOT_FOUND)
-    rows = {"TECH_CATEGORY": TECH_CODES, "BANK_CODE": BANK_CODES}.get(
-        groupKey, FIELD_CODES
-    )
+    response.headers["Cache-Control"] = "public, max-age=3600"
     return CodeListResponse(content=[CodeResponse(**row) for row in rows])
 
 
@@ -2853,15 +3280,24 @@ def get_codes(
     description=(
         "**화면 — `3_의뢰인_개발자찾기` › 검색 · 분야 선택 · 정렬 · 카드 목록 · "
         "`3_펼침_검색모드` · `3_펼침_정렬`**\n\n"
-        "의뢰인이 직접 개발자를 찾는다. 추천을 거치지 않고 스스로 고르는 경로다.\n\n"
+        "의뢰인이 직접 개발자를 찾는다. 추천을 거치지 않고 스스로 고르는 경로다. "
+        "**로그인하지 않아도 부를 수 있다.** 랜딩의 '증상별로 찾기'로 바로 들어오는 "
+        "경로가 있어서다.\n\n"
         "검색은 두 가지다. `problem`은 겪고 있는 문제를 문장으로 적어 맞는 개발자를 찾고, "
         "`name`은 이름으로 바로 찾는다.\n\n"
         "`totalDevelopers`는 조건을 걸지 않았을 때의 전체 수라, 화면의 "
         "'128명 중 5명'에서 앞 숫자에 해당한다.\n\n"
+        "**카드 머리는 `field`와 `yearsOfExperience`, 칩은 `techCategories`다.** 분야는 "
+        "한 명에 하나라 `DB 연결 · 5년`처럼 연차와 붙여 한 줄로 쓰고, 여럿일 수 있는 "
+        "기술을 카드 아래 칩으로 늘어놓는다. 거르는 기준은 분야이고 칩은 기술이라 서로 "
+        "다른 것을 가리킨다.\n\n"
+        "**`page`는 1부터 센다.** 0이 첫 장이 아니다.\n\n"
         "- **200**: 항상. 조건에 맞는 사람이 없으면 `content`가 빈 배열이다\n"
         "- **422 / INVALID_REQUEST**: `searchMode`나 `sort`가 허용된 값이 아니거나 "
         "`size`가 범위를 벗어날 때\n"
-        "- **500 / INTERNAL_ERROR**: 목록을 만들지 못했을 때"
+        "- **500 / INTERNAL_ERROR**: 목록을 만들지 못했을 때\n\n"
+        "⚠️ 이 목 서버는 분야 거르기, 이름 검색, 네 가지 정렬을 실제로 수행한다. "
+        "`problem` 검색만은 문장의 뜻을 읽어야 하므로 거르지 않고 전체를 준다."
     ),
 )
 def find_developers(
@@ -2884,7 +3320,13 @@ def find_developers(
     fieldCodeIds: Annotated[
         list[int] | None,
         Query(
-            description="분야 코드 식별자. 여러 개를 보내면 그중 하나라도 맞는 개발자를 찾는다.",
+            description=(
+                "분야 코드 식별자. 여러 개를 보내면 그중 하나라도 맞는 개발자를 찾는다. "
+                "여럿을 보낼 때는 `?fieldCodeIds=41&fieldCodeIds=42`처럼 같은 이름을 "
+                "거듭 적는다. **`DEV_FIELD`의 항목이 아닌 값은 조용히 무시한다** — "
+                "쓰지 않기로 내린 분야가 담긴 옛 주소로 들어와도 나머지 조건으로 "
+                "결과가 나오게 하기 위해서다."
+            ),
             examples=[[41, 42]],
         ),
     ] = None,
@@ -2892,7 +3334,10 @@ def find_developers(
         Literal["devRating,desc", "explanatoryRating,desc", "price,asc", "contract,desc"],
         Query(
             description=(
-                "정렬 기준. 차례로 실력 높은 순, 설명력 높은 순, 비용 낮은 순, 계약 많은 순이다."
+                "정렬 기준. 차례로 실력 높은 순, 설명력 높은 순, 비용 낮은 순, 계약 많은 "
+                "순이다. **비용은 가격표 전체의 최저가로 견준다** — 컨설팅과 개발을 "
+                "가리지 않고 그 개발자가 받는 가장 싼 금액이며, 카드에 나란히 적히는 "
+                "두 금액 중 작은 쪽이다."
             ),
             examples=["devRating,desc"],
         ),
@@ -2905,6 +3350,17 @@ def find_developers(
     rows = DEVELOPERS
     if fieldCodeIds:
         rows = [r for r in rows if r["field"] and r["field"]["codeId"] in fieldCodeIds]
+    if searchMode == "name" and keyword:
+        rows = [r for r in rows if keyword.strip() in r["name"]]
+
+    # 평점이 없는 개발자는 뒤로 보낸다. 리뷰가 없다고 맨 위에 오르면 안 된다.
+    sorters = {
+        "devRating,desc": lambda r: _rating_key(r["devRating"]),
+        "explanatoryRating,desc": lambda r: _rating_key(r["explanatoryRating"]),
+        "price,asc": lambda r: (_lowest_price(r),),
+        "contract,desc": lambda r: (-r["contractCount"],),
+    }
+    rows = sorted(rows, key=sorters[sort])
 
     total = len(rows)
     start = (page - 1) * size
@@ -2937,6 +3393,13 @@ def find_developers(
         "개발자 한 명의 소개, 경력, 작업물, 평점, 가격표를 한 번에 내려준다. 로그인하지 "
         "않아도 볼 수 있는 공개 프로필이다.\n\n"
         "경력은 `isVerified`로 갈린다. 참이면 '확인됨', 거짓이면 '확인 중'으로 보여준다.\n\n"
+        "**무료 상담은 이 응답에 담기지 않는다.** 가격표에 없는 고정 정책이라 화면이 "
+        "'상담 — 무료' 줄을 스스로 그린다. `priceCatalog`에서 상담 줄을 찾지 않는다.\n\n"
+        "**리뷰 총 건수는 `devRating.reviewCount`다.** 리뷰 하나가 두 점수를 다 받으므로 "
+        "설명력 쪽과 같은 값이고, 화면의 '리뷰 N개 모두 보기'가 이 수를 쓴다.\n\n"
+        "**함께 쓰는 API** 리뷰 칸은 `GET /api/developers/{developerId}/reviews`가 채우고, "
+        "아래의 '무료로 물어보기'는 `POST /api/projects/{projectId}/consultation-requests`로 "
+        "간다.\n\n"
         "- **200**: 개발자가 있을 때\n"
         "- **404 / DEVELOPER_NOT_FOUND**: `developerId`가 404일 때. 없거나 탈퇴한 개발자다\n"
         "- **500 / INTERNAL_ERROR**: 프로필을 읽지 못했을 때"
@@ -2953,7 +3416,7 @@ def get_developer(
 ) -> DeveloperDetailResponse | JSONResponse:
     if developerId == NOT_FOUND_DEVELOPER_ID:
         return _error_response(404, DEVELOPER_NOT_FOUND)
-    return DeveloperDetailResponse(**DEVELOPER_DETAIL)
+    return DeveloperDetailResponse(**{**DEVELOPER_DETAIL, "developerId": developerId})
 
 
 @router.get(
@@ -2973,9 +3436,17 @@ def get_developer(
     description=(
         "**화면 — `3_의뢰인_개발자프로필` › 리뷰 · 모두 보기**\n\n"
         "이 개발자가 계약을 마친 뒤 받은 리뷰를 최신순으로 내려준다. 프로필 화면은 앞의 "
-        "몇 건만 보여주고 '모두 보기'에서 페이지를 넘긴다.\n\n"
+        "몇 건만 보여주고 '모두 보기'에서 페이지를 넘긴다. 프로필과 마찬가지로 "
+        "로그인하지 않아도 볼 수 있다.\n\n"
+        "**의뢰인 이름은 서버가 가려서 내보낸다.** 화면이 따로 가릴 것은 없고, 개발자가 "
+        "자기 프로필에서 볼 때도 같은 값이다. 어느 프로젝트의 리뷰인지는 의뢰인의 사업 "
+        "정보라 담지 않으며, 계약 종류만 `contractType`으로 알려준다.\n\n"
+        "`totalElements`는 개발자 프로필의 `devRating.reviewCount`와 언제나 같다. 리뷰 "
+        "하나가 두 점수를 다 받으므로 두 수가 갈릴 일이 없다.\n\n"
+        "**`page`는 1부터 센다.** 0이 첫 장이 아니다.\n\n"
         "- **200**: 개발자가 있을 때. 받은 리뷰가 없으면 `content`가 빈 배열이다\n"
         "- **404 / DEVELOPER_NOT_FOUND**: `developerId`가 404일 때\n"
+        "- **422 / INVALID_REQUEST**: `page`나 `size`가 범위를 벗어날 때\n"
         "- **500 / INTERNAL_ERROR**: 목록을 만들지 못했을 때"
     ),
 )
@@ -3022,12 +3493,27 @@ def get_developer_reviews(
         "**화면 — `2_요구사항선택` › 상담 요청하기. 결과는 `3_의뢰인_개발자추천`에 나온다**\n\n"
         "고른 요구사항을 근거로 맞는 개발자를 찾아 추천 회차를 만든다. 이 회차의 결과가 "
         "추천 화면에 순위대로 나온다.\n\n"
+        "**직접 찾아 고른 개발자는 이 API를 거치지 않는다.** 그 길은 프로젝트 상담 요청 "
+        "API가 맡고, 회차 없이 방이 바로 열린다.\n\n"
         "같은 프로젝트에서 다시 찾으면 회차 번호가 1 오른다. 이전 회차는 지우지 않고 "
-        "남겨서 어떤 추천이 계약으로 이어졌는지 볼 수 있다.\n\n"
+        "남기지만, 지난 회차를 늘어놓는 화면도 API도 없다. 어떤 추천이 계약으로 "
+        "이어졌는지는 서버가 집계에 쓴다.\n\n"
+        "**아직 열어보지 않은 회차가 있으면 새로 만들지 않는다.** 직전 회차를 한 번도 "
+        "열지 않았다면 그 회차를 그대로 돌려준다. 새로고침하거나 버튼을 두 번 눌러 빈 "
+        "회차가 쌓이는 것을 막기 위해서다. 한 번이라도 열어본 뒤에 다시 부르면 그때는 "
+        "새 회차가 생긴다.\n\n"
+        "**추천을 무엇 때문에 만들었는지는 서버가 정한다.** 이 프로젝트의 첫 회차면 상담 "
+        "요청, 이미 회차가 있으면 재매칭으로 기록하고 직전 회차를 부모로 잇는다. 요청에 "
+        "담아 보낼 것은 없다.\n\n"
         "- **201**: 추천을 만들었을 때. 맞는 개발자가 없으면 `items`가 빈 배열이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / PROJECT_NOT_FOUND**: `projectId`가 404일 때. 없거나 남의 프로젝트다\n"
-        "- **500 / INTERNAL_ERROR**: 추천을 만들지 못했을 때"
+        "- **422 / INVALID_REQUEST**: `diagnosisId`가 없거나, `issueIds`가 비었거나, "
+        "**이 진단에서 나오지 않은 요구사항이 섞였을 때.** 고르지 않은 것이 요청서에 "
+        "실리면 계약까지 따라가므로 조용히 버리지 않고 막는다\n"
+        "- **500 / INTERNAL_ERROR**: 추천을 만들지 못했을 때\n\n"
+        "목에서는 `issueIds`에 이 진단의 요구사항(311·312·313·314)이 아닌 값이 하나라도 "
+        "있으면 422를 준다."
     ),
 )
 def create_recommendation(
@@ -3042,6 +3528,22 @@ def create_recommendation(
 ) -> RecommendationBatchResponse | JSONResponse:
     if projectId == NOT_FOUND_PROJECT_ID:
         return _error_response(404, PROJECT_NOT_FOUND)
+
+    known = {issue["issueId"] for issue in ISSUES}
+    unknown = [issue_id for issue_id in request.issueIds if issue_id not in known]
+    if unknown:
+        body = ValidationErrorResponse(
+            code=INVALID_REQUEST[0],
+            message=INVALID_REQUEST[1],
+            errors=[
+                FieldError(
+                    field="issueIds",
+                    reason="이 진단에서 나온 요구사항만 보낼 수 있습니다.",
+                )
+            ],
+        )
+        return JSONResponse(status_code=422, content=jsonable_encoder(body))
+
     return RecommendationBatchResponse(**RECOMMENDATION_BATCH)
 
 
@@ -3069,9 +3571,16 @@ def create_recommendation(
     summary="추천 결과 조회",
     description=(
         "**화면 — `3_의뢰인_개발자추천` › 추천 개발자 목록**\n\n"
-        "추천 회차의 결과를 순위대로 내려준다. 개발자마다 상담을 요청했는지, 요청했다면 "
-        "수락했는지가 `status`에 담긴다.\n\n"
-        "- **200**: 추천 회차가 있고 내 것일 때\n"
+        "추천 회차의 결과를 순위대로 내려준다. 개발자마다 상담을 요청했는지는 `roomId`로 "
+        "안다. 비어 있으면 아직 요청하지 않은 개발자다.\n\n"
+        "**이 조회가 회차를 '열어본 것'으로 표시한다.** 처음 불릴 때 열람 시각을 남기며, "
+        "그 표시가 있어야 추천 받기를 다시 불렀을 때 새 회차가 만들어진다. 표시가 없는 "
+        "동안에는 추천 받기가 같은 회차를 계속 돌려주므로, **이 API를 부르지 않으면 "
+        "두 번째 회차가 영영 생기지 않는다.**\n\n"
+        "조회인데 기록을 남기지만 몇 번을 불러도 결과는 같다. 열람 시각은 처음 한 번만 "
+        "찍히고 그 뒤로는 아무것도 바뀌지 않는다.\n\n"
+        "- **200**: 추천 회차가 있고 내 것일 때. 맞는 개발자가 없던 회차면 `items`가 "
+        "빈 배열이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / RECOMMENDATION_NOT_FOUND**: `batchId`가 404일 때. 없거나 남의 추천이다\n"
         "- **500 / INTERNAL_ERROR**: 결과를 읽지 못했을 때"
@@ -3110,18 +3619,6 @@ def get_recommendation(
                 }
             },
         },
-        409: {
-            "model": ErrorResponse,
-            "description": "이미 상담을 요청함",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "code": "CONSULTATION_ALREADY_REQUESTED",
-                        "message": "이미 상담을 요청한 개발자입니다.",
-                    }
-                }
-            },
-        },
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -3130,23 +3627,29 @@ def get_recommendation(
         "**화면 — `3_의뢰인_개발자추천` › N명에게 상담 요청**\n\n"
         "고른 개발자들에게 같은 요청서를 보낸다. 여러 명에게 한 번에 보낼 수 있고, "
         "개발자마다 무료 상담방이 하나씩 열린다. 상담은 무료다.\n\n"
-        "같은 요청을 다시 보내도 방이 더 생기지 않는다.\n\n"
-        "- **201**: 요청을 보냈을 때. 열린 방 목록이 내려온다\n"
+        "**개발자의 수락을 기다리지 않는다.** 요청하면 그 자리에서 방이 열리고, 개발자는 "
+        "사이드바의 '받은 의뢰'에서 그 방을 본다.\n\n"
+        "열린 방은 보낸 순서가 아니라 `recommendationItemId`로 맞춘다. 그 값이 이 요청에 "
+        "담아 보낸 추천 항목과 같으므로, 화면은 어느 개발자 카드에 어느 방을 붙일지 안다.\n\n"
+        "**몇 번을 보내도 방은 개발자마다 하나다.** 이미 방이 있는 개발자는 그 방을 그대로 "
+        "응답에 담고 새로 만들지 않는다. 같은 개발자를 두 번 담아 보내도, 새로고침해도, "
+        "두 화면에서 동시에 눌러도 결과가 같다. 이미 요청했다는 이유로 막지 않으므로 "
+        "**여러 명 중 한 명이 걸려 나머지가 못 나가는 일도 없다.**\n\n"
+        "- **201**: 요청을 보냈을 때. 이번에 연 방과 이미 있던 방이 함께 내려온다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / RECOMMENDATION_NOT_FOUND**: `batchId`가 404일 때\n"
-        "- **409 / CONSULTATION_ALREADY_REQUESTED**: `batchId`가 409일 때. 이미 상담을 "
-        "요청한 개발자가 목록에 들어 있다\n"
-        "- **422 / INVALID_REQUEST**: `recommendationItemIds`가 비었을 때\n"
-        "- **500 / INTERNAL_ERROR**: 요청을 보내지 못했을 때"
+        "- **422 / INVALID_REQUEST**: `recommendationItemIds`가 비었거나, **이 회차의 "
+        "추천 항목이 아닌 값이 섞였을 때.** 고르지 않은 개발자에게 요청이 나가면 안 되므로 "
+        "조용히 버리지 않고 막는다\n"
+        "- **500 / INTERNAL_ERROR**: 요청을 보내지 못했을 때\n\n"
+        "목에서는 이 회차의 추천 항목(501·502)이 아닌 값을 보내면 422를 준다."
     ),
 )
 def request_consultations(
     batchId: Annotated[
         int,
         Path(
-            description=(
-                "추천 회차 식별자. 404는 없음, 409는 중복 요청 재현용 예약값이다."
-            ),
+            description="추천 회차 식별자. 404는 없음 재현용 예약값이다.",
             examples=[61],
         ),
     ],
@@ -3154,20 +3657,98 @@ def request_consultations(
 ) -> RoomListResponse | JSONResponse:
     if batchId == NOT_FOUND_BATCH_ID:
         return _error_response(404, RECOMMENDATION_NOT_FOUND)
-    if batchId == ALREADY_REQUESTED_BATCH_ID:
-        return _error_response(409, CONSULTATION_ALREADY_REQUESTED)
-    if not request.recommendationItemIds:
-        body = ValidationErrorResponse(
-            code=INVALID_REQUEST[0],
-            message=INVALID_REQUEST[1],
-            errors=[
-                FieldError(
-                    field="recommendationItemIds", reason="한 명 이상 골라야 합니다."
-                )
-            ],
+
+    items = {
+        item["recommendationItemId"]: item for item in RECOMMENDATION_BATCH["items"]
+    }
+    if any(item_id not in items for item_id in request.recommendationItemIds):
+        return _field_error(
+            "recommendationItemIds", "이 회차의 추천 항목만 보낼 수 있습니다."
         )
-        return JSONResponse(status_code=422, content=jsonable_encoder(body))
-    return RoomListResponse(content=[RoomSummaryResponse(**ROOMS[0])])
+
+    # 같은 항목을 거듭 보내도 방은 하나다. 보낸 순서는 지킨다.
+    rooms = [
+        _item_room(item_id) for item_id in dict.fromkeys(request.recommendationItemIds)
+    ]
+    return RoomListResponse(content=[RoomSummaryResponse(**room) for room in rooms])
+
+
+@router.post(
+    "/projects/{projectId}/consultation-requests",
+    response_model=RoomListResponse,
+    status_code=201,
+    tags=[AREA3_TAG],
+    responses={
+        201: {"content": {"application/json": {"example": {"content": [DIRECT_ROOM]}}}},
+        404: {
+            "model": ErrorResponse,
+            "description": "프로젝트 없음",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": "PROJECT_NOT_FOUND",
+                        "message": "프로젝트를 찾을 수 없습니다.",
+                    }
+                }
+            },
+        },
+        **AREA1_UNAUTHORIZED,
+        **AREA1_ERRORS,
+    },
+    summary="직접 찾은 개발자에게 상담 요청 보내기",
+    description=(
+        "**화면 — `1_랜딩홈` › 추천 개발자 › 상담 시작하기 · "
+        "`3_의뢰인_개발자프로필` › 무료로 물어보기**\n\n"
+        "추천을 거치지 않고 직접 찾은 개발자에게 상담을 요청한다. 개발자마다 무료 "
+        "상담방이 하나씩 열린다. 상담은 무료다.\n\n"
+        "**부르려면 로그인과 프로젝트가 있어야 한다.** 두 진입점 모두 로그인 전에도 보이는 "
+        "화면이라, 둘 중 하나라도 없으면 화면이 로그인 → 사전점검으로 보낸 뒤 프로젝트가 "
+        "생긴 다음에 이 API를 부른다. 프로젝트는 진단을 시작할 때 만들어지며, 여럿이면 "
+        "어느 프로젝트의 상담인지 고르게 한다.\n\n"
+        "**프로젝트에 진단이 있으면 요청서가 함께 걸린다.** 개발자가 방에 들어오자마자 "
+        "무엇을 고치고 싶은지 볼 수 있게 하기 위해서다. 진단 전이라면 요청서 없이 방만 "
+        "열리고 방 상세의 `request`가 null이다.\n\n"
+        "**추천 회차를 만들지 않는다.** 그래서 이렇게 열린 방은 "
+        "`recommendationItemId`가 비어 있다. 추천 화면에서 고른 개발자는 이 API가 "
+        "아니라 추천 회차의 상담 요청 API로 보낸다.\n\n"
+        "**개발자의 수락을 기다리지 않는다.** 요청하면 그 자리에서 방이 열리고, "
+        "개발자는 사이드바의 '받은 의뢰'에서 그 방을 본다.\n\n"
+        "**몇 번을 보내도 방은 개발자마다 하나다.** 이미 방이 있는 개발자는 그 방을 그대로 "
+        "응답에 담고 새로 만들지 않는다. 같은 개발자를 두 번 담아 보내도, 새로고침해도 "
+        "결과가 같다.\n\n"
+        "- **201**: 요청을 보냈을 때. 이번에 연 방과 이미 있던 방이 함께 내려온다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **404 / PROJECT_NOT_FOUND**: `projectId`가 404일 때. 없거나 남의 프로젝트다\n"
+        "- **422 / INVALID_REQUEST**: `developerIds`가 비었거나, 없는 개발자가 섞였거나, "
+        "**자기 자신에게 요청했을 때.** 개발자이면서 의뢰인인 사용자가 자기 프로필에서 "
+        "누를 수 있어 서버가 막는다\n"
+        "- **500 / INTERNAL_ERROR**: 요청을 보내지 못했을 때\n\n"
+        "목에서는 등록된 개발자(3·5·7)가 아닌 값을 보내면 422를 준다. 자기 자신인지는 "
+        "토큰을 봐야 알 수 있어 목이 가려내지 않는다."
+    ),
+)
+def request_direct_consultations(
+    projectId: Annotated[
+        int,
+        Path(
+            description="프로젝트 식별자. 404는 없음 재현용 예약값이다.",
+            examples=[8],
+        ),
+    ],
+    request: CreateDirectConsultationRequest,
+) -> RoomListResponse | JSONResponse:
+    if projectId == NOT_FOUND_PROJECT_ID:
+        return _error_response(404, PROJECT_NOT_FOUND)
+
+    developers = {row["developerId"]: row for row in DEVELOPERS}
+    if any(dev_id not in developers for dev_id in request.developerIds):
+        return _field_error("developerIds", "등록된 개발자만 보낼 수 있습니다.")
+
+    # 같은 개발자를 거듭 보내도 방은 하나다. 보낸 순서는 지킨다.
+    rooms = [
+        _developer_room(dev_id) for dev_id in dict.fromkeys(request.developerIds)
+    ]
+    return RoomListResponse(content=[RoomSummaryResponse(**room) for room in rooms])
 
 
 # --------------------------------------------------------------------------- #
@@ -3187,11 +3768,23 @@ def request_consultations(
     summary="방 목록 조회",
     description=(
         "**화면 — 영역 3~5의 모든 방 화면 › 왼쪽 사이드바의 보낸 의뢰 · 받은 의뢰**\n\n"
-        "내가 들어가 있는 방을 프로젝트별로 묶어 내려준다. 의뢰인이 보면 '보낸 의뢰', "
-        "개발자가 보면 '받은 의뢰'가 된다. 두 갈래는 `clientId`·`developerId`를 내 "
-        "사용자 식별자와 견주어 가른다.\n\n"
+        "내가 들어가 있는 방을 내려준다. 의뢰인이 보면 '보낸 의뢰', 개발자가 보면 "
+        "'받은 의뢰'가 된다.\n\n"
+        "**가르는 값은 `developerId` 하나다.** 방의 `developerId`가 내 개발자 식별자와 "
+        "같으면 받은 의뢰, 아니면 보낸 의뢰다. 이 목록에는 내가 들어가 있는 방만 오고 "
+        "한 방에서 나는 의뢰인이거나 개발자 둘 중 하나이므로 비교는 한 번으로 끝난다. "
+        "의뢰인 식별자를 따로 내려주지 않는 것도 그래서다.\n\n"
+        "**한 사람이 양쪽일 수 있다.** 개발자이면서 의뢰인인 사용자는 보낸 의뢰와 받은 "
+        "의뢰에 방이 모두 있다. 역할별로 따로 부르는 API는 두지 않으며, 이 API가 둘 다 "
+        "내려주고 화면이 가른다.\n\n"
+        "**마지막으로 움직인 방이 먼저 온다.** 메시지가 오거나 계약이 바뀌면 그 방이 "
+        "위로 올라온다. 프로젝트로 묶어 보여주는 화면은 그 안에서 가장 최근에 움직인 "
+        "방을 따라 그룹 순서를 정하면 된다.\n\n"
+        "**닫힌 방도 내려간다.** 갈래가 정해져 닫힌 상담방은 나눈 이야기를 계속 볼 수 "
+        "있어야 하므로 목록에 남는다. 거르려면 `status`를 준다.\n\n"
         "**마지막 메시지와 미리보기는 이 응답에 없다.** 메시지는 채팅 쪽이 다루므로 "
-        "`chatRefId`로 그쪽에서 가져온다.\n\n"
+        "`chatRefId`로 그쪽에서 가져온다. 순서는 이 응답이 이미 정해 주므로 채팅 쪽 "
+        "데이터를 기다리지 않아도 된다.\n\n"
         "- **200**: 항상. 들어가 있는 방이 없으면 `content`가 빈 배열이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **422 / INVALID_REQUEST**: `type`이나 `status`가 허용된 값이 아닐 때\n"
@@ -3202,7 +3795,10 @@ def get_rooms(
     type: Annotated[
         Literal["INQUIRY", "CONSULTING", "DEVELOPMENT"] | None,
         Query(
-            description="방 용도로 거른다. 비우면 전부 내려간다.",
+            description=(
+                "방 용도로 거른다. 비우면 전부 내려간다. 사이드바는 모든 방을 한 번에 "
+                "보여주므로 거르지 않는다."
+            ),
             examples=["INQUIRY"],
         ),
     ] = None,
@@ -3219,6 +3815,9 @@ def get_rooms(
         rows = [r for r in rows if r["type"] == type]
     if status is not None:
         rows = [r for r in rows if r["status"] == status]
+
+    # 실서버는 마지막으로 움직인 시각으로 줄 세운다. 목에는 그 값이 없어 개설 시각을 쓴다.
+    rows = sorted(rows, key=lambda r: r["openedAt"], reverse=True)
     return RoomListResponse(content=[RoomSummaryResponse(**r) for r in rows])
 
 
@@ -3256,14 +3855,18 @@ def get_room(
     roomId: Annotated[
         int,
         Path(
-            description="방 식별자. 404는 없음 재현용 예약값이다.",
+            description=(
+                "방 식별자. 방 목록의 91·92·93과 상담 요청으로 열리는 94~97이 있다. "
+                "그 밖의 값은 모두 없는 방이며 404는 없음 재현용 예약값이다."
+            ),
             examples=[91],
         ),
     ],
 ) -> RoomDetailResponse | JSONResponse:
-    if roomId == NOT_FOUND_ROOM_ID:
+    room = _room(roomId)
+    if room is None:
         return _error_response(404, ROOM_NOT_FOUND)
-    return RoomDetailResponse(**ROOM_DETAIL)
+    return RoomDetailResponse(**_room_detail(room))
 
 
 @router.post(
@@ -3275,9 +3878,19 @@ def get_room(
         201: {
             "content": {
                 "application/json": {
-                    "example": {**ROOM_DETAIL, "status": "CLOSED", "convertedRoomId": 92}
+                    "example": {
+                        **ROOM_DETAIL,
+                        "status": "CLOSED",
+                        "convertedRoomId": CONVERTED_CONSULTING_ROOM_ID,
+                        "convertedRoomType": "CONSULTING",
+                    }
                 }
             }
+        },
+        403: {
+            "model": ErrorResponse,
+            "description": "이 방의 의뢰인이 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
         },
         404: {
             "model": ErrorResponse,
@@ -3304,10 +3917,15 @@ def get_room(
         "**화면 — `3_의뢰인_상담방_대화` › 컨설팅 계약 진행 · 개발 계약 진행**\n\n"
         "무료 상담을 마치고 컨설팅과 개발 중 하나로 이어간다. 상담방은 닫히고 고른 갈래의 "
         "방이 새로 열린다. 닫힌 상담방도 지우지 않고 남겨서 나눈 이야기를 계속 볼 수 있다.\n\n"
-        "응답의 `convertedRoomId`가 새로 열린 방이다. 화면은 '컨설팅 방으로' 또는 "
-        "'개발 방으로' 버튼으로 그 방에 보낸다. 개발자 화면에는 '개발 계약서 작성'이 뜬다.\n\n"
+        "응답의 `convertedRoomId`가 새로 열린 방이고 `convertedRoomType`이 그 방의 "
+        "용도다. 화면은 둘로 '컨설팅 방으로' 또는 '개발 방으로' 버튼을 그린다. 개발자 "
+        "화면에는 대신 '개발 계약서 작성'이 뜬다.\n\n"
+        "**갈래는 의뢰인이 정한다.** 개발자는 이 API를 부를 수 없다 — 상담을 어디로 "
+        "이어갈지는 돈을 내는 쪽이 고르기 때문이다. 개발자는 그 방의 당사자라 방이 있다는 "
+        "것을 이미 아는 상태이므로, 없는 척 감추지 않고 권한이 없다고 답한다.\n\n"
         "- **201**: 갈래를 정해 새 방이 열렸을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **403 / FORBIDDEN**: 이 방의 의뢰인이 아닐 때. 갈래는 의뢰인이 정한다\n"
         "- **404 / ROOM_NOT_FOUND**: `roomId`가 404일 때\n"
         "- **409 / ROOM_ALREADY_CONVERTED**: `roomId`가 409일 때. 이미 갈래가 정해졌다\n"
         "- **422 / INVALID_REQUEST**: `targetType`이 CONSULTING도 DEVELOPMENT도 아닐 때\n"
@@ -3326,12 +3944,23 @@ def convert_room(
     ],
     request: ConvertRoomRequest,
 ) -> RoomDetailResponse | JSONResponse:
-    if roomId == NOT_FOUND_ROOM_ID:
-        return _error_response(404, ROOM_NOT_FOUND)
     if roomId == CONVERTED_ROOM_ID:
         return _error_response(409, ROOM_ALREADY_CONVERTED)
+    room = _room(roomId)
+    if room is None:
+        return _error_response(404, ROOM_NOT_FOUND)
+    converted_room_id = (
+        CONVERTED_CONSULTING_ROOM_ID
+        if request.targetType == "CONSULTING"
+        else CONVERTED_DEVELOPMENT_ROOM_ID
+    )
     return RoomDetailResponse(
-        **{**ROOM_DETAIL, "status": "CLOSED", "convertedRoomId": 92}
+        **{
+            **_room_detail(room),
+            "status": "CLOSED",
+            "convertedRoomId": converted_room_id,
+            "convertedRoomType": request.targetType,
+        }
     )
 
 
@@ -4644,11 +5273,16 @@ class ConfirmMilestoneRequest(BaseModel):
 class WriteReviewRequest(BaseModel):
     """계약을 마친 뒤 남기는 리뷰."""
 
-    devScore: int = Field(description="개발력 점수. 1에서 5 사이다.", examples=[5])
-    commScore: int = Field(description="설명력 점수. 1에서 5 사이다.", examples=[5])
+    devScore: int = Field(
+        ge=1, le=5, description="개발력 점수. 1에서 5 사이다.", examples=[5]
+    )
+    commScore: int = Field(
+        ge=1, le=5, description="설명력 점수. 1에서 5 사이다.", examples=[5]
+    )
     content: str | None = Field(
         default=None,
-        description="리뷰 내용. 점수만 주고 넘어가도 된다.",
+        max_length=1000,
+        description="리뷰 내용. 1000자까지 받는다. 점수만 주고 넘어가도 된다.",
         examples=["말이 잘 통했습니다."],
     )
 
@@ -5330,7 +5964,8 @@ def upload_deliverable(
         "- **403 / FORBIDDEN**: 이 계약의 의뢰인이 아닐 때\n"
         "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때\n"
         "- **409 / REVIEW_ALREADY_WRITTEN**: `contractId`가 409일 때\n"
-        "- **422 / INVALID_REQUEST**: 점수가 1에서 5 사이가 아닐 때\n"
+        "- **422 / INVALID_REQUEST**: 점수가 1에서 5 사이가 아니거나 `content`가 "
+        "1000자를 넘을 때\n"
         "- **500 / INTERNAL_ERROR**: 남기지 못했을 때"
     ),
 )
@@ -5958,24 +6593,46 @@ def get_income() -> IncomeResponse:
 #       8_개발자_내프로필 · 8_개발자_내일정
 #
 # 8_약관과 8_아바타메뉴에는 API 가 없다. 약관 문서와 개정일, 사업자 정보는 서버가
-# 들고 있지 않고 화면이 가진 정적 문서이며(ERD 에 약관 테이블이 없다), 아바타 메뉴는
-# 이미 받은 값으로 그리는 메뉴다.
+# 들고 있지 않고 화면이 가진 정적 문서이며, 아바타 메뉴는 이미 받은 값으로 그리는
+# 메뉴다. 동의 여부는 settings 에 있지만 그것을 읽고 바꾸는 API 는 두지 않는다 —
+# 필수 약관은 로그인으로 처리되고, 마케팅 수신과 판매자 약관은 켜고 끄는 화면이
+# 없다.
 #
 # 내 프로필은 줄마다 저장하지 않는다. 화면의 저장 버튼 하나가 소개·기술·경력·작업물·
 # 가격표를 통째로 보내고, 보낸 내용으로 맞춘다. 파일만 먼저 올려 식별자를 받는다.
+#
+# 파일은 이 서버를 거치지 않는다. uploads 로 보낼 주소를 받고, 화면이 그 주소로 직접
+# 보낸 뒤 complete 로 확인받아 fileId 를 받는다. 올리기와 붙이기는 별개이며, 프로필
+# 사진은 전용 API 로 즉시 붙고 증빙·작업물은 프로필 저장 요청에 실려 붙는다.
 #
 # 회원 탈퇴는 지우는 것이 아니다. 사용자 정보는 그대로 두고 삭제 여부 값만 참으로
 # 바꾼 뒤 삭제 시각을 적는다. 계약·정산 이력과 메시지, 리뷰가 상대 화면에도 있는
 # 기록이라 남겨야 하기 때문이다. 그래서 DELETE 가 아니라 POST 를 쓴다.
 #
-# 돈을 내는 수단과 받는 계좌는 다르다. 내는 쪽은 payment_methods 로 카드와
-# 실시간 계좌이체가 있고, 받는 쪽은 accounts 로 사람마다 한 개다. 의뢰인은 그
-# 계좌로 환불을 받고 개발자는 대금을 받는다.
+# 돈을 내는 수단과 받는 계좌는 다르다. 이 영역이 다루는 것은 받는 쪽인 accounts
+# 하나뿐이고 사람마다 한 개다. 의뢰인은 그 계좌로 환불을 받고 개발자는 대금을
+# 받는다. 내는 쪽은 여기서 다루지 않는다 — 예치할 때 영역 5 에서 고른다.
 #
 # 계좌는 1원 인증으로만 등록한다. 계좌를 넣는 요청과 입금자명 뒤 네 자리를 내는
 # 요청이 나뉘며, 확인이 끝나는 순간에만 accounts 에 계좌가 남는다. 1원 이체와
 # 확인 호출은 Escrow 서버가 금융망에 하고, Komit 은 확인 건의 식별자와 가린
 # 계좌번호만 들고 있다. 계좌번호 원문은 어느 쪽에도 남지 않는다.
+#
+# Escrow 서버는 SSAFY 금융망과 Komit 사이의 프록시로 동작한다. 클라이언트에서
+# Komit 까지는 아래 API 들의 간소화된 형식을 쓰고, Komit 에서 Escrow 까지는 SSAFY
+# 금융망 형식(Header/REC)을 쓴다. 클라이언트는 SSAFY 형식을 알 필요가 없다.
+#
+# 이 영역은 전부 내 것을 다루므로 인가를 반드시 검증한다. 액세스 토큰을 검증해
+# sub 를 꺼내고, 다루려는 자원의 주인이 그 sub 와 같은지 확인한 뒤에 처리한다.
+# 대상을 요청에 담지 않는 API 는 sub 가 곧 대상이고, 경로나 본문에 식별자가 있는
+# API 는 그 자원의 주인이 sub 와 같은지 확인해 다르면 403 FORBIDDEN 으로 막는다.
+#
+# 그래서 대상을 담지 않는 API 에는 403 FORBIDDEN 을 두지 않는다. 남의 것을 가리킬
+# 자리가 없어 나올 수가 없기 때문이다. 토큰을 고쳐 남의 sub 를 넣는 경우도 서명이
+# 깨져 401 에서 끝난다.
+#
+# 403 은 두 뜻으로 쓴다. FORBIDDEN 은 남의 자원, NO_DEVELOPER_PROFILE 은 개발자로
+# 전환하지 않은 것이다. 화면 분기는 상태코드가 아니라 code 로 가른다.
 #
 # 함께 쓰는 API (다른 영역에 있다):
 #   GET /api/users/me                 전 영역 헤더
@@ -5986,9 +6643,18 @@ def get_income() -> IncomeResponse:
 class RequestAccountVerificationRequest(BaseModel):
     """1원 보내기 요청."""
 
-    bankCodeId: int = Field(description="은행 코드 식별자.", examples=[4])
+    bankCodeId: int = Field(
+        description=(
+            "은행 코드 식별자. 금융망 1원 송금에는 쓰이지 않고, 계좌번호만으로는 은행을 "
+            "알 수 없어 화면 표시와 저장에 쓴다."
+        ),
+        examples=[4],
+    )
     accountNumber: str = Field(
-        description="계좌번호. 하이픈 없는 숫자만 받는다. 원문은 보관하지 않는다.",
+        description=(
+            "계좌번호. 하이픈 없는 숫자만 받는다. 확인이 끝날 때까지만 두고 그 뒤에는 "
+            "가린 번호만 남는다."
+        ),
         examples=["11012345678842"],
     )
     accountHolder: str = Field(description="예금주.", examples=["이준"])
@@ -5998,8 +6664,12 @@ class AccountVerificationResponse(BaseModel):
     """1원을 보낸 뒤의 확인 상태."""
 
     verificationId: int = Field(
-        description="이번 확인 건의 식별자. 4자리를 낼 때 그대로 쓴다.",
-        examples=[9012],
+        description=(
+            "이번 확인 건의 식별자. 사용자가 입력하는 값이 아니며 화면에도 보이지 "
+            "않는다. 확인 API의 경로에 그대로 실어 어느 확인 건인지 가리키는 데만 쓴다. "
+            "사용자가 입력하는 것은 입금자명 뒤 네 자리인 `authCode` 하나뿐이다."
+        ),
+        examples=[77301],
     )
     bankName: str = Field(description="은행 이름.", examples=["국민은행"])
     maskedNumber: str = Field(
@@ -6023,9 +6693,19 @@ class ConfirmAccountVerificationRequest(BaseModel):
 
 AREA8_TAG = "8 계정 · 공통"
 
+# 영역 8의 모든 엔드포인트가 함께 쓰는 인가 실패 응답.
+# 토큰의 주인 것이 아닌 자원을 다루려 했을 때다.
+AREA8_FORBIDDEN: dict = {
+    403: {
+        "model": ErrorResponse,
+        "description": "토큰의 주인 것이 아님",
+        "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+    },
+}
+
 ACCOUNT_REJECTED = (
     "ACCOUNT_REJECTED",
-    "은행에서 받지 않은 계좌입니다. 은행과 계좌번호를 다시 확인해 주세요.",
+    "은행과 계좌번호를 다시 확인해 주세요.",
 )
 AUTH_CODE_MISMATCH = (
     "AUTH_CODE_MISMATCH",
@@ -6076,7 +6756,7 @@ ESCROW_UNAVAILABLE_EXAMPLE = {
 }
 
 VERIFICATION_EXAMPLE = {
-    "verificationId": 9012,
+    "verificationId": 77301,
     "bankName": "국민은행",
     "maskedNumber": "···· 8842",
     "accountHolder": "이준",
@@ -6119,6 +6799,10 @@ VERIFICATION_EXAMPLE = {
         "요청을 다시 보내 새 확인 건을 연다. 화면의 **다시 보내기**가 이 경로다.\n\n"
         "이미 등록한 계좌가 있어도 여기서 막지 않는다. 확인이 끝나는 순간 새 계좌가 "
         "이전 계좌를 대신한다.\n\n"
+        "**확인 건은 토큰의 주인에게 달린다.** 액세스 토큰을 검증해 `sub`를 꺼내고 그 "
+        "사용자의 확인 건으로 연다. 누구의 계좌인지는 요청에 담지 않는다.\n\n"
+        "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
+        "없고, 토큰을 고쳐 남의 `sub`를 넣으면 서명이 깨져 401이 된다.\n\n"
         "- **201**: 1원을 보냈고 확인 건이 열렸을 때\n"
         "- **400 / ACCOUNT_REJECTED**: 은행이 계좌를 받지 않았을 때. 계좌번호나 "
         "은행이 틀렸거나 거래할 수 없는 계좌다\n"
@@ -6138,7 +6822,7 @@ def request_account_verification(
         return _error_response(400, ACCOUNT_REJECTED)
 
     return AccountVerificationResponse(
-        verificationId=9012,
+        verificationId=77301,
         bankName="국민은행",
         maskedNumber="···· " + request.accountNumber[-4:],
         accountHolder=request.accountHolder,
@@ -6161,6 +6845,7 @@ def request_account_verification(
             "description": "네 자리가 맞지 않거나 확인 건을 더 쓸 수 없음",
             "content": {"application/json": {"example": AUTH_CODE_MISMATCH_EXAMPLE}},
         },
+        **AREA8_FORBIDDEN,
         404: {
             "model": ErrorResponse,
             "description": "확인 건을 찾지 못함",
@@ -6177,6 +6862,16 @@ def request_account_verification(
         "입금자명 뒤 네 자리를 내면 확인 건이 끝나고 그 계좌가 등록된다. 등록한 계좌가 "
         "이미 있으면 이 시점에 대체된다.\n\n"
         "계좌번호는 암호화해 보관하고 응답에는 언제나 가려서 내보낸다.\n\n"
+        "**지금 단계에서는 네 자리를 실제로 검사하지 않는다.** 은행 앱을 쓸 수 없어 "
+        "입금자명에 찍힌 인증코드를 읽어올 방법이 없기 때문이다. 클라이언트가 어떤 "
+        "값을 보내든, 에스크로 서버가 금융망에 맞는 값을 대신 건네 확인을 끝낸다. "
+        "따라서 이 단계에서 400 `AUTH_CODE_MISMATCH`는 실제로 나오지 않는다.\n\n"
+        "은행 앱을 쓸 수 있게 되면 클라이언트가 보낸 값을 그대로 금융망에 넘기도록 "
+        "바꾼다. **요청·응답 형식은 그대로이므로 클라이언트는 고칠 것이 없다.**\n\n"
+        "**확인 건의 주인이 토큰의 주인인지 검증한다.** `verificationId`의 확인 건을 "
+        "연 사람이 `sub`와 같은지 확인한 뒤에 처리하고, 다르면 403으로 막는다. 남의 "
+        "확인 건을 끝내 그 계좌를 내 계좌로 등록하는 일이 없어야 한다. 등록되는 계좌는 "
+        "언제나 `sub`의 계좌다.\n\n"
         "- **200**: 네 자리가 맞아 계좌가 등록됐을 때\n"
         "- **400 / AUTH_CODE_MISMATCH**: 네 자리가 다를 때. 확인 건은 아직 살아 "
         "있어 다시 낼 수 있다\n"
@@ -6184,7 +6879,7 @@ def request_account_verification(
         "- **400 / VERIFICATION_CLOSED**: 여러 번 틀려 확인 건이 닫혔을 때. 계좌 "
         "입력부터 다시 한다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / FORBIDDEN**: 남의 확인 건일 때\n"
+        "- **403 / FORBIDDEN**: `sub`가 연 확인 건이 아닐 때\n"
         "- **404 / VERIFICATION_NOT_FOUND**: `verificationId`에 해당하는 확인 건이 "
         "없을 때\n"
         "- **422 / INVALID_REQUEST**: `authCode`가 네 자리 숫자가 아닐 때\n"
@@ -6221,12 +6916,16 @@ class MyAccountResponse(BaseModel):
         description="카카오 계정 이메일. 동의하지 않았으면 null이다.",
         examples=["mimi@kakao.com"],
     )
-    profileImageFileId: int | None = Field(
+    profileImageUrl: str | None = Field(
         description=(
-            "직접 올린 프로필 사진의 파일 식별자. null이면 카카오 사진을 쓰고 있는 "
-            "것이고, 화면은 '카카오 프로필 사진을 쓰고 있습니다'라고 적는다."
+            "화면에 그대로 거는 프로필 사진 주소. 저장된 값이 아니라 응답을 만들 때마다 "
+            "새로 만든다. 직접 올린 사진이 있으면 그 사진의 주소이고, 없으면 카카오 "
+            "사진 주소다. 둘 다 없으면 null이며 이때 화면은 이름 첫 글자를 동그라미에 "
+            "넣어 보여준다.\n\n"
+            "직접 올린 사진의 주소는 한동안만 쓸 수 있는 임시 주소다. 만료되면 다시 "
+            "받아야 하므로 저장해 두고 오래 쓰지 않는다."
         ),
-        examples=[None],
+        examples=["https://cdn.komit.example.com/profiles/512.png"],
     )
 
 
@@ -6236,64 +6935,49 @@ class MyProjectResponse(BaseModel):
     projectId: int = Field(description="프로젝트 식별자.", examples=[12])
     name: str = Field(description="프로젝트 이름.", examples=["수제 비누 가게"])
     latestDiagnosisId: int | None = Field(
-        description="가장 최근 진단서 식별자. 아직 진단이 없으면 null이다.",
+        description=(
+            "가장 최근 진단서 식별자. 진단 기록에서 골라내는 값이며 아직 진단이 없으면 "
+            "null이다."
+        ),
         examples=[31],
     )
-    diagnosisCount: int = Field(
-        description="이 프로젝트에서 만든 진단서 수. 화면의 '진단 v2'에서 v 뒤 숫자다.",
-        examples=[2],
-    )
     latestDiagnosedAt: str | None = Field(
-        description="가장 최근에 진단한 시각. 진단이 없으면 null이다.",
+        description=(
+            "가장 최근에 진단한 시각. 진단 기록에서 골라내는 값이며 진단이 없으면 "
+            "null이다."
+        ),
         examples=["2026-08-17T09:12:00+09:00"],
     )
-    roomCount: int = Field(description="이 프로젝트로 연 방 수.", examples=[4])
+    roomCount: int = Field(
+        description="이 프로젝트로 연 방 수. 세어서 만드는 값이다.",
+        examples=[4],
+    )
 
 
 class MyDeveloperResponse(BaseModel):
-    """마이페이지의 개발자 프로필 칸. 개발자로 전환한 사람에게만 내려간다."""
+    """마이페이지의 개발자 프로필 칸. 개발자 프로필이 있는 사람에게만 내려간다."""
 
-    developerId: int = Field(description="개발자 식별자.", examples=[3])
-    isPublished: bool = Field(
-        description="프로필이 공개 중인지. 거짓이면 개발자 찾기에 나오지 않는다.",
-        examples=[True],
+    developerId: int = Field(
+        description="개발자 식별자. 사용자 식별자가 아니다.",
+        examples=[3],
     )
-    reviewCount: int = Field(description="받은 리뷰 수.", examples=[12])
+    reviewCount: int = Field(
+        description="받은 리뷰 수. 세어서 만드는 값이다.",
+        examples=[12],
+    )
     upcomingSessionCount: int = Field(
-        description="아직 하지 않은 컨설팅 세션 수. 화면의 '잡힌 세션 N건'이다.",
-        examples=[1],
-    )
-
-
-class PaymentMethodResponse(BaseModel):
-    """예치금을 낼 때 쓰는 수단."""
-
-    paymentMethodId: int = Field(description="결제 수단 식별자.", examples=[9])
-    methodType: Literal["CARD", "REALTIME_TRANSFER"] = Field(
         description=(
-            "수단 종류. CARD는 등록해 둔 카드, REALTIME_TRANSFER는 결제할 때 은행 "
-            "앱에서 바로 내는 계좌이체다. 계좌이체는 미리 등록하지 않으므로 지난번에 "
-            "쓴 기록으로만 남는다."
+            "아직 하지 않은 컨설팅 세션 수. 화면의 '잡힌 세션 N건'이며 세어서 만드는 "
+            "값이다."
         ),
-        examples=["CARD"],
-    )
-    maskedNumber: str | None = Field(
-        description="가려진 번호. 전체 번호는 내려보내지 않는다.",
-        examples=["···· 4412"],
-    )
-    cardCompany: CodeResponse | None = Field(
-        description="카드사. 계좌이체면 null이다.",
-    )
-    isDefault: bool = Field(
-        description="기본 수단인지. 예치 화면이 이 수단을 먼저 고른다.",
-        examples=[True],
+        examples=[1],
     )
 
 
 class NotificationSettingResponse(BaseModel):
     """알림 수신 설정."""
 
-    isEnabled: bool = Field(
+    notificationEnabled: bool = Field(
         description=(
             "카카오 알림톡을 받을지. 거짓이면 방 소식과 확인 요청을 보내지 않는다."
         ),
@@ -6305,24 +6989,15 @@ class MyPageResponse(BaseModel):
     """마이페이지 한 판."""
 
     account: MyAccountResponse = Field(description="계정 칸.")
-    paymentMethods: list[PaymentMethodResponse] = Field(
-        description=(
-            "등록한 결제 수단. 하나도 없으면 빈 배열이고 화면은 등록 안내를 낸다."
-        ),
-    )
     settlementAccount: AccountResponse | None = Field(
         description="환불과 대금을 받는 계좌. 등록하지 않았으면 null이다.",
-    )
-    settlementAccountVerifiedAt: str | None = Field(
-        description="그 계좌를 1원 인증으로 확인한 시각. 계좌가 없으면 null이다.",
-        examples=["2026-09-02T14:05:00+09:00"],
     )
     projects: list[MyProjectResponse] = Field(
         description="내가 등록한 프로젝트. 없으면 빈 배열이다.",
     )
     developer: MyDeveloperResponse | None = Field(
         description=(
-            "개발자 프로필 칸. 개발자로 전환하지 않았으면 null이고 화면에서 빠진다."
+            "개발자 프로필 칸. 개발자 프로필이 없으면 null이고 화면에서 빠진다."
         ),
     )
     notificationSetting: NotificationSettingResponse = Field(description="알림 설정.")
@@ -6332,7 +7007,9 @@ class UpdateMyNameRequest(BaseModel):
     """이름 바꾸기 요청."""
 
     name: str = Field(
-        description="새로 쓸 표시 이름. 카카오 닉네임과 달라도 된다.",
+        min_length=1,
+        max_length=20,
+        description="새로 쓸 표시 이름. 20자까지 받는다. 카카오 닉네임과 달라도 된다.",
         examples=["김미미"],
     )
 
@@ -6340,29 +7017,9 @@ class UpdateMyNameRequest(BaseModel):
 class UpdateNotificationSettingRequest(BaseModel):
     """알림 켜고 끄기 요청."""
 
-    isEnabled: bool = Field(
+    notificationEnabled: bool = Field(
         description="참이면 알림톡을 받고, 거짓이면 받지 않는다.",
         examples=[False],
-    )
-
-
-class RegisterPaymentMethodRequest(BaseModel):
-    """카드 등록 요청.
-
-    카드 번호는 결제대행사 결제창에서 받으므로 Komit 서버로 넘어오지 않는다.
-    여기로는 결제창이 돌려준 키와 화면에 보여줄 값만 온다.
-    """
-
-    billingKey: str = Field(
-        min_length=1,
-        description="결제대행사가 돌려준 카드 키. 이 값으로 다음 결제를 건다.",
-        examples=["bk_2f91c0e4"],
-    )
-    cardCompanyCodeId: int = Field(description="카드사 코드 식별자.", examples=[21])
-    maskedNumber: str = Field(
-        min_length=1,
-        description="결제창이 돌려준 가려진 카드번호.",
-        examples=["···· 4412"],
     )
 
 
@@ -6375,24 +7032,36 @@ class NotificationResponse(BaseModel):
     """받은 알림 한 줄."""
 
     notificationId: int = Field(description="알림 식별자.", examples=[901])
-    type: str = Field(
-        description="알림 종류. 코드 분류 NOTIFICATION_TYPE의 코드 이름이다.",
+    type: Literal["공지", "착수알림", "승인알림", "예약알림톡"] = Field(
+        description=(
+            "알림 종류. 코드 분류 `NOTIFICATION_TYPE`의 코드값이다. 공지는 운영이 "
+            "모두에게 보내는 것이고 나머지는 내 계약에서 생긴 일이다."
+        ),
         examples=["승인알림"],
     )
-    content: str = Field(
-        description="알림 한 줄. 공지는 제목만 담고 본문은 body에 있다.",
+    title: str = Field(
+        description="알림 제목. 목록에서 굵게 보이는 줄이다.",
         examples=["이준 개발자가 3차를 끝냈습니다"],
     )
-    body: str | None = Field(
-        description="공지 본문. 공지가 아니면 null이다.",
-        examples=[None],
+    content: str = Field(
+        description=(
+            "제목 아래에 붙는 줄. 공지는 본문이 들어가고, 그 밖에는 어느 건인지 "
+            "가리키는 줄이 들어간다."
+        ),
+        examples=["수제 비누 가게 · 회원탈퇴 경로 구현 · 확인 문장 세 줄"],
     )
     targetType: Literal["ANNOUNCEMENT", "CONTRACT", "ISSUE"] = Field(
-        description="'확인하기'를 눌렀을 때 갈 곳의 종류.",
+        description=(
+            "'확인하기'를 눌렀을 때 갈 곳의 종류. 코드 분류 "
+            "`NOTIFICATION_TARGET_TYPE`의 코드값이다."
+        ),
         examples=["CONTRACT"],
     )
     targetId: int | None = Field(
-        description="갈 곳의 식별자. 갈 곳이 없으면 null이다.",
+        description=(
+            "갈 곳의 식별자. `targetType`에 따라 공지·계약·이슈 중 하나를 가리키며 "
+            "갈 곳이 없으면 null이다. 공지 본문은 이 식별자로 공지 화면에서 본다."
+        ),
         examples=[130],
     )
     isRead: bool = Field(description="읽었는지.", examples=[False])
@@ -6409,7 +7078,10 @@ class NotificationListResponse(BaseModel):
         description="알림. 새로운 것이 먼저다. 공지도 이 목록에 섞여 있다.",
     )
     unreadCount: int = Field(
-        description="안 읽은 알림 수. 헤더 종 옆 숫자와 '안 읽음' 뱃지에 쓴다.",
+        description=(
+            "안 읽은 알림 수. 헤더 종 옆 숫자와 '안 읽음' 뱃지에 쓰며 세어서 만드는 "
+            "값이다."
+        ),
         examples=[3],
     )
     page: int = Field(description="현재 페이지 번호. 1부터 시작한다.", examples=[1])
@@ -6450,8 +7122,8 @@ class WithdrawalBlockerResponse(BaseModel):
 class WithdrawalResultResponse(BaseModel):
     """탈퇴 처리 결과.
 
-    계정을 지우는 것이 아니라 삭제 표시를 켜는 것이므로, 무엇이 바뀌었고 언제부터
-    다시 가입할 수 있는지를 돌려준다.
+    계정을 지우는 것이 아니라 삭제 표시를 켜는 것이므로, 무엇이 바뀌었는지를
+    돌려준다.
     """
 
     isDeleted: bool = Field(
@@ -6460,13 +7132,9 @@ class WithdrawalResultResponse(BaseModel):
         ),
         examples=[True],
     )
-    withdrawnAt: str = Field(
+    deletedAt: str = Field(
         description="삭제 표시를 켠 시각.",
         examples=["2026-09-14T10:05:00+09:00"],
-    )
-    rejoinableFrom: str = Field(
-        description="같은 카카오 계정으로 다시 가입할 수 있게 되는 시각.",
-        examples=["2026-10-14T10:05:00+09:00"],
     )
 
 
@@ -6474,11 +7142,17 @@ class WithdrawalCheckResponse(BaseModel):
     """탈퇴할 수 있는지."""
 
     canWithdraw: bool = Field(
-        description="지금 탈퇴할 수 있는지. 거짓이면 화면이 탈퇴 버튼을 잠근다.",
+        description=(
+            "지금 탈퇴할 수 있는지. 저장된 값이 아니라 아래 `blockers`가 비었는지로 "
+            "판정해 만드는 값이며, 거짓이면 화면이 탈퇴 버튼을 잠근다."
+        ),
         examples=[False],
     )
     blockers: list[WithdrawalBlockerResponse] = Field(
-        description="정리해야 할 것. 없으면 빈 배열이고 이때 canWithdraw가 참이다.",
+        description=(
+            "정리해야 할 것. 계약·예치금·소득을 훑어 그때그때 만드는 목록이라 저장되지 "
+            "않는다. 없으면 빈 배열이고 이때 `canWithdraw`가 참이다."
+        ),
     )
 
 
@@ -6487,42 +7161,107 @@ class WithdrawalCheckResponse(BaseModel):
 # --------------------------------------------------------------------------- #
 
 
-class MyPriceResponse(BaseModel):
-    """내 가격표 한 줄."""
+class MyPortfolioItemResponse(BaseModel):
+    """내 프로필 편집 화면이 쓰는 작업물 하나."""
 
-    priceId: int = Field(description="가격표 식별자.", examples=[61])
-    taskType: Literal["CONSULT", "DEVELOP"] = Field(
-        description="작업 종류. CONSULT는 컨설팅 세션, DEVELOP은 개발 작업이다.",
-        examples=["DEVELOP"],
+    portfolioItemId: int = Field(description="작업물 식별자.", examples=[7])
+    title: str = Field(description="작업물 제목.", examples=["미미헤어샵 예약"])
+    description: str | None = Field(
+        description="설명. 적지 않았으면 null이다.",
+        examples=["예약이 저장되지 않던 문제를 고쳤습니다."],
     )
-    taskName: str = Field(
+    linkUrl: str | None = Field(
+        description="배포 사이트나 저장소 주소. 없으면 null이다.",
+        examples=["https://hairshop-mimi.com"],
+    )
+    thumbnailUrl: str | None = Field(
         description=(
-            "작업 이름. 컨설팅은 '30분 화상'처럼 시간을, 개발은 '로그인 붙이기'처럼 "
-            "할 일을 적는다."
+            "화면에 그대로 거는 사진 주소. 계정의 `profileImageUrl`과 같은 방식으로, "
+            "저장된 값이 아니라 응답을 만들 때마다 새로 만든다. 사진을 올리지 않았으면 "
+            "null이다.\n\n"
+            "한동안만 쓸 수 있는 임시 주소다. 만료되면 다시 받아야 하므로 저장해 두고 "
+            "오래 쓰지 않는다."
         ),
-        examples=["로그인 붙이기"],
-    )
-    price: int = Field(description="가격. 원 단위 정수다.", examples=[400000])
-    periodDays: int | None = Field(
-        description="예상 작업 기간(일). 컨설팅 세션은 null이다.",
-        examples=[4],
+        examples=["https://cdn.komit.example.com/portfolio/512.png"],
     )
 
 
-class MyDeveloperProfileResponse(DeveloperDetailResponse):
-    """내 프로필 편집 화면이 쓰는 값. 남에게 보이는 상세에 가격표와 리뷰를 더한다."""
+class MyDeveloperProfileResponse(BaseModel):
+    """내 프로필 편집 화면이 쓰는 값.
 
-    isPublished: bool = Field(description="프로필이 공개 중인지.", examples=[True])
-    myPrices: list[MyPriceResponse] = Field(
+    남에게 보이는 개발자 상세와 필드가 겹치지만 유형별 최저가(`prices`)는 담지
+    않는다. 편집 화면은 줄 단위 가격표를 고치는 곳이고, 최저가는 그 줄들에서
+    계산되는 값이라 함께 내려주면 서로 어긋날 수 있다. 줄 단위 가격표는 상세와
+    같은 `priceCatalog`를 그대로 쓴다.
+    """
+
+    developerId: int = Field(
+        description="개발자 식별자. 사용자 식별자가 아니다.",
+        examples=[3],
+    )
+    name: str = Field(description="화면에 표시하는 이름.", examples=["이준"])
+    profileImageUrl: str | None = Field(
         description=(
-            "내가 등록한 가격표 전부. 남에게 보이는 상세의 `prices`는 유형별 최저가만 "
-            "담지만, 편집 화면은 줄마다 고쳐야 하므로 전부 내려준다."
+            "화면에 그대로 거는 프로필 사진 주소. 계정의 `profileImageUrl`과 같은 "
+            "값이라 직접 올린 사진이 있으면 그 사진의 주소이고, 없으면 카카오 사진 "
+            "주소다. 둘 다 없으면 null이다.\n\n"
+            "직접 올린 사진의 주소는 한동안만 쓸 수 있는 임시 주소다. 만료되면 다시 "
+            "받아야 하므로 저장해 두고 오래 쓰지 않는다."
+        ),
+        examples=["https://cdn.komit.example.com/profiles/512.png"],
+    )
+    intro: str = Field(
+        description="개발자가 적은 한 줄 소개.",
+        examples=["간단한 상담도 받습니다. 용어부터 풀어서 설명합니다."],
+    )
+    description: str | None = Field(
+        description="개발자 소개 글. 적지 않았으면 null이다.",
+        examples=["작은 가게 서비스를 주로 맡습니다."],
+    )
+    yearsOfExperience: float | None = Field(
+        description="경력 연차. 등록하지 않았으면 null이다.",
+        examples=[5.0],
+    )
+    field: CodeResponse | None = Field(
+        description="주로 담당하는 개발 분야. 등록하지 않았으면 null이다.",
+    )
+    activeFrom: str | None = Field(
+        description="주로 활동하는 시간대의 시작. 정하지 않았으면 null이다.",
+        examples=["10:00"],
+    )
+    activeTo: str | None = Field(
+        description=(
+            "주로 활동하는 시간대의 끝. 시작보다 이르면 자정을 넘기는 것으로 본다."
+        ),
+        examples=["19:00"],
+    )
+    isCareerVerified: bool = Field(
+        description="증빙이 확인된 경력을 하나라도 가지고 있는지.",
+        examples=[True],
+    )
+    devRating: RatingResponse = Field(description="개발력 평점과 리뷰 수.")
+    explanatoryRating: RatingResponse = Field(description="설명력 평점과 리뷰 수.")
+    techCategories: list[CodeResponse] = Field(
+        description="다룰 수 있는 기술. 등록 전이면 빈 배열이다.",
+    )
+    careers: list[CareerResponse] = Field(description="등록한 경력.")
+    portfolioItems: list[MyPortfolioItemResponse] = Field(
+        description="등록한 작업물. 보낸 순서가 화면에 보이는 순서다.",
+    )
+    priceCatalog: list[PriceCatalogItemResponse] = Field(
+        description=(
+            "등록한 가격표 전부. 개발자 상세가 내려주는 것과 같은 목록이라 모델도 "
+            "그대로 쓴다. 편집 화면은 줄마다 고쳐야 하므로 유형별 최저가가 아니라 "
+            "전부 내려준다."
         ),
     )
     reviews: list[ReviewResponse] = Field(
         description="받은 리뷰. 새로운 것이 먼저다. 답글을 여기서 단다.",
     )
-    replyCount: int = Field(description="답글을 단 리뷰 수.", examples=[1])
+    replyCount: int = Field(
+        description="답글을 단 리뷰 수. 세어서 만드는 값이다.",
+        examples=[1],
+    )
     updatedAt: str = Field(
         description="마지막으로 저장한 시각. 화면의 '마지막 저장'에 쓴다.",
         examples=["2026-08-14T18:20:00+09:00"],
@@ -6547,7 +7286,7 @@ class WriteCareerRequest(BaseModel):
     evidenceFileId: int | None = Field(
         default=None,
         description=(
-            "증빙 서류 파일 식별자. 파일 올리기로 먼저 올린 뒤 그 식별자를 넣는다. "
+            "증빙 서류 파일 식별자. 올리기 시작·완료를 먼저 거쳐 그 식별자를 넣는다. "
             "증빙은 경력 확인에만 쓰고 확인이 끝나면 원본을 지운다."
         ),
         examples=[512],
@@ -6572,7 +7311,11 @@ class WritePortfolioItemRequest(BaseModel):
         examples=["https://hairshop-mimi.com"],
     )
     thumbnailFileId: int | None = Field(
-        description="썸네일 파일 식별자. 올리지 않았으면 null이다.",
+        description=(
+            "올려 둔 사진의 파일 식별자. 올리기 완료까지 마친 내 파일이어야 하며, "
+            "사진을 빼려면 null을 보낸다. 응답에는 이 식별자가 아니라 바로 걸 수 있는 "
+            "`thumbnailUrl`이 담긴다."
+        ),
         examples=[512],
     )
 
@@ -6586,7 +7329,7 @@ class WritePriceRequest(BaseModel):
         examples=[61],
     )
     taskType: Literal["CONSULT", "DEVELOP"] = Field(
-        description="작업 종류.",
+        description="작업 종류. 코드 분류 `TASK_TYPE`의 코드값이다.",
         examples=["DEVELOP"],
     )
     taskName: str = Field(description="작업 이름.", examples=["로그인 붙이기"])
@@ -6609,8 +7352,10 @@ class WriteDeveloperProfileRequest(BaseModel):
         examples=["AI로 만든 걸 실제로 돌아가게 만드는 일을 주로 합니다."],
     )
     fieldCodeId: int | None = Field(
-        description="주로 담당하는 개발 분야 코드 식별자.",
-        examples=[4],
+        description=(
+            "주로 담당하는 개발 분야 코드 식별자. 코드 분류 `DEV_FIELD`의 항목이다."
+        ),
+        examples=[42],
     )
     yearsOfExperience: float | None = Field(
         description="경력 연차.",
@@ -6626,7 +7371,7 @@ class WriteDeveloperProfileRequest(BaseModel):
     )
     techCodeIds: list[int] = Field(
         description="다룰 수 있는 기술의 코드 식별자. 보낸 목록이 그대로 저장된다.",
-        examples=[[31, 32, 33]],
+        examples=[[21, 22, 23]],
     )
     careers: list[WriteCareerRequest] = Field(
         description=(
@@ -6635,17 +7380,13 @@ class WriteDeveloperProfileRequest(BaseModel):
         ),
     )
     portfolioItems: list[WritePortfolioItemRequest] = Field(
-        description="작업물 전부. 보낸 순서가 화면에 보이는 순서다.",
+        description=(
+            "작업물 전부. 보낸 목록에 없는 기존 작업물은 지운 것으로 본다. 새로 추가한 "
+            "줄은 뒤에 붙으며, 이미 등록된 줄의 순서는 보낸 순서로 바뀌지 않는다."
+        ),
     )
     prices: list[WritePriceRequest] = Field(
         description="가격표 전부. 보낸 목록에 없는 기존 줄은 지운 것으로 본다.",
-    )
-    isPublished: bool = Field(
-        description=(
-            "참이면 저장하면서 프로필을 공개한다. 화면의 '저장하고 프로필 공개'가 "
-            "참을 보낸다."
-        ),
-        examples=[True],
     )
 
 
@@ -6654,7 +7395,8 @@ class WriteReviewReplyRequest(BaseModel):
 
     reply: str = Field(
         min_length=1,
-        description="답글 내용.",
+        max_length=1000,
+        description="답글 내용. 1000자까지 받는다.",
         examples=["감사합니다. 도메인 만료 전에 미리 알려드리겠습니다."],
     )
 
@@ -6664,9 +7406,12 @@ class MySessionResponse(BaseModel):
 
     sessionId: int = Field(description="컨설팅 세션 식별자.", examples=[55])
     contractId: int = Field(description="이 세션이 달린 계약 식별자.", examples=[120])
-    clientName: str = Field(description="의뢰인 이름.", examples=["김미미"])
+    clientName: str = Field(
+        description="의뢰인 이름. 사용자 정보에서 가져오는 값이다.",
+        examples=["김미미"],
+    )
     scheduledAt: str = Field(
-        description="예약한 일시.",
+        description="예약한 일시. 세션이 아니라 그 세션에 잡힌 예약이 가진 값이다.",
         examples=["2026-08-22T15:00:00+09:00"],
     )
     durationMinutes: int = Field(description="세션 시간(분).", examples=[30])
@@ -6692,19 +7437,95 @@ class MySessionListResponse(BaseModel):
     )
 
 
+class CreateUploadRequest(BaseModel):
+    """올릴 파일을 미리 알리는 요청. 파일 자체는 아직 보내지 않는다."""
+
+    originalName: str = Field(
+        description="올릴 파일 이름. 화면에 보여줄 이름으로 그대로 남는다.",
+        examples=["재직증명서.pdf"],
+    )
+    contentType: str = Field(
+        description=(
+            "파일 종류. 올릴 때 같은 값을 `Content-Type`으로 보내야 하며, 다르면 "
+            "완료 요청에서 거절된다."
+        ),
+        examples=["application/pdf"],
+    )
+    sizeBytes: int = Field(
+        description="파일 크기(바이트). 완료할 때 실제 크기와 맞는지 본다.",
+        examples=[284193],
+    )
+    purpose: Literal["PROFILE_IMAGE", "CAREER_EVIDENCE", "PORTFOLIO_IMAGE"] = Field(
+        description=(
+            "이 파일을 어디에 쓸지. 쓰임에 따라 받는 형식과 크기가 다르고 보관 기간도 "
+            "다르다.\n\n"
+            "**이 값은 보관하지 않는다.** 형식·크기 한도를 고르고 파일을 둘 자리를 "
+            "정하는 데까지만 쓴다. 그래서 올린 뒤에는 어느 쓰임으로 올렸는지 따지지 "
+            "않으며, 증빙 서류로 올린 파일을 작업물 사진에 붙여도 막지 않는다."
+        ),
+        examples=["CAREER_EVIDENCE"],
+    )
+
+
+class UploadTargetResponse(BaseModel):
+    """파일을 올릴 곳. 이 주소로 파일을 직접 보낸다."""
+
+    uploadId: int = Field(
+        description=(
+            "이번 업로드 건의 식별자. 다 올린 뒤 완료 요청의 경로에 그대로 쓴다. "
+            "완료되면 이 값이 그대로 파일 식별자가 된다."
+        ),
+        examples=[512],
+    )
+    uploadUrl: str = Field(
+        description=(
+            "파일을 보낼 주소. 이 주소로 `PUT` 한 번을 보내며 본문이 파일 내용이다. "
+            "한동안만 쓸 수 있고 이 서버를 거치지 않는다."
+        ),
+        examples=["https://storage.komit.example.com/komit/evidence/9f3c1a.pdf?..."],
+    )
+    expiresAt: str = Field(
+        description=(
+            "이 주소를 쓸 수 있는 기한. 지나면 올릴 수 없고 처음부터 다시 받아야 한다."
+        ),
+        examples=["2026-08-14T18:17:00+09:00"],
+    )
+    headers: dict[str, str] = Field(
+        description=(
+            "올릴 때 함께 보내야 하는 헤더. 여기 적힌 `Content-Type`을 그대로 보내지 "
+            "않으면 완료 요청에서 거절된다."
+        ),
+        examples=[{"Content-Type": "application/pdf"}],
+    )
+
+
 class UploadedFileResponse(BaseModel):
-    """올린 파일 하나."""
+    """올리기를 마친 파일 하나."""
 
     fileId: int = Field(description="파일 식별자.", examples=[512])
-    fileName: str = Field(description="올린 파일 이름.", examples=["재직증명서.pdf"])
+    originalName: str = Field(
+        description="올린 파일 이름.",
+        examples=["재직증명서.pdf"],
+    )
     contentType: str | None = Field(
         description="파일 종류.",
         examples=["application/pdf"],
     )
     sizeBytes: int = Field(description="파일 크기(바이트).", examples=[284193])
-    uploadedAt: str = Field(
-        description="올린 시각.",
+    verifiedAt: str = Field(
+        description="올라온 파일을 확인한 시각.",
         examples=["2026-08-14T18:12:00+09:00"],
+    )
+
+
+class UpdateProfileImageRequest(BaseModel):
+    """프로필 사진 바꾸기 요청. 파일이 아니라 올려 둔 파일의 식별자를 보낸다."""
+
+    fileId: int = Field(
+        description=(
+            "프로필 사진으로 걸 파일 식별자. 올리기 완료까지 마친 내 파일이어야 한다."
+        ),
+        examples=[512],
     )
 
 
@@ -6722,6 +7543,24 @@ NO_DEVELOPER_PROFILE = (
 )
 FILE_TOO_LARGE = ("FILE_TOO_LARGE", "파일이 너무 큽니다.")
 UNSUPPORTED_FILE_TYPE = ("UNSUPPORTED_FILE_TYPE", "올릴 수 없는 형식입니다.")
+UPLOAD_NOT_FOUND = ("UPLOAD_NOT_FOUND", "업로드 건을 찾을 수 없습니다.")
+UPLOAD_NOT_COMPLETED = (
+    "UPLOAD_NOT_COMPLETED",
+    "아직 파일이 올라오지 않았습니다. 올리기를 마친 뒤 다시 시도해 주세요.",
+)
+UPLOAD_SIZE_MISMATCH = (
+    "UPLOAD_SIZE_MISMATCH",
+    "올린 파일이 알린 것과 다릅니다. 처음부터 다시 올려 주세요.",
+)
+UPLOAD_TYPE_MISMATCH = (
+    "UPLOAD_TYPE_MISMATCH",
+    "올린 파일의 형식이 알린 것과 다릅니다. 처음부터 다시 올려 주세요.",
+)
+UPLOAD_EXPIRED = (
+    "UPLOAD_EXPIRED",
+    "올릴 수 있는 시간이 지났습니다. 처음부터 다시 올려 주세요.",
+)
+FILE_NOT_ATTACHABLE = ("FILE_NOT_ATTACHABLE", "쓸 수 없는 파일입니다.")
 
 WITHDRAWAL_BLOCKED_EXAMPLE = {
     "code": WITHDRAWAL_BLOCKED[0],
@@ -6732,12 +7571,33 @@ NO_DEVELOPER_PROFILE_EXAMPLE = {
     "message": NO_DEVELOPER_PROFILE[1],
 }
 FILE_TOO_LARGE_EXAMPLE = {"code": FILE_TOO_LARGE[0], "message": FILE_TOO_LARGE[1]}
+UPLOAD_NOT_FOUND_EXAMPLE = {
+    "code": UPLOAD_NOT_FOUND[0],
+    "message": UPLOAD_NOT_FOUND[1],
+}
+UPLOAD_NOT_COMPLETED_EXAMPLE = {
+    "code": UPLOAD_NOT_COMPLETED[0],
+    "message": UPLOAD_NOT_COMPLETED[1],
+}
+FILE_NOT_ATTACHABLE_EXAMPLE = {
+    "code": FILE_NOT_ATTACHABLE[0],
+    "message": FILE_NOT_ATTACHABLE[1],
+}
 
-AREA8_FORBIDDEN: dict = {
+# 목에서 실패 응답을 보고 싶을 때 쓰는 값.
+NOT_FOUND_UPLOAD_ID = 404
+NOT_COMPLETED_UPLOAD_ID = 400
+NOT_ATTACHABLE_FILE_ID = 400
+
+# 개발자 프로필이 있어야 부를 수 있는 API 가 함께 쓰는 실패 응답.
+# 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 없으므로 FORBIDDEN 은 싣지 않는다.
+AREA8_NO_DEVELOPER_PROFILE: dict = {
     403: {
         "model": ErrorResponse,
         "description": "개발자 프로필이 없음",
-        "content": {"application/json": {"example": NO_DEVELOPER_PROFILE_EXAMPLE}},
+        "content": {
+            "application/json": {"example": NO_DEVELOPER_PROFILE_EXAMPLE}
+        },
     },
 }
 
@@ -6745,30 +7605,19 @@ MY_PAGE_EXAMPLE = {
     "account": {
         "name": "김미미",
         "email": "mimi@kakao.com",
-        "profileImageFileId": None,
+        "profileImageUrl": "https://k.kakaocdn.net/dn/profile/mimi.jpg",
     },
-    "paymentMethods": [
-        {
-            "paymentMethodId": 9,
-            "methodType": "CARD",
-            "maskedNumber": "···· 4412",
-            "cardCompany": {"codeId": 21, "codeName": "우리카드"},
-            "isDefault": True,
-        }
-    ],
     "settlementAccount": {
         "accountId": 22,
         "bankName": "신한은행",
         "maskedNumber": "···· 4412",
         "accountHolder": "김미미",
     },
-    "settlementAccountVerifiedAt": "2026-09-02T14:05:00+09:00",
     "projects": [
         {
             "projectId": 12,
             "name": "수제 비누 가게",
             "latestDiagnosisId": 31,
-            "diagnosisCount": 2,
             "latestDiagnosedAt": "2026-08-17T09:12:00+09:00",
             "roomCount": 4,
         },
@@ -6776,7 +7625,6 @@ MY_PAGE_EXAMPLE = {
             "projectId": 11,
             "name": "미미헤어샵 예약",
             "latestDiagnosisId": 18,
-            "diagnosisCount": 1,
             "latestDiagnosedAt": "2026-07-02T11:40:00+09:00",
             "roomCount": 2,
         },
@@ -6784,33 +7632,34 @@ MY_PAGE_EXAMPLE = {
             "projectId": 14,
             "name": "사내 재고 관리",
             "latestDiagnosisId": None,
-            "diagnosisCount": 0,
             "latestDiagnosedAt": None,
             "roomCount": 1,
         },
     ],
     "developer": None,
-    "notificationSetting": {"isEnabled": True},
+    "notificationSetting": {"notificationEnabled": True},
 }
 
 MY_PAGE_EMPTY_EXAMPLE = {
     **MY_PAGE_EXAMPLE,
-    "paymentMethods": [],
     "settlementAccount": None,
-    "settlementAccountVerifiedAt": None,
 }
 
-PAYMENT_METHOD_EXAMPLE = MY_PAGE_EXAMPLE["paymentMethods"][0]
+NAME_INVALID_EXAMPLE = {
+    "code": INVALID_REQUEST[0],
+    "message": INVALID_REQUEST[1],
+    "errors": [{"field": "name", "reason": "20자 이하여야 합니다."}],
+}
 
 NOTIFICATION_LIST_EXAMPLE = {
     "content": [
         {
             "notificationId": 940,
             "type": "공지",
-            "content": "9월 1일부터 정산 지급 주기가 바뀝니다",
-            "body": (
-                "작업 전 건이 통과 확정되면 영업일 3일 이내에 지급하던 것을 영업일 "
-                "2일 이내로 앞당깁니다. 8월 31일까지 체결된 계약에도 동일하게 "
+            "title": "9월 1일부터 정산 지급 주기가 바뀝니다",
+            "content": (
+                "작업 전 건이 통과 확정되면 3영업일 이내에 지급하던 것을 2영업일 "
+                "이내로 앞당깁니다. 8월 31일까지 체결된 계약에도 동일하게 "
                 "적용됩니다."
             ),
             "targetType": "ANNOUNCEMENT",
@@ -6821,8 +7670,8 @@ NOTIFICATION_LIST_EXAMPLE = {
         {
             "notificationId": 951,
             "type": "승인알림",
-            "content": "이준 개발자가 3차를 끝냈습니다",
-            "body": None,
+            "title": "이준 개발자가 3차를 끝냈습니다",
+            "content": "수제 비누 가게 · 회원탈퇴 경로 구현 · 확인 문장 세 줄",
             "targetType": "CONTRACT",
             "targetId": 130,
             "isRead": False,
@@ -6831,8 +7680,8 @@ NOTIFICATION_LIST_EXAMPLE = {
         {
             "notificationId": 950,
             "type": "착수알림",
-            "content": "한서 개발자가 계약서를 보냈습니다",
-            "body": None,
+            "title": "한서 개발자가 계약서를 보냈습니다",
+            "content": "수제 비누 가게 · 650,000원",
             "targetType": "CONTRACT",
             "targetId": 131,
             "isRead": False,
@@ -6841,8 +7690,8 @@ NOTIFICATION_LIST_EXAMPLE = {
         {
             "notificationId": 930,
             "type": "예약알림톡",
-            "content": "컨설팅 세션이 30분 뒤에 시작합니다",
-            "body": None,
+            "title": "컨설팅 세션이 30분 뒤에 시작합니다",
+            "content": "이준 개발자 · 30분 화상",
             "targetType": "CONTRACT",
             "targetId": 120,
             "isRead": True,
@@ -6851,8 +7700,8 @@ NOTIFICATION_LIST_EXAMPLE = {
         {
             "notificationId": 910,
             "type": "승인알림",
-            "content": "'관리자 API에 인증 추가'가 통과 확정됐습니다",
-            "body": None,
+            "title": "'관리자 API에 인증 추가'가 통과 확정됐습니다",
+            "content": "수제 비누 가게 · 이준 개발자",
             "targetType": "CONTRACT",
             "targetId": 130,
             "isRead": True,
@@ -6886,28 +7735,23 @@ WITHDRAWAL_CHECK_EXAMPLE = {
 
 WITHDRAWAL_RESULT_EXAMPLE = {
     "isDeleted": True,
-    "withdrawnAt": "2026-09-14T10:05:00+09:00",
-    "rejoinableFrom": "2026-10-14T10:05:00+09:00",
+    "deletedAt": "2026-09-14T10:05:00+09:00",
 }
 
 MY_DEVELOPER_PROFILE_EXAMPLE = {
     "developerId": 3,
     "name": "이준",
-    "profileImageFileId": None,
+    "profileImageUrl": None,
     "intro": "간단한 상담도 받습니다. 용어부터 풀어서 설명합니다.",
     "yearsOfExperience": 5.0,
-    "field": {"codeId": 4, "codeName": "백엔드"},
+    "field": {"codeId": 42, "codeName": "DB 연결"},
     "isCareerVerified": True,
-    "devRating": {"score": 4.8, "reviewCount": 20},
-    "explanatoryRating": {"score": 4.9, "reviewCount": 20},
+    "devRating": {"score": 4.8, "reviewCount": 2},
+    "explanatoryRating": {"score": 4.9, "reviewCount": 2},
     "techCategories": [
-        {"codeId": 31, "codeName": "TypeScript"},
-        {"codeId": 32, "codeName": "Next.js"},
-        {"codeId": 33, "codeName": "Supabase"},
-    ],
-    "prices": [
-        {"taskType": "CONSULT", "price": 50000},
-        {"taskType": "DEVELOP", "price": 100000},
+        {"codeId": 23, "codeName": "TypeScript"},
+        {"codeId": 21, "codeName": "Next.js"},
+        {"codeId": 22, "codeName": "Supabase"},
     ],
     "description": (
         "AI로 만든 걸 실제로 돌아가게 만드는 일을 주로 합니다. 지난 1년 동안 소상공인 "
@@ -6950,58 +7794,29 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
             "title": "미미헤어샵 예약",
             "description": "예약이 저장되지 않던 문제를 고쳤습니다.",
             "linkUrl": "https://hairshop-mimi.com",
-            "thumbnailFileId": 512,
+            "thumbnailUrl": "https://cdn.komit.example.com/portfolio/512.png",
         },
         {
             "portfolioItemId": 8,
             "title": "동네 필라테스 수업",
             "description": "회원가입 없이 수업을 예약할 수 있게 했습니다.",
             "linkUrl": "https://pilates-onnuri.kr",
-            "thumbnailFileId": 513,
+            "thumbnailUrl": "https://cdn.komit.example.com/portfolio/513.png",
         },
         {
             "portfolioItemId": 9,
             "title": "사내 재고 관리",
             "description": "엑셀로 관리하던 재고를 DB로 옮겼습니다.",
             "linkUrl": None,
-            "thumbnailFileId": None,
+            "thumbnailUrl": None,
         },
     ],
-    "isPublished": True,
-    "myPrices": [
-        {
-            "priceId": 60,
-            "taskType": "CONSULT",
-            "taskName": "30분 화상",
-            "price": 50000,
-            "periodDays": None,
-        },
-        {
-            "priceId": 61,
-            "taskType": "CONSULT",
-            "taskName": "60분 화상",
-            "price": 90000,
-            "periodDays": None,
-        },
-        {
-            "priceId": 62,
-            "taskType": "DEVELOP",
-            "taskName": "인터넷에 올리기",
-            "price": 200000,
-            "periodDays": 1,
-        },
-        {
-            "priceId": 63,
-            "taskType": "DEVELOP",
-            "taskName": "로그인 붙이기",
-            "price": 400000,
-            "periodDays": 4,
-        },
-    ],
+    "priceCatalog": PRICE_CATALOG,
     "reviews": [
         {
             "reviewId": 88,
-            "clientName": "김미미",
+            "clientName": "김O미",
+            "contractType": "DEVELOPMENT",
             "devScore": 5,
             "commScore": 5,
             "content": (
@@ -7013,7 +7828,8 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
         },
         {
             "reviewId": 84,
-            "clientName": "최수진",
+            "clientName": "최O진",
+            "contractType": "CONSULTING",
             "devScore": 4,
             "commScore": 5,
             "content": "일정이 하루 밀렸지만 미리 알려주셔서 괜찮았습니다.",
@@ -7054,10 +7870,20 @@ MY_SESSION_LIST_EXAMPLE = {
 
 UPLOADED_FILE_EXAMPLE = {
     "fileId": 512,
-    "fileName": "재직증명서.pdf",
+    "originalName": "재직증명서.pdf",
     "contentType": "application/pdf",
     "sizeBytes": 284193,
-    "uploadedAt": "2026-08-14T18:12:00+09:00",
+    "verifiedAt": "2026-08-14T18:12:00+09:00",
+}
+
+UPLOAD_TARGET_EXAMPLE = {
+    "uploadId": 512,
+    "uploadUrl": (
+        "https://storage.komit.example.com/komit/evidence/9f3c1a2b.pdf"
+        "?X-Amz-Expires=300&X-Amz-Signature=6f1d..."
+    ),
+    "expiresAt": "2026-08-14T18:17:00+09:00",
+    "headers": {"Content-Type": "application/pdf"},
 }
 
 
@@ -7071,11 +7897,11 @@ UPLOADED_FILE_EXAMPLE = {
                 "application/json": {
                     "examples": {
                         "registered": {
-                            "summary": "결제 수단과 계좌를 등록한 사람",
+                            "summary": "계좌를 등록한 사람",
                             "value": MY_PAGE_EXAMPLE,
                         },
                         "empty": {
-                            "summary": "아직 아무것도 등록하지 않은 사람",
+                            "summary": "아직 계좌를 등록하지 않은 사람",
                             "value": MY_PAGE_EMPTY_EXAMPLE,
                         },
                     }
@@ -7088,14 +7914,16 @@ UPLOADED_FILE_EXAMPLE = {
     summary="마이페이지 조회",
     description=(
         "**화면 — `8_마이페이지` · `8_마이페이지_등록전`**\n\n"
-        "마이페이지 한 판을 한 번에 내려준다. 계정, 결제 수단, 계좌, 등록한 프로젝트, "
-        "개발자 프로필 요약, 알림 설정이 들어간다.\n\n"
-        "`paymentMethods`가 빈 배열이거나 `settlementAccount`가 null이면 화면이 그 칸을 "
-        "등록 안내로 바꾼다. 같은 API이며 화면만 갈린다.\n\n"
-        "`developer`는 개발자로 전환하지 않은 사람에게 null로 나가고, 화면에서 개발자 "
+        "마이페이지 한 판을 한 번에 내려준다. 계정, 계좌, 등록한 프로젝트, 개발자 "
+        "프로필 요약, 알림 설정이 들어간다.\n\n"
+        "`settlementAccount`가 null이면 화면이 그 칸을 등록 안내로 바꾼다. 같은 "
+        "API이며 화면만 갈린다.\n\n"
+        "`developer`는 개발자 프로필이 없는 사람에게 null로 나가고, 화면에서 개발자 "
         "프로필 칸이 통째로 빠진다.\n\n"
         "약관 칸은 이 응답에 없다. 약관 문서와 개정일은 서버가 들고 있지 않고 화면이 "
-        "가진 정적 문서다.\n\n"
+        "가진 정적 문서이며, 동의 여부도 이 응답에 담지 않는다.\n\n"
+        "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
+        "없고, 토큰을 고쳐 남의 `sub`를 넣으면 서명이 깨져 401이 된다.\n\n"
         "- **200**: 항상\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **500 / INTERNAL_ERROR**: 마이페이지를 만들지 못했을 때"
@@ -7115,6 +7943,11 @@ def get_my_page() -> MyPageResponse:
         },
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": NAME_INVALID_EXAMPLE}},
+        },
     },
     summary="이름 바꾸기",
     description=(
@@ -7122,9 +7955,15 @@ def get_my_page() -> MyPageResponse:
         "화면에 표시하는 이름을 바꾼다. 카카오 닉네임으로 시작하지만 이후에는 따로 "
         "간다 — 카카오에서 닉네임을 바꿔도 여기 이름은 그대로다.\n\n"
         "이미 남긴 리뷰나 주고받은 메시지에 붙은 이름도 이 이름을 따라 바뀐다.\n\n"
+        "**바꾸려는 계정이 토큰의 주인인지 검증한다.** 액세스 토큰을 검증해 `sub`를 "
+        "꺼내고, 바꾸려는 계정이 그 `sub`와 같은지 확인한 뒤에 바꾼다. 다르면 403으로 "
+        "막는다. 로그인했다는 것만으로 남의 이름을 바꿀 수 없다.\n\n"
+        "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
+        "없고, 토큰을 고쳐 남의 `sub`를 넣으면 서명이 깨져 401이 된다.\n\n"
         "- **200**: 바꿨을 때\n"
-        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **422 / INVALID_REQUEST**: `name`이 비었거나 50자를 넘었을 때\n"
+        "- **401 / UNAUTHORIZED**: 토큰이 없거나 만료·위조됐을 때, `sub`의 사용자가 "
+        "없거나 탈퇴한 계정일 때\n"
+        "- **422 / INVALID_REQUEST**: `name`이 비었거나 20자를 넘었을 때\n"
         "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
     ),
 )
@@ -7132,7 +7971,7 @@ def update_my_name(request: UpdateMyNameRequest) -> MyAccountResponse:
     return MyAccountResponse(
         name=request.name,
         email=MY_PAGE_EXAMPLE["account"]["email"],
-        profileImageFileId=None,
+        profileImageUrl=MY_PAGE_EXAMPLE["account"]["profileImageUrl"],
     )
 
 
@@ -7146,31 +7985,44 @@ def update_my_name(request: UpdateMyNameRequest) -> MyAccountResponse:
         },
         400: {
             "model": ErrorResponse,
-            "description": "파일이 너무 크거나 형식이 맞지 않음",
-            "content": {"application/json": {"example": FILE_TOO_LARGE_EXAMPLE}},
+            "description": "쓸 수 없는 파일",
+            "content": {"application/json": {"example": FILE_NOT_ATTACHABLE_EXAMPLE}},
         },
+        **AREA8_FORBIDDEN,
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
     summary="프로필 사진 바꾸기",
     description=(
         "**화면 — `8_마이페이지` › 계정 › 사진 바꾸기**\n\n"
-        "프로필 사진을 직접 올린다. 올리기 전에는 카카오 프로필 사진을 쓰고, 한 번 "
-        "올리면 그 뒤로는 올린 사진을 쓴다.\n\n"
-        "- **200**: 바꿨을 때. `profileImageFileId`에 새 파일 식별자가 담긴다\n"
-        "- **400 / FILE_TOO_LARGE**: 파일이 허용 크기를 넘었을 때\n"
-        "- **400 / UNSUPPORTED_FILE_TYPE**: 이미지가 아닐 때\n"
+        "올려 둔 사진을 프로필 사진으로 건다. 올리기 전에는 카카오 프로필 사진을 쓰고, "
+        "한 번 걸면 그 뒤로는 올린 사진을 쓴다.\n\n"
+        "**파일 자체는 이 API로 보내지 않는다.** 업로드 시작과 완료를 먼저 거쳐 "
+        "`fileId`를 받고, 그 값만 여기로 보낸다. 이 화면은 저장 버튼이 따로 없어 "
+        "고르는 즉시 바뀐다.\n\n"
+        "**바뀌는 것은 토큰의 주인의 사진이다.** 액세스 토큰을 검증해 `sub`를 꺼내 그 "
+        "계정에 걸며, 대상을 요청에 담지 않는다. `fileId`가 `sub`가 올린 파일인지도 "
+        "확인하고, 남의 파일이면 걸지 않는다.\n\n"
+        "- **200**: 바꿨을 때. `profileImageUrl`이 새 사진을 가리킨다\n"
+        "- **400 / FILE_NOT_ATTACHABLE**: `fileId`가 400일 때. 아직 올리기를 마치지 "
+        "않았거나 남이 올린 파일일 때다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **403 / FORBIDDEN**: `sub`가 올린 파일이 아니거나 남의 계정에 걸려 할 때\n"
+        "- **422 / INVALID_REQUEST**: `fileId`가 없거나 정수가 아닐 때\n"
         "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
     ),
 )
 def update_my_profile_image(
-    image: Annotated[UploadFile, File(description="올릴 사진 파일.")],
-) -> MyAccountResponse:
+    request: UpdateProfileImageRequest,
+) -> MyAccountResponse | JSONResponse:
+    if request.fileId == NOT_ATTACHABLE_FILE_ID:
+        return _error_response(400, FILE_NOT_ATTACHABLE)
     return MyAccountResponse(
         name=MY_PAGE_EXAMPLE["account"]["name"],
         email=MY_PAGE_EXAMPLE["account"]["email"],
-        profileImageFileId=512,
+        profileImageUrl=(
+            f"https://cdn.komit.example.com/profiles/{request.fileId}.png"
+        ),
     )
 
 
@@ -7179,7 +8031,7 @@ def update_my_profile_image(
     response_model=NotificationSettingResponse,
     tags=[AREA8_TAG],
     responses={
-        200: {"content": {"application/json": {"example": {"isEnabled": False}}}},
+        200: {"content": {"application/json": {"example": {"notificationEnabled": False}}}},
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -7189,52 +8041,21 @@ def update_my_profile_image(
         "카카오 알림톡을 받을지 정한다. 끄면 방 소식과 확인 요청 알림톡이 나가지 않고, "
         "알림 화면에는 그대로 쌓인다.\n\n"
         "카카오 이메일을 인증하지 않은 계정에는 켜도 알림톡이 나가지 않는다.\n\n"
+        "**바뀌는 것은 토큰의 주인의 설정이다.** 액세스 토큰을 검증해 `sub`를 꺼내 그 "
+        "계정의 설정만 바꾸며, 대상을 요청에 담지 않는다.\n\n"
+        "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
+        "없고, 토큰을 고쳐 남의 `sub`를 넣으면 서명이 깨져 401이 된다.\n\n"
         "- **200**: 바꿨을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **422 / INVALID_REQUEST**: `isEnabled`가 없을 때\n"
+        "- **422 / INVALID_REQUEST**: `notificationEnabled`가 없을 때\n"
         "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
     ),
 )
 def update_notification_setting(
     request: UpdateNotificationSettingRequest,
 ) -> NotificationSettingResponse:
-    return NotificationSettingResponse(isEnabled=request.isEnabled)
-
-
-@router.post(
-    "/payment-methods",
-    response_model=PaymentMethodResponse,
-    status_code=201,
-    tags=[AREA8_TAG],
-    responses={
-        201: {"content": {"application/json": {"example": PAYMENT_METHOD_EXAMPLE}}},
-        **AREA1_UNAUTHORIZED,
-        **AREA1_ERRORS,
-    },
-    summary="카드 등록 · 변경",
-    description=(
-        "**화면 — `8_마이페이지` › 결제 수단 › 카드 등록 · 카드 바꾸기**\n\n"
-        "예치금을 낼 카드를 등록한다. **카드 번호는 이 서버로 오지 않는다.** 화면이 "
-        "결제대행사 결제창을 띄워 카드를 받고, 결제창이 돌려준 키와 가린 번호만 여기로 "
-        "온다.\n\n"
-        "새로 등록한 카드가 기본 수단이 되고, 이전 카드는 기본에서 내려간다.\n\n"
-        "실시간 계좌이체는 결제할 때 은행 앱에서 바로 내므로 등록할 것이 없다. 이 API는 "
-        "카드만 받는다.\n\n"
-        "- **201**: 등록했을 때\n"
-        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **422 / INVALID_REQUEST**: `billingKey`나 `maskedNumber`가 비었을 때\n"
-        "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
-    ),
-)
-def register_payment_method(
-    request: RegisterPaymentMethodRequest,
-) -> PaymentMethodResponse:
-    return PaymentMethodResponse(
-        paymentMethodId=9,
-        methodType="CARD",
-        maskedNumber=request.maskedNumber,
-        cardCompany=CodeResponse(codeId=request.cardCompanyCodeId, codeName="우리카드"),
-        isDefault=True,
+    return NotificationSettingResponse(
+        notificationEnabled=request.notificationEnabled
     )
 
 
@@ -7252,10 +8073,15 @@ def register_payment_method(
     summary="알림 목록 조회",
     description=(
         "**화면 — `8_알림` › 전체 · 안 읽음**\n\n"
-        "받은 알림을 새로운 것부터 내려준다. 공지도 같은 목록에 섞이며, 공지만 `body`에 "
-        "본문을 담아 화면이 목록에서 펼쳐 보여준다.\n\n"
+        "받은 알림을 새로운 것부터 내려준다. 공지도 같은 목록에 섞이며 `type`이 "
+        "`공지`인 줄이 그것이다.\n\n"
+        "한 줄은 `title`과 `content` 두 단이다. 공지는 `content`에 본문이 들어가 "
+        "화면이 목록에서 바로 펼쳐 보여주고, 그 밖의 알림은 어느 건인지 가리키는 "
+        "줄이 들어간다.\n\n"
         "`unreadCount`는 `unreadOnly`와 페이지에 상관없이 언제나 안 읽은 알림 전체 수다. "
         "헤더 종 옆 숫자가 이 값이다.\n\n"
+        "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
+        "없고, 토큰을 고쳐 남의 `sub`를 넣으면 서명이 깨져 401이 된다.\n\n"
         "- **200**: 항상. 알림이 없으면 빈 배열이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **422 / INVALID_REQUEST**: `page`가 1보다 작거나 `size`가 범위를 벗어났을 때\n"
@@ -7303,6 +8129,8 @@ def get_notifications(
         "안 읽은 알림을 전부 읽음으로 바꾸고, 바뀐 목록을 그대로 돌려준다. 화면이 "
         "다시 조회하지 않아도 되게 하기 위해서다.\n\n"
         "이미 다 읽었으면 아무것도 바꾸지 않고 같은 목록을 준다.\n\n"
+        "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
+        "없고, 토큰을 고쳐 남의 `sub`를 넣으면 서명이 깨져 401이 된다.\n\n"
         "- **200**: 처리했을 때. `unreadCount`가 0이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **500 / INTERNAL_ERROR**: 처리하지 못했을 때"
@@ -7330,6 +8158,7 @@ def read_all_notifications() -> NotificationListResponse:
                 }
             }
         },
+        **AREA8_FORBIDDEN,
         404: {
             "model": ErrorResponse,
             "description": "알림을 찾지 못함",
@@ -7346,9 +8175,12 @@ def read_all_notifications() -> NotificationListResponse:
         "알림 하나를 읽음으로 바꾼다. 화면은 '확인하기'를 누를 때 이 API를 부르고 "
         "`targetType`과 `targetId`가 가리키는 곳으로 옮겨 간다.\n\n"
         "이미 읽은 알림에 다시 보내도 200이다.\n\n"
+        "**알림을 받은 사람이 토큰의 주인인지 검증한다.** `notificationId`의 알림이 "
+        "`sub`에게 온 것인지 확인한 뒤에 처리하고, 다르면 403으로 막는다. 남의 알림을 "
+        "읽음으로 바꾸거나 그 내용을 응답으로 받아 갈 수 없어야 한다.\n\n"
         "- **200**: 처리했을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / FORBIDDEN**: 남의 알림일 때\n"
+        "- **403 / FORBIDDEN**: `sub`에게 온 알림이 아닐 때\n"
         "- **404 / NOTIFICATION_NOT_FOUND**: `notificationId`가 404일 때\n"
         "- **500 / INTERNAL_ERROR**: 처리하지 못했을 때"
     ),
@@ -7384,6 +8216,8 @@ def read_notification(
         "`canWithdraw`가 거짓이면 탈퇴 버튼을 잠그고 `blockers`를 줄로 늘어놓는다.\n\n"
         "진행 중인 의뢰, 남은 예치금, 아직 받지 못한 소득이 막는다. 예치금과 소득은 "
         "Escrow 서버에서 받아와 센다.\n\n"
+        "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
+        "없고, 토큰을 고쳐 남의 `sub`를 넣으면 서명이 깨져 401이 된다.\n\n"
         "- **200**: 항상\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **500 / INTERNAL_ERROR**: 확인하지 못했을 때"
@@ -7421,6 +8255,11 @@ def check_withdrawal() -> WithdrawalCheckResponse:
         "자료는 법정 기간 동안 남는다.\n\n"
         "탈퇴 전 확인과 같은 조건을 여기서 다시 본다. 화면이 버튼을 잠갔더라도 서버가 "
         "한 번 더 막는다.\n\n"
+        "**탈퇴하는 계정은 토큰의 주인이다.** 액세스 토큰을 검증해 `sub`를 꺼내 그 "
+        "계정만 탈퇴시키며, 대상을 요청에 담지 않는다. 되돌릴 수 없는 요청이므로 "
+        "로그인했다는 것만으로 통과시키지 않는다.\n\n"
+        "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
+        "없고, 토큰을 고쳐 남의 `sub`를 넣으면 서명이 깨져 401이 된다.\n\n"
         "- **200**: 탈퇴했을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **409 / WITHDRAWAL_BLOCKED**: 진행 중인 의뢰나 남은 돈이 있을 때\n"
@@ -7441,7 +8280,7 @@ def withdraw() -> WithdrawalResultResponse | JSONResponse:
                 "application/json": {"example": MY_DEVELOPER_PROFILE_EXAMPLE}
             }
         },
-        **AREA8_FORBIDDEN,
+        **AREA8_NO_DEVELOPER_PROFILE,
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -7450,13 +8289,15 @@ def withdraw() -> WithdrawalResultResponse | JSONResponse:
         "**화면 — `8_개발자_내프로필`**\n\n"
         "편집 화면이 쓰는 값을 한 번에 내려준다. 남에게 보이는 개발자 상세에 가격표 "
         "전부와 받은 리뷰를 더한 모양이다.\n\n"
-        "`prices`는 남에게 보이는 것과 같은 유형별 최저가이고, 편집에 쓰는 줄 단위 "
-        "가격표는 `myPrices`에 있다.\n\n"
+        "줄 단위 가격표는 개발자 상세에서 물려받은 `priceCatalog`다. 같은 데이터를 "
+        "이름만 바꿔 두 번 내려보내지 않으려고 모양을 맞췄다.\n\n"
         "평점은 읽기 전용이다. 유료 거래를 마친 의뢰인의 리뷰로만 매겨지므로 저장 "
         "요청으로 바꿀 수 없다.\n\n"
+        "**403은 개발자 프로필이 없을 때만 나온다.** 대상을 요청에 담지 않아 남의 "
+        "것을 가리킬 자리가 없고, 토큰을 고치면 서명이 깨져 401이 된다.\n\n"
         "- **200**: 항상\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / NO_DEVELOPER_PROFILE**: 개발자로 전환하지 않았을 때\n"
+        "- **403 / NO_DEVELOPER_PROFILE**: 개발자 프로필이 없을 때\n"
         "- **500 / INTERNAL_ERROR**: 프로필을 만들지 못했을 때"
     ),
 )
@@ -7480,17 +8321,22 @@ def get_my_developer_profile() -> MyDeveloperProfileResponse:
     },
     summary="내 개발자 프로필 저장",
     description=(
-        "**화면 — `8_개발자_내프로필` › 저장하고 프로필 공개**\n\n"
+        "**화면 — `8_개발자_내프로필` › 저장**\n\n"
         "화면의 저장 버튼 하나가 이 요청 하나를 보낸다. 소개, 기술, 경력, 작업물, "
         "가격표를 통째로 받아 **보낸 내용으로 맞춘다** — 목록에서 빠진 줄은 지운 것으로 "
         "본다. 줄마다 따로 부르는 API는 두지 않는다.\n\n"
         "새로 추가하는 줄은 식별자를 null로 보내고, 서버가 만들어 응답에 담아 준다.\n\n"
+        "**저장되는 곳은 토큰의 주인의 프로필이다.** 액세스 토큰을 검증해 `sub`를 꺼내 "
+        "그 사용자의 개발자 프로필에 저장하며, 대상을 요청에 담지 않는다. 요청에 실린 "
+        "`careerId`·`portfolioItemId`·`priceId`가 그 프로필의 것인지도 확인하고, 남의 "
+        "줄을 가리키면 저장하지 않는다.\n\n"
         "**저장해도 바뀌지 않는 것이 있다.** 경력의 증빙 확인 표시는 운영에서 확인한 "
         "값이라 그대로 남고, 평점과 리뷰 수는 의뢰인이 남긴 것이라 손대지 않는다.\n\n"
-        "`isPublished`가 참이면 저장과 동시에 프로필이 공개되어 개발자 찾기에 나온다.\n\n"
+        "**공개·비공개를 나누지 않는다.** 개발자 프로필이 있으면 개발자 찾기에 나온다. "
+        "저장이 곧 공개이며 따로 감출 수 없다.\n\n"
         "- **200**: 저장했을 때. 저장된 뒤의 프로필을 그대로 준다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / NO_DEVELOPER_PROFILE**: 개발자로 전환하지 않았을 때\n"
+        "- **403 / FORBIDDEN**: 토큰의 주인이 아닌 프로필에 저장하려 할 때\n"
         "- **422 / INVALID_REQUEST**: `intro`가 비었거나, 경력의 시작일이 종료일보다 "
         "늦거나, 가격이 0 이하일 때\n"
         "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
@@ -7504,7 +8350,6 @@ def write_my_developer_profile(
             **MY_DEVELOPER_PROFILE_EXAMPLE,
             "intro": request.intro,
             "description": request.description,
-            "isPublished": request.isPublished,
         }
     )
 
@@ -7521,12 +8366,12 @@ def write_my_developer_profile(
                 }
             }
         },
+        **AREA8_FORBIDDEN,
         404: {
             "model": ErrorResponse,
             "description": "리뷰를 찾지 못함",
             "content": {"application/json": {"example": REVIEW_NOT_FOUND_EXAMPLE}},
         },
-        **AREA8_FORBIDDEN,
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -7536,11 +8381,14 @@ def write_my_developer_profile(
         "받은 리뷰에 답글을 단다. 리뷰 하나에 답글은 하나뿐이라 다시 보내면 덮어쓴다. "
         "프로필 저장과 따로 움직이며 보내는 즉시 남는다.\n\n"
         "답글은 의뢰인에게 보이는 프로필에도 함께 나간다.\n\n"
+        "**리뷰를 받은 개발자가 토큰의 주인인지 검증한다.** `reviewId`의 리뷰가 `sub`의 "
+        "개발자 프로필에 달린 것인지 확인한 뒤에 저장하고, 다르면 403으로 막는다. 남의 "
+        "프로필에 내가 답글을 남기는 일이 없어야 한다.\n\n"
         "- **200**: 달았거나 고쳤을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / FORBIDDEN**: 나에게 달린 리뷰가 아닐 때\n"
+        "- **403 / FORBIDDEN**: `sub`가 받은 리뷰가 아닐 때\n"
         "- **404 / REVIEW_NOT_FOUND**: `reviewId`가 404일 때\n"
-        "- **422 / INVALID_REQUEST**: `reply`가 비었을 때\n"
+        "- **422 / INVALID_REQUEST**: `reply`가 비었거나 1000자를 넘을 때\n"
         "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
     ),
 )
@@ -7566,7 +8414,7 @@ def write_review_reply(
         200: {
             "content": {"application/json": {"example": MY_SESSION_LIST_EXAMPLE}}
         },
-        **AREA8_FORBIDDEN,
+        **AREA8_NO_DEVELOPER_PROFILE,
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -7579,9 +8427,11 @@ def write_review_reply(
         "화면의 '시작 N분 전'은 `scheduledAt`에서, '언제까지 질문 받습니다'는 "
         "`followUpUntil`에서 만든다.\n\n"
         "개발 계약에는 예약이 없으므로 이 목록에 나오지 않는다.\n\n"
+        "**403은 개발자 프로필이 없을 때만 나온다.** 대상을 요청에 담지 않아 남의 "
+        "것을 가리킬 자리가 없고, 토큰을 고치면 서명이 깨져 401이 된다.\n\n"
         "- **200**: 항상. 잡힌 세션이 없으면 빈 배열이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / NO_DEVELOPER_PROFILE**: 개발자로 전환하지 않았을 때\n"
+        "- **403 / NO_DEVELOPER_PROFILE**: 개발자 프로필이 없을 때\n"
         "- **500 / INTERNAL_ERROR**: 일정을 만들지 못했을 때"
     ),
 )
@@ -7590,12 +8440,12 @@ def get_my_sessions() -> MySessionListResponse:
 
 
 @router.post(
-    "/files",
-    response_model=UploadedFileResponse,
+    "/uploads",
+    response_model=UploadTargetResponse,
     status_code=201,
     tags=[AREA8_TAG],
     responses={
-        201: {"content": {"application/json": {"example": UPLOADED_FILE_EXAMPLE}}},
+        201: {"content": {"application/json": {"example": UPLOAD_TARGET_EXAMPLE}}},
         400: {
             "model": ErrorResponse,
             "description": "파일이 너무 크거나 형식이 맞지 않음",
@@ -7604,39 +8454,111 @@ def get_my_sessions() -> MySessionListResponse:
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
-    summary="파일 올리기",
+    summary="파일 올리기 시작",
     description=(
-        "**화면 — `8_개발자_내프로필` › 증빙 서류 파일 올리기 · 작업물 사진 추가**\n\n"
-        "파일을 먼저 올려 식별자를 받고, 그 식별자를 프로필 저장 요청에 담는다. 올리기만 "
-        "해서는 어디에도 붙지 않으며, 저장 요청에 담기지 않은 파일은 붙지 않은 채로 "
-        "남는다.\n\n"
+        "**화면 — `8_마이페이지` › 계정 › 사진 바꾸기, "
+        "`8_개발자_내프로필` › 증빙 서류 파일 올리기 · 작업물 사진 추가**\n\n"
+        "**파일은 이 서버로 보내지 않는다.** 올릴 파일을 먼저 알리면 파일을 보낼 주소를 "
+        "돌려주고, 화면이 그 주소로 파일을 직접 보낸다. 다 보낸 뒤 완료 API를 불러야 "
+        "파일이 쓸 수 있는 상태가 된다.\n\n"
+        "형식과 크기는 이 단계에서 본다. 여기서 걸리면 주소를 내주지 않으므로 파일이 "
+        "올라가지도 않는다. `contentType`과 `sizeBytes`는 완료할 때 실제로 올라온 "
+        "파일과 맞는지 다시 본다.\n\n"
+        "**올리기만 해서는 어디에도 붙지 않는다.** 완료까지 마친 뒤 `fileId`를 프로필 "
+        "사진 바꾸기나 프로필 저장 요청에 담아야 붙는다. 어디에도 담기지 않은 파일은 "
+        "붙지 않은 채로 남다가 정리된다.\n\n"
         "**증빙 서류는 경력 확인에만 쓴다.** 운영에서 확인이 끝나면 원본을 지우고 "
         "프로필에는 확인 표시만 남는다.\n\n"
         "작업물 사진은 의뢰인이 공개에 동의한 것만 올릴 수 있다. 동의 여부는 계약에 "
         "적혀 있고 서버가 확인한다.\n\n"
-        "- **201**: 올렸을 때\n"
-        "- **400 / FILE_TOO_LARGE**: 파일이 허용 크기를 넘었을 때\n"
-        "- **400 / UNSUPPORTED_FILE_TYPE**: 받지 않는 형식일 때\n"
+        "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
+        "없고, 토큰을 고쳐 남의 `sub`를 넣으면 서명이 깨져 401이 된다.\n\n"
+        "- **201**: 보낼 주소를 내줬을 때\n"
+        "- **400 / FILE_TOO_LARGE**: `sizeBytes`가 그 쓰임의 허용 크기를 넘었을 때\n"
+        "- **400 / UNSUPPORTED_FILE_TYPE**: `contentType`이 그 쓰임에서 받지 않는 "
+        "형식일 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **422 / INVALID_REQUEST**: `file`이나 `purpose`가 없을 때\n"
-        "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
+        "- **422 / INVALID_REQUEST**: `originalName`·`contentType`·`sizeBytes`·"
+        "`purpose`가 비었거나 `purpose`가 허용된 값이 아닐 때\n"
+        "- **500 / INTERNAL_ERROR**: 주소를 만들지 못했을 때\n\n"
+        "**이 목 서버가 내주는 `uploadUrl`은 실제로 파일을 받지 않는다.** 화면이 3콜 "
+        "구조와 응답 형태를 맞추는 데까지만 쓰고, 실제 올리기는 실서버에서 확인한다."
     ),
 )
-def upload_file(
-    file: Annotated[UploadFile, File(description="올릴 파일.")],
-    purpose: Annotated[
-        Literal["CAREER_EVIDENCE", "PORTFOLIO_IMAGE"],
-        Form(
+def create_upload(request: CreateUploadRequest) -> UploadTargetResponse:
+    return UploadTargetResponse(
+        **{
+            **UPLOAD_TARGET_EXAMPLE,
+            "headers": {"Content-Type": request.contentType},
+        }
+    )
+
+
+@router.post(
+    "/uploads/{uploadId}/complete",
+    response_model=UploadedFileResponse,
+    tags=[AREA8_TAG],
+    responses={
+        200: {"content": {"application/json": {"example": UPLOADED_FILE_EXAMPLE}}},
+        400: {
+            "model": ErrorResponse,
+            "description": "올라오지 않았거나 알린 것과 다름",
+            "content": {
+                "application/json": {"example": UPLOAD_NOT_COMPLETED_EXAMPLE}
+            },
+        },
+        **AREA8_FORBIDDEN,
+        404: {
+            "model": ErrorResponse,
+            "description": "업로드 건을 찾지 못함",
+            "content": {"application/json": {"example": UPLOAD_NOT_FOUND_EXAMPLE}},
+        },
+        **AREA1_UNAUTHORIZED,
+        **AREA1_ERRORS,
+    },
+    summary="파일 올리기 완료",
+    description=(
+        "**화면 — 파일 올리기 시작으로 받은 주소에 파일을 다 보낸 뒤**\n\n"
+        "파일이 제대로 올라왔는지 확인하고 쓸 수 있는 상태로 바꾼다. 이 API를 부르기 "
+        "전까지 `fileId`는 어디에도 붙일 수 없다.\n\n"
+        "화면이 '다 보냈다'고 알려도 그대로 믿지 않는다. 저장소에 실제로 그 파일이 "
+        "있는지, 크기와 형식이 시작할 때 알린 것과 같은지 서버가 직접 확인한다. 하나라도 "
+        "어긋나면 올라온 것을 지우고 실패로 남긴다.\n\n"
+        "**업로드를 시작한 사람이 토큰의 주인인지 검증한다.** 남이 시작한 업로드 건을 "
+        "가로채 자기 파일로 만들 수 없다.\n\n"
+        "같은 `uploadId`로 다시 불러도 된다. 이미 끝난 건이면 같은 응답을 그대로 준다. "
+        "보내는 도중 연결이 끊겨 화면이 다시 보내는 경우가 있기 때문이다.\n\n"
+        "- **200**: 확인을 마쳐 쓸 수 있게 됐을 때\n"
+        "- **400 / UPLOAD_NOT_COMPLETED**: `uploadId`가 400일 때. 저장소에 파일이 "
+        "없는 경우다\n"
+        "- **400 / UPLOAD_SIZE_MISMATCH**: 올라온 크기가 알린 것과 다를 때\n"
+        "- **400 / UPLOAD_TYPE_MISMATCH**: 올라온 형식이 알린 것과 다를 때. 보낼 때 "
+        "`headers`의 `Content-Type`을 그대로 쓰지 않으면 여기서 걸린다\n"
+        "- **400 / UPLOAD_EXPIRED**: `expiresAt`이 지난 뒤 불렀을 때\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **403 / FORBIDDEN**: 남이 시작한 업로드 건일 때\n"
+        "- **404 / UPLOAD_NOT_FOUND**: `uploadId`가 404일 때\n"
+        "- **500 / INTERNAL_ERROR**: 확인하지 못했을 때\n\n"
+        "**이 목 서버는 저장소를 확인하지 않는다.** 위 예약값이 아니면 언제나 성공한다."
+    ),
+)
+def complete_upload(
+    uploadId: Annotated[
+        int,
+        Path(
             description=(
-                "이 파일을 어디에 쓸지. 쓰임에 따라 받는 형식과 크기가 다르고 보관 "
-                "기간도 다르다."
-            )
+                "올리기 시작에서 받은 업로드 건 식별자. 404는 없음, 400은 파일이 "
+                "올라오지 않음 재현용 예약값이다."
+            ),
+            examples=[512],
         ),
     ],
-) -> UploadedFileResponse:
-    return UploadedFileResponse(
-        **{**UPLOADED_FILE_EXAMPLE, "fileName": file.filename or "file"}
-    )
+) -> UploadedFileResponse | JSONResponse:
+    if uploadId == NOT_FOUND_UPLOAD_ID:
+        return _error_response(404, UPLOAD_NOT_FOUND)
+    if uploadId == NOT_COMPLETED_UPLOAD_ID:
+        return _error_response(400, UPLOAD_NOT_COMPLETED)
+    return UploadedFileResponse(**{**UPLOADED_FILE_EXAMPLE, "fileId": uploadId})
 
 
 # =========================================================================== #
@@ -8902,7 +9824,6 @@ def download_scan_file(
         "- **200**: 내려받았을 때. 본문이 파일 내용이고 파일 이름은 "
         "`Content-Disposition`에 담긴다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / FORBIDDEN**: 이 계약의 당사자가 아닐 때\n"
         "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableId`가 404일 때\n"
         "- **409 / DELIVERABLE_NOT_UPLOADED**: `deliverableId`가 409일 때. 개발자가 아직 "
         "올리지 않아 받을 파일이 없다\n"
@@ -8939,6 +9860,67 @@ WriteDevelopmentContractRequest.model_rebuild()
 # 개발자가 상담 요청을 수락·거절하는 기능은 만들지 않기로 했다.
 # ERD의 recommendation_items.status(RECOMMENDATION_DEV_RESPONSE)는 쓰지 않는다.
 # 의뢰인이 상담을 요청하면 방이 바로 열린다.
+#
+# 추천 관련 ERD 컬럼을 어떻게 채우는지 — API 응답에는 나가지 않는 값들이다.
+#
+#   recommendation_batches.viewed_at
+#       추천 결과 조회가 처음 불릴 때 찍는다. 이 값이 비어 있으면 아직 열어보지 않은
+#       회차이므로, 추천 받기를 다시 불러도 새 회차를 만들지 않고 그 회차를 돌려준다.
+#   recommendation_batches.trigger_type / parent_batch_id
+#       서버가 정한다. 프로젝트의 첫 회차면 CONSULT_REQUEST, 이미 회차가 있으면
+#       REMATCH 로 적고 직전 회차를 부모로 잇는다. MANUAL 은 운영에서만 쓴다.
+#   recommendation_batches.outcome
+#       계약이 완료되거나 파기될 때 서버가 갱신한다. 추천으로 만난 개발자와 계약했으면
+#       CONTRACTED, 상담만 하고 끝났으면 CONSULTED_ONLY, 추천 밖 개발자와 계약했으면
+#       OUTSIDE 다. 확정 전에는 비어 있다.
+#   recommendation_items.impressed_at
+#       추천 결과 조회가 목록에 실어 보낸 항목 전부에 찍는다. 화면이 스크롤로 실제로
+#       보여준 것만 가려내지는 않는다. 그 정확도를 얻으려면 화면이 노출을 따로
+#       알려줘야 하는데, 그만한 API 를 두지 않기로 했다.
+#   recommendation_items.profile_viewed_at
+#       쓰지 않는다. 개발자 프로필 조회는 로그인 없이도 부르는 공개 API 라 어느
+#       추천에서 눌러 들어왔는지 알 수 없고, 그것을 알리자고 공개 API 에 추적 값을
+#       얹지 않는다.
+#
+# 방 상세의 값을 어디서 만드는지 — 한 컬럼으로 바로 나오지 않는 것들이다.
+#
+#   RoomSummaryResponse 에 의뢰인 식별자를 담지 않는 이유
+#       rooms 에 client_id 가 없다. 방의 의뢰인은 projects.client_id 이며 같은
+#       프로젝트의 방은 모두 같은 사람이다. 화면도 developer_id 하나로 보낸 의뢰와
+#       받은 의뢰를 가르므로 응답에 넣지 않는다.
+#   counterpartName
+#       의뢰인이 보면 rooms.developer_id -> developers.user_id -> users.name,
+#       개발자가 보면 projects.client_id -> users.name 이다. users.is_deleted 가
+#       참이면 이름 대신 '탈퇴한 사용자' 를 내보낸다.
+#   request.issueCount
+#       rooms.project_id -> diagnoses -> inspections -> issues 로 내려가 센다.
+#       **이번 회차만 센다** — inspections.diagnosis_version = diagnoses.version 인
+#       검사의 이슈만 대상이며, 그중 status 가 RESOLVED 가 아닌 것을 센다. 회차
+#       조건을 빠뜨리면 재진단한 프로젝트에서 숫자가 회차만큼 불어난다.
+#   request.updatedAt
+#       diagnoses.updated_at 을 쓴다. issues 에는 updated_at 컬럼이 없고
+#       qa_criteria 의 것만 보면 요구사항 제목을 고쳤을 때 값이 움직이지 않는다.
+#       요청서 저장이 진단 행도 함께 갱신하게 해서 한 값으로 모은다.
+#   contractId
+#       contracts.room_id = rooms.id 로 찾는다. 컬럼에 UNIQUE 가 걸려 있지 않지만
+#       방 하나에 계약은 하나로 두기로 했다. 파기 뒤 재계약을 허용하게 되면 그때
+#       어느 것을 내려줄지 다시 정해야 한다.
+#   convertedRoomId / convertedRoomType
+#       rooms 에 상담방과 이어진 방을 잇는 컬럼이 없다. 같은 프로젝트·같은 개발자의
+#       방 가운데 용도가 INQUIRY 가 아닌 것을 찾아 잇는다.
+#           WHERE project_id = ? AND developer_id = ? AND type <> 'INQUIRY'
+#       이 추정이 성립하는 근거는 두 가지다. 상담 요청이 멱등이라 (프로젝트, 개발자)
+#       마다 상담방이 하나뿐이고, 한 상담방은 한 번만 전환되므로(두 번째는 409)
+#       이어지는 방도 하나다.
+#
+#       ⚠️ 컨설팅 방에서 개발로 다시 이어가는 길을 만들면 이 규칙이 깨진다. 한
+#       (프로젝트, 개발자)에 CONSULTING 과 DEVELOPMENT 가 함께 생겨 어느 것이 상담방의
+#       다음인지 가릴 수 없다. 그때는 rooms.parent_room_id 를 두어야 한다.
+#
+#       목 데이터는 갈래 두 쪽을 다 보여주려고 방 92(컨설팅)와 93(개발)을 같은
+#       (프로젝트 8, 개발자 3)에 함께 두었다. 실서버에서는 상담방 91 이 한 번만
+#       전환되므로 둘 중 하나만 생기지만, 목 데이터에 위 질의를 그대로 돌리면 둘 다
+#       걸린다. 목을 보고 이 추정을 검증하지 않는다.
 
 
 # =========================================================================== #
@@ -8970,6 +9952,9 @@ SERVICE_TAGS = [
             "---\n\n"
             "### 인증\n\n"
             "로그인과 재발급을 뺀 모든 API는 헤더에 `Authorization: Bearer <accessToken>`을 실어 부른다.\n\n"
+            "**공개 API 넷은 예외다.** 코드 목록, 개발자 찾기, 개발자 프로필, 개발자 리뷰 목록은 "
+            "토큰 없이 부를 수 있다. 랜딩의 '증상별로 찾기'가 로그인 전 진입 경로라서다. 이 넷은 "
+            "`401`을 선언하지 않는다.\n\n"
             "**토큰에는 사용자 id와 만료 시각만 들어 있다.**\n\n"
             "**리프레시 토큰은 액세스 토큰을 다시 받을 때만 쓴다.** 다시 받으면 리프레시 토큰도 새 값이 되고 이전 값은 못 쓴다.\n\n"
             "**운영 콘솔은 토큰이 따로다.** `9 운영 콘솔`의 로그인으로 받으며, 사용자 토큰으로는 운영 API를 부를 수 없다.\n\n"
@@ -9004,6 +9989,11 @@ SERVICE_TAGS = [
             "**화면** `3_의뢰인_개발자찾기` · `3_의뢰인_개발자프로필` · "
             "`3_의뢰인_개발자추천` · `3_의뢰인_상담방_대화` · `3_의뢰인_상담방_컨설팅전환` · `3_의뢰인_상담방_개발전환` · "
             "`3_개발자_개발계약서요청받음`\n\n"
+            "**상담 요청 API는 들어온 길에 따라 둘이다.** 추천에서 고른 개발자는 추천 "
+            "회차의 상담 요청 API로, 직접 찾은 개발자는 프로젝트 상담 요청 API로 보낸다. "
+            "직접 찾은 길은 회차를 만들지 않아 방의 `recommendationItemId`가 비어 있다.\n\n"
+            "**개발자가 상담 요청을 수락하거나 거절하지 않는다.** 요청하면 그 자리에서 "
+            "무료 상담방이 열리고, 개발자는 사이드바의 '받은 의뢰'에서 본다.\n\n"
             "**채팅 메시지는 이 API가 다루지 않는다.** 방 응답의 `chatRefId`로 채팅 쪽에 "
             "넘긴다. 사이드바의 마지막 메시지 미리보기도 그쪽에서 가져온다.\n\n"
             "**함께 쓰는 API** `GET /api/users/me` · `GET /api/diagnoses/{id}`"
@@ -9080,27 +10070,84 @@ SERVICE_TAGS = [
     {
         "name": "8 계정 · 공통",
         "description": (
-            "마이페이지에서 계정과 돈 쓰는 수단을 관리한다. 흐름 밖 화면이다.\n\n"
-            "**화면** `8_마이페이지` · `8_마이페이지_등록전` · `8_계좌등록` · "
-            "`8_계좌인증` · `8_펼침_은행선택` · `8_아바타메뉴` · `8_회원탈퇴` · "
-            "`8_알림` · `8_약관` · `8_개발자_내프로필` · `8_개발자_내일정`\n\n"
-            "**`8_약관`과 `8_아바타메뉴`에는 API가 없다.** 약관 문서와 개정일, 사업자 "
-            "정보는 서버가 들고 있지 않고 화면이 가진 정적 문서이며, 아바타 메뉴는 이미 "
-            "받은 값으로 그리는 메뉴다.\n\n"
-            "**내 프로필은 줄마다 저장하지 않는다.** 화면의 저장 버튼 하나가 소개·기술·"
-            "경력·작업물·가격표를 통째로 보내고, 보낸 내용으로 맞춘다. 파일만 먼저 올려 "
-            "식별자를 받는다.\n\n"
-            "**회원 탈퇴는 지우는 것이 아니다.** 사용자 정보는 그대로 두고 삭제 여부 값만 "
+            "마이페이지에서 계정·계좌·알림을 관리하고, 개발자는 자기 프로필과 일정을 "
+            "본다. 의뢰 흐름 밖 화면이다.\n\n"
+            "### 화면과 API\n\n"
+            "| 화면 | API |\n"
+            "| --- | --- |\n"
+            "| `8_마이페이지` · `8_마이페이지_등록전` | `GET /api/mypage` |\n"
+            "| `8_마이페이지` › 이름 바꾸기 | `PATCH /api/users/me` |\n"
+            "| `8_마이페이지` › 사진 바꾸기 | `PUT /api/users/me/profile-image` |\n"
+            "| `8_마이페이지` › 알림 끄기·켜기 | `PATCH /api/settings/notification` |\n"
+            "| `8_계좌등록` | `POST /api/accounts/verifications` |\n"
+            "| `8_계좌인증` | `POST /api/accounts/verifications/{verificationId}/confirm` |\n"
+            "| `8_알림` | `GET /api/notifications` · "
+            "`POST /api/notifications/read-all` · "
+            "`PATCH /api/notifications/{notificationId}/read` |\n"
+            "| `8_회원탈퇴` | `GET /api/users/me/withdrawal` · "
+            "`POST /api/users/me/withdrawal` |\n"
+            "| `8_개발자_내프로필` | `GET /api/users/me/developer-profile` · "
+            "`PUT /api/users/me/developer-profile` · "
+            "`PUT /api/reviews/{reviewId}/reply` |\n"
+            "| `8_개발자_내일정` | `GET /api/users/me/sessions` |\n"
+            "| `8_마이페이지` · `8_개발자_내프로필` › 파일 올리기 | "
+            "`POST /api/uploads` · `POST /api/uploads/{uploadId}/complete` |\n"
+            "| `8_펼침_은행선택` | `GET /api/codes/{groupKey}` — 영역 3 |\n"
+            "| `8_아바타메뉴` | `POST /api/auth/logout` — 영역 1 |\n"
+            "| `8_약관` | 없음 |\n\n"
+            "`8_약관`은 화면이 가진 정적 문서라 서버가 줄 것이 없다. `8_아바타메뉴`는 "
+            "`GET /api/users/me`로 이미 받은 값을 그리고 로그아웃만 부른다. "
+            "`8_펼침_은행선택`은 은행 목록을 코드 조회로 받는다 — `groupKey`는 "
+            "`BANK_CODE`다.\n\n"
+            "약관 **동의 여부**는 서버가 들고 있지만 그걸 읽고 바꾸는 API는 두지 "
+            "않는다 — 필수 약관은 로그인에 묶여 있고, 마케팅 수신과 판매자 약관을 "
+            "켜고 끄는 화면이 없다.\n\n"
+            "**함께 쓰는 API** `GET /api/users/me` (전 영역 헤더) · "
+            "`POST /api/auth/logout` · `GET /api/codes/{groupKey}` · "
+            "`GET /api/settlements/income` (개발자 소득 내역의 계좌 칸)\n\n"
+            "---\n\n"
+            "### 인가\n\n"
+            "**이 영역은 전부 내 것을 다루므로 로그인 여부만 보고 통과시키지 않는다.** "
+            "액세스 토큰을 검증해 `sub`를 꺼내고, 다루려는 자원의 주인이 그 `sub`와 "
+            "같은지 확인한 뒤에 처리한다.\n\n"
+            "- 대상을 요청에 담지 않는 API는 `sub`가 곧 대상이다. 요청에 사용자 "
+            "식별자를 실어 보내도 받지 않는다\n"
+            "- 경로나 본문에 식별자가 있는 API는 그 자원의 주인이 `sub`와 같은지 "
+            "확인하고, 다르면 403 `FORBIDDEN`으로 막는다\n\n"
+            "**대상을 담지 않는 API에는 403 `FORBIDDEN`이 없다.** 남의 것을 가리킬 "
+            "자리가 없어 나올 수가 없다. 토큰을 고쳐 남의 `sub`를 넣어도 서명이 깨져 "
+            "401에서 끝난다. 403이 실려 있는 API는 요청에 남의 식별자를 적을 수 있는 "
+            "쪽이다.\n\n"
+            "**403은 두 뜻으로 쓴다.** `FORBIDDEN`은 남의 자원을 건드렸다는 뜻이고, "
+            "`NO_DEVELOPER_PROFILE`은 개발자 프로필이 없다는 뜻이다. 화면 분기는 "
+            "상태코드가 아니라 `code`로 가른다.\n\n"
+            "---\n\n"
+            "### 파일\n\n"
+            "**파일은 이 서버를 거치지 않는다.** 올릴 파일을 알리면 보낼 주소를 받고, "
+            "화면이 그 주소로 파일을 직접 보낸 뒤 완료를 알린다.\n\n"
+            "1. `POST /api/uploads` 보낼 주소를 받는다\n"
+            "2. 받은 주소로 `PUT` 파일을 직접 보낸다\n"
+            "3. `POST /api/uploads/{uploadId}/complete` 제대로 올라왔는지 확인받고 "
+            "`fileId`를 받는다\n"
+            "4. 그 `fileId`를 쓰는 곳에 붙인다\n\n"
+            "**올리기와 붙이기는 별개다.** 프로필 사진은 저장 버튼이 없는 화면이라 "
+            "`PUT /api/users/me/profile-image`로 즉시 붙이고, 증빙 서류와 작업물 사진은 "
+            "프로필 저장 요청에 `fileId`를 실어 저장할 때 붙는다.\n\n"
+            "---\n\n"
+            "### 그 밖에 알아 둘 것\n\n"
+            "**내 프로필은 줄마다 저장하지 않는다.** 저장 버튼 하나가 소개·기술·경력·"
+            "작업물·가격표를 통째로 보내고, 보낸 내용으로 맞춘다.\n\n"
+            "**회원 탈퇴는 지우는 것이 아니다.** 사용자 정보는 그대로 두고 삭제 여부만 "
             "참으로 바꾼 뒤 삭제 시각을 적는다. 계약·정산 이력과 메시지, 리뷰가 상대 "
-            "화면에도 있는 기록이라 남겨야 하기 때문이며, 그래서 `DELETE`가 아니라 "
-            "`POST`를 쓴다.\n\n"
-            "**돈을 내는 수단과 받는 계좌는 다르다.** 내는 쪽은 카드와 실시간 계좌이체이고, "
-            "받는 쪽은 1원 인증으로 등록한 계좌 하나다. 의뢰인은 그 계좌로 환불을 받고 "
-            "개발자는 대금을 받는다. **계좌 API는 두 역할이 함께 쓴다.**\n\n"
-            "**계좌는 1원 인증으로만 등록한다.** 계좌를 넣는 요청과 입금자명 뒤 네 자리를 "
-            "내는 요청이 나뉘고, 확인이 끝나는 순간에만 계좌가 남는다. 계좌번호 원문은 "
-            "어디에도 보관하지 않으며 응답에는 언제나 가려서 나간다.\n\n"
-            "**함께 쓰는 API** `GET /api/settlements/income`"
+            "화면에도 있는 기록이라 남겨야 하며, 그래서 `DELETE`가 아니라 `POST`다.\n\n"
+            "**계좌는 1원 인증으로만 등록한다.** 계좌를 넣는 요청과 입금자명 뒤 네 "
+            "자리를 내는 요청이 나뉘고, 확인이 끝나는 순간에만 계좌가 남는다. 사람마다 "
+            "한 개이며 의뢰인은 환불을, 개발자는 대금을 그 계좌로 받는다. 계좌번호 "
+            "원문은 보관하지 않고 응답에는 언제나 가려서 나간다.\n\n"
+            "**에스크로 서버는 SSAFY 금융망과 코밋 사이의 프록시다.** 클라이언트는 위 "
+            "API들의 간소화된 형식만 쓰고, 코밋이 에스크로에 보낼 때 SSAFY 금융망 "
+            "형식(`Header`/`REC`)으로 바꾼다. 금융망 응답코드는 코밋의 `code`로 옮겨져 "
+            "나간다."
         ),
     },
     {
