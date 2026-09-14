@@ -926,17 +926,17 @@ def get_featured_developers(
             "description": "카카오 인가 코드로 로그인하지 못함",
             "content": {"application/json": {"example": KAKAO_AUTH_FAILED_EXAMPLE}},
         },
-        503: {
-            "model": ErrorResponse,
-            "description": "카카오 서비스에 연결하지 못함",
-            "content": {"application/json": {"example": KAKAO_UNAVAILABLE_EXAMPLE}},
-        },
         422: {
             "model": ValidationErrorResponse,
             "description": "요청 스키마 유효성 검증 실패",
             "content": {"application/json": {"example": KAKAO_LOGIN_ERROR_EXAMPLE}},
         },
         500: AREA1_ERRORS[500],
+        503: {
+            "model": ErrorResponse,
+            "description": "카카오 서비스에 연결하지 못함",
+            "content": {"application/json": {"example": KAKAO_UNAVAILABLE_EXAMPLE}},
+        },
     },
     summary="카카오 로그인",
     description=(
@@ -950,9 +950,10 @@ def get_featured_developers(
         "- **200**: 로그인에 성공했을 때. 이번에 새로 가입했으면 `isNewUser`가 true다\n"
         "- **401 / KAKAO_AUTH_FAILED**: `code`가 `invalid-code`일 때. 인가 코드가 "
         "만료되었거나 이미 쓴 값이다. 계정이 있는지 없는지는 구분해 알려주지 않는다\n"
+        "- **422 / INVALID_REQUEST**: `code`나 `redirectUri`가 없을 때\n"
+        "- **500 / INTERNAL_ERROR**: 로그인을 처리하지 못했을 때\n"
         "- **503 / KAKAO_UNAVAILABLE**: `code`가 `kakao-unavailable`일 때. 카카오 쪽 "
-        "문제라 잠시 뒤 다시 시도하면 된다\n"
-        "- **422 / INVALID_REQUEST**: `code`나 `redirectUri`가 없을 때\n\n"
+        "문제라 잠시 뒤 다시 시도하면 된다\n\n"
         "`code`가 `new-user`이면 새로 가입한 응답을, 그 밖의 값이면 기존 사용자로 "
         "로그인한 응답을 준다."
     ),
