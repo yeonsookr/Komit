@@ -6021,6 +6021,11 @@ def confirm_milestone(
             "description": "파일이 허용 용량을 넘음",
             "content": {"application/json": {"example": FILE_TOO_LARGE_EXAMPLE}},
         },
+        403: {
+            "model": ErrorResponse,
+            "description": "이 계약의 개발자가 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
         404: {
             "model": ErrorResponse,
             "description": "인계물 없음",
