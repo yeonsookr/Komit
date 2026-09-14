@@ -5959,8 +5959,9 @@ def get_income() -> IncomeResponse:
 #
 # 8_약관과 8_아바타메뉴에는 API 가 없다. 약관 문서와 개정일, 사업자 정보는 서버가
 # 들고 있지 않고 화면이 가진 정적 문서이며, 아바타 메뉴는 이미 받은 값으로 그리는
-# 메뉴다. 다만 동의 여부는 settings 에 있다 — 필수 약관은 로그인으로 처리되고,
-# 마케팅 수신과 판매자 약관은 선택이라 켜고 끄는 API 가 따로 필요하다.
+# 메뉴다. 동의 여부는 settings 에 있지만 그것을 읽고 바꾸는 API 는 두지 않는다 —
+# 필수 약관은 로그인으로 처리되고, 마케팅 수신과 판매자 약관은 켜고 끄는 화면이
+# 없다.
 #
 # 내 프로필은 줄마다 저장하지 않는다. 화면의 저장 버튼 하나가 소개·기술·경력·작업물·
 # 가격표를 통째로 보내고, 보낸 내용으로 맞춘다. 파일만 먼저 올려 식별자를 받는다.
@@ -5973,9 +5974,9 @@ def get_income() -> IncomeResponse:
 # 바꾼 뒤 삭제 시각을 적는다. 계약·정산 이력과 메시지, 리뷰가 상대 화면에도 있는
 # 기록이라 남겨야 하기 때문이다. 그래서 DELETE 가 아니라 POST 를 쓴다.
 #
-# 돈을 내는 수단과 받는 계좌는 다르다. 내는 쪽은 payment_methods 로 카드와
-# 실시간 계좌이체가 있고, 받는 쪽은 accounts 로 사람마다 한 개다. 의뢰인은 그
-# 계좌로 환불을 받고 개발자는 대금을 받는다.
+# 돈을 내는 수단과 받는 계좌는 다르다. 이 영역이 다루는 것은 받는 쪽인 accounts
+# 하나뿐이고 사람마다 한 개다. 의뢰인은 그 계좌로 환불을 받고 개발자는 대금을
+# 받는다. 내는 쪽은 여기서 다루지 않는다 — 예치할 때 영역 5 에서 고른다.
 #
 # 계좌는 1원 인증으로만 등록한다. 계좌를 넣는 요청과 입금자명 뒤 네 자리를 내는
 # 요청이 나뉘며, 확인이 끝나는 순간에만 accounts 에 계좌가 남는다. 1원 이체와
@@ -5988,8 +5989,12 @@ def get_income() -> IncomeResponse:
 #
 # 이 영역은 전부 내 것을 다루므로 인가를 반드시 검증한다. 액세스 토큰을 검증해
 # sub 를 꺼내고, 다루려는 자원의 주인이 그 sub 와 같은지 확인한 뒤에 처리한다.
-# 대상을 요청에 담지 않는 API 는 sub 가 곧 대상이고, 경로에 식별자가 있는 API 는
-# 그 자원의 주인이 sub 와 같은지 확인해 다르면 403 FORBIDDEN 으로 막는다.
+# 대상을 요청에 담지 않는 API 는 sub 가 곧 대상이고, 경로나 본문에 식별자가 있는
+# API 는 그 자원의 주인이 sub 와 같은지 확인해 다르면 403 FORBIDDEN 으로 막는다.
+#
+# 그래서 대상을 담지 않는 API 에는 403 FORBIDDEN 을 두지 않는다. 남의 것을 가리킬
+# 자리가 없어 나올 수가 없기 때문이다. 토큰을 고쳐 남의 sub 를 넣는 경우도 서명이
+# 깨져 401 에서 끝난다.
 #
 # 403 은 두 뜻으로 쓴다. FORBIDDEN 은 남의 자원, NO_DEVELOPER_PROFILE 은 개발자로
 # 전환하지 않은 것이다. 화면 분기는 상태코드가 아니라 code 로 가른다.
@@ -6141,7 +6146,6 @@ VERIFICATION_EXAMPLE = {
             "description": "에스크로 서버에 연결하지 못함",
             "content": {"application/json": {"example": ESCROW_UNAVAILABLE_EXAMPLE}},
         },
-        **AREA8_FORBIDDEN,
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -6162,12 +6166,13 @@ VERIFICATION_EXAMPLE = {
         "이전 계좌를 대신한다.\n\n"
         "**확인 건은 토큰의 주인에게 달린다.** 액세스 토큰을 검증해 `sub`를 꺼내고 그 "
         "사용자의 확인 건으로 연다. 누구의 계좌인지는 요청에 담지 않는다.\n\n"
+        "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
+        "없고, 토큰을 고쳐 남의 `sub`를 넣으면 서명이 깨져 401이 된다.\n\n"
         "- **201**: 1원을 보냈고 확인 건이 열렸을 때\n"
         "- **400 / ACCOUNT_REJECTED**: 은행이 계좌를 받지 않았을 때. 계좌번호나 "
         "은행이 틀렸거나 거래할 수 없는 계좌다\n"
         "- **400 / VERIFICATION_TOO_MANY**: 같은 계좌로 너무 자주 요청했을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / FORBIDDEN**: 토큰의 주인 앞으로 확인 건을 열 수 없을 때\n"
         "- **422 / INVALID_REQUEST**: 은행·계좌번호·예금주가 비었거나 계좌번호에 "
         "숫자가 아닌 글자가 섞였을 때\n"
         "- **500 / INTERNAL_ERROR**: 확인 건을 열지 못했을 때\n"
@@ -6584,9 +6589,15 @@ class MyDeveloperProfileResponse(BaseModel):
         examples=[3],
     )
     name: str = Field(description="화면에 표시하는 이름.", examples=["이준"])
-    profileImageFileId: int | None = Field(
-        description="직접 올린 프로필 사진의 파일 식별자. 없으면 null이다.",
-        examples=[None],
+    profileImageUrl: str | None = Field(
+        description=(
+            "화면에 그대로 거는 프로필 사진 주소. 계정의 `profileImageUrl`과 같은 "
+            "값이라 직접 올린 사진이 있으면 그 사진의 주소이고, 없으면 카카오 사진 "
+            "주소다. 둘 다 없으면 null이다.\n\n"
+            "직접 올린 사진의 주소는 한동안만 쓸 수 있는 임시 주소다. 만료되면 다시 "
+            "받아야 하므로 저장해 두고 오래 쓰지 않는다."
+        ),
+        examples=["https://cdn.komit.example.com/profiles/512.png"],
     )
     intro: str = Field(
         description="개발자가 적은 한 줄 소개.",
@@ -6961,24 +6972,13 @@ NOT_COMPLETED_UPLOAD_ID = 400
 NOT_ATTACHABLE_FILE_ID = 400
 
 # 개발자 프로필이 있어야 부를 수 있는 API 가 함께 쓰는 실패 응답.
-# 같은 403 이라도 code 가 다르므로 두 예시를 함께 싣는다.
-AREA8_DEVELOPER_FORBIDDEN: dict = {
+# 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 없으므로 FORBIDDEN 은 싣지 않는다.
+AREA8_NO_DEVELOPER_PROFILE: dict = {
     403: {
         "model": ErrorResponse,
-        "description": "토큰의 주인 것이 아니거나 개발자 프로필이 없음",
+        "description": "개발자 프로필이 없음",
         "content": {
-            "application/json": {
-                "examples": {
-                    "forbidden": {
-                        "summary": "`sub`의 것이 아닐 때",
-                        "value": FORBIDDEN_EXAMPLE,
-                    },
-                    "noDeveloperProfile": {
-                        "summary": "개발자 프로필이 없을 때",
-                        "value": NO_DEVELOPER_PROFILE_EXAMPLE,
-                    },
-                }
-            }
+            "application/json": {"example": NO_DEVELOPER_PROFILE_EXAMPLE}
         },
     },
 }
@@ -7123,7 +7123,7 @@ WITHDRAWAL_RESULT_EXAMPLE = {
 MY_DEVELOPER_PROFILE_EXAMPLE = {
     "developerId": 3,
     "name": "이준",
-    "profileImageFileId": None,
+    "profileImageUrl": None,
     "intro": "간단한 상담도 받습니다. 용어부터 풀어서 설명합니다.",
     "yearsOfExperience": 5.0,
     "field": {"codeId": 4, "codeName": "백엔드"},
@@ -7317,7 +7317,6 @@ UPLOAD_TARGET_EXAMPLE = {
                 }
             }
         },
-        **AREA8_FORBIDDEN,
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -7332,9 +7331,10 @@ UPLOAD_TARGET_EXAMPLE = {
         "프로필 칸이 통째로 빠진다.\n\n"
         "약관 칸은 이 응답에 없다. 약관 문서와 개정일은 서버가 들고 있지 않고 화면이 "
         "가진 정적 문서이며, 동의 여부도 이 응답에 담지 않는다.\n\n"
+        "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
+        "없고, 토큰을 고쳐 남의 `sub`를 넣으면 서명이 깨져 401이 된다.\n\n"
         "- **200**: 항상\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / FORBIDDEN**: 토큰의 주인이 아닌 계정의 마이페이지를 열려 할 때\n"
         "- **500 / INTERNAL_ERROR**: 마이페이지를 만들지 못했을 때"
     ),
 )
@@ -7350,7 +7350,6 @@ def get_my_page() -> MyPageResponse:
         200: {
             "content": {"application/json": {"example": MY_PAGE_EXAMPLE["account"]}}
         },
-        **AREA8_FORBIDDEN,
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
         422: {
@@ -7368,10 +7367,11 @@ def get_my_page() -> MyPageResponse:
         "**바꾸려는 계정이 토큰의 주인인지 검증한다.** 액세스 토큰을 검증해 `sub`를 "
         "꺼내고, 바꾸려는 계정이 그 `sub`와 같은지 확인한 뒤에 바꾼다. 다르면 403으로 "
         "막는다. 로그인했다는 것만으로 남의 이름을 바꿀 수 없다.\n\n"
+        "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
+        "없고, 토큰을 고쳐 남의 `sub`를 넣으면 서명이 깨져 401이 된다.\n\n"
         "- **200**: 바꿨을 때\n"
         "- **401 / UNAUTHORIZED**: 토큰이 없거나 만료·위조됐을 때, `sub`의 사용자가 "
         "없거나 탈퇴한 계정일 때\n"
-        "- **403 / FORBIDDEN**: 토큰의 `sub`가 아닌 계정을 바꾸려 할 때\n"
         "- **422 / INVALID_REQUEST**: `name`이 비었거나 20자를 넘었을 때\n"
         "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
     ),
@@ -7441,7 +7441,6 @@ def update_my_profile_image(
     tags=[AREA8_TAG],
     responses={
         200: {"content": {"application/json": {"example": {"notificationEnabled": False}}}},
-        **AREA8_FORBIDDEN,
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -7453,9 +7452,10 @@ def update_my_profile_image(
         "카카오 이메일을 인증하지 않은 계정에는 켜도 알림톡이 나가지 않는다.\n\n"
         "**바뀌는 것은 토큰의 주인의 설정이다.** 액세스 토큰을 검증해 `sub`를 꺼내 그 "
         "계정의 설정만 바꾸며, 대상을 요청에 담지 않는다.\n\n"
+        "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
+        "없고, 토큰을 고쳐 남의 `sub`를 넣으면 서명이 깨져 401이 된다.\n\n"
         "- **200**: 바꿨을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / FORBIDDEN**: 토큰의 주인이 아닌 계정의 설정을 바꾸려 할 때\n"
         "- **422 / INVALID_REQUEST**: `notificationEnabled`가 없을 때\n"
         "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
     ),
@@ -7476,7 +7476,6 @@ def update_notification_setting(
         200: {
             "content": {"application/json": {"example": NOTIFICATION_LIST_EXAMPLE}}
         },
-        **AREA8_FORBIDDEN,
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -7490,9 +7489,10 @@ def update_notification_setting(
         "줄이 들어간다.\n\n"
         "`unreadCount`는 `unreadOnly`와 페이지에 상관없이 언제나 안 읽은 알림 전체 수다. "
         "헤더 종 옆 숫자가 이 값이다.\n\n"
+        "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
+        "없고, 토큰을 고쳐 남의 `sub`를 넣으면 서명이 깨져 401이 된다.\n\n"
         "- **200**: 항상. 알림이 없으면 빈 배열이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / FORBIDDEN**: 토큰의 주인이 아닌 계정의 알림을 보려 할 때\n"
         "- **422 / INVALID_REQUEST**: `page`가 1보다 작거나 `size`가 범위를 벗어났을 때\n"
         "- **500 / INTERNAL_ERROR**: 목록을 만들지 못했을 때"
     ),
@@ -7529,7 +7529,6 @@ def get_notifications(
         200: {
             "content": {"application/json": {"example": NOTIFICATION_LIST_EXAMPLE}}
         },
-        **AREA8_FORBIDDEN,
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -7539,9 +7538,10 @@ def get_notifications(
         "안 읽은 알림을 전부 읽음으로 바꾸고, 바뀐 목록을 그대로 돌려준다. 화면이 "
         "다시 조회하지 않아도 되게 하기 위해서다.\n\n"
         "이미 다 읽었으면 아무것도 바꾸지 않고 같은 목록을 준다.\n\n"
+        "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
+        "없고, 토큰을 고쳐 남의 `sub`를 넣으면 서명이 깨져 401이 된다.\n\n"
         "- **200**: 처리했을 때. `unreadCount`가 0이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / FORBIDDEN**: 토큰의 주인이 아닌 계정의 알림을 읽음으로 바꾸려 할 때\n"
         "- **500 / INTERNAL_ERROR**: 처리하지 못했을 때"
     ),
 )
@@ -7615,7 +7615,6 @@ def read_notification(
         200: {
             "content": {"application/json": {"example": WITHDRAWAL_CHECK_EXAMPLE}}
         },
-        **AREA8_FORBIDDEN,
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -7626,9 +7625,10 @@ def read_notification(
         "`canWithdraw`가 거짓이면 탈퇴 버튼을 잠그고 `blockers`를 줄로 늘어놓는다.\n\n"
         "진행 중인 의뢰, 남은 예치금, 아직 받지 못한 소득이 막는다. 예치금과 소득은 "
         "Escrow 서버에서 받아와 센다.\n\n"
+        "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
+        "없고, 토큰을 고쳐 남의 `sub`를 넣으면 서명이 깨져 401이 된다.\n\n"
         "- **200**: 항상\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / FORBIDDEN**: 토큰의 주인이 아닌 계정의 탈퇴 가능 여부를 보려 할 때\n"
         "- **500 / INTERNAL_ERROR**: 확인하지 못했을 때"
     ),
 )
@@ -7642,7 +7642,6 @@ def check_withdrawal() -> WithdrawalCheckResponse:
     tags=[AREA8_TAG],
     responses={
         200: {"content": {"application/json": {"example": WITHDRAWAL_RESULT_EXAMPLE}}},
-        **AREA8_FORBIDDEN,
         409: {
             "model": ErrorResponse,
             "description": "정리하지 않은 것이 남아 탈퇴할 수 없음",
@@ -7668,9 +7667,10 @@ def check_withdrawal() -> WithdrawalCheckResponse:
         "**탈퇴하는 계정은 토큰의 주인이다.** 액세스 토큰을 검증해 `sub`를 꺼내 그 "
         "계정만 탈퇴시키며, 대상을 요청에 담지 않는다. 되돌릴 수 없는 요청이므로 "
         "로그인했다는 것만으로 통과시키지 않는다.\n\n"
+        "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
+        "없고, 토큰을 고쳐 남의 `sub`를 넣으면 서명이 깨져 401이 된다.\n\n"
         "- **200**: 탈퇴했을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / FORBIDDEN**: 토큰의 주인이 아닌 계정을 탈퇴시키려 할 때\n"
         "- **409 / WITHDRAWAL_BLOCKED**: 진행 중인 의뢰나 남은 돈이 있을 때\n"
         "- **500 / INTERNAL_ERROR**: 처리하지 못했을 때"
     ),
@@ -7689,7 +7689,7 @@ def withdraw() -> WithdrawalResultResponse | JSONResponse:
                 "application/json": {"example": MY_DEVELOPER_PROFILE_EXAMPLE}
             }
         },
-        **AREA8_DEVELOPER_FORBIDDEN,
+        **AREA8_NO_DEVELOPER_PROFILE,
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -7698,13 +7698,12 @@ def withdraw() -> WithdrawalResultResponse | JSONResponse:
         "**화면 — `8_개발자_내프로필`**\n\n"
         "편집 화면이 쓰는 값을 한 번에 내려준다. 남에게 보이는 개발자 상세에 가격표 "
         "전부와 받은 리뷰를 더한 모양이다.\n\n"
-        "`prices`는 남에게 보이는 것과 같은 유형별 최저가이고, 편집에 쓰는 줄 단위 "
-        "가격표는 `myPrices`에 있다.\n\n"
         "평점은 읽기 전용이다. 유료 거래를 마친 의뢰인의 리뷰로만 매겨지므로 저장 "
         "요청으로 바꿀 수 없다.\n\n"
+        "**403은 개발자 프로필이 없을 때만 나온다.** 대상을 요청에 담지 않아 남의 "
+        "것을 가리킬 자리가 없고, 토큰을 고치면 서명이 깨져 401이 된다.\n\n"
         "- **200**: 항상\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / FORBIDDEN**: 토큰의 주인이 아닌 프로필을 보려 할 때\n"
         "- **403 / NO_DEVELOPER_PROFILE**: 개발자 프로필이 없을 때\n"
         "- **500 / INTERNAL_ERROR**: 프로필을 만들지 못했을 때"
     ),
@@ -7822,7 +7821,7 @@ def write_review_reply(
         200: {
             "content": {"application/json": {"example": MY_SESSION_LIST_EXAMPLE}}
         },
-        **AREA8_DEVELOPER_FORBIDDEN,
+        **AREA8_NO_DEVELOPER_PROFILE,
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -7835,9 +7834,10 @@ def write_review_reply(
         "화면의 '시작 N분 전'은 `scheduledAt`에서, '언제까지 질문 받습니다'는 "
         "`followUpUntil`에서 만든다.\n\n"
         "개발 계약에는 예약이 없으므로 이 목록에 나오지 않는다.\n\n"
+        "**403은 개발자 프로필이 없을 때만 나온다.** 대상을 요청에 담지 않아 남의 "
+        "것을 가리킬 자리가 없고, 토큰을 고치면 서명이 깨져 401이 된다.\n\n"
         "- **200**: 항상. 잡힌 세션이 없으면 빈 배열이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / FORBIDDEN**: 토큰의 주인이 아닌 사람의 일정을 보려 할 때\n"
         "- **403 / NO_DEVELOPER_PROFILE**: 개발자 프로필이 없을 때\n"
         "- **500 / INTERNAL_ERROR**: 일정을 만들지 못했을 때"
     ),
@@ -7858,7 +7858,6 @@ def get_my_sessions() -> MySessionListResponse:
             "description": "파일이 너무 크거나 형식이 맞지 않음",
             "content": {"application/json": {"example": FILE_TOO_LARGE_EXAMPLE}},
         },
-        **AREA8_FORBIDDEN,
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -7879,12 +7878,13 @@ def get_my_sessions() -> MySessionListResponse:
         "프로필에는 확인 표시만 남는다.\n\n"
         "작업물 사진은 의뢰인이 공개에 동의한 것만 올릴 수 있다. 동의 여부는 계약에 "
         "적혀 있고 서버가 확인한다.\n\n"
+        "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
+        "없고, 토큰을 고쳐 남의 `sub`를 넣으면 서명이 깨져 401이 된다.\n\n"
         "- **201**: 보낼 주소를 내줬을 때\n"
         "- **400 / FILE_TOO_LARGE**: `sizeBytes`가 그 쓰임의 허용 크기를 넘었을 때\n"
         "- **400 / UNSUPPORTED_FILE_TYPE**: `contentType`이 그 쓰임에서 받지 않는 "
         "형식일 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / FORBIDDEN**: 토큰의 주인 앞으로 올릴 수 없을 때\n"
         "- **422 / INVALID_REQUEST**: `originalName`·`contentType`·`sizeBytes`·"
         "`purpose`가 비었거나 `purpose`가 허용된 값이 아닐 때\n"
         "- **500 / INTERNAL_ERROR**: 주소를 만들지 못했을 때\n\n"
@@ -9437,8 +9437,9 @@ SERVICE_TAGS = [
             "`GET /api/users/me`로 이미 받은 값을 그리고 로그아웃만 부른다. "
             "`8_펼침_은행선택`은 은행 목록을 코드 조회로 받는다 — `groupKey`는 "
             "`BANK_CODE`다.\n\n"
-            "약관 **동의 여부**는 서버가 들고 있지만 그걸 읽고 바꾸는 API는 아직 없다 — "
-            "필수 약관은 로그인에 묶여 있고, 마케팅 수신과 판매자 약관은 선택이다.\n\n"
+            "약관 **동의 여부**는 서버가 들고 있지만 그걸 읽고 바꾸는 API는 두지 "
+            "않는다 — 필수 약관은 로그인에 묶여 있고, 마케팅 수신과 판매자 약관을 "
+            "켜고 끄는 화면이 없다.\n\n"
             "**함께 쓰는 API** `GET /api/users/me` (전 영역 헤더) · "
             "`POST /api/auth/logout` · `GET /api/codes/{groupKey}` · "
             "`GET /api/settlements/income` (개발자 소득 내역의 계좌 칸)\n\n"
@@ -9449,8 +9450,12 @@ SERVICE_TAGS = [
             "같은지 확인한 뒤에 처리한다.\n\n"
             "- 대상을 요청에 담지 않는 API는 `sub`가 곧 대상이다. 요청에 사용자 "
             "식별자를 실어 보내도 받지 않는다\n"
-            "- 경로에 식별자가 있는 API는 그 자원의 주인이 `sub`와 같은지 확인하고, "
-            "다르면 403 `FORBIDDEN`으로 막는다\n\n"
+            "- 경로나 본문에 식별자가 있는 API는 그 자원의 주인이 `sub`와 같은지 "
+            "확인하고, 다르면 403 `FORBIDDEN`으로 막는다\n\n"
+            "**대상을 담지 않는 API에는 403 `FORBIDDEN`이 없다.** 남의 것을 가리킬 "
+            "자리가 없어 나올 수가 없다. 토큰을 고쳐 남의 `sub`를 넣어도 서명이 깨져 "
+            "401에서 끝난다. 403이 실려 있는 API는 요청에 남의 식별자를 적을 수 있는 "
+            "쪽이다.\n\n"
             "**403은 두 뜻으로 쓴다.** `FORBIDDEN`은 남의 자원을 건드렸다는 뜻이고, "
             "`NO_DEVELOPER_PROFILE`은 개발자 프로필이 없다는 뜻이다. 화면 분기는 "
             "상태코드가 아니라 `code`로 가른다.\n\n"
