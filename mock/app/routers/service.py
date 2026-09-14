@@ -2246,6 +2246,14 @@ class DeveloperSummaryResponse(BaseModel):
     prices: list[TaskPriceResponse] = Field(
         description="작업 유형별 최저가. 가격표를 등록하지 않은 유형은 빠진다.",
     )
+    contractCount: int = Field(
+        description=(
+            "이 개발자가 마친 계약 수. 컨설팅과 개발을 합쳐 세며, 완료된 계약만 든다 — "
+            "진행 중이거나 파기된 계약은 빠진다. 카드의 'N건 완료'와 `contract,desc` "
+            "정렬이 이 값을 쓴다."
+        ),
+        examples=[23],
+    )
 
 
 class DeveloperListResponse(BaseModel):
@@ -2446,10 +2454,13 @@ class RecommendationItemResponse(BaseModel):
         examples=[501],
     )
     rank: int = Field(description="노출 순위. 1부터 시작한다.", examples=[1])
-    developer: DeveloperSummaryResponse = Field(description="추천된 개발자.")
-    contractCount: int = Field(
-        description="이 개발자가 마친 계약 수. 카드의 'N건 완료'에 쓴다.",
-        examples=[23],
+    developer: DeveloperSummaryResponse = Field(
+        description=(
+            "추천된 개발자. **언제나 지금 값이다.** 서버는 추천 시점의 프로필을 따로 "
+            "보관하지만 그것은 알고리즘 성과를 견주는 내부 자료이고, 응답에는 나가지 "
+            "않는다. 옛 회차를 다시 열어도 평점과 가격은 현재 프로필을 따른다 — 카드에 "
+            "적힌 금액과 상담에서 듣는 금액이 달라지면 안 되기 때문이다."
+        ),
     )
     roomId: int | None = Field(
         description=(
@@ -2471,8 +2482,19 @@ class RecommendationBatchResponse(BaseModel):
         examples=[1],
     )
     projectId: int = Field(description="추천 대상 프로젝트 식별자.", examples=[8])
+    projectName: str = Field(
+        description="프로젝트 이름. 화면 머리에 쓴다.",
+        examples=["수제 비누 가게"],
+    )
+    diagnosisVersion: int = Field(
+        description=(
+            "이 추천을 만든 시점의 진단 회차. 재진단한 뒤 옛 추천을 열었을 때 무엇을 "
+            "근거로 뽑은 결과인지 알려준다."
+        ),
+        examples=[2],
+    )
     candidateCount: int = Field(
-        description="점수를 매긴 개발자 수.",
+        description="점수를 매긴 개발자 수. 순위를 매기기 전 모집단이다.",
         examples=[128],
     )
     items: list[RecommendationItemResponse] = Field(
@@ -2483,14 +2505,17 @@ class RecommendationBatchResponse(BaseModel):
 class CreateRecommendationRequest(BaseModel):
     """추천 회차 생성 요청."""
 
-    diagnosisId: int | None = Field(
-        default=None,
-        description="어느 진단을 근거로 찾을지. 진단 없이 찾으면 비운다.",
+    diagnosisId: int = Field(
+        description="어느 진단을 근거로 찾을지. 이 API는 진단 없이 부를 수 없다.",
         examples=[31],
     )
     issueIds: list[int] = Field(
-        default_factory=list,
-        description="요청서에 담을 요구사항 식별자. 진단을 거치지 않았으면 빈 배열이다.",
+        min_length=1,
+        description=(
+            "요청서에 담을 요구사항 식별자. 한 건 이상 골라야 하며, 모두 이 진단에서 "
+            "나온 것이어야 한다. 진단을 거치지 않고 개발자를 고르는 길은 프로젝트 상담 "
+            "요청 API가 맡는다."
+        ),
         examples=[[311, 312]],
     )
 
@@ -2745,6 +2770,7 @@ DEVELOPERS = [
             {"taskType": "CONSULT", "price": 50000},
             {"taskType": "DEVELOP", "price": 100000},
         ],
+        "contractCount": 23,
     },
     {
         "developerId": 5,
@@ -2761,6 +2787,7 @@ DEVELOPERS = [
             {"taskType": "CONSULT", "price": 40000},
             {"taskType": "DEVELOP", "price": 90000},
         ],
+        "contractCount": 41,
     },
     {
         "developerId": 7,
@@ -2777,13 +2804,11 @@ DEVELOPERS = [
             {"taskType": "CONSULT", "price": 60000},
             {"taskType": "DEVELOP", "price": 120000},
         ],
+        "contractCount": 11,
     },
 ]
 
 TOTAL_DEVELOPERS = 128
-
-# 마친 계약 수. 목에서 '계약 많은 순'을 확인하려고 두며, 개발자 목록 응답에는 나가지 않는다.
-CONTRACT_COUNTS = {3: 23, 5: 41, 7: 11}
 
 
 def _rating_key(rating: dict) -> tuple:
@@ -2914,20 +2939,20 @@ RECOMMENDATION_BATCH = {
     "batchId": 61,
     "sequenceNo": 1,
     "projectId": 8,
+    "projectName": "수제 비누 가게",
+    "diagnosisVersion": 2,
     "candidateCount": TOTAL_DEVELOPERS,
     "items": [
         {
             "recommendationItemId": 501,
             "rank": 1,
             "developer": DEVELOPERS[0],
-            "contractCount": 23,
             "roomId": None,
         },
         {
             "recommendationItemId": 502,
             "rank": 2,
             "developer": DEVELOPERS[2],
-            "contractCount": 11,
             "roomId": None,
         },
     ],
@@ -3211,7 +3236,7 @@ def find_developers(
         "devRating,desc": lambda r: _rating_key(r["devRating"]),
         "explanatoryRating,desc": lambda r: _rating_key(r["explanatoryRating"]),
         "price,asc": lambda r: (_lowest_price(r),),
-        "contract,desc": lambda r: (-CONTRACT_COUNTS.get(r["developerId"], 0),),
+        "contract,desc": lambda r: (-r["contractCount"],),
     }
     rows = sorted(rows, key=sorters[sort])
 
@@ -3350,11 +3375,22 @@ def get_developer_reviews(
         "API가 맡고, 회차 없이 방이 바로 열린다.\n\n"
         "같은 프로젝트에서 다시 찾으면 회차 번호가 1 오른다. 이전 회차는 지우지 않고 "
         "남겨서 어떤 추천이 계약으로 이어졌는지 볼 수 있다.\n\n"
+        "**아직 열어보지 않은 회차가 있으면 새로 만들지 않는다.** 직전 회차를 한 번도 "
+        "열지 않았다면 그 회차를 그대로 돌려준다. 새로고침하거나 버튼을 두 번 눌러 빈 "
+        "회차가 쌓이는 것을 막기 위해서다. 한 번이라도 열어본 뒤에 다시 부르면 그때는 "
+        "새 회차가 생긴다.\n\n"
+        "**추천을 무엇 때문에 만들었는지는 서버가 정한다.** 이 프로젝트의 첫 회차면 상담 "
+        "요청, 이미 회차가 있으면 재매칭으로 기록하고 직전 회차를 부모로 잇는다. 요청에 "
+        "담아 보낼 것은 없다.\n\n"
         "- **201**: 추천을 만들었을 때. 맞는 개발자가 없으면 `items`가 빈 배열이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / PROJECT_NOT_FOUND**: `projectId`가 404일 때. 없거나 남의 프로젝트다\n"
-        "- **422 / INVALID_REQUEST**: 보낸 값의 형식이 맞지 않을 때\n"
-        "- **500 / INTERNAL_ERROR**: 추천을 만들지 못했을 때"
+        "- **422 / INVALID_REQUEST**: `diagnosisId`가 없거나, `issueIds`가 비었거나, "
+        "**이 진단에서 나오지 않은 요구사항이 섞였을 때.** 고르지 않은 것이 요청서에 "
+        "실리면 계약까지 따라가므로 조용히 버리지 않고 막는다\n"
+        "- **500 / INTERNAL_ERROR**: 추천을 만들지 못했을 때\n\n"
+        "목에서는 `issueIds`에 이 진단의 요구사항(311·312·313·314)이 아닌 값이 하나라도 "
+        "있으면 422를 준다."
     ),
 )
 def create_recommendation(
@@ -3369,6 +3405,22 @@ def create_recommendation(
 ) -> RecommendationBatchResponse | JSONResponse:
     if projectId == NOT_FOUND_PROJECT_ID:
         return _error_response(404, PROJECT_NOT_FOUND)
+
+    known = {issue["issueId"] for issue in ISSUES}
+    unknown = [issue_id for issue_id in request.issueIds if issue_id not in known]
+    if unknown:
+        body = ValidationErrorResponse(
+            code=INVALID_REQUEST[0],
+            message=INVALID_REQUEST[1],
+            errors=[
+                FieldError(
+                    field="issueIds",
+                    reason="이 진단에서 나온 요구사항만 보낼 수 있습니다.",
+                )
+            ],
+        )
+        return JSONResponse(status_code=422, content=jsonable_encoder(body))
+
     return RecommendationBatchResponse(**RECOMMENDATION_BATCH)
 
 
@@ -7284,6 +7336,7 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
         {"taskType": "CONSULT", "price": 50000},
         {"taskType": "DEVELOP", "price": 100000},
     ],
+    "contractCount": 23,
     "description": (
         "AI로 만든 걸 실제로 돌아가게 만드는 일을 주로 합니다. 지난 1년 동안 소상공인 "
         "웹 서비스 14건을 올렸고, 그중 13건이 Komit에서 만난 분들이었습니다."
