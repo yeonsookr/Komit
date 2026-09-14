@@ -687,6 +687,13 @@ REFRESH_TOKEN_INVALID = (
 )
 UNAUTHORIZED = ("UNAUTHORIZED", "로그인이 필요합니다.")
 
+# featured-developers의 size는 1~10이라 공용 예시(size ≤ 100)와 한계값이 다르다.
+FEATURED_SIZE_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [{"field": "size", "reason": "10 이하여야 합니다."}],
+}
+
 
 # --------------------------------------------------------------------------- #
 # 영역 1 — 목 데이터
@@ -859,7 +866,12 @@ def get_landing_summary() -> LandingSummaryResponse:
     tags=["1 랜딩 · 로그인"],
     responses={
         200: {"content": {"application/json": {"example": FEATURED_EXAMPLE}}},
-        **AREA1_ERRORS,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": FEATURED_SIZE_ERROR_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
     },
     summary="추천 개발자 목록 조회",
     description=(
