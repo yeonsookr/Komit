@@ -2320,8 +2320,20 @@ class ReviewResponse(BaseModel):
 
     reviewId: int = Field(description="리뷰 식별자.", examples=[88])
     clientName: str = Field(
-        description="리뷰를 쓴 의뢰인의 표시 이름.",
-        examples=["김미미"],
+        description=(
+            "리뷰를 쓴 의뢰인의 표시 이름. **서버가 가려서 내보낸다** — 첫 글자와 끝 "
+            "글자만 남기고 가운데를 `O`로 바꾸며, 두 글자면 끝 글자를 바꾼다. 개발자가 "
+            "자기 프로필에서 볼 때도 같은 값이라 화면이 따로 가릴 것은 없다. 리뷰를 쓴 "
+            "뒤 탈퇴한 의뢰인이면 `탈퇴한 사용자`가 들어온다."
+        ),
+        examples=["김O미"],
+    )
+    contractType: Literal["CONSULTING", "DEVELOPMENT"] = Field(
+        description=(
+            "이 리뷰가 나온 계약의 종류. 어떤 거래에서 받은 평가인지 구분하는 데 쓴다. "
+            "어느 프로젝트였는지는 의뢰인의 사업 정보라 담지 않는다."
+        ),
+        examples=["DEVELOPMENT"],
     )
     devScore: int = Field(
         description="개발력 점수. 1에서 5 사이이며 비울 수 없다.",
@@ -2335,11 +2347,11 @@ class ReviewResponse(BaseModel):
         examples=[5],
     )
     content: str | None = Field(
-        description="리뷰 내용. 점수만 주고 글을 안 썼으면 null이다.",
+        description="리뷰 내용. 1000자까지 받는다. 점수만 주고 글을 안 썼으면 null이다.",
         examples=["말이 잘 통했습니다."],
     )
     reply: str | None = Field(
-        description="개발자가 단 답글. 없으면 null이다.",
+        description="개발자가 단 답글. 1000자까지 받는다. 없으면 null이다.",
         examples=[None],
     )
     createdAt: str = Field(
@@ -2356,7 +2368,12 @@ class ReviewListResponse(BaseModel):
     )
     page: int = Field(description="현재 페이지 번호.", examples=[1])
     size: int = Field(description="한 페이지에 담긴 최대 항목 수.", examples=[20])
-    totalElements: int = Field(description="전체 리뷰 수.", examples=[20])
+    totalElements: int = Field(
+        description=(
+            "전체 리뷰 수. 개발자 프로필의 `devRating.reviewCount`와 언제나 같은 값이다."
+        ),
+        examples=[20],
+    )
     totalPages: int = Field(description="전체 페이지 수.", examples=[1])
 
 
@@ -2721,8 +2738,8 @@ DEVELOPERS = [
         "field": {"codeId": 42, "codeName": "DB 연결"},
         "yearsOfExperience": 5.0,
         "isCareerVerified": True,
-        "devRating": {"score": 4.4, "reviewCount": 20},
-        "explanatoryRating": {"score": 4.9, "reviewCount": 20},
+        "devRating": {"score": 4.4, "reviewCount": 2},
+        "explanatoryRating": {"score": 4.9, "reviewCount": 2},
         "techCategories": TECH_CODES,
         "prices": [
             {"taskType": "CONSULT", "price": 50000},
@@ -2737,8 +2754,8 @@ DEVELOPERS = [
         "field": {"codeId": 41, "codeName": "인터넷에 올리기"},
         "yearsOfExperience": 4.0,
         "isCareerVerified": True,
-        "devRating": {"score": 4.2, "reviewCount": 11},
-        "explanatoryRating": {"score": 4.4, "reviewCount": 11},
+        "devRating": {"score": 4.2, "reviewCount": 2},
+        "explanatoryRating": {"score": 4.4, "reviewCount": 2},
         "techCategories": TECH_CODES[1:],
         "prices": [
             {"taskType": "CONSULT", "price": 40000},
@@ -2753,8 +2770,8 @@ DEVELOPERS = [
         "field": {"codeId": 47, "codeName": "버그 잡기"},
         "yearsOfExperience": 6.0,
         "isCareerVerified": False,
-        "devRating": {"score": 4.7, "reviewCount": 22},
-        "explanatoryRating": {"score": 4.1, "reviewCount": 22},
+        "devRating": {"score": 4.7, "reviewCount": 2},
+        "explanatoryRating": {"score": 4.1, "reviewCount": 2},
         "techCategories": TECH_CODES[:1],
         "prices": [
             {"taskType": "CONSULT", "price": 60000},
@@ -2764,6 +2781,21 @@ DEVELOPERS = [
 ]
 
 TOTAL_DEVELOPERS = 128
+
+# 마친 계약 수. 목에서 '계약 많은 순'을 확인하려고 두며, 개발자 목록 응답에는 나가지 않는다.
+CONTRACT_COUNTS = {3: 23, 5: 41, 7: 11}
+
+
+def _rating_key(rating: dict) -> tuple:
+    """평점 내림차순 정렬 키. 평점이 없으면 뒤로 보낸다."""
+    score = rating.get("score")
+    return (score is None, -(score or 0))
+
+
+def _lowest_price(row: dict) -> int:
+    """가격표 전체의 최저가. 등록한 가격이 없으면 맨 뒤로 간다."""
+    prices = [price["price"] for price in row["prices"]]
+    return min(prices) if prices else 10**9
 
 # 개발자 한 명의 가격표. 컨설팅은 세션 길이로, 개발은 할 일로 줄을 나눈다.
 PRICE_CATALOG = [
@@ -2858,7 +2890,8 @@ DEVELOPER_DETAIL = {
 REVIEWS = [
     {
         "reviewId": 88,
-        "clientName": "김미미",
+        "clientName": "김O미",
+        "contractType": "DEVELOPMENT",
         "devScore": 5,
         "commScore": 5,
         "content": "말이 잘 통했습니다.",
@@ -2867,7 +2900,8 @@ REVIEWS = [
     },
     {
         "reviewId": 87,
-        "clientName": "최수진",
+        "clientName": "최O진",
+        "contractType": "CONSULTING",
         "devScore": 4,
         "commScore": 5,
         "content": None,
@@ -3114,7 +3148,9 @@ def get_codes(
         "- **200**: 항상. 조건에 맞는 사람이 없으면 `content`가 빈 배열이다\n"
         "- **422 / INVALID_REQUEST**: `searchMode`나 `sort`가 허용된 값이 아니거나 "
         "`size`가 범위를 벗어날 때\n"
-        "- **500 / INTERNAL_ERROR**: 목록을 만들지 못했을 때"
+        "- **500 / INTERNAL_ERROR**: 목록을 만들지 못했을 때\n\n"
+        "⚠️ 이 목 서버는 분야 거르기, 이름 검색, 네 가지 정렬을 실제로 수행한다. "
+        "`problem` 검색만은 문장의 뜻을 읽어야 하므로 거르지 않고 전체를 준다."
     ),
 )
 def find_developers(
@@ -3167,6 +3203,17 @@ def find_developers(
     rows = DEVELOPERS
     if fieldCodeIds:
         rows = [r for r in rows if r["field"] and r["field"]["codeId"] in fieldCodeIds]
+    if searchMode == "name" and keyword:
+        rows = [r for r in rows if keyword.strip() in r["name"]]
+
+    # 평점이 없는 개발자는 뒤로 보낸다. 리뷰가 없다고 맨 위에 오르면 안 된다.
+    sorters = {
+        "devRating,desc": lambda r: _rating_key(r["devRating"]),
+        "explanatoryRating,desc": lambda r: _rating_key(r["explanatoryRating"]),
+        "price,asc": lambda r: (_lowest_price(r),),
+        "contract,desc": lambda r: (-CONTRACT_COUNTS.get(r["developerId"], 0),),
+    }
+    rows = sorted(rows, key=sorters[sort])
 
     total = len(rows)
     start = (page - 1) * size
@@ -3244,6 +3291,11 @@ def get_developer(
         "이 개발자가 계약을 마친 뒤 받은 리뷰를 최신순으로 내려준다. 프로필 화면은 앞의 "
         "몇 건만 보여주고 '모두 보기'에서 페이지를 넘긴다. 프로필과 마찬가지로 "
         "로그인하지 않아도 볼 수 있다.\n\n"
+        "**의뢰인 이름은 서버가 가려서 내보낸다.** 화면이 따로 가릴 것은 없고, 개발자가 "
+        "자기 프로필에서 볼 때도 같은 값이다. 어느 프로젝트의 리뷰인지는 의뢰인의 사업 "
+        "정보라 담지 않으며, 계약 종류만 `contractType`으로 알려준다.\n\n"
+        "`totalElements`는 개발자 프로필의 `devRating.reviewCount`와 언제나 같다. 리뷰 "
+        "하나가 두 점수를 다 받으므로 두 수가 갈릴 일이 없다.\n\n"
         "**`page`는 1부터 센다.** 0이 첫 장이 아니다.\n\n"
         "- **200**: 개발자가 있을 때. 받은 리뷰가 없으면 `content`가 빈 배열이다\n"
         "- **404 / DEVELOPER_NOT_FOUND**: `developerId`가 404일 때\n"
@@ -4995,11 +5047,16 @@ class ConfirmMilestoneRequest(BaseModel):
 class WriteReviewRequest(BaseModel):
     """계약을 마친 뒤 남기는 리뷰."""
 
-    devScore: int = Field(description="개발력 점수. 1에서 5 사이다.", examples=[5])
-    commScore: int = Field(description="설명력 점수. 1에서 5 사이다.", examples=[5])
+    devScore: int = Field(
+        ge=1, le=5, description="개발력 점수. 1에서 5 사이다.", examples=[5]
+    )
+    commScore: int = Field(
+        ge=1, le=5, description="설명력 점수. 1에서 5 사이다.", examples=[5]
+    )
     content: str | None = Field(
         default=None,
-        description="리뷰 내용. 점수만 주고 넘어가도 된다.",
+        max_length=1000,
+        description="리뷰 내용. 1000자까지 받는다. 점수만 주고 넘어가도 된다.",
         examples=["말이 잘 통했습니다."],
     )
 
@@ -5681,7 +5738,8 @@ def upload_deliverable(
         "- **403 / FORBIDDEN**: 이 계약의 의뢰인이 아닐 때\n"
         "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때\n"
         "- **409 / REVIEW_ALREADY_WRITTEN**: `contractId`가 409일 때\n"
-        "- **422 / INVALID_REQUEST**: 점수가 1에서 5 사이가 아닐 때\n"
+        "- **422 / INVALID_REQUEST**: 점수가 1에서 5 사이가 아니거나 `content`가 "
+        "1000자를 넘을 때\n"
         "- **500 / INTERNAL_ERROR**: 남기지 못했을 때"
     ),
 )
@@ -6970,7 +7028,8 @@ class WriteReviewReplyRequest(BaseModel):
 
     reply: str = Field(
         min_length=1,
-        description="답글 내용.",
+        max_length=1000,
+        description="답글 내용. 1000자까지 받는다.",
         examples=["감사합니다. 도메인 만료 전에 미리 알려드리겠습니다."],
     )
 
@@ -7214,8 +7273,8 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
     "yearsOfExperience": 5.0,
     "field": {"codeId": 42, "codeName": "DB 연결"},
     "isCareerVerified": True,
-    "devRating": {"score": 4.8, "reviewCount": 20},
-    "explanatoryRating": {"score": 4.9, "reviewCount": 20},
+    "devRating": {"score": 4.8, "reviewCount": 2},
+    "explanatoryRating": {"score": 4.9, "reviewCount": 2},
     "techCategories": [
         {"codeId": 23, "codeName": "TypeScript"},
         {"codeId": 21, "codeName": "Next.js"},
@@ -7287,7 +7346,8 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
     "reviews": [
         {
             "reviewId": 88,
-            "clientName": "김미미",
+            "clientName": "김O미",
+            "contractType": "DEVELOPMENT",
             "devScore": 5,
             "commScore": 5,
             "content": (
@@ -7299,7 +7359,8 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
         },
         {
             "reviewId": 84,
-            "clientName": "최수진",
+            "clientName": "최O진",
+            "contractType": "CONSULTING",
             "devScore": 4,
             "commScore": 5,
             "content": "일정이 하루 밀렸지만 미리 알려주셔서 괜찮았습니다.",
@@ -7826,7 +7887,7 @@ def write_my_developer_profile(
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 나에게 달린 리뷰가 아닐 때\n"
         "- **404 / REVIEW_NOT_FOUND**: `reviewId`가 404일 때\n"
-        "- **422 / INVALID_REQUEST**: `reply`가 비었을 때\n"
+        "- **422 / INVALID_REQUEST**: `reply`가 비었거나 1000자를 넘을 때\n"
         "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
     ),
 )
