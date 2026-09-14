@@ -2789,7 +2789,8 @@ class CodeListResponse(BaseModel):
         "있는 목록이라 화면에 문구를 박지 않고 이 API로 받는다.\n\n"
         "**고르게 할 목록은 모두 이 API로 받는다.** 분류마다 API를 따로 두지 않는다.\n\n"
         "- **200**: 분류가 있을 때. 쓸 수 있는 항목만 순서대로 내려간다\n"
-        "- **404 / CODE_GROUP_NOT_FOUND**: `groupKey`가 `UNKNOWN`일 때\n"
+        "- **404 / CODE_GROUP_NOT_FOUND**: 아는 분류 키가 아닐 때. 오타나 대소문자가 "
+        "다른 키도 여기에 걸린다\n"
         "- **500 / INTERNAL_ERROR**: 목록을 읽지 못했을 때"
     ),
 )
@@ -2799,18 +2800,20 @@ def get_codes(
         Path(
             description=(
                 "코드 분류 키. 개발 분야는 `DEV_FIELD`, 기술은 `TECH_CATEGORY`, "
-                "계좌를 등록할 때 고르는 은행은 `BANK_CODE`다. `UNKNOWN`은 분류 없음 "
-                "재현용 예약값이다."
+                "계좌를 등록할 때 고르는 은행은 `BANK_CODE`다. 이 셋이 아닌 값은 "
+                "모두 분류 없음으로 본다."
             ),
             examples=["DEV_FIELD"],
         ),
     ],
 ) -> CodeListResponse | JSONResponse:
-    if groupKey == "UNKNOWN":
+    rows = {
+        "DEV_FIELD": FIELD_CODES,
+        "TECH_CATEGORY": TECH_CODES,
+        "BANK_CODE": BANK_CODES,
+    }.get(groupKey)
+    if rows is None:
         return _error_response(404, CODE_GROUP_NOT_FOUND)
-    rows = {"TECH_CATEGORY": TECH_CODES, "BANK_CODE": BANK_CODES}.get(
-        groupKey, FIELD_CODES
-    )
     return CodeListResponse(content=[CodeResponse(**row) for row in rows])
 
 
