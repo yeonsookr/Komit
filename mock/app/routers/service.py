@@ -2282,7 +2282,10 @@ class PortfolioItemResponse(BaseModel):
         examples=[None],
     )
     linkUrl: str | None = Field(
-        description="배포 사이트나 저장소 주소. 없으면 null이다.",
+        description=(
+            "배포 사이트나 저장소 주소. 없으면 null이고, 화면은 그 자리에 '비공개'라고 "
+            "적는다."
+        ),
         examples=["https://example.com"],
     )
     thumbnailFileId: int | None = Field(
@@ -3111,6 +3114,9 @@ def find_developers(
         "개발자 한 명의 소개, 경력, 작업물, 평점, 가격표를 한 번에 내려준다. 로그인하지 "
         "않아도 볼 수 있는 공개 프로필이다.\n\n"
         "경력은 `isVerified`로 갈린다. 참이면 '확인됨', 거짓이면 '확인 중'으로 보여준다.\n\n"
+        "**함께 쓰는 API** 리뷰 칸은 `GET /api/developers/{developerId}/reviews`가 채우고, "
+        "아래의 '무료로 물어보기'는 `POST /api/projects/{projectId}/consultation-requests`로 "
+        "간다.\n\n"
         "- **200**: 개발자가 있을 때\n"
         "- **404 / DEVELOPER_NOT_FOUND**: `developerId`가 404일 때. 없거나 탈퇴한 개발자다\n"
         "- **500 / INTERNAL_ERROR**: 프로필을 읽지 못했을 때"
