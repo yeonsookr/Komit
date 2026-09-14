@@ -165,6 +165,13 @@ def _reason(error: dict) -> str:
         return f"{context.get('ge', context.get('gt'))} 이상이어야 합니다."
     if error_type in {"less_than_equal", "less_than"}:
         return f"{context.get('le', context.get('lt'))} 이하여야 합니다."
+    if error_type == "string_too_long":
+        return f"{context.get('max_length')}자 이하여야 합니다."
+    if error_type == "string_too_short":
+        min_length = context.get("min_length")
+        if min_length == 1:
+            return "필수 항목입니다."
+        return f"{min_length}자 이상이어야 합니다."
     if error_type == "string_pattern_mismatch":
         return "형식이 올바르지 않습니다."
     if error_type == "literal_error":
@@ -5894,6 +5901,18 @@ def get_income() -> IncomeResponse:
 # 확인 호출은 Escrow 서버가 금융망에 하고, Komit 은 확인 건의 식별자와 가린
 # 계좌번호만 들고 있다. 계좌번호 원문은 어느 쪽에도 남지 않는다.
 #
+# Escrow 서버는 SSAFY 금융망과 Komit 사이의 프록시로 동작한다. 클라이언트에서
+# Komit 까지는 아래 API 들의 간소화된 형식을 쓰고, Komit 에서 Escrow 까지는 SSAFY
+# 금융망 형식(Header/REC)을 쓴다. 클라이언트는 SSAFY 형식을 알 필요가 없다.
+#
+# 이 영역은 전부 내 것을 다루므로 인가를 반드시 검증한다. 액세스 토큰을 검증해
+# sub 를 꺼내고, 다루려는 자원의 주인이 그 sub 와 같은지 확인한 뒤에 처리한다.
+# 대상을 요청에 담지 않는 API 는 sub 가 곧 대상이고, 경로에 식별자가 있는 API 는
+# 그 자원의 주인이 sub 와 같은지 확인해 다르면 403 FORBIDDEN 으로 막는다.
+#
+# 403 은 두 뜻으로 쓴다. FORBIDDEN 은 남의 자원, NO_DEVELOPER_PROFILE 은 개발자로
+# 전환하지 않은 것이다. 화면 분기는 상태코드가 아니라 code 로 가른다.
+#
 # 함께 쓰는 API (다른 영역에 있다):
 #   GET /api/users/me                 전 영역 헤더
 #   GET /api/settlements/income       개발자 소득 내역의 계좌 칸
@@ -5903,9 +5922,18 @@ def get_income() -> IncomeResponse:
 class RequestAccountVerificationRequest(BaseModel):
     """1원 보내기 요청."""
 
-    bankCodeId: int = Field(description="은행 코드 식별자.", examples=[4])
+    bankCodeId: int = Field(
+        description=(
+            "은행 코드 식별자. 금융망 1원 송금에는 쓰이지 않고, 계좌번호만으로는 은행을 "
+            "알 수 없어 화면 표시와 저장에 쓴다."
+        ),
+        examples=[4],
+    )
     accountNumber: str = Field(
-        description="계좌번호. 하이픈 없는 숫자만 받는다. 원문은 보관하지 않는다.",
+        description=(
+            "계좌번호. 하이픈 없는 숫자만 받는다. 확인이 끝날 때까지만 두고 그 뒤에는 "
+            "가린 번호만 남는다."
+        ),
         examples=["11012345678842"],
     )
     accountHolder: str = Field(description="예금주.", examples=["이준"])
@@ -5915,8 +5943,12 @@ class AccountVerificationResponse(BaseModel):
     """1원을 보낸 뒤의 확인 상태."""
 
     verificationId: int = Field(
-        description="이번 확인 건의 식별자. 4자리를 낼 때 그대로 쓴다.",
-        examples=[9012],
+        description=(
+            "이번 확인 건의 식별자. 사용자가 입력하는 값이 아니며 화면에도 보이지 "
+            "않는다. 확인 API의 경로에 그대로 실어 어느 확인 건인지 가리키는 데만 쓴다. "
+            "사용자가 입력하는 것은 입금자명 뒤 네 자리인 `authCode` 하나뿐이다."
+        ),
+        examples=[77301],
     )
     bankName: str = Field(description="은행 이름.", examples=["국민은행"])
     maskedNumber: str = Field(
@@ -5942,7 +5974,7 @@ AREA8_TAG = "8 계정 · 공통"
 
 ACCOUNT_REJECTED = (
     "ACCOUNT_REJECTED",
-    "은행에서 받지 않은 계좌입니다. 은행과 계좌번호를 다시 확인해 주세요.",
+    "은행과 계좌번호를 다시 확인해 주세요.",
 )
 AUTH_CODE_MISMATCH = (
     "AUTH_CODE_MISMATCH",
@@ -5993,7 +6025,7 @@ ESCROW_UNAVAILABLE_EXAMPLE = {
 }
 
 VERIFICATION_EXAMPLE = {
-    "verificationId": 9012,
+    "verificationId": 77301,
     "bankName": "국민은행",
     "maskedNumber": "···· 8842",
     "accountHolder": "이준",
@@ -6036,6 +6068,8 @@ VERIFICATION_EXAMPLE = {
         "요청을 다시 보내 새 확인 건을 연다. 화면의 **다시 보내기**가 이 경로다.\n\n"
         "이미 등록한 계좌가 있어도 여기서 막지 않는다. 확인이 끝나는 순간 새 계좌가 "
         "이전 계좌를 대신한다.\n\n"
+        "**확인 건은 토큰의 주인에게 달린다.** 액세스 토큰을 검증해 `sub`를 꺼내고 그 "
+        "사용자의 확인 건으로 연다. 누구의 계좌인지는 요청에 담지 않는다.\n\n"
         "- **201**: 1원을 보냈고 확인 건이 열렸을 때\n"
         "- **400 / ACCOUNT_REJECTED**: 은행이 계좌를 받지 않았을 때. 계좌번호나 "
         "은행이 틀렸거나 거래할 수 없는 계좌다\n"
@@ -6055,7 +6089,7 @@ def request_account_verification(
         return _error_response(400, ACCOUNT_REJECTED)
 
     return AccountVerificationResponse(
-        verificationId=9012,
+        verificationId=77301,
         bankName="국민은행",
         maskedNumber="···· " + request.accountNumber[-4:],
         accountHolder=request.accountHolder,
@@ -6078,6 +6112,11 @@ def request_account_verification(
             "description": "네 자리가 맞지 않거나 확인 건을 더 쓸 수 없음",
             "content": {"application/json": {"example": AUTH_CODE_MISMATCH_EXAMPLE}},
         },
+        403: {
+            "model": ErrorResponse,
+            "description": "토큰의 주인이 연 확인 건이 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
         404: {
             "model": ErrorResponse,
             "description": "확인 건을 찾지 못함",
@@ -6094,6 +6133,16 @@ def request_account_verification(
         "입금자명 뒤 네 자리를 내면 확인 건이 끝나고 그 계좌가 등록된다. 등록한 계좌가 "
         "이미 있으면 이 시점에 대체된다.\n\n"
         "계좌번호는 암호화해 보관하고 응답에는 언제나 가려서 내보낸다.\n\n"
+        "**지금 단계에서는 네 자리를 실제로 검사하지 않는다.** 은행 앱을 쓸 수 없어 "
+        "입금자명에 찍힌 인증코드를 읽어올 방법이 없기 때문이다. 클라이언트가 어떤 "
+        "값을 보내든, 에스크로 서버가 금융망에 맞는 값을 대신 건네 확인을 끝낸다. "
+        "따라서 이 단계에서 400 `AUTH_CODE_MISMATCH`는 실제로 나오지 않는다.\n\n"
+        "은행 앱을 쓸 수 있게 되면 클라이언트가 보낸 값을 그대로 금융망에 넘기도록 "
+        "바꾼다. **요청·응답 형식은 그대로이므로 클라이언트는 고칠 것이 없다.**\n\n"
+        "**확인 건의 주인이 토큰의 주인인지 검증한다.** `verificationId`의 확인 건을 "
+        "연 사람이 `sub`와 같은지 확인한 뒤에 처리하고, 다르면 403으로 막는다. 남의 "
+        "확인 건을 끝내 그 계좌를 내 계좌로 등록하는 일이 없어야 한다. 등록되는 계좌는 "
+        "언제나 `sub`의 계좌다.\n\n"
         "- **200**: 네 자리가 맞아 계좌가 등록됐을 때\n"
         "- **400 / AUTH_CODE_MISMATCH**: 네 자리가 다를 때. 확인 건은 아직 살아 "
         "있어 다시 낼 수 있다\n"
@@ -6101,7 +6150,7 @@ def request_account_verification(
         "- **400 / VERIFICATION_CLOSED**: 여러 번 틀려 확인 건이 닫혔을 때. 계좌 "
         "입력부터 다시 한다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / FORBIDDEN**: 남의 확인 건일 때\n"
+        "- **403 / FORBIDDEN**: `sub`가 연 확인 건이 아닐 때\n"
         "- **404 / VERIFICATION_NOT_FOUND**: `verificationId`에 해당하는 확인 건이 "
         "없을 때\n"
         "- **422 / INVALID_REQUEST**: `authCode`가 네 자리 숫자가 아닐 때\n"
@@ -6249,7 +6298,9 @@ class UpdateMyNameRequest(BaseModel):
     """이름 바꾸기 요청."""
 
     name: str = Field(
-        description="새로 쓸 표시 이름. 카카오 닉네임과 달라도 된다.",
+        min_length=1,
+        max_length=20,
+        description="새로 쓸 표시 이름. 20자까지 받는다. 카카오 닉네임과 달라도 된다.",
         examples=["김미미"],
     )
 
@@ -6716,6 +6767,12 @@ MY_PAGE_EMPTY_EXAMPLE = {
 
 PAYMENT_METHOD_EXAMPLE = MY_PAGE_EXAMPLE["paymentMethods"][0]
 
+NAME_INVALID_EXAMPLE = {
+    "code": INVALID_REQUEST[0],
+    "message": INVALID_REQUEST[1],
+    "errors": [{"field": "name", "reason": "20자 이하여야 합니다."}],
+}
+
 NOTIFICATION_LIST_EXAMPLE = {
     "content": [
         {
@@ -7027,8 +7084,18 @@ def get_my_page() -> MyPageResponse:
         200: {
             "content": {"application/json": {"example": MY_PAGE_EXAMPLE["account"]}}
         },
+        403: {
+            "model": ErrorResponse,
+            "description": "토큰의 주인이 아닌 계정을 바꾸려 함",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": NAME_INVALID_EXAMPLE}},
+        },
     },
     summary="이름 바꾸기",
     description=(
@@ -7036,9 +7103,14 @@ def get_my_page() -> MyPageResponse:
         "화면에 표시하는 이름을 바꾼다. 카카오 닉네임으로 시작하지만 이후에는 따로 "
         "간다 — 카카오에서 닉네임을 바꿔도 여기 이름은 그대로다.\n\n"
         "이미 남긴 리뷰나 주고받은 메시지에 붙은 이름도 이 이름을 따라 바뀐다.\n\n"
+        "**바꾸려는 계정이 토큰의 주인인지 검증한다.** 액세스 토큰을 검증해 `sub`를 "
+        "꺼내고, 바꾸려는 계정이 그 `sub`와 같은지 확인한 뒤에 바꾼다. 다르면 403으로 "
+        "막는다. 로그인했다는 것만으로 남의 이름을 바꿀 수 없다.\n\n"
         "- **200**: 바꿨을 때\n"
-        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **422 / INVALID_REQUEST**: `name`이 비었거나 50자를 넘었을 때\n"
+        "- **401 / UNAUTHORIZED**: 토큰이 없거나 만료·위조됐을 때, `sub`의 사용자가 "
+        "없거나 탈퇴한 계정일 때\n"
+        "- **403 / FORBIDDEN**: 토큰의 `sub`가 아닌 계정을 바꾸려 할 때\n"
+        "- **422 / INVALID_REQUEST**: `name`이 비었거나 20자를 넘었을 때\n"
         "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
     ),
 )
@@ -7071,6 +7143,8 @@ def update_my_name(request: UpdateMyNameRequest) -> MyAccountResponse:
         "**화면 — `8_마이페이지` › 계정 › 사진 바꾸기**\n\n"
         "프로필 사진을 직접 올린다. 올리기 전에는 카카오 프로필 사진을 쓰고, 한 번 "
         "올리면 그 뒤로는 올린 사진을 쓴다.\n\n"
+        "**바뀌는 것은 토큰의 주인의 사진이다.** 액세스 토큰을 검증해 `sub`를 꺼내 그 "
+        "계정에 붙이며, 대상을 요청에 담지 않는다.\n\n"
         "- **200**: 바꿨을 때. `profileImageFileId`에 새 파일 식별자가 담긴다\n"
         "- **400 / FILE_TOO_LARGE**: 파일이 허용 크기를 넘었을 때\n"
         "- **400 / UNSUPPORTED_FILE_TYPE**: 이미지가 아닐 때\n"
@@ -7103,6 +7177,8 @@ def update_my_profile_image(
         "카카오 알림톡을 받을지 정한다. 끄면 방 소식과 확인 요청 알림톡이 나가지 않고, "
         "알림 화면에는 그대로 쌓인다.\n\n"
         "카카오 이메일을 인증하지 않은 계정에는 켜도 알림톡이 나가지 않는다.\n\n"
+        "**바뀌는 것은 토큰의 주인의 설정이다.** 액세스 토큰을 검증해 `sub`를 꺼내 그 "
+        "계정의 설정만 바꾸며, 대상을 요청에 담지 않는다.\n\n"
         "- **200**: 바꿨을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **422 / INVALID_REQUEST**: `isEnabled`가 없을 때\n"
@@ -7132,6 +7208,9 @@ def update_notification_setting(
         "결제대행사 결제창을 띄워 카드를 받고, 결제창이 돌려준 키와 가린 번호만 여기로 "
         "온다.\n\n"
         "새로 등록한 카드가 기본 수단이 되고, 이전 카드는 기본에서 내려간다.\n\n"
+        "**카드는 토큰의 주인에게 등록된다.** 액세스 토큰을 검증해 `sub`를 꺼내 그 "
+        "계정에 붙이며, 누구의 카드인지는 요청에 담지 않는다. 남의 계정에 내 카드를 "
+        "달거나 남의 카드를 내 계정에 다는 경로가 없어야 한다.\n\n"
         "실시간 계좌이체는 결제할 때 은행 앱에서 바로 내므로 등록할 것이 없다. 이 API는 "
         "카드만 받는다.\n\n"
         "- **201**: 등록했을 때\n"
@@ -7244,6 +7323,11 @@ def read_all_notifications() -> NotificationListResponse:
                 }
             }
         },
+        403: {
+            "model": ErrorResponse,
+            "description": "토큰의 주인이 받은 알림이 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
         404: {
             "model": ErrorResponse,
             "description": "알림을 찾지 못함",
@@ -7260,9 +7344,12 @@ def read_all_notifications() -> NotificationListResponse:
         "알림 하나를 읽음으로 바꾼다. 화면은 '확인하기'를 누를 때 이 API를 부르고 "
         "`targetType`과 `targetId`가 가리키는 곳으로 옮겨 간다.\n\n"
         "이미 읽은 알림에 다시 보내도 200이다.\n\n"
+        "**알림을 받은 사람이 토큰의 주인인지 검증한다.** `notificationId`의 알림이 "
+        "`sub`에게 온 것인지 확인한 뒤에 처리하고, 다르면 403으로 막는다. 남의 알림을 "
+        "읽음으로 바꾸거나 그 내용을 응답으로 받아 갈 수 없어야 한다.\n\n"
         "- **200**: 처리했을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / FORBIDDEN**: 남의 알림일 때\n"
+        "- **403 / FORBIDDEN**: `sub`에게 온 알림이 아닐 때\n"
         "- **404 / NOTIFICATION_NOT_FOUND**: `notificationId`가 404일 때\n"
         "- **500 / INTERNAL_ERROR**: 처리하지 못했을 때"
     ),
@@ -7335,6 +7422,9 @@ def check_withdrawal() -> WithdrawalCheckResponse:
         "자료는 법정 기간 동안 남는다.\n\n"
         "탈퇴 전 확인과 같은 조건을 여기서 다시 본다. 화면이 버튼을 잠갔더라도 서버가 "
         "한 번 더 막는다.\n\n"
+        "**탈퇴하는 계정은 토큰의 주인이다.** 액세스 토큰을 검증해 `sub`를 꺼내 그 "
+        "계정만 탈퇴시키며, 대상을 요청에 담지 않는다. 되돌릴 수 없는 요청이므로 "
+        "로그인했다는 것만으로 통과시키지 않는다.\n\n"
         "- **200**: 탈퇴했을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **409 / WITHDRAWAL_BLOCKED**: 진행 중인 의뢰나 남은 돈이 있을 때\n"
@@ -7399,6 +7489,10 @@ def get_my_developer_profile() -> MyDeveloperProfileResponse:
         "가격표를 통째로 받아 **보낸 내용으로 맞춘다** — 목록에서 빠진 줄은 지운 것으로 "
         "본다. 줄마다 따로 부르는 API는 두지 않는다.\n\n"
         "새로 추가하는 줄은 식별자를 null로 보내고, 서버가 만들어 응답에 담아 준다.\n\n"
+        "**저장되는 곳은 토큰의 주인의 프로필이다.** 액세스 토큰을 검증해 `sub`를 꺼내 "
+        "그 사용자의 개발자 프로필에 저장하며, 대상을 요청에 담지 않는다. 요청에 실린 "
+        "`careerId`·`portfolioItemId`·`priceId`가 그 프로필의 것인지도 확인하고, 남의 "
+        "줄을 가리키면 저장하지 않는다.\n\n"
         "**저장해도 바뀌지 않는 것이 있다.** 경력의 증빙 확인 표시는 운영에서 확인한 "
         "값이라 그대로 남고, 평점과 리뷰 수는 의뢰인이 남긴 것이라 손대지 않는다.\n\n"
         "`isPublished`가 참이면 저장과 동시에 프로필이 공개되어 개발자 찾기에 나온다.\n\n"
@@ -7435,12 +7529,29 @@ def write_my_developer_profile(
                 }
             }
         },
+        403: {
+            "model": ErrorResponse,
+            "description": "남의 리뷰이거나 개발자 프로필이 없음",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "forbidden": {
+                            "summary": "`sub`가 받은 리뷰가 아닐 때",
+                            "value": FORBIDDEN_EXAMPLE,
+                        },
+                        "noDeveloperProfile": {
+                            "summary": "개발자로 전환하지 않았을 때",
+                            "value": NO_DEVELOPER_PROFILE_EXAMPLE,
+                        },
+                    }
+                }
+            },
+        },
         404: {
             "model": ErrorResponse,
             "description": "리뷰를 찾지 못함",
             "content": {"application/json": {"example": REVIEW_NOT_FOUND_EXAMPLE}},
         },
-        **AREA8_FORBIDDEN,
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -7450,9 +7561,15 @@ def write_my_developer_profile(
         "받은 리뷰에 답글을 단다. 리뷰 하나에 답글은 하나뿐이라 다시 보내면 덮어쓴다. "
         "프로필 저장과 따로 움직이며 보내는 즉시 남는다.\n\n"
         "답글은 의뢰인에게 보이는 프로필에도 함께 나간다.\n\n"
+        "**리뷰를 받은 개발자가 토큰의 주인인지 검증한다.** `reviewId`의 리뷰가 `sub`의 "
+        "개발자 프로필에 달린 것인지 확인한 뒤에 저장하고, 다르면 403으로 막는다. 남의 "
+        "프로필에 내가 답글을 남기는 일이 없어야 한다.\n\n"
+        "**이 API의 403은 두 가지다.** 남의 리뷰면 `FORBIDDEN`, 개발자로 전환하지 "
+        "않았으면 `NO_DEVELOPER_PROFILE`이다. 화면은 `code`로 가른다.\n\n"
         "- **200**: 달았거나 고쳤을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / FORBIDDEN**: 나에게 달린 리뷰가 아닐 때\n"
+        "- **403 / FORBIDDEN**: `sub`가 받은 리뷰가 아닐 때\n"
+        "- **403 / NO_DEVELOPER_PROFILE**: 개발자로 전환하지 않았을 때\n"
         "- **404 / REVIEW_NOT_FOUND**: `reviewId`가 404일 때\n"
         "- **422 / INVALID_REQUEST**: `reply`가 비었을 때\n"
         "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
@@ -8891,6 +9008,25 @@ SERVICE_TAGS = [
             "**계좌는 1원 인증으로만 등록한다.** 계좌를 넣는 요청과 입금자명 뒤 네 자리를 "
             "내는 요청이 나뉘고, 확인이 끝나는 순간에만 계좌가 남는다. 계좌번호 원문은 "
             "어디에도 보관하지 않으며 응답에는 언제나 가려서 나간다.\n\n"
+            "**에스크로 서버는 SSAFY 금융망과 코밋 사이의 프록시로 동작한다.** 계층마다 "
+            "형식이 다르다.\n\n"
+            "- 클라이언트 → 코밋: 아래 API들의 간소화된 형식\n"
+            "- 코밋 → 에스크로: SSAFY 금융망 형식(`Header`/`REC`)\n\n"
+            "클라이언트는 SSAFY 형식을 알 필요가 없다. `Header`와 기업명은 코밋이 "
+            "채우고, 금융망 응답코드는 코밋의 `code`로 옮겨져 나간다.\n\n"
+            "**이 영역은 전부 내 것을 다루므로 인가를 반드시 검증한다.** 로그인 여부만 "
+            "확인하고 통과시키면 남의 계정·알림·리뷰·계좌를 건드릴 수 있다. 액세스 "
+            "토큰을 검증해 `sub`를 꺼내고, 다루려는 자원의 주인이 그 `sub`와 같은지 "
+            "확인한 뒤에 처리한다.\n\n"
+            "- 대상을 요청에 담지 않는 API(`/users/me...`, `/mypage`, `/notifications`, "
+            "`/payment-methods`, `/files`)는 `sub`가 곧 대상이다. 요청에 사용자 식별자를 "
+            "실어 보내도 받지 않는다\n"
+            "- 경로에 식별자가 있는 API(`/accounts/verifications/{verificationId}/confirm`, "
+            "`/notifications/{notificationId}/read`, `/reviews/{reviewId}/reply`)는 그 "
+            "자원의 주인이 `sub`와 같은지 확인하고, 다르면 403 `FORBIDDEN`으로 막는다\n\n"
+            "**403이 두 뜻으로 쓰인다.** `FORBIDDEN`은 남의 자원을 건드렸다는 뜻이고, "
+            "`NO_DEVELOPER_PROFILE`은 개발자로 전환하지 않았다는 뜻이다. 화면 분기는 "
+            "상태코드가 아니라 `code`로 가른다.\n\n"
             "**함께 쓰는 API** `GET /api/settlements/income`"
         ),
     },
