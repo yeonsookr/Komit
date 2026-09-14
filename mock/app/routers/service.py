@@ -2341,15 +2341,13 @@ class RecommendationItemResponse(BaseModel):
         description="이 개발자가 마친 계약 수. 카드의 'N건 완료'에 쓴다.",
         examples=[23],
     )
-    status: Literal["ACCEPTED", "REJECTED", "EXPIRED"] | None = Field(
-        description=(
-            "상담 요청에 대한 개발자 응답. 아직 요청하지 않았으면 null이다. "
-            "ACCEPTED는 수락, REJECTED는 거절, EXPIRED는 답이 없어 만료된 것이다."
-        ),
-        examples=[None],
-    )
     roomId: int | None = Field(
-        description="상담이 시작되어 열린 방 식별자. 시작 전이면 null이다.",
+        description=(
+            "상담을 요청해 열린 방 식별자. 아직 요청하지 않았으면 null이다. "
+            "**이 값 하나가 요청 여부를 말한다.** 상담 요청에 개발자의 수락은 없어서 "
+            "요청하면 그 자리에서 방이 열리므로, 요청했는데 방이 없는 상태는 없다. "
+            "화면은 null이면 '상담 요청', 값이 있으면 '방으로 가기'를 보여준다."
+        ),
         examples=[None],
     )
 
@@ -2674,7 +2672,6 @@ RECOMMENDATION_BATCH = {
             "rank": 1,
             "developer": DEVELOPERS[0],
             "contractCount": 23,
-            "status": None,
             "roomId": None,
         },
         {
@@ -2682,7 +2679,6 @@ RECOMMENDATION_BATCH = {
             "rank": 2,
             "developer": DEVELOPERS[2],
             "contractCount": 11,
-            "status": None,
             "roomId": None,
         },
     ],
@@ -3045,8 +3041,8 @@ def create_recommendation(
     summary="추천 결과 조회",
     description=(
         "**화면 — `3_의뢰인_개발자추천` › 추천 개발자 목록**\n\n"
-        "추천 회차의 결과를 순위대로 내려준다. 개발자마다 상담을 요청했는지, 요청했다면 "
-        "수락했는지가 `status`에 담긴다.\n\n"
+        "추천 회차의 결과를 순위대로 내려준다. 개발자마다 상담을 요청했는지는 `roomId`로 "
+        "안다. 비어 있으면 아직 요청하지 않은 개발자다.\n\n"
         "- **200**: 추천 회차가 있고 내 것일 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / RECOMMENDATION_NOT_FOUND**: `batchId`가 404일 때. 없거나 남의 추천이다\n"
@@ -3106,6 +3102,8 @@ def get_recommendation(
         "**화면 — `3_의뢰인_개발자추천` › N명에게 상담 요청**\n\n"
         "고른 개발자들에게 같은 요청서를 보낸다. 여러 명에게 한 번에 보낼 수 있고, "
         "개발자마다 무료 상담방이 하나씩 열린다. 상담은 무료다.\n\n"
+        "**개발자의 수락을 기다리지 않는다.** 요청하면 그 자리에서 방이 열리고, 개발자는 "
+        "사이드바의 '받은 의뢰'에서 그 방을 본다.\n\n"
         "같은 요청을 다시 보내도 방이 더 생기지 않는다.\n\n"
         "- **201**: 요청을 보냈을 때. 열린 방 목록이 내려온다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
