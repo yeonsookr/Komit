@@ -15,7 +15,7 @@ nginx가 /mock 아래로 넘기므로 밖에서는 /mock/service/..., /mock/escr
 from fastapi import FastAPI
 
 from .factory import create_app
-from .routers import ESCROW_ROUTERS, SERVICE_ROUTERS
+from .routers import ESCROW_ROUTERS, SERVICE_ROUTERS, SERVICE_TAGS
 from .routers.service import validation_exception_handler as service_validation_handler
 from .routers.escrow import validation_exception_handler as escrow_validation_handler
 
@@ -31,6 +31,7 @@ service_app = create_app(
     SERVICE_ROUTERS,
     DOCS,
     validation_error_handler=service_validation_handler,
+    openapi_tags=SERVICE_TAGS,
 )
 escrow_app = create_app(
     "Komit Escrow Mock Server",
