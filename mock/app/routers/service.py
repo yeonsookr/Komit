@@ -2146,6 +2146,11 @@ def update_issue_status(
 #   GET /api/users/me            전 영역 헤더
 #   GET /api/diagnoses/{id}      요청서 요약에 쓰는 진단 정보
 #
+# 상담 요청은 들어온 길에 따라 API가 갈린다. 추천에서 고른 개발자는 추천 회차의 상담 요청
+# API로, 직접 찾은 개발자는 프로젝트 상담 요청 API로 보낸다. 뒤쪽은 회차를 만들지 않아
+# 방의 recommendationItemId가 비어 있다.
+# 개발자의 수락·거절은 없고, 요청하면 그 자리에서 방이 열린다.
+#
 # 채팅 메시지는 이 API가 다루지 않는다. 방 응답의 chatRefId로 채팅 쪽에 넘긴다.
 # =========================================================================== #
 
@@ -2385,6 +2390,19 @@ class CreateRecommendationRequest(BaseModel):
     )
 
 
+class CreateDirectConsultationRequest(BaseModel):
+    """직접 찾은 개발자에게 상담을 요청한다."""
+
+    developerIds: list[int] = Field(
+        min_length=1,
+        description=(
+            "상담을 요청할 개발자 식별자. 여러 명에게 한 번에 보낼 수 있고, "
+            "한 명 이상 골라야 한다."
+        ),
+        examples=[[5]],
+    )
+
+
 class CreateConsultationRequest(BaseModel):
     """고른 개발자들에게 상담을 요청한다."""
 
@@ -2508,6 +2526,7 @@ AREA3_TAG = "3 개발자 찾기 · 상담방"
 
 NOT_FOUND_DEVELOPER_ID = 404
 NOT_FOUND_PROJECT_ID = 404
+ALREADY_REQUESTED_PROJECT_ID = 409
 NOT_FOUND_BATCH_ID = 404
 NOT_FOUND_ROOM_ID = 404
 ALREADY_REQUESTED_BATCH_ID = 409
@@ -2706,6 +2725,19 @@ ROOMS = [
         "openedAt": "2026-08-22T11:40:00+09:00",
     },
 ]
+
+# 추천을 거치지 않고 직접 찾아 연 방. 추천 항목이 없어 recommendationItemId가 비어 있다.
+DIRECT_ROOM = {
+    "roomId": 94,
+    "recommendationItemId": None,
+    "type": "INQUIRY",
+    "status": "OPEN",
+    "projectId": 8,
+    "projectName": "수제 비누 가게",
+    "counterpartName": "정하",
+    "chatRefId": "room-94-chat",
+    "openedAt": "2026-08-27T10:15:00+09:00",
+}
 
 ROOM_DETAIL = {
     **ROOMS[0],
@@ -2994,11 +3026,14 @@ def get_developer_reviews(
         "**화면 — `2_요구사항선택` › 상담 요청하기. 결과는 `3_의뢰인_개발자추천`에 나온다**\n\n"
         "고른 요구사항을 근거로 맞는 개발자를 찾아 추천 회차를 만든다. 이 회차의 결과가 "
         "추천 화면에 순위대로 나온다.\n\n"
+        "**직접 찾아 고른 개발자는 이 API를 거치지 않는다.** 그 길은 프로젝트 상담 요청 "
+        "API가 맡고, 회차 없이 방이 바로 열린다.\n\n"
         "같은 프로젝트에서 다시 찾으면 회차 번호가 1 오른다. 이전 회차는 지우지 않고 "
         "남겨서 어떤 추천이 계약으로 이어졌는지 볼 수 있다.\n\n"
         "- **201**: 추천을 만들었을 때. 맞는 개발자가 없으면 `items`가 빈 배열이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / PROJECT_NOT_FOUND**: `projectId`가 404일 때. 없거나 남의 프로젝트다\n"
+        "- **422 / INVALID_REQUEST**: 보낸 값의 형식이 맞지 않을 때\n"
         "- **500 / INTERNAL_ERROR**: 추천을 만들지 못했을 때"
     ),
 )
@@ -3131,6 +3166,80 @@ def request_consultations(
     if batchId == ALREADY_REQUESTED_BATCH_ID:
         return _error_response(409, CONSULTATION_ALREADY_REQUESTED)
     return RoomListResponse(content=[RoomSummaryResponse(**ROOMS[0])])
+
+
+@router.post(
+    "/projects/{projectId}/consultation-requests",
+    response_model=RoomListResponse,
+    status_code=201,
+    tags=[AREA3_TAG],
+    responses={
+        201: {"content": {"application/json": {"example": {"content": [DIRECT_ROOM]}}}},
+        404: {
+            "model": ErrorResponse,
+            "description": "프로젝트 없음",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": "PROJECT_NOT_FOUND",
+                        "message": "프로젝트를 찾을 수 없습니다.",
+                    }
+                }
+            },
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "이미 상담을 요청함",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": "CONSULTATION_ALREADY_REQUESTED",
+                        "message": "이미 상담을 요청한 개발자입니다.",
+                    }
+                }
+            },
+        },
+        **AREA1_UNAUTHORIZED,
+        **AREA1_ERRORS,
+    },
+    summary="직접 찾은 개발자에게 상담 요청 보내기",
+    description=(
+        "**화면 — `3_의뢰인_개발자찾기` › 카드에서 상담 요청 · "
+        "`3_의뢰인_개발자프로필` › 무료로 물어보기**\n\n"
+        "추천을 거치지 않고 직접 찾은 개발자에게 상담을 요청한다. 개발자마다 무료 "
+        "상담방이 하나씩 열린다. 상담은 무료다.\n\n"
+        "**추천 회차를 만들지 않는다.** 그래서 이렇게 열린 방은 "
+        "`recommendationItemId`가 비어 있다. 추천 화면에서 고른 개발자는 이 API가 "
+        "아니라 추천 회차의 상담 요청 API로 보낸다.\n\n"
+        "**개발자의 수락을 기다리지 않는다.** 요청하면 그 자리에서 방이 열리고, "
+        "개발자는 사이드바의 '받은 의뢰'에서 그 방을 본다.\n\n"
+        "같은 요청을 다시 보내도 방이 더 생기지 않는다.\n\n"
+        "- **201**: 요청을 보냈을 때. 열린 방 목록이 내려온다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **404 / PROJECT_NOT_FOUND**: `projectId`가 404일 때. 없거나 남의 프로젝트다\n"
+        "- **409 / CONSULTATION_ALREADY_REQUESTED**: `projectId`가 409일 때. 이미 "
+        "상담을 요청한 개발자가 목록에 들어 있다\n"
+        "- **422 / INVALID_REQUEST**: `developerIds`가 비었을 때\n"
+        "- **500 / INTERNAL_ERROR**: 요청을 보내지 못했을 때"
+    ),
+)
+def request_direct_consultations(
+    projectId: Annotated[
+        int,
+        Path(
+            description=(
+                "프로젝트 식별자. 404는 없음, 409는 중복 요청 재현용 예약값이다."
+            ),
+            examples=[8],
+        ),
+    ],
+    request: CreateDirectConsultationRequest,
+) -> RoomListResponse | JSONResponse:
+    if projectId == NOT_FOUND_PROJECT_ID:
+        return _error_response(404, PROJECT_NOT_FOUND)
+    if projectId == ALREADY_REQUESTED_PROJECT_ID:
+        return _error_response(409, CONSULTATION_ALREADY_REQUESTED)
+    return RoomListResponse(content=[RoomSummaryResponse(**DIRECT_ROOM)])
 
 
 # --------------------------------------------------------------------------- #
@@ -8813,6 +8922,11 @@ SERVICE_TAGS = [
             "**화면** `3_의뢰인_개발자찾기` · `3_의뢰인_개발자프로필` · "
             "`3_의뢰인_개발자추천` · `3_의뢰인_상담방_대화` · `3_의뢰인_상담방_컨설팅전환` · `3_의뢰인_상담방_개발전환` · "
             "`3_개발자_개발계약서요청받음`\n\n"
+            "**상담 요청 API는 들어온 길에 따라 둘이다.** 추천에서 고른 개발자는 추천 "
+            "회차의 상담 요청 API로, 직접 찾은 개발자는 프로젝트 상담 요청 API로 보낸다. "
+            "직접 찾은 길은 회차를 만들지 않아 방의 `recommendationItemId`가 비어 있다.\n\n"
+            "**개발자가 상담 요청을 수락하거나 거절하지 않는다.** 요청하면 그 자리에서 "
+            "무료 상담방이 열리고, 개발자는 사이드바의 '받은 의뢰'에서 본다.\n\n"
             "**채팅 메시지는 이 API가 다루지 않는다.** 방 응답의 `chatRefId`로 채팅 쪽에 "
             "넘긴다. 사이드바의 마지막 메시지 미리보기도 그쪽에서 가져온다.\n\n"
             "**함께 쓰는 API** `GET /api/users/me` · `GET /api/diagnoses/{id}`"
