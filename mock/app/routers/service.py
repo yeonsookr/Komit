@@ -2722,10 +2722,10 @@ ROOM_DETAIL = {
 }
 
 DEVELOPER_LIST_EXAMPLE = {
-    "content": DEVELOPERS[:1],
+    "content": DEVELOPERS,
     "page": 1,
     "size": 20,
-    "totalElements": 5,
+    "totalElements": len(DEVELOPERS),
     "totalPages": 1,
     "totalDevelopers": TOTAL_DEVELOPERS,
 }
@@ -2734,7 +2734,7 @@ REVIEW_LIST_EXAMPLE = {
     "content": REVIEWS,
     "page": 1,
     "size": 20,
-    "totalElements": 20,
+    "totalElements": len(REVIEWS),
     "totalPages": 1,
 }
 
