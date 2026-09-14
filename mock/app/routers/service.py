@@ -5578,6 +5578,13 @@ SUBMIT_MESSAGE_ERROR_EXAMPLE = {
     "errors": [{"field": "message", "reason": "300자 이하여야 합니다."}],
 }
 
+# 통과시키기 바디는 qaCriterionIds 하나뿐이고 필수다. 빈 배열은 422가 아니라 400(QA_NOT_ALL_CHECKED)이다.
+CONFIRM_QA_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [{"field": "qaCriterionIds", "reason": "필수 항목입니다."}],
+}
+
 STARTED_CONTRACT_ID = 409
 
 
@@ -5937,7 +5944,14 @@ def submit_milestone(
                 }
             },
         },
-        **MILESTONE_ERRORS,
+        404: MILESTONE_ERRORS[404],
+        **AREA1_UNAUTHORIZED,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": CONFIRM_QA_ERROR_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
     },
     summary="작업 통과시키기",
     description=(
@@ -5954,6 +5968,7 @@ def submit_milestone(
         "당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 준다\n"
         "- **409 / MILESTONE_STATE_CONFLICT**: `milestoneId`가 409일 때. 이미 통과됐거나 "
         "아직 확인 요청이 오지 않은 작업이다\n"
+        "- **422 / INVALID_REQUEST**: `qaCriterionIds`가 없을 때. 빈 배열은 400이다\n"
         "- **500 / INTERNAL_ERROR**: 통과시키지 못했을 때"
     ),
 )
