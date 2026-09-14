@@ -2934,7 +2934,7 @@ def get_developer(
 ) -> DeveloperDetailResponse | JSONResponse:
     if developerId == NOT_FOUND_DEVELOPER_ID:
         return _error_response(404, DEVELOPER_NOT_FOUND)
-    return DeveloperDetailResponse(**DEVELOPER_DETAIL)
+    return DeveloperDetailResponse(**{**DEVELOPER_DETAIL, "developerId": developerId})
 
 
 @router.get(
