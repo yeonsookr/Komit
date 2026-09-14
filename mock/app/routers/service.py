@@ -6205,10 +6205,6 @@ class MyProjectResponse(BaseModel):
         description="가장 최근 진단서 식별자. 아직 진단이 없으면 null이다.",
         examples=[31],
     )
-    diagnosisCount: int = Field(
-        description="이 프로젝트에서 만든 진단서 수. 화면의 '진단 v2'에서 v 뒤 숫자다.",
-        examples=[2],
-    )
     latestDiagnosedAt: str | None = Field(
         description="가장 최근에 진단한 시각. 진단이 없으면 null이다.",
         examples=["2026-08-17T09:12:00+09:00"],
@@ -6271,11 +6267,6 @@ class MyPageResponse(BaseModel):
     """마이페이지 한 판."""
 
     account: MyAccountResponse = Field(description="계정 칸.")
-    paymentMethods: list[PaymentMethodResponse] = Field(
-        description=(
-            "등록한 결제 수단. 하나도 없으면 빈 배열이고 화면은 등록 안내를 낸다."
-        ),
-    )
     settlementAccount: AccountResponse | None = Field(
         description="환불과 대금을 받는 계좌. 등록하지 않았으면 null이다.",
     )
@@ -6712,15 +6703,6 @@ MY_PAGE_EXAMPLE = {
         "email": "mimi@kakao.com",
         "profileImageFileId": None,
     },
-    "paymentMethods": [
-        {
-            "paymentMethodId": 9,
-            "methodType": "CARD",
-            "maskedNumber": "···· 4412",
-            "cardCompany": {"codeId": 21, "codeName": "우리카드"},
-            "isDefault": True,
-        }
-    ],
     "settlementAccount": {
         "accountId": 22,
         "bankName": "신한은행",
@@ -6733,7 +6715,6 @@ MY_PAGE_EXAMPLE = {
             "projectId": 12,
             "name": "수제 비누 가게",
             "latestDiagnosisId": 31,
-            "diagnosisCount": 2,
             "latestDiagnosedAt": "2026-08-17T09:12:00+09:00",
             "roomCount": 4,
         },
@@ -6741,7 +6722,6 @@ MY_PAGE_EXAMPLE = {
             "projectId": 11,
             "name": "미미헤어샵 예약",
             "latestDiagnosisId": 18,
-            "diagnosisCount": 1,
             "latestDiagnosedAt": "2026-07-02T11:40:00+09:00",
             "roomCount": 2,
         },
@@ -6749,7 +6729,6 @@ MY_PAGE_EXAMPLE = {
             "projectId": 14,
             "name": "사내 재고 관리",
             "latestDiagnosisId": None,
-            "diagnosisCount": 0,
             "latestDiagnosedAt": None,
             "roomCount": 1,
         },
@@ -6760,12 +6739,17 @@ MY_PAGE_EXAMPLE = {
 
 MY_PAGE_EMPTY_EXAMPLE = {
     **MY_PAGE_EXAMPLE,
-    "paymentMethods": [],
     "settlementAccount": None,
     "settlementAccountVerifiedAt": None,
 }
 
-PAYMENT_METHOD_EXAMPLE = MY_PAGE_EXAMPLE["paymentMethods"][0]
+PAYMENT_METHOD_EXAMPLE = {
+    "paymentMethodId": 9,
+    "methodType": "CARD",
+    "maskedNumber": "···· 4412",
+    "cardCompany": {"codeId": 21, "codeName": "우리카드"},
+    "isDefault": True,
+}
 
 NAME_INVALID_EXAMPLE = {
     "code": INVALID_REQUEST[0],
@@ -7042,11 +7026,11 @@ UPLOADED_FILE_EXAMPLE = {
                 "application/json": {
                     "examples": {
                         "registered": {
-                            "summary": "결제 수단과 계좌를 등록한 사람",
+                            "summary": "계좌를 등록한 사람",
                             "value": MY_PAGE_EXAMPLE,
                         },
                         "empty": {
-                            "summary": "아직 아무것도 등록하지 않은 사람",
+                            "summary": "아직 계좌를 등록하지 않은 사람",
                             "value": MY_PAGE_EMPTY_EXAMPLE,
                         },
                     }
@@ -7059,10 +7043,10 @@ UPLOADED_FILE_EXAMPLE = {
     summary="마이페이지 조회",
     description=(
         "**화면 — `8_마이페이지` · `8_마이페이지_등록전`**\n\n"
-        "마이페이지 한 판을 한 번에 내려준다. 계정, 결제 수단, 계좌, 등록한 프로젝트, "
-        "개발자 프로필 요약, 알림 설정이 들어간다.\n\n"
-        "`paymentMethods`가 빈 배열이거나 `settlementAccount`가 null이면 화면이 그 칸을 "
-        "등록 안내로 바꾼다. 같은 API이며 화면만 갈린다.\n\n"
+        "마이페이지 한 판을 한 번에 내려준다. 계정, 계좌, 등록한 프로젝트, 개발자 "
+        "프로필 요약, 알림 설정이 들어간다.\n\n"
+        "`settlementAccount`가 null이면 화면이 그 칸을 등록 안내로 바꾼다. 같은 "
+        "API이며 화면만 갈린다.\n\n"
         "`developer`는 개발자로 전환하지 않은 사람에게 null로 나가고, 화면에서 개발자 "
         "프로필 칸이 통째로 빠진다.\n\n"
         "약관 칸은 이 응답에 없다. 약관 문서와 개정일은 서버가 들고 있지 않고 화면이 "
