@@ -2180,13 +2180,23 @@ def update_issue_status(
 
 
 class RatingResponse(BaseModel):
-    """평점 하나와 그 근거가 된 리뷰 수."""
+    """평점 하나와 그 근거가 된 리뷰 수.
+
+    **리뷰 하나는 개발력과 설명력을 둘 다 받는다.** 한쪽만 매기고 넘어갈 수 없으므로
+    두 평점의 reviewCount는 언제나 같고, 그 값이 곧 이 개발자가 받은 리뷰 총 건수다.
+    화면의 '리뷰 N개 모두 보기'가 이 수를 쓴다.
+    """
 
     score: float | None = Field(
         description="평균 평점. 받은 리뷰가 없으면 null이다.",
         examples=[4.4],
     )
-    reviewCount: int = Field(description="집계에 들어간 리뷰 수.", examples=[13])
+    reviewCount: int = Field(
+        description=(
+            "집계에 들어간 리뷰 수. 개발력과 설명력이 같은 값이며 리뷰 총 건수와도 같다."
+        ),
+        examples=[20],
+    )
 
 
 class DeveloperSummaryResponse(BaseModel):
@@ -2313,8 +2323,17 @@ class ReviewResponse(BaseModel):
         description="리뷰를 쓴 의뢰인의 표시 이름.",
         examples=["김미미"],
     )
-    devScore: int = Field(description="개발력 점수. 1에서 5 사이다.", examples=[5])
-    commScore: int = Field(description="설명력 점수. 1에서 5 사이다.", examples=[5])
+    devScore: int = Field(
+        description="개발력 점수. 1에서 5 사이이며 비울 수 없다.",
+        examples=[5],
+    )
+    commScore: int = Field(
+        description=(
+            "설명력 점수. 1에서 5 사이이며 비울 수 없다. 컨설팅 계약이든 개발 계약이든 "
+            "리뷰 하나는 두 점수를 다 받는다."
+        ),
+        examples=[5],
+    )
     content: str | None = Field(
         description="리뷰 내용. 점수만 주고 글을 안 썼으면 null이다.",
         examples=["말이 잘 통했습니다."],
@@ -2358,7 +2377,11 @@ class PriceCatalogItemResponse(BaseModel):
     )
     price: int = Field(description="가격. 원 단위 정수다.", examples=[400000])
     periodDays: int | None = Field(
-        description="예상 작업 기간(일). 컨설팅 세션은 null이다.",
+        description=(
+            "예상 작업 기간(일). **컨설팅 세션은 언제나 null이다.** 가격표는 세션 시간을 "
+            "담지 않으므로, 몇 분짜리 세션인지는 `taskName`에 적힌 글이 전부다. 실제 "
+            "세션 시간은 계약서를 쓸 때 분 단위로 따로 정한다."
+        ),
         examples=[4],
     )
 
@@ -2380,13 +2403,20 @@ class DeveloperDetailResponse(DeveloperSummaryResponse):
         ),
         examples=["19:00"],
     )
-    careers: list[CareerResponse] = Field(description="등록한 경력.")
-    portfolioItems: list[PortfolioItemResponse] = Field(description="등록한 작업물.")
+    careers: list[CareerResponse] = Field(
+        description="등록한 경력. 시작일이 늦은 것, 곧 최근 경력이 먼저 내려간다.",
+    )
+    portfolioItems: list[PortfolioItemResponse] = Field(
+        description=(
+            "등록한 작업물. 등록한 순서대로 내려간다. 줄 순서를 바꾸는 기능은 없다."
+        ),
+    )
     priceCatalog: list[PriceCatalogItemResponse] = Field(
         description=(
             "등록한 가격표 전부. 화면의 '컨설팅'과 '개발 · 작업별 요금'을 이 목록으로 "
             "그린다. 목록 응답의 `prices`는 카드에 쓰는 유형별 최저가라 줄 단위 금액과 "
-            "기간은 여기에만 있다. 가격표를 등록하지 않았으면 빈 배열이다."
+            "기간은 여기에만 있다. 컨설팅이 먼저 오고 그 안에서 가격이 싼 것부터 "
+            "내려간다. 가격표를 등록하지 않았으면 빈 배열이다."
         ),
     )
 
@@ -2691,7 +2721,7 @@ DEVELOPERS = [
         "field": {"codeId": 42, "codeName": "DB 연결"},
         "yearsOfExperience": 5.0,
         "isCareerVerified": True,
-        "devRating": {"score": 4.4, "reviewCount": 13},
+        "devRating": {"score": 4.4, "reviewCount": 20},
         "explanatoryRating": {"score": 4.9, "reviewCount": 20},
         "techCategories": TECH_CODES,
         "prices": [
@@ -2707,7 +2737,7 @@ DEVELOPERS = [
         "field": {"codeId": 41, "codeName": "인터넷에 올리기"},
         "yearsOfExperience": 4.0,
         "isCareerVerified": True,
-        "devRating": {"score": 4.2, "reviewCount": 9},
+        "devRating": {"score": 4.2, "reviewCount": 11},
         "explanatoryRating": {"score": 4.4, "reviewCount": 11},
         "techCategories": TECH_CODES[1:],
         "prices": [
@@ -2724,7 +2754,7 @@ DEVELOPERS = [
         "yearsOfExperience": 6.0,
         "isCareerVerified": False,
         "devRating": {"score": 4.7, "reviewCount": 22},
-        "explanatoryRating": {"score": 4.1, "reviewCount": 18},
+        "explanatoryRating": {"score": 4.1, "reviewCount": 22},
         "techCategories": TECH_CODES[:1],
         "prices": [
             {"taskType": "CONSULT", "price": 60000},
@@ -3169,6 +3199,10 @@ def find_developers(
         "개발자 한 명의 소개, 경력, 작업물, 평점, 가격표를 한 번에 내려준다. 로그인하지 "
         "않아도 볼 수 있는 공개 프로필이다.\n\n"
         "경력은 `isVerified`로 갈린다. 참이면 '확인됨', 거짓이면 '확인 중'으로 보여준다.\n\n"
+        "**무료 상담은 이 응답에 담기지 않는다.** 가격표에 없는 고정 정책이라 화면이 "
+        "'상담 — 무료' 줄을 스스로 그린다. `priceCatalog`에서 상담 줄을 찾지 않는다.\n\n"
+        "**리뷰 총 건수는 `devRating.reviewCount`다.** 리뷰 하나가 두 점수를 다 받으므로 "
+        "설명력 쪽과 같은 값이고, 화면의 '리뷰 N개 모두 보기'가 이 수를 쓴다.\n\n"
         "**함께 쓰는 API** 리뷰 칸은 `GET /api/developers/{developerId}/reviews`가 채우고, "
         "아래의 '무료로 물어보기'는 `POST /api/projects/{projectId}/consultation-requests`로 "
         "간다.\n\n"
@@ -6571,10 +6605,6 @@ class MyDeveloperResponse(BaseModel):
     """마이페이지의 개발자 프로필 칸. 개발자로 전환한 사람에게만 내려간다."""
 
     developerId: int = Field(description="개발자 식별자.", examples=[3])
-    isPublished: bool = Field(
-        description="프로필이 공개 중인지. 거짓이면 개발자 찾기에 나오지 않는다.",
-        examples=[True],
-    )
     reviewCount: int = Field(description="받은 리뷰 수.", examples=[12])
     upcomingSessionCount: int = Field(
         description="아직 하지 않은 컨설팅 세션 수. 화면의 '잡힌 세션 N건'이다.",
@@ -6807,7 +6837,6 @@ class WithdrawalCheckResponse(BaseModel):
 class MyDeveloperProfileResponse(DeveloperDetailResponse):
     """내 프로필 편집 화면이 쓰는 값. 남에게 보이는 상세에 가격표와 리뷰를 더한다."""
 
-    isPublished: bool = Field(description="프로필이 공개 중인지.", examples=[True])
     reviews: list[ReviewResponse] = Field(
         description="받은 리뷰. 새로운 것이 먼저다. 답글을 여기서 단다.",
     )
@@ -6926,17 +6955,13 @@ class WriteDeveloperProfileRequest(BaseModel):
         ),
     )
     portfolioItems: list[WritePortfolioItemRequest] = Field(
-        description="작업물 전부. 보낸 순서가 화면에 보이는 순서다.",
+        description=(
+            "작업물 전부. 보낸 목록에 없는 기존 작업물은 지운 것으로 본다. 새로 추가한 "
+            "줄은 뒤에 붙으며, 이미 등록된 줄의 순서는 보낸 순서로 바뀌지 않는다."
+        ),
     )
     prices: list[WritePriceRequest] = Field(
         description="가격표 전부. 보낸 목록에 없는 기존 줄은 지운 것으로 본다.",
-    )
-    isPublished: bool = Field(
-        description=(
-            "참이면 저장하면서 프로필을 공개한다. 화면의 '저장하고 프로필 공개'가 "
-            "참을 보낸다."
-        ),
-        examples=[True],
     )
 
 
@@ -7258,7 +7283,6 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
             "thumbnailFileId": None,
         },
     ],
-    "isPublished": True,
     "priceCatalog": PRICE_CATALOG,
     "reviews": [
         {
@@ -7742,14 +7766,15 @@ def get_my_developer_profile() -> MyDeveloperProfileResponse:
     },
     summary="내 개발자 프로필 저장",
     description=(
-        "**화면 — `8_개발자_내프로필` › 저장하고 프로필 공개**\n\n"
+        "**화면 — `8_개발자_내프로필` › 저장**\n\n"
         "화면의 저장 버튼 하나가 이 요청 하나를 보낸다. 소개, 기술, 경력, 작업물, "
         "가격표를 통째로 받아 **보낸 내용으로 맞춘다** — 목록에서 빠진 줄은 지운 것으로 "
         "본다. 줄마다 따로 부르는 API는 두지 않는다.\n\n"
         "새로 추가하는 줄은 식별자를 null로 보내고, 서버가 만들어 응답에 담아 준다.\n\n"
         "**저장해도 바뀌지 않는 것이 있다.** 경력의 증빙 확인 표시는 운영에서 확인한 "
         "값이라 그대로 남고, 평점과 리뷰 수는 의뢰인이 남긴 것이라 손대지 않는다.\n\n"
-        "`isPublished`가 참이면 저장과 동시에 프로필이 공개되어 개발자 찾기에 나온다.\n\n"
+        "**프로필을 감춰 두는 상태는 없다.** 개발자로 전환해 프로필을 저장한 순간부터 "
+        "개발자 찾기에 나온다. 공개 여부를 켜고 끄는 값은 두지 않는다.\n\n"
         "- **200**: 저장했을 때. 저장된 뒤의 프로필을 그대로 준다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / NO_DEVELOPER_PROFILE**: 개발자로 전환하지 않았을 때\n"
@@ -7766,7 +7791,6 @@ def write_my_developer_profile(
             **MY_DEVELOPER_PROFILE_EXAMPLE,
             "intro": request.intro,
             "description": request.description,
-            "isPublished": request.isPublished,
         }
     )
 
