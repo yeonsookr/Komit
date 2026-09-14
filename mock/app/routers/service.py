@@ -141,6 +141,17 @@ def _error_response(status_code: int, code_message: tuple[str, str]) -> JSONResp
     return JSONResponse(status_code=status_code, content=jsonable_encoder(error))
 
 
+def _field_error(field: str, reason: str) -> JSONResponse:
+    """스키마로는 거를 수 없고 값을 들여다봐야 아는 검증 실패를 422로 돌려준다."""
+    code, message = INVALID_REQUEST
+    body = ValidationErrorResponse(
+        code=code,
+        message=message,
+        errors=[FieldError(field=field, reason=reason)],
+    )
+    return JSONResponse(status_code=422, content=jsonable_encoder(body))
+
+
 # Pydantic 오류 종류를 사용자 문구로 옮긴다. 보낸 값은 문구에 넣지 않는다.
 _REASONS: dict[str, str] = {
     "missing": "필수 항목입니다.",
@@ -646,6 +657,14 @@ class MeResponse(BaseModel):
         description="개발자 프로필 보유 여부. 헤더의 의뢰인·개발자 전환 노출을 정한다.",
         examples=[False],
     )
+    developerId: int | None = Field(
+        description=(
+            "내 개발자 식별자. 개발자로 전환하지 않았으면 null이다. 방의 "
+            "`developerId`와 견주어 '받은 의뢰'를 가리는 데 쓴다 — 방의 `clientId`는 "
+            "사용자 식별자라 `userId`와, `developerId`는 이 값과 견준다."
+        ),
+        examples=[None],
+    )
     unreadNotificationCount: int = Field(
         description="아직 읽지 않은 알림 수. 헤더 알림 배지에 쓴다.",
         examples=[3],
@@ -762,6 +781,7 @@ ME_EXAMPLE = {
     "name": "김미미",
     "profileImageFileId": None,
     "hasDevProfile": False,
+    "developerId": None,
     "unreadNotificationCount": 3,
 }
 
@@ -2579,14 +2599,16 @@ class RoomSummaryResponse(BaseModel):
     )
     developerId: int = Field(
         description=(
-            "이 방에 참여한 개발자 사용자 식별자. 같은 프로젝트라도 방마다 다를 수 "
-            "있다. 내 사용자 식별자와 같으면 사이드바의 '받은 의뢰'에 묶인다."
+            "이 방에 참여한 **개발자 식별자**. 사용자 식별자가 아니며, 상담을 요청할 때 "
+            "보내는 값과 같은 종류다. 같은 프로젝트라도 방마다 다를 수 있다. 내 정보의 "
+            "`developerId`와 같으면 사이드바의 '받은 의뢰'에 묶인다."
         ),
-        examples=[30],
+        examples=[3],
     )
     counterpartName: str = Field(
         description=(
-            "상대의 표시 이름. 의뢰인이 보면 개발자 이름, 개발자가 보면 의뢰인 이름이다."
+            "상대의 표시 이름. 의뢰인이 보면 개발자 이름, 개발자가 보면 의뢰인 이름이다. "
+            "상대가 탈퇴했으면 `탈퇴한 사용자`가 들어온다."
         ),
         examples=["이준"],
     )
@@ -2604,10 +2626,16 @@ class RoomSummaryResponse(BaseModel):
 
 
 class RoomListResponse(BaseModel):
-    """방 목록."""
+    """방 목록.
+
+    **페이지 정보로 감싸지 않는다.** 사이드바가 프로젝트별로 묶어 한 번에 늘어놓는
+    구조라 페이지를 넘길 자리가 없어서다. 방이 몇 개든 전부 내려가며 상한을 두지 않는다.
+    """
 
     content: list[RoomSummaryResponse] = Field(
-        description="조건에 맞는 방. 없으면 빈 배열이다.",
+        description=(
+            "조건에 맞는 방. 마지막으로 움직인 것이 먼저다. 없으면 빈 배열이다."
+        ),
     )
 
 
@@ -2663,10 +2691,6 @@ PROJECT_NOT_FOUND_EXAMPLE = {
 }
 RECOMMENDATION_NOT_FOUND = ("RECOMMENDATION_NOT_FOUND", "추천 결과를 찾을 수 없습니다.")
 ROOM_NOT_FOUND = ("ROOM_NOT_FOUND", "방을 찾을 수 없습니다.")
-CONSULTATION_ALREADY_REQUESTED = (
-    "CONSULTATION_ALREADY_REQUESTED",
-    "이미 상담을 요청한 개발자입니다.",
-)
 ROOM_ALREADY_CONVERTED = (
     "ROOM_ALREADY_CONVERTED",
     "이미 갈래가 정해진 상담입니다.",
@@ -2682,9 +2706,7 @@ AREA3_TAG = "3 개발자 찾기 · 상담방"
 
 NOT_FOUND_DEVELOPER_ID = 404
 NOT_FOUND_PROJECT_ID = 404
-ALREADY_REQUESTED_PROJECT_ID = 409
 NOT_FOUND_BATCH_ID = 404
-ALREADY_REQUESTED_BATCH_ID = 409
 NOT_FOUND_ROOM_ID = 404
 CONVERTED_ROOM_ID = 409
 
@@ -2967,7 +2989,7 @@ ROOMS = [
         "projectId": 8,
         "projectName": "수제 비누 가게",
         "clientId": 12,
-        "developerId": 30,
+        "developerId": 3,
         "counterpartName": "이준",
         "chatRefId": "room-91-chat",
         "openedAt": "2026-08-20T09:00:00+09:00",
@@ -2980,7 +3002,7 @@ ROOMS = [
         "projectId": 8,
         "projectName": "수제 비누 가게",
         "clientId": 12,
-        "developerId": 30,
+        "developerId": 3,
         "counterpartName": "이준",
         "chatRefId": "room-92-chat",
         "openedAt": "2026-08-22T11:40:00+09:00",
@@ -2993,12 +3015,16 @@ ROOMS = [
         "projectId": 8,
         "projectName": "수제 비누 가게",
         "clientId": 12,
-        "developerId": 31,
+        "developerId": 7,
         "counterpartName": "한서",
         "chatRefId": "room-93-chat",
         "openedAt": "2026-08-25T14:05:00+09:00",
     },
 ]
+
+# 상담 요청으로 열리는 방. 같은 개발자에게 다시 요청해도 같은 방을 돌려주도록 고정해 둔다.
+ROOM_ID_BY_ITEM = {501: 91, 502: 95}
+ROOM_ID_BY_DEVELOPER = {3: 96, 5: 94, 7: 97}
 
 # 상담방에서 갈래를 정하면 열리는 방. 고른 갈래에 따라 어느 쪽이 열리는지 갈린다.
 CONVERTED_CONSULTING_ROOM_ID = 92
@@ -3013,7 +3039,7 @@ DIRECT_ROOM = {
     "projectId": 8,
     "projectName": "수제 비누 가게",
     "clientId": 12,
-    "developerId": 32,
+    "developerId": 5,
     "counterpartName": "정하",
     "chatRefId": "room-94-chat",
     "openedAt": "2026-08-27T10:15:00+09:00",
@@ -3497,18 +3523,6 @@ def get_recommendation(
                 }
             },
         },
-        409: {
-            "model": ErrorResponse,
-            "description": "이미 상담을 요청함",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "code": "CONSULTATION_ALREADY_REQUESTED",
-                        "message": "이미 상담을 요청한 개발자입니다.",
-                    }
-                }
-            },
-        },
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -3521,23 +3535,25 @@ def get_recommendation(
         "사이드바의 '받은 의뢰'에서 그 방을 본다.\n\n"
         "열린 방은 보낸 순서가 아니라 `recommendationItemId`로 맞춘다. 그 값이 이 요청에 "
         "담아 보낸 추천 항목과 같으므로, 화면은 어느 개발자 카드에 어느 방을 붙일지 안다.\n\n"
-        "같은 요청을 다시 보내도 방이 더 생기지 않는다.\n\n"
-        "- **201**: 요청을 보냈을 때. 열린 방 목록이 내려온다\n"
+        "**몇 번을 보내도 방은 개발자마다 하나다.** 이미 방이 있는 개발자는 그 방을 그대로 "
+        "응답에 담고 새로 만들지 않는다. 같은 개발자를 두 번 담아 보내도, 새로고침해도, "
+        "두 화면에서 동시에 눌러도 결과가 같다. 이미 요청했다는 이유로 막지 않으므로 "
+        "**여러 명 중 한 명이 걸려 나머지가 못 나가는 일도 없다.**\n\n"
+        "- **201**: 요청을 보냈을 때. 이번에 연 방과 이미 있던 방이 함께 내려온다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / RECOMMENDATION_NOT_FOUND**: `batchId`가 404일 때\n"
-        "- **409 / CONSULTATION_ALREADY_REQUESTED**: `batchId`가 409일 때. 이미 상담을 "
-        "요청한 개발자가 목록에 들어 있다\n"
-        "- **422 / INVALID_REQUEST**: `recommendationItemIds`가 비었을 때\n"
-        "- **500 / INTERNAL_ERROR**: 요청을 보내지 못했을 때"
+        "- **422 / INVALID_REQUEST**: `recommendationItemIds`가 비었거나, **이 회차의 "
+        "추천 항목이 아닌 값이 섞였을 때.** 고르지 않은 개발자에게 요청이 나가면 안 되므로 "
+        "조용히 버리지 않고 막는다\n"
+        "- **500 / INTERNAL_ERROR**: 요청을 보내지 못했을 때\n\n"
+        "목에서는 이 회차의 추천 항목(501·502)이 아닌 값을 보내면 422를 준다."
     ),
 )
 def request_consultations(
     batchId: Annotated[
         int,
         Path(
-            description=(
-                "추천 회차 식별자. 404는 없음, 409는 중복 요청 재현용 예약값이다."
-            ),
+            description="추천 회차 식별자. 404는 없음 재현용 예약값이다.",
             examples=[61],
         ),
     ],
@@ -3545,9 +3561,28 @@ def request_consultations(
 ) -> RoomListResponse | JSONResponse:
     if batchId == NOT_FOUND_BATCH_ID:
         return _error_response(404, RECOMMENDATION_NOT_FOUND)
-    if batchId == ALREADY_REQUESTED_BATCH_ID:
-        return _error_response(409, CONSULTATION_ALREADY_REQUESTED)
-    return RoomListResponse(content=[RoomSummaryResponse(**ROOMS[0])])
+
+    items = {
+        item["recommendationItemId"]: item for item in RECOMMENDATION_BATCH["items"]
+    }
+    if any(item_id not in items for item_id in request.recommendationItemIds):
+        return _field_error(
+            "recommendationItemIds", "이 회차의 추천 항목만 보낼 수 있습니다."
+        )
+
+    # 같은 항목을 거듭 보내도 방은 하나다. 보낸 순서는 지킨다.
+    rooms = [
+        {
+            **ROOMS[0],
+            "roomId": ROOM_ID_BY_ITEM[item_id],
+            "recommendationItemId": item_id,
+            "developerId": items[item_id]["developer"]["developerId"],
+            "counterpartName": items[item_id]["developer"]["name"],
+            "chatRefId": f"room-{ROOM_ID_BY_ITEM[item_id]}-chat",
+        }
+        for item_id in dict.fromkeys(request.recommendationItemIds)
+    ]
+    return RoomListResponse(content=[RoomSummaryResponse(**room) for room in rooms])
 
 
 @router.post(
@@ -3569,49 +3604,46 @@ def request_consultations(
                 }
             },
         },
-        409: {
-            "model": ErrorResponse,
-            "description": "이미 상담을 요청함",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "code": "CONSULTATION_ALREADY_REQUESTED",
-                        "message": "이미 상담을 요청한 개발자입니다.",
-                    }
-                }
-            },
-        },
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
     summary="직접 찾은 개발자에게 상담 요청 보내기",
     description=(
-        "**화면 — `3_의뢰인_개발자찾기` › 카드에서 상담 요청 · "
+        "**화면 — `1_랜딩홈` › 추천 개발자 › 상담 시작하기 · "
         "`3_의뢰인_개발자프로필` › 무료로 물어보기**\n\n"
         "추천을 거치지 않고 직접 찾은 개발자에게 상담을 요청한다. 개발자마다 무료 "
         "상담방이 하나씩 열린다. 상담은 무료다.\n\n"
+        "**부르려면 로그인과 프로젝트가 있어야 한다.** 두 진입점 모두 로그인 전에도 보이는 "
+        "화면이라, 둘 중 하나라도 없으면 화면이 로그인 → 사전점검으로 보낸 뒤 프로젝트가 "
+        "생긴 다음에 이 API를 부른다. 프로젝트는 진단을 시작할 때 만들어지며, 여럿이면 "
+        "어느 프로젝트의 상담인지 고르게 한다.\n\n"
+        "**프로젝트에 진단이 있으면 요청서가 함께 걸린다.** 개발자가 방에 들어오자마자 "
+        "무엇을 고치고 싶은지 볼 수 있게 하기 위해서다. 진단 전이라면 요청서 없이 방만 "
+        "열리고 방 상세의 `request`가 null이다.\n\n"
         "**추천 회차를 만들지 않는다.** 그래서 이렇게 열린 방은 "
         "`recommendationItemId`가 비어 있다. 추천 화면에서 고른 개발자는 이 API가 "
         "아니라 추천 회차의 상담 요청 API로 보낸다.\n\n"
         "**개발자의 수락을 기다리지 않는다.** 요청하면 그 자리에서 방이 열리고, "
         "개발자는 사이드바의 '받은 의뢰'에서 그 방을 본다.\n\n"
-        "같은 요청을 다시 보내도 방이 더 생기지 않는다.\n\n"
-        "- **201**: 요청을 보냈을 때. 열린 방 목록이 내려온다\n"
+        "**몇 번을 보내도 방은 개발자마다 하나다.** 이미 방이 있는 개발자는 그 방을 그대로 "
+        "응답에 담고 새로 만들지 않는다. 같은 개발자를 두 번 담아 보내도, 새로고침해도 "
+        "결과가 같다.\n\n"
+        "- **201**: 요청을 보냈을 때. 이번에 연 방과 이미 있던 방이 함께 내려온다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / PROJECT_NOT_FOUND**: `projectId`가 404일 때. 없거나 남의 프로젝트다\n"
-        "- **409 / CONSULTATION_ALREADY_REQUESTED**: `projectId`가 409일 때. 이미 "
-        "상담을 요청한 개발자가 목록에 들어 있다\n"
-        "- **422 / INVALID_REQUEST**: `developerIds`가 비었을 때\n"
-        "- **500 / INTERNAL_ERROR**: 요청을 보내지 못했을 때"
+        "- **422 / INVALID_REQUEST**: `developerIds`가 비었거나, 없는 개발자가 섞였거나, "
+        "**자기 자신에게 요청했을 때.** 개발자이면서 의뢰인인 사용자가 자기 프로필에서 "
+        "누를 수 있어 서버가 막는다\n"
+        "- **500 / INTERNAL_ERROR**: 요청을 보내지 못했을 때\n\n"
+        "목에서는 등록된 개발자(3·5·7)가 아닌 값을 보내면 422를 준다. 자기 자신인지는 "
+        "토큰을 봐야 알 수 있어 목이 가려내지 않는다."
     ),
 )
 def request_direct_consultations(
     projectId: Annotated[
         int,
         Path(
-            description=(
-                "프로젝트 식별자. 404는 없음, 409는 중복 요청 재현용 예약값이다."
-            ),
+            description="프로젝트 식별자. 404는 없음 재현용 예약값이다.",
             examples=[8],
         ),
     ],
@@ -3619,9 +3651,23 @@ def request_direct_consultations(
 ) -> RoomListResponse | JSONResponse:
     if projectId == NOT_FOUND_PROJECT_ID:
         return _error_response(404, PROJECT_NOT_FOUND)
-    if projectId == ALREADY_REQUESTED_PROJECT_ID:
-        return _error_response(409, CONSULTATION_ALREADY_REQUESTED)
-    return RoomListResponse(content=[RoomSummaryResponse(**DIRECT_ROOM)])
+
+    developers = {row["developerId"]: row for row in DEVELOPERS}
+    if any(dev_id not in developers for dev_id in request.developerIds):
+        return _field_error("developerIds", "등록된 개발자만 보낼 수 있습니다.")
+
+    # 같은 개발자를 거듭 보내도 방은 하나다. 보낸 순서는 지킨다.
+    rooms = [
+        {
+            **DIRECT_ROOM,
+            "roomId": ROOM_ID_BY_DEVELOPER[dev_id],
+            "developerId": dev_id,
+            "counterpartName": developers[dev_id]["name"],
+            "chatRefId": f"room-{ROOM_ID_BY_DEVELOPER[dev_id]}-chat",
+        }
+        for dev_id in dict.fromkeys(request.developerIds)
+    ]
+    return RoomListResponse(content=[RoomSummaryResponse(**room) for room in rooms])
 
 
 # --------------------------------------------------------------------------- #
@@ -3641,11 +3687,22 @@ def request_direct_consultations(
     summary="방 목록 조회",
     description=(
         "**화면 — 영역 3~5의 모든 방 화면 › 왼쪽 사이드바의 보낸 의뢰 · 받은 의뢰**\n\n"
-        "내가 들어가 있는 방을 프로젝트별로 묶어 내려준다. 의뢰인이 보면 '보낸 의뢰', "
-        "개발자가 보면 '받은 의뢰'가 된다. 두 갈래는 `clientId`·`developerId`를 내 "
-        "사용자 식별자와 견주어 가른다.\n\n"
+        "내가 들어가 있는 방을 내려준다. 의뢰인이 보면 '보낸 의뢰', 개발자가 보면 "
+        "'받은 의뢰'가 된다.\n\n"
+        "**두 갈래는 견주는 값이 다르다.** `clientId`는 내 `userId`와, `developerId`는 "
+        "내 `developerId`와 견준다 — 방의 `clientId`는 사용자 식별자이고 `developerId`는 "
+        "개발자 식별자라 서로 다른 값이다. 둘 다 내 정보 조회로 받는다.\n\n"
+        "**한 사람이 양쪽일 수 있다.** 개발자이면서 의뢰인인 사용자는 보낸 의뢰와 받은 "
+        "의뢰에 방이 모두 있다. 역할별로 따로 부르는 API는 두지 않으며, 이 API가 둘 다 "
+        "내려주고 화면이 가른다.\n\n"
+        "**마지막으로 움직인 방이 먼저 온다.** 메시지가 오거나 계약이 바뀌면 그 방이 "
+        "위로 올라온다. 프로젝트로 묶어 보여주는 화면은 그 안에서 가장 최근에 움직인 "
+        "방을 따라 그룹 순서를 정하면 된다.\n\n"
+        "**닫힌 방도 내려간다.** 갈래가 정해져 닫힌 상담방은 나눈 이야기를 계속 볼 수 "
+        "있어야 하므로 목록에 남는다. 거르려면 `status`를 준다.\n\n"
         "**마지막 메시지와 미리보기는 이 응답에 없다.** 메시지는 채팅 쪽이 다루므로 "
-        "`chatRefId`로 그쪽에서 가져온다.\n\n"
+        "`chatRefId`로 그쪽에서 가져온다. 순서는 이 응답이 이미 정해 주므로 채팅 쪽 "
+        "데이터를 기다리지 않아도 된다.\n\n"
         "- **200**: 항상. 들어가 있는 방이 없으면 `content`가 빈 배열이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **422 / INVALID_REQUEST**: `type`이나 `status`가 허용된 값이 아닐 때\n"
@@ -3656,7 +3713,10 @@ def get_rooms(
     type: Annotated[
         Literal["INQUIRY", "CONSULTING", "DEVELOPMENT"] | None,
         Query(
-            description="방 용도로 거른다. 비우면 전부 내려간다.",
+            description=(
+                "방 용도로 거른다. 비우면 전부 내려간다. 사이드바는 모든 방을 한 번에 "
+                "보여주므로 거르지 않는다."
+            ),
             examples=["INQUIRY"],
         ),
     ] = None,
@@ -3673,6 +3733,9 @@ def get_rooms(
         rows = [r for r in rows if r["type"] == type]
     if status is not None:
         rows = [r for r in rows if r["status"] == status]
+
+    # 실서버는 마지막으로 움직인 시각으로 줄 세운다. 목에는 그 값이 없어 개설 시각을 쓴다.
+    rows = sorted(rows, key=lambda r: r["openedAt"], reverse=True)
     return RoomListResponse(content=[RoomSummaryResponse(**r) for r in rows])
 
 
