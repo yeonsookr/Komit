@@ -141,6 +141,17 @@ def _error_response(status_code: int, code_message: tuple[str, str]) -> JSONResp
     return JSONResponse(status_code=status_code, content=jsonable_encoder(error))
 
 
+def _field_error(field: str, reason: str) -> JSONResponse:
+    """스키마로는 거를 수 없고 값을 들여다봐야 아는 검증 실패를 422로 돌려준다."""
+    code, message = INVALID_REQUEST
+    body = ValidationErrorResponse(
+        code=code,
+        message=message,
+        errors=[FieldError(field=field, reason=reason)],
+    )
+    return JSONResponse(status_code=422, content=jsonable_encoder(body))
+
+
 # Pydantic 오류 종류를 사용자 문구로 옮긴다. 보낸 값은 문구에 넣지 않는다.
 _REASONS: dict[str, str] = {
     "missing": "필수 항목입니다.",
@@ -438,10 +449,10 @@ class LandingSummaryResponse(BaseModel):
 class CodeResponse(BaseModel):
     """코드 항목 하나. 무엇의 코드인지는 이 모델을 담는 필드가 정한다."""
 
-    codeId: int = Field(description="코드 항목 식별자.", examples=[4])
+    codeId: int = Field(description="코드 항목 식별자.", examples=[41])
     codeName: str = Field(
         description="화면에 그대로 보여주는 코드 항목 이름.",
-        examples=["백엔드"],
+        examples=["인터넷에 올리기"],
     )
 
 
@@ -513,7 +524,10 @@ class FeaturedDeveloperResponse(BaseModel):
         examples=[5.0],
     )
     field: CodeResponse | None = Field(
-        description="주로 담당하는 개발 분야. 등록하지 않았으면 null이다.",
+        description=(
+            "주로 담당하는 개발 분야. 코드 분류 `DEV_FIELD`의 항목이며, "
+            "등록하지 않았으면 null이다."
+        ),
     )
     devRating: float | None = Field(
         description="개발력 평균 평점. 받은 리뷰가 없으면 null이다.",
@@ -643,6 +657,14 @@ class MeResponse(BaseModel):
         description="개발자 프로필 보유 여부. 헤더의 의뢰인·개발자 전환 노출을 정한다.",
         examples=[False],
     )
+    developerId: int | None = Field(
+        description=(
+            "내 개발자 식별자. 개발자로 전환하지 않았으면 null이다. 방의 "
+            "`developerId`와 견주어 '받은 의뢰'를 가린다 — 같으면 내가 개발자로 들어간 "
+            "방이고, 다르거나 이 값이 null이면 내가 의뢰인인 방이다."
+        ),
+        examples=[None],
+    )
     unreadNotificationCount: int = Field(
         description="아직 읽지 않은 알림 수. 헤더 알림 배지에 쓴다.",
         examples=[3],
@@ -679,7 +701,7 @@ FEATURED_DEVELOPERS = [
         "profileImageFileId": None,
         "intro": "간단한 상담도 받습니다.",
         "yearsOfExperience": 5.0,
-        "field": {"codeId": 4, "codeName": "백엔드"},
+        "field": {"codeId": 42, "codeName": "DB 연결"},
         "devRating": 4.4,
         "explanatoryRating": 4.9,
         "prices": [
@@ -693,7 +715,7 @@ FEATURED_DEVELOPERS = [
         "profileImageFileId": None,
         "intro": "급한 장애 대응 잘합니다.",
         "yearsOfExperience": 6.0,
-        "field": {"codeId": 4, "codeName": "백엔드"},
+        "field": {"codeId": 47, "codeName": "버그 잡기"},
         "devRating": 4.7,
         "explanatoryRating": 4.1,
         "prices": [
@@ -707,7 +729,7 @@ FEATURED_DEVELOPERS = [
         "profileImageFileId": None,
         "intro": "상담으로 먼저 방향을 잡아드립니다.",
         "yearsOfExperience": 8.0,
-        "field": {"codeId": 6, "codeName": "인프라"},
+        "field": {"codeId": 46, "codeName": "비용 진단"},
         "devRating": 4.9,
         "explanatoryRating": 3.4,
         "prices": [
@@ -759,6 +781,7 @@ ME_EXAMPLE = {
     "name": "김미미",
     "profileImageFileId": None,
     "hasDevProfile": False,
+    "developerId": None,
     "unreadNotificationCount": 3,
 }
 
@@ -1040,7 +1063,7 @@ def get_me() -> MeResponse:
 class TechCategoryResponse(BaseModel):
     """프로젝트가 쓰는 기술 한 줄."""
 
-    techCodeId: int = Field(description="기술 항목 식별자.", examples=[12])
+    techCodeId: int = Field(description="기술 항목 식별자.", examples=[21])
     codeName: str = Field(
         description="화면에 그대로 보여주는 기술 이름.",
         examples=["Next.js"],
@@ -1443,8 +1466,8 @@ PROJECT_EXAMPLE = {
     "description": "수제 비누를 파는 작은 온라인 가게",
     "domain": None,
     "techCategories": [
-        {"techCodeId": 12, "codeName": "Next.js"},
-        {"techCodeId": 15, "codeName": "Supabase"},
+        {"techCodeId": 21, "codeName": "Next.js"},
+        {"techCodeId": 22, "codeName": "Supabase"},
     ],
 }
 
@@ -1988,7 +2011,7 @@ def create_issue(
         detail=request.detail,
         location=None,
         isInput=False,
-        category=CodeResponse(codeId=request.categoryCodeId, codeName="기타"),
+        category=_issue_category(request.categoryCodeId),
         status="UNRESOLVED",
         severity=request.severity,
         fixedVersion=None,
@@ -2056,7 +2079,7 @@ def write_requirements(
             "detail": item.detail,
             "location": None,
             "isInput": False,
-            "category": {"codeId": item.categoryCodeId, "codeName": "보안"},
+            "category": jsonable_encoder(_issue_category(item.categoryCodeId)),
             "status": "UNRESOLVED",
             "severity": item.severity,
             "fixedVersion": None,
@@ -2162,6 +2185,11 @@ def update_issue_status(
 #   GET /api/users/me            전 영역 헤더
 #   GET /api/diagnoses/{id}      요청서 요약에 쓰는 진단 정보
 #
+# 상담 요청은 들어온 길에 따라 API가 갈린다. 추천에서 고른 개발자는 추천 회차의 상담 요청
+# API로, 직접 찾은 개발자는 프로젝트 상담 요청 API로 보낸다. 뒤쪽은 회차를 만들지 않아
+# 방의 recommendationItemId가 비어 있다.
+# 개발자의 수락·거절은 없고, 요청하면 그 자리에서 방이 열린다.
+#
 # 채팅 메시지는 이 API가 다루지 않는다. 방 응답의 chatRefId로 채팅 쪽에 넘긴다.
 # =========================================================================== #
 
@@ -2172,13 +2200,23 @@ def update_issue_status(
 
 
 class RatingResponse(BaseModel):
-    """평점 하나와 그 근거가 된 리뷰 수."""
+    """평점 하나와 그 근거가 된 리뷰 수.
+
+    **리뷰 하나는 개발력과 설명력을 둘 다 받는다.** 한쪽만 매기고 넘어갈 수 없으므로
+    두 평점의 reviewCount는 언제나 같고, 그 값이 곧 이 개발자가 받은 리뷰 총 건수다.
+    화면의 '리뷰 N개 모두 보기'가 이 수를 쓴다.
+    """
 
     score: float | None = Field(
         description="평균 평점. 받은 리뷰가 없으면 null이다.",
         examples=[4.4],
     )
-    reviewCount: int = Field(description="집계에 들어간 리뷰 수.", examples=[13])
+    reviewCount: int = Field(
+        description=(
+            "집계에 들어간 리뷰 수. 개발력과 설명력이 같은 값이며 리뷰 총 건수와도 같다."
+        ),
+        examples=[20],
+    )
 
 
 class DeveloperSummaryResponse(BaseModel):
@@ -2197,12 +2235,19 @@ class DeveloperSummaryResponse(BaseModel):
         description="개발자가 적은 한 줄 소개.",
         examples=["간단한 상담도 받습니다. 용어부터 풀어서 설명합니다."],
     )
-    yearsOfExperience: float | None = Field(
-        description="경력 연차. 등록하지 않았으면 null이다.",
-        examples=[5.0],
-    )
     field: CodeResponse | None = Field(
-        description="주로 담당하는 개발 분야. 등록하지 않았으면 null이다.",
+        description=(
+            "주로 담당하는 개발 분야. 코드 분류 `DEV_FIELD`의 항목이며, "
+            "**한 명에 하나다.** 등록하지 않았으면 null이다. 카드 머리에 연차와 나란히 "
+            "`DB 연결 · 5년`으로 붙는다."
+        ),
+    )
+    yearsOfExperience: float | None = Field(
+        description=(
+            "경력 연차. 등록하지 않았으면 null이다. 카드 머리에서 분야 옆에 붙는다. "
+            "어떤 일로 쌓은 연차인지는 상세의 `careers`가 말한다."
+        ),
+        examples=[5.0],
     )
     isCareerVerified: bool = Field(
         description=(
@@ -2213,10 +2258,21 @@ class DeveloperSummaryResponse(BaseModel):
     devRating: RatingResponse = Field(description="개발력 평점과 리뷰 수.")
     explanatoryRating: RatingResponse = Field(description="설명력 평점과 리뷰 수.")
     techCategories: list[CodeResponse] = Field(
-        description="이 개발자가 다룰 수 있는 기술. 등록 전이면 빈 배열이다.",
+        description=(
+            "이 개발자가 다룰 수 있는 기술. 코드 분류 `TECH_CATEGORY`의 항목이며 "
+            "여럿일 수 있다. **카드 아래 칩이 이 목록이다.** 등록 전이면 빈 배열이다."
+        ),
     )
     prices: list[TaskPriceResponse] = Field(
         description="작업 유형별 최저가. 가격표를 등록하지 않은 유형은 빠진다.",
+    )
+    contractCount: int = Field(
+        description=(
+            "이 개발자가 마친 계약 수. 컨설팅과 개발을 합쳐 세며, 완료된 계약만 든다 — "
+            "진행 중이거나 파기된 계약은 빠진다. 카드의 'N건 완료'와 `contract,desc` "
+            "정렬이 이 값을 쓴다."
+        ),
+        examples=[23],
     )
 
 
@@ -2275,7 +2331,10 @@ class PortfolioItemResponse(BaseModel):
         examples=[None],
     )
     linkUrl: str | None = Field(
-        description="배포 사이트나 저장소 주소. 없으면 null이다.",
+        description=(
+            "배포 사이트나 저장소 주소. 없으면 null이고, 화면은 그 자리에 '비공개'라고 "
+            "적는다."
+        ),
         examples=["https://example.com"],
     )
     thumbnailFileId: int | None = Field(
@@ -2289,17 +2348,38 @@ class ReviewResponse(BaseModel):
 
     reviewId: int = Field(description="리뷰 식별자.", examples=[88])
     clientName: str = Field(
-        description="리뷰를 쓴 의뢰인의 표시 이름.",
-        examples=["김미미"],
+        description=(
+            "리뷰를 쓴 의뢰인의 표시 이름. **서버가 가려서 내보낸다** — 첫 글자와 끝 "
+            "글자만 남기고 가운데를 `O`로 바꾸며, 두 글자면 끝 글자를 바꾼다. 개발자가 "
+            "자기 프로필에서 볼 때도 같은 값이라 화면이 따로 가릴 것은 없다. 리뷰를 쓴 "
+            "뒤 탈퇴한 의뢰인이면 `탈퇴한 사용자`가 들어온다."
+        ),
+        examples=["김O미"],
     )
-    devScore: int = Field(description="개발력 점수. 1에서 5 사이다.", examples=[5])
-    commScore: int = Field(description="설명력 점수. 1에서 5 사이다.", examples=[5])
+    contractType: Literal["CONSULTING", "DEVELOPMENT"] = Field(
+        description=(
+            "이 리뷰가 나온 계약의 종류. 어떤 거래에서 받은 평가인지 구분하는 데 쓴다. "
+            "어느 프로젝트였는지는 의뢰인의 사업 정보라 담지 않는다."
+        ),
+        examples=["DEVELOPMENT"],
+    )
+    devScore: int = Field(
+        description="개발력 점수. 1에서 5 사이이며 비울 수 없다.",
+        examples=[5],
+    )
+    commScore: int = Field(
+        description=(
+            "설명력 점수. 1에서 5 사이이며 비울 수 없다. 컨설팅 계약이든 개발 계약이든 "
+            "리뷰 하나는 두 점수를 다 받는다."
+        ),
+        examples=[5],
+    )
     content: str | None = Field(
-        description="리뷰 내용. 점수만 주고 글을 안 썼으면 null이다.",
+        description="리뷰 내용. 1000자까지 받는다. 점수만 주고 글을 안 썼으면 null이다.",
         examples=["말이 잘 통했습니다."],
     )
     reply: str | None = Field(
-        description="개발자가 단 답글. 없으면 null이다.",
+        description="개발자가 단 답글. 1000자까지 받는다. 없으면 null이다.",
         examples=[None],
     )
     createdAt: str = Field(
@@ -2316,8 +2396,39 @@ class ReviewListResponse(BaseModel):
     )
     page: int = Field(description="현재 페이지 번호.", examples=[1])
     size: int = Field(description="한 페이지에 담긴 최대 항목 수.", examples=[20])
-    totalElements: int = Field(description="전체 리뷰 수.", examples=[20])
+    totalElements: int = Field(
+        description=(
+            "전체 리뷰 수. 개발자 프로필의 `devRating.reviewCount`와 언제나 같은 값이다."
+        ),
+        examples=[20],
+    )
     totalPages: int = Field(description="전체 페이지 수.", examples=[1])
+
+
+class PriceCatalogItemResponse(BaseModel):
+    """가격표 한 줄. 개발자가 등록한 작업마다 한 행이다."""
+
+    priceId: int = Field(description="가격표 식별자.", examples=[61])
+    taskType: Literal["CONSULT", "DEVELOP"] = Field(
+        description="작업 종류. CONSULT는 컨설팅 세션, DEVELOP은 개발 작업이다.",
+        examples=["DEVELOP"],
+    )
+    taskName: str = Field(
+        description=(
+            "작업 이름. 컨설팅은 '30분 · 한 가지 주제'처럼 시간을, 개발은 "
+            "'로그인 붙이기'처럼 할 일을 적는다."
+        ),
+        examples=["로그인 붙이기"],
+    )
+    price: int = Field(description="가격. 원 단위 정수다.", examples=[400000])
+    periodDays: int | None = Field(
+        description=(
+            "예상 작업 기간(일). **컨설팅 세션은 언제나 null이다.** 가격표는 세션 시간을 "
+            "담지 않으므로, 몇 분짜리 세션인지는 `taskName`에 적힌 글이 전부다. 실제 "
+            "세션 시간은 계약서를 쓸 때 분 단위로 따로 정한다."
+        ),
+        examples=[4],
+    )
 
 
 class DeveloperDetailResponse(DeveloperSummaryResponse):
@@ -2337,8 +2448,22 @@ class DeveloperDetailResponse(DeveloperSummaryResponse):
         ),
         examples=["19:00"],
     )
-    careers: list[CareerResponse] = Field(description="등록한 경력.")
-    portfolioItems: list[PortfolioItemResponse] = Field(description="등록한 작업물.")
+    careers: list[CareerResponse] = Field(
+        description="등록한 경력. 시작일이 늦은 것, 곧 최근 경력이 먼저 내려간다.",
+    )
+    portfolioItems: list[PortfolioItemResponse] = Field(
+        description=(
+            "등록한 작업물. 등록한 순서대로 내려간다. 줄 순서를 바꾸는 기능은 없다."
+        ),
+    )
+    priceCatalog: list[PriceCatalogItemResponse] = Field(
+        description=(
+            "등록한 가격표 전부. 화면의 '컨설팅'과 '개발 · 작업별 요금'을 이 목록으로 "
+            "그린다. 목록 응답의 `prices`는 카드에 쓰는 유형별 최저가라 줄 단위 금액과 "
+            "기간은 여기에만 있다. 컨설팅이 먼저 오고 그 안에서 가격이 싼 것부터 "
+            "내려간다. 가격표를 등록하지 않았으면 빈 배열이다."
+        ),
+    )
 
 
 class RecommendationItemResponse(BaseModel):
@@ -2349,20 +2474,21 @@ class RecommendationItemResponse(BaseModel):
         examples=[501],
     )
     rank: int = Field(description="노출 순위. 1부터 시작한다.", examples=[1])
-    developer: DeveloperSummaryResponse = Field(description="추천된 개발자.")
-    contractCount: int = Field(
-        description="이 개발자가 마친 계약 수. 카드의 'N건 완료'에 쓴다.",
-        examples=[23],
-    )
-    status: Literal["ACCEPTED", "REJECTED", "EXPIRED"] | None = Field(
+    developer: DeveloperSummaryResponse = Field(
         description=(
-            "상담 요청에 대한 개발자 응답. 아직 요청하지 않았으면 null이다. "
-            "ACCEPTED는 수락, REJECTED는 거절, EXPIRED는 답이 없어 만료된 것이다."
+            "추천된 개발자. **언제나 지금 값이다.** 서버는 추천 시점의 프로필을 따로 "
+            "보관하지만 그것은 알고리즘 성과를 견주는 내부 자료이고, 응답에는 나가지 "
+            "않는다. 옛 회차를 다시 열어도 평점과 가격은 현재 프로필을 따른다 — 카드에 "
+            "적힌 금액과 상담에서 듣는 금액이 달라지면 안 되기 때문이다."
         ),
-        examples=[None],
     )
     roomId: int | None = Field(
-        description="상담이 시작되어 열린 방 식별자. 시작 전이면 null이다.",
+        description=(
+            "상담을 요청해 열린 방 식별자. 아직 요청하지 않았으면 null이다. "
+            "**이 값 하나가 요청 여부를 말한다.** 상담 요청에 개발자의 수락은 없어서 "
+            "요청하면 그 자리에서 방이 열리므로, 요청했는데 방이 없는 상태는 없다. "
+            "화면은 null이면 '상담 요청', 값이 있으면 '방으로 가기'를 보여준다."
+        ),
         examples=[None],
     )
 
@@ -2376,8 +2502,19 @@ class RecommendationBatchResponse(BaseModel):
         examples=[1],
     )
     projectId: int = Field(description="추천 대상 프로젝트 식별자.", examples=[8])
+    projectName: str = Field(
+        description="프로젝트 이름. 화면 머리에 쓴다.",
+        examples=["수제 비누 가게"],
+    )
+    diagnosisVersion: int = Field(
+        description=(
+            "이 추천을 만든 시점의 진단 회차. 재진단한 뒤 옛 추천을 열었을 때 무엇을 "
+            "근거로 뽑은 결과인지 알려준다."
+        ),
+        examples=[2],
+    )
     candidateCount: int = Field(
-        description="점수를 매긴 개발자 수.",
+        description="점수를 매긴 개발자 수. 순위를 매기기 전 모집단이다.",
         examples=[128],
     )
     items: list[RecommendationItemResponse] = Field(
@@ -2388,15 +2525,31 @@ class RecommendationBatchResponse(BaseModel):
 class CreateRecommendationRequest(BaseModel):
     """추천 회차 생성 요청."""
 
-    diagnosisId: int | None = Field(
-        default=None,
-        description="어느 진단을 근거로 찾을지. 진단 없이 찾으면 비운다.",
+    diagnosisId: int = Field(
+        description="어느 진단을 근거로 찾을지. 이 API는 진단 없이 부를 수 없다.",
         examples=[31],
     )
     issueIds: list[int] = Field(
-        default_factory=list,
-        description="요청서에 담을 요구사항 식별자. 진단을 거치지 않았으면 빈 배열이다.",
+        min_length=1,
+        description=(
+            "요청서에 담을 요구사항 식별자. 한 건 이상 골라야 하며, 모두 이 진단에서 "
+            "나온 것이어야 한다. 진단을 거치지 않고 개발자를 고르는 길은 프로젝트 상담 "
+            "요청 API가 맡는다."
+        ),
         examples=[[311, 312]],
+    )
+
+
+class CreateDirectConsultationRequest(BaseModel):
+    """직접 찾은 개발자에게 상담을 요청한다."""
+
+    developerIds: list[int] = Field(
+        min_length=1,
+        description=(
+            "상담을 요청할 개발자 식별자. 여러 명에게 한 번에 보낼 수 있고, "
+            "한 명 이상 골라야 한다."
+        ),
+        examples=[[5]],
     )
 
 
@@ -2405,7 +2558,10 @@ class CreateConsultationRequest(BaseModel):
 
     recommendationItemIds: list[int] = Field(
         min_length=1,
-        description="상담을 요청할 추천 항목 식별자. 여러 명에게 한 번에 보낼 수 있다.",
+        description=(
+            "상담을 요청할 추천 항목 식별자. 여러 명에게 한 번에 보낼 수 있고, "
+            "한 명 이상 골라야 한다."
+        ),
         examples=[[501, 502]],
     )
 
@@ -2414,6 +2570,14 @@ class RoomSummaryResponse(BaseModel):
     """방 목록 사이드바에 한 줄로 나가는 방."""
 
     roomId: int = Field(description="방 식별자.", examples=[91])
+    recommendationItemId: int | None = Field(
+        description=(
+            "이 방이 나온 추천 항목 식별자. 추천을 거치지 않고 직접 찾아 연 방이면 "
+            "null이다. 여러 개발자에게 한 번에 상담을 요청하면 방이 여러 개 열리는데, "
+            "어느 개발자의 방인지 이 값으로 맞춘다."
+        ),
+        examples=[501],
+    )
     type: Literal["INQUIRY", "CONSULTING", "DEVELOPMENT"] = Field(
         description=(
             "방 용도. INQUIRY는 무료 상담, CONSULTING은 컨설팅, DEVELOPMENT는 개발이다."
@@ -2426,23 +2590,21 @@ class RoomSummaryResponse(BaseModel):
     )
     projectId: int = Field(description="이 방이 달린 프로젝트 식별자.", examples=[8])
     projectName: str = Field(description="프로젝트 이름.", examples=["수제 비누 가게"])
-    clientId: int = Field(
-        description=(
-            "이 방의 의뢰인 사용자 식별자. 프로젝트를 등록한 사람이다. 내 "
-            "사용자 식별자와 같으면 사이드바의 '보낸 의뢰'에 묶인다."
-        ),
-        examples=[12],
-    )
     developerId: int = Field(
         description=(
-            "이 방에 참여한 개발자 사용자 식별자. 같은 프로젝트라도 방마다 다를 수 "
-            "있다. 내 사용자 식별자와 같으면 사이드바의 '받은 의뢰'에 묶인다."
+            "이 방에 참여한 **개발자 식별자**. 사용자 식별자가 아니며, 상담을 요청할 때 "
+            "보내는 값과 같은 종류다. 같은 프로젝트라도 방마다 다를 수 있다.\n\n"
+            "**보낸 의뢰와 받은 의뢰를 가르는 값이다.** 내 정보의 `developerId`와 같으면 "
+            "내가 개발자로 들어간 방이라 '받은 의뢰', 다르면 내가 의뢰인이라 '보낸 "
+            "의뢰'다. 의뢰인은 프로젝트를 등록한 사람이라 방마다 따로 적히지 않으므로 "
+            "의뢰인 식별자는 이 응답에 담지 않는다."
         ),
-        examples=[30],
+        examples=[3],
     )
     counterpartName: str = Field(
         description=(
-            "상대의 표시 이름. 의뢰인이 보면 개발자 이름, 개발자가 보면 의뢰인 이름이다."
+            "상대의 표시 이름. 의뢰인이 보면 개발자 이름, 개발자가 보면 의뢰인 이름이다. "
+            "상대가 탈퇴했으면 `탈퇴한 사용자`가 들어온다."
         ),
         examples=["이준"],
     )
@@ -2460,23 +2622,40 @@ class RoomSummaryResponse(BaseModel):
 
 
 class RoomListResponse(BaseModel):
-    """방 목록."""
+    """방 목록.
+
+    **페이지 정보로 감싸지 않는다.** 사이드바가 프로젝트별로 묶어 한 번에 늘어놓는
+    구조라 페이지를 넘길 자리가 없어서다. 방이 몇 개든 전부 내려가며 상한을 두지 않는다.
+    """
 
     content: list[RoomSummaryResponse] = Field(
-        description="조건에 맞는 방. 없으면 빈 배열이다.",
+        description=(
+            "조건에 맞는 방. 마지막으로 움직인 것이 먼저다. 없으면 빈 배열이다."
+        ),
     )
 
 
 class RoomRequestSummaryResponse(BaseModel):
-    """방 머리에 붙는 요청서 요약."""
+    """방 머리에 붙는 요청서 요약.
+
+    **요청서는 방이 아니라 프로젝트에 달린다.** 상담·컨설팅·개발 방이 모두 같은 요청서를
+    보므로, 요청서를 고치면 열려 있는 모든 방의 머리가 함께 바뀐다.
+    """
 
     diagnosisId: int = Field(description="요청서의 근거가 된 진단 식별자.", examples=[31])
     issueCount: int = Field(
-        description="요청서에 담긴 요구사항 수.",
+        description=(
+            "요청서에 담긴 요구사항 수. **이번 회차에서 나온 요구사항 가운데 직접 "
+            "해결하지 않은 것**을 센다 — 해결로 내린 것은 요청서에서 빠지고, 계약에 "
+            "들어간 것은 그대로 남는다. 지난 회차의 요구사항은 세지 않는다."
+        ),
         examples=[3],
     )
     updatedAt: str = Field(
-        description="요청서를 마지막으로 고친 시각.",
+        description=(
+            "요청서를 마지막으로 고친 시각. 요구사항을 더하거나 빼도, 확인 문장만 "
+            "고쳐도 이 값이 갱신된다."
+        ),
         examples=["2026-08-18T16:40:00+09:00"],
     )
 
@@ -2485,12 +2664,31 @@ class RoomDetailResponse(RoomSummaryResponse):
     """방 상세. 목록에 쓰는 값에 요청서 요약을 더한다."""
 
     request: RoomRequestSummaryResponse | None = Field(
-        description="이 방에 딸린 요청서 요약. 요청서 없이 열린 방이면 null이다.",
+        description=(
+            "이 방에 딸린 요청서 요약. **아직 진단을 하지 않은 프로젝트의 방이면 "
+            "null이다.** 진단이 있으면 상담을 어느 길로 요청했든 요청서가 걸린다."
+        ),
+    )
+    contractId: int | None = Field(
+        description=(
+            "이 방에서 오간 계약 식별자. 아직 계약서를 쓰지 않았으면 null이고 화면은 "
+            "머리에 '없음'이라 적는다. **방 하나에 계약은 하나다.** 금액과 갱신 시각은 "
+            "이 식별자로 계약서를 조회해 채운다."
+        ),
+        examples=[None],
     )
     convertedRoomId: int | None = Field(
         description=(
             "갈래를 정해 새로 열린 방 식별자. 아직 정하지 않았으면 null이다. "
             "화면의 '컨설팅 방으로' · '개발 방으로' 버튼이 이 방으로 보낸다."
+        ),
+        examples=[None],
+    )
+    convertedRoomType: Literal["CONSULTING", "DEVELOPMENT"] | None = Field(
+        description=(
+            "새로 열린 방의 용도. `convertedRoomId`와 늘 짝으로 차고 빈다. 버튼에 "
+            "'컨설팅 방으로'라고 적을지 '개발 방으로'라고 적을지를 이 값으로 고른다 — "
+            "이것 하나 때문에 새 방을 다시 조회하지 않아도 된다."
         ),
         examples=[None],
     )
@@ -2519,10 +2717,6 @@ PROJECT_NOT_FOUND_EXAMPLE = {
 }
 RECOMMENDATION_NOT_FOUND = ("RECOMMENDATION_NOT_FOUND", "추천 결과를 찾을 수 없습니다.")
 ROOM_NOT_FOUND = ("ROOM_NOT_FOUND", "방을 찾을 수 없습니다.")
-CONSULTATION_ALREADY_REQUESTED = (
-    "CONSULTATION_ALREADY_REQUESTED",
-    "이미 상담을 요청한 개발자입니다.",
-)
 ROOM_ALREADY_CONVERTED = (
     "ROOM_ALREADY_CONVERTED",
     "이미 갈래가 정해진 상담입니다.",
@@ -2536,13 +2730,22 @@ CODE_GROUP_NOT_FOUND = ("CODE_GROUP_NOT_FOUND", "코드 분류를 찾을 수 없
 
 AREA3_TAG = "3 개발자 찾기 · 상담방"
 
-NOT_FOUND_PROJECT_ID = 404
 NOT_FOUND_DEVELOPER_ID = 404
+NOT_FOUND_PROJECT_ID = 404
 NOT_FOUND_BATCH_ID = 404
-ALREADY_REQUESTED_BATCH_ID = 409
 NOT_FOUND_ROOM_ID = 404
 CONVERTED_ROOM_ID = 409
 
+# 코드 항목의 식별자는 분류마다 번호대를 나눠 쓴다. 값만 보고 어느 분류인지 알 수 있고,
+# 분류가 늘어도 이미 나간 번호와 겹치지 않는다. 새 분류는 비어 있는 번호대를 가져간다.
+#
+#   21~29  TECH_CATEGORY   기술
+#   41~48  DEV_FIELD       분야
+#   51~57  BANK_CODE       은행
+#   61~68  CARD_COMPANY    카드사 (영역 8)
+#   71~74  ISSUE_CATEGORY  결함 분류 (영역 2)
+#
+# 기술은 영역 2의 프로젝트 기술과 영역 8의 내 프로필에서도 같은 번호를 쓴다.
 TECH_CODES = [
     {"codeId": 21, "codeName": "Next.js"},
     {"codeId": 22, "codeName": "Supabase"},
@@ -2551,13 +2754,13 @@ TECH_CODES = [
 
 # 계좌를 등록할 때 고르는 은행. 분야·기술과 같은 코드 항목이라 코드 API 가 함께 낸다.
 BANK_CODES = [
-    {"codeId": 4, "codeName": "국민은행"},
-    {"codeId": 5, "codeName": "신한은행"},
-    {"codeId": 6, "codeName": "우리은행"},
-    {"codeId": 7, "codeName": "하나은행"},
-    {"codeId": 8, "codeName": "농협은행"},
-    {"codeId": 9, "codeName": "카카오뱅크"},
-    {"codeId": 10, "codeName": "토스뱅크"},
+    {"codeId": 51, "codeName": "국민은행"},
+    {"codeId": 52, "codeName": "신한은행"},
+    {"codeId": 53, "codeName": "우리은행"},
+    {"codeId": 54, "codeName": "하나은행"},
+    {"codeId": 55, "codeName": "농협은행"},
+    {"codeId": 56, "codeName": "카카오뱅크"},
+    {"codeId": 57, "codeName": "토스뱅크"},
 ]
 
 FIELD_CODES = [
@@ -2571,61 +2774,158 @@ FIELD_CODES = [
     {"codeId": 48, "codeName": "결제 붙이기"},
 ]
 
+# 카드를 등록할 때 고르는 카드사. 쓰는 곳은 영역 8이지만 코드 API 가 함께 낸다.
+CARD_COMPANY_CODES = [
+    {"codeId": 61, "codeName": "우리카드"},
+    {"codeId": 62, "codeName": "국민카드"},
+    {"codeId": 63, "codeName": "신한카드"},
+    {"codeId": 64, "codeName": "삼성카드"},
+    {"codeId": 65, "codeName": "현대카드"},
+    {"codeId": 66, "codeName": "롯데카드"},
+    {"codeId": 67, "codeName": "하나카드"},
+    {"codeId": 68, "codeName": "BC카드"},
+]
+
+# 요구사항을 직접 추가할 때 고르는 결함 분류. 쓰는 곳은 영역 2다.
+ISSUE_CATEGORY_CODES = [
+    {"codeId": 71, "codeName": "보안"},
+    {"codeId": 72, "codeName": "위법"},
+    {"codeId": 73, "codeName": "결제"},
+    {"codeId": 74, "codeName": "기타"},
+]
+
+
+def _issue_category(code_id: int) -> CodeResponse:
+    """결함 분류 식별자를 코드 항목으로 바꾼다. 아는 번호가 아니면 기타로 둔다."""
+    for row in ISSUE_CATEGORY_CODES:
+        if row["codeId"] == code_id:
+            return CodeResponse(**row)
+    return CodeResponse(codeId=code_id, codeName="기타")
+
 DEVELOPERS = [
     {
         "developerId": 3,
         "name": "이준",
         "profileImageFileId": None,
         "intro": "간단한 상담도 받습니다. 용어부터 풀어서 설명합니다.",
+        "field": {"codeId": 42, "codeName": "DB 연결"},
         "yearsOfExperience": 5.0,
-        "field": {"codeId": 4, "codeName": "백엔드"},
         "isCareerVerified": True,
-        "devRating": {"score": 4.4, "reviewCount": 13},
-        "explanatoryRating": {"score": 4.9, "reviewCount": 20},
+        "devRating": {"score": 4.4, "reviewCount": 2},
+        "explanatoryRating": {"score": 4.9, "reviewCount": 2},
         "techCategories": TECH_CODES,
         "prices": [
             {"taskType": "CONSULT", "price": 50000},
             {"taskType": "DEVELOP", "price": 100000},
         ],
+        "contractCount": 23,
     },
     {
         "developerId": 5,
         "name": "정하",
         "profileImageFileId": None,
         "intro": "짧게 방향만 잡아드려요.",
+        "field": {"codeId": 41, "codeName": "인터넷에 올리기"},
         "yearsOfExperience": 4.0,
-        "field": {"codeId": 5, "codeName": "풀스택"},
         "isCareerVerified": True,
-        "devRating": {"score": 4.2, "reviewCount": 9},
-        "explanatoryRating": {"score": 4.4, "reviewCount": 11},
+        "devRating": {"score": 4.2, "reviewCount": 2},
+        "explanatoryRating": {"score": 4.4, "reviewCount": 2},
         "techCategories": TECH_CODES[1:],
         "prices": [
             {"taskType": "CONSULT", "price": 40000},
             {"taskType": "DEVELOP", "price": 90000},
         ],
+        "contractCount": 41,
     },
     {
         "developerId": 7,
         "name": "한서",
         "profileImageFileId": None,
         "intro": "급한 장애 대응 잘합니다. 새벽도 괜찮습니다.",
+        "field": {"codeId": 47, "codeName": "버그 잡기"},
         "yearsOfExperience": 6.0,
-        "field": {"codeId": 4, "codeName": "백엔드"},
         "isCareerVerified": False,
-        "devRating": {"score": 4.7, "reviewCount": 22},
-        "explanatoryRating": {"score": 4.1, "reviewCount": 18},
+        "devRating": {"score": 4.7, "reviewCount": 2},
+        "explanatoryRating": {"score": 4.1, "reviewCount": 2},
         "techCategories": TECH_CODES[:1],
         "prices": [
             {"taskType": "CONSULT", "price": 60000},
             {"taskType": "DEVELOP", "price": 120000},
         ],
+        "contractCount": 11,
     },
 ]
 
 TOTAL_DEVELOPERS = 128
 
+
+def _rating_key(rating: dict) -> tuple:
+    """평점 내림차순 정렬 키. 평점이 없으면 뒤로 보낸다."""
+    score = rating.get("score")
+    return (score is None, -(score or 0))
+
+
+def _lowest_price(row: dict) -> int:
+    """가격표 전체의 최저가. 등록한 가격이 없으면 맨 뒤로 간다."""
+    prices = [price["price"] for price in row["prices"]]
+    return min(prices) if prices else 10**9
+
+# 개발자 한 명의 가격표. 컨설팅은 세션 길이로, 개발은 할 일로 줄을 나눈다.
+PRICE_CATALOG = [
+    {
+        "priceId": 60,
+        "taskType": "CONSULT",
+        "taskName": "30분 · 한 가지 주제",
+        "price": 50000,
+        "periodDays": None,
+    },
+    {
+        "priceId": 61,
+        "taskType": "CONSULT",
+        "taskName": "60분 · 이어지는 두세 가지",
+        "price": 90000,
+        "periodDays": None,
+    },
+    {
+        "priceId": 62,
+        "taskType": "DEVELOP",
+        "taskName": "인터넷에 올리기",
+        "price": 200000,
+        "periodDays": 1,
+    },
+    {
+        "priceId": 63,
+        "taskType": "DEVELOP",
+        "taskName": "저장되게 하기",
+        "price": 350000,
+        "periodDays": 3,
+    },
+    {
+        "priceId": 64,
+        "taskType": "DEVELOP",
+        "taskName": "사둔 주소 연결",
+        "price": 100000,
+        "periodDays": 1,
+    },
+    {
+        "priceId": 65,
+        "taskType": "DEVELOP",
+        "taskName": "로그인 붙이기",
+        "price": 400000,
+        "periodDays": 4,
+    },
+    {
+        "priceId": 66,
+        "taskType": "DEVELOP",
+        "taskName": "버그 하나 고치기",
+        "price": 100000,
+        "periodDays": 2,
+    },
+]
+
 DEVELOPER_DETAIL = {
     **DEVELOPERS[0],
+    "priceCatalog": PRICE_CATALOG,
     "description": "작은 가게 서비스를 주로 맡습니다.",
     "activeFrom": "10:00",
     "activeTo": "19:00",
@@ -2663,7 +2963,8 @@ DEVELOPER_DETAIL = {
 REVIEWS = [
     {
         "reviewId": 88,
-        "clientName": "김미미",
+        "clientName": "김O미",
+        "contractType": "DEVELOPMENT",
         "devScore": 5,
         "commScore": 5,
         "content": "말이 잘 통했습니다.",
@@ -2672,7 +2973,8 @@ REVIEWS = [
     },
     {
         "reviewId": 87,
-        "clientName": "최수진",
+        "clientName": "최O진",
+        "contractType": "CONSULTING",
         "devScore": 4,
         "commScore": 5,
         "content": None,
@@ -2685,22 +2987,20 @@ RECOMMENDATION_BATCH = {
     "batchId": 61,
     "sequenceNo": 1,
     "projectId": 8,
+    "projectName": "수제 비누 가게",
+    "diagnosisVersion": 2,
     "candidateCount": TOTAL_DEVELOPERS,
     "items": [
         {
             "recommendationItemId": 501,
             "rank": 1,
             "developer": DEVELOPERS[0],
-            "contractCount": 23,
-            "status": None,
             "roomId": None,
         },
         {
             "recommendationItemId": 502,
             "rank": 2,
             "developer": DEVELOPERS[2],
-            "contractCount": 11,
-            "status": None,
             "roomId": None,
         },
     ],
@@ -2709,29 +3009,63 @@ RECOMMENDATION_BATCH = {
 ROOMS = [
     {
         "roomId": 91,
+        "recommendationItemId": 501,
         "type": "INQUIRY",
         "status": "OPEN",
         "projectId": 8,
         "projectName": "수제 비누 가게",
-        "clientId": 12,
-        "developerId": 30,
+        "developerId": 3,
         "counterpartName": "이준",
         "chatRefId": "room-91-chat",
         "openedAt": "2026-08-20T09:00:00+09:00",
     },
     {
         "roomId": 92,
+        "recommendationItemId": 501,
         "type": "CONSULTING",
         "status": "OPEN",
         "projectId": 8,
         "projectName": "수제 비누 가게",
-        "clientId": 12,
-        "developerId": 30,
+        "developerId": 3,
         "counterpartName": "이준",
         "chatRefId": "room-92-chat",
         "openedAt": "2026-08-22T11:40:00+09:00",
     },
+    {
+        "roomId": 93,
+        "recommendationItemId": 502,
+        "type": "DEVELOPMENT",
+        "status": "OPEN",
+        "projectId": 8,
+        "projectName": "수제 비누 가게",
+        "developerId": 7,
+        "counterpartName": "한서",
+        "chatRefId": "room-93-chat",
+        "openedAt": "2026-08-25T14:05:00+09:00",
+    },
 ]
+
+# 상담 요청으로 열리는 방. 같은 개발자에게 다시 요청해도 같은 방을 돌려주도록 고정해 둔다.
+ROOM_ID_BY_ITEM = {501: 91, 502: 95}
+ROOM_ID_BY_DEVELOPER = {3: 96, 5: 94, 7: 97}
+
+# 상담방에서 갈래를 정하면 열리는 방. 고른 갈래에 따라 어느 쪽이 열리는지 갈린다.
+CONVERTED_CONSULTING_ROOM_ID = 92
+CONVERTED_DEVELOPMENT_ROOM_ID = 93
+
+# 추천을 거치지 않고 직접 찾아 연 방. 추천 항목이 없어 recommendationItemId가 비어 있다.
+DIRECT_ROOM = {
+    "roomId": 94,
+    "recommendationItemId": None,
+    "type": "INQUIRY",
+    "status": "OPEN",
+    "projectId": 8,
+    "projectName": "수제 비누 가게",
+    "developerId": 5,
+    "counterpartName": "정하",
+    "chatRefId": "room-94-chat",
+    "openedAt": "2026-08-27T10:15:00+09:00",
+}
 
 ROOM_DETAIL = {
     **ROOMS[0],
@@ -2740,14 +3074,16 @@ ROOM_DETAIL = {
         "issueCount": 3,
         "updatedAt": "2026-08-18T16:40:00+09:00",
     },
+    "contractId": None,
     "convertedRoomId": None,
+    "convertedRoomType": None,
 }
 
 DEVELOPER_LIST_EXAMPLE = {
-    "content": DEVELOPERS[:1],
+    "content": DEVELOPERS,
     "page": 1,
     "size": 20,
-    "totalElements": 5,
+    "totalElements": len(DEVELOPERS),
     "totalPages": 1,
     "totalDevelopers": TOTAL_DEVELOPERS,
 }
@@ -2756,7 +3092,7 @@ REVIEW_LIST_EXAMPLE = {
     "content": REVIEWS,
     "page": 1,
     "size": 20,
-    "totalElements": 20,
+    "totalElements": len(REVIEWS),
     "totalPages": 1,
 }
 
@@ -2806,33 +3142,52 @@ class CodeListResponse(BaseModel):
     summary="코드 목록 조회",
     description=(
         "**화면 — `3_의뢰인_개발자찾기` · `3_펼침_분야선택` › 분야 선택 · "
-        "`8_펼침_은행선택` › 은행 선택**\n\n"
+        "`8_펼침_은행선택` › 은행 선택 · `8_개발자_내프로필` › 기술 선택 · "
+        "`8_마이페이지` › 카드 등록의 카드사 · `2_요구사항선택` › 요구사항 추가의 "
+        "결함 분류**\n\n"
         "화면에서 고르게 할 항목을 내려준다. 분야 칩이나 은행 목록처럼 운영에서 늘고 줄 수 "
         "있는 목록이라 화면에 문구를 박지 않고 이 API로 받는다.\n\n"
         "**고르게 할 목록은 모두 이 API로 받는다.** 분류마다 API를 따로 두지 않는다.\n\n"
+        "**로그인하지 않아도 부를 수 있다.** 분야 목록이 로그인 전 화면에 필요해서인데, "
+        "한 API가 모든 분류를 내주므로 인증 경계를 분류마다 다르게 둘 수 없다. 로그인한 "
+        "사람에게만 보여야 하는 목록은 이 API에 두지 않는다.\n\n"
+        "**여기서 빠진 항목도 이름은 그대로 나간다.** 운영에서 쓰지 않기로 내린 항목은 이 "
+        "목록에서 빠지지만, 이미 그 항목을 고른 개발자나 요구사항이 있으므로 상세 응답의 "
+        "`codeName`에는 계속 담긴다. 고를 수 없게 하는 것과 이름을 감추는 것은 다르다.\n\n"
+        "몇 달에 한 번 바뀌는 목록이라 실서버는 `Cache-Control: public, max-age=3600`을 "
+        "실어 보낸다. 화면에 들어올 때마다 다시 받지 않아도 된다.\n\n"
+        "아래 200 예시는 `DEV_FIELD`를 부른 결과다.\n\n"
         "- **200**: 분류가 있을 때. 쓸 수 있는 항목만 순서대로 내려간다\n"
-        "- **404 / CODE_GROUP_NOT_FOUND**: `groupKey`가 `UNKNOWN`일 때\n"
+        "- **404 / CODE_GROUP_NOT_FOUND**: 아는 분류 키가 아닐 때. 오타나 대소문자가 "
+        "다른 키도 여기에 걸린다\n"
         "- **500 / INTERNAL_ERROR**: 목록을 읽지 못했을 때"
     ),
 )
 def get_codes(
+    response: Response,
     groupKey: Annotated[
         str,
         Path(
             description=(
                 "코드 분류 키. 개발 분야는 `DEV_FIELD`, 기술은 `TECH_CATEGORY`, "
-                "계좌를 등록할 때 고르는 은행은 `BANK_CODE`다. `UNKNOWN`은 분류 없음 "
-                "재현용 예약값이다."
+                "계좌를 등록할 때 고르는 은행은 `BANK_CODE`, 카드를 등록할 때 고르는 "
+                "카드사는 `CARD_COMPANY`, 요구사항을 직접 추가할 때 고르는 결함 분류는 "
+                "`ISSUE_CATEGORY`다. 이 다섯이 아닌 값은 모두 분류 없음으로 본다."
             ),
             examples=["DEV_FIELD"],
         ),
     ],
 ) -> CodeListResponse | JSONResponse:
-    if groupKey == "UNKNOWN":
+    rows = {
+        "DEV_FIELD": FIELD_CODES,
+        "TECH_CATEGORY": TECH_CODES,
+        "BANK_CODE": BANK_CODES,
+        "CARD_COMPANY": CARD_COMPANY_CODES,
+        "ISSUE_CATEGORY": ISSUE_CATEGORY_CODES,
+    }.get(groupKey)
+    if rows is None:
         return _error_response(404, CODE_GROUP_NOT_FOUND)
-    rows = {"TECH_CATEGORY": TECH_CODES, "BANK_CODE": BANK_CODES}.get(
-        groupKey, FIELD_CODES
-    )
+    response.headers["Cache-Control"] = "public, max-age=3600"
     return CodeListResponse(content=[CodeResponse(**row) for row in rows])
 
 
@@ -2853,15 +3208,24 @@ def get_codes(
     description=(
         "**화면 — `3_의뢰인_개발자찾기` › 검색 · 분야 선택 · 정렬 · 카드 목록 · "
         "`3_펼침_검색모드` · `3_펼침_정렬`**\n\n"
-        "의뢰인이 직접 개발자를 찾는다. 추천을 거치지 않고 스스로 고르는 경로다.\n\n"
+        "의뢰인이 직접 개발자를 찾는다. 추천을 거치지 않고 스스로 고르는 경로다. "
+        "**로그인하지 않아도 부를 수 있다.** 랜딩의 '증상별로 찾기'로 바로 들어오는 "
+        "경로가 있어서다.\n\n"
         "검색은 두 가지다. `problem`은 겪고 있는 문제를 문장으로 적어 맞는 개발자를 찾고, "
         "`name`은 이름으로 바로 찾는다.\n\n"
         "`totalDevelopers`는 조건을 걸지 않았을 때의 전체 수라, 화면의 "
         "'128명 중 5명'에서 앞 숫자에 해당한다.\n\n"
+        "**카드 머리는 `field`와 `yearsOfExperience`, 칩은 `techCategories`다.** 분야는 "
+        "한 명에 하나라 `DB 연결 · 5년`처럼 연차와 붙여 한 줄로 쓰고, 여럿일 수 있는 "
+        "기술을 카드 아래 칩으로 늘어놓는다. 거르는 기준은 분야이고 칩은 기술이라 서로 "
+        "다른 것을 가리킨다.\n\n"
+        "**`page`는 1부터 센다.** 0이 첫 장이 아니다.\n\n"
         "- **200**: 항상. 조건에 맞는 사람이 없으면 `content`가 빈 배열이다\n"
         "- **422 / INVALID_REQUEST**: `searchMode`나 `sort`가 허용된 값이 아니거나 "
         "`size`가 범위를 벗어날 때\n"
-        "- **500 / INTERNAL_ERROR**: 목록을 만들지 못했을 때"
+        "- **500 / INTERNAL_ERROR**: 목록을 만들지 못했을 때\n\n"
+        "⚠️ 이 목 서버는 분야 거르기, 이름 검색, 네 가지 정렬을 실제로 수행한다. "
+        "`problem` 검색만은 문장의 뜻을 읽어야 하므로 거르지 않고 전체를 준다."
     ),
 )
 def find_developers(
@@ -2884,7 +3248,13 @@ def find_developers(
     fieldCodeIds: Annotated[
         list[int] | None,
         Query(
-            description="분야 코드 식별자. 여러 개를 보내면 그중 하나라도 맞는 개발자를 찾는다.",
+            description=(
+                "분야 코드 식별자. 여러 개를 보내면 그중 하나라도 맞는 개발자를 찾는다. "
+                "여럿을 보낼 때는 `?fieldCodeIds=41&fieldCodeIds=42`처럼 같은 이름을 "
+                "거듭 적는다. **`DEV_FIELD`의 항목이 아닌 값은 조용히 무시한다** — "
+                "쓰지 않기로 내린 분야가 담긴 옛 주소로 들어와도 나머지 조건으로 "
+                "결과가 나오게 하기 위해서다."
+            ),
             examples=[[41, 42]],
         ),
     ] = None,
@@ -2892,7 +3262,10 @@ def find_developers(
         Literal["devRating,desc", "explanatoryRating,desc", "price,asc", "contract,desc"],
         Query(
             description=(
-                "정렬 기준. 차례로 실력 높은 순, 설명력 높은 순, 비용 낮은 순, 계약 많은 순이다."
+                "정렬 기준. 차례로 실력 높은 순, 설명력 높은 순, 비용 낮은 순, 계약 많은 "
+                "순이다. **비용은 가격표 전체의 최저가로 견준다** — 컨설팅과 개발을 "
+                "가리지 않고 그 개발자가 받는 가장 싼 금액이며, 카드에 나란히 적히는 "
+                "두 금액 중 작은 쪽이다."
             ),
             examples=["devRating,desc"],
         ),
@@ -2905,6 +3278,17 @@ def find_developers(
     rows = DEVELOPERS
     if fieldCodeIds:
         rows = [r for r in rows if r["field"] and r["field"]["codeId"] in fieldCodeIds]
+    if searchMode == "name" and keyword:
+        rows = [r for r in rows if keyword.strip() in r["name"]]
+
+    # 평점이 없는 개발자는 뒤로 보낸다. 리뷰가 없다고 맨 위에 오르면 안 된다.
+    sorters = {
+        "devRating,desc": lambda r: _rating_key(r["devRating"]),
+        "explanatoryRating,desc": lambda r: _rating_key(r["explanatoryRating"]),
+        "price,asc": lambda r: (_lowest_price(r),),
+        "contract,desc": lambda r: (-r["contractCount"],),
+    }
+    rows = sorted(rows, key=sorters[sort])
 
     total = len(rows)
     start = (page - 1) * size
@@ -2937,6 +3321,13 @@ def find_developers(
         "개발자 한 명의 소개, 경력, 작업물, 평점, 가격표를 한 번에 내려준다. 로그인하지 "
         "않아도 볼 수 있는 공개 프로필이다.\n\n"
         "경력은 `isVerified`로 갈린다. 참이면 '확인됨', 거짓이면 '확인 중'으로 보여준다.\n\n"
+        "**무료 상담은 이 응답에 담기지 않는다.** 가격표에 없는 고정 정책이라 화면이 "
+        "'상담 — 무료' 줄을 스스로 그린다. `priceCatalog`에서 상담 줄을 찾지 않는다.\n\n"
+        "**리뷰 총 건수는 `devRating.reviewCount`다.** 리뷰 하나가 두 점수를 다 받으므로 "
+        "설명력 쪽과 같은 값이고, 화면의 '리뷰 N개 모두 보기'가 이 수를 쓴다.\n\n"
+        "**함께 쓰는 API** 리뷰 칸은 `GET /api/developers/{developerId}/reviews`가 채우고, "
+        "아래의 '무료로 물어보기'는 `POST /api/projects/{projectId}/consultation-requests`로 "
+        "간다.\n\n"
         "- **200**: 개발자가 있을 때\n"
         "- **404 / DEVELOPER_NOT_FOUND**: `developerId`가 404일 때. 없거나 탈퇴한 개발자다\n"
         "- **500 / INTERNAL_ERROR**: 프로필을 읽지 못했을 때"
@@ -2953,7 +3344,7 @@ def get_developer(
 ) -> DeveloperDetailResponse | JSONResponse:
     if developerId == NOT_FOUND_DEVELOPER_ID:
         return _error_response(404, DEVELOPER_NOT_FOUND)
-    return DeveloperDetailResponse(**DEVELOPER_DETAIL)
+    return DeveloperDetailResponse(**{**DEVELOPER_DETAIL, "developerId": developerId})
 
 
 @router.get(
@@ -2973,9 +3364,17 @@ def get_developer(
     description=(
         "**화면 — `3_의뢰인_개발자프로필` › 리뷰 · 모두 보기**\n\n"
         "이 개발자가 계약을 마친 뒤 받은 리뷰를 최신순으로 내려준다. 프로필 화면은 앞의 "
-        "몇 건만 보여주고 '모두 보기'에서 페이지를 넘긴다.\n\n"
+        "몇 건만 보여주고 '모두 보기'에서 페이지를 넘긴다. 프로필과 마찬가지로 "
+        "로그인하지 않아도 볼 수 있다.\n\n"
+        "**의뢰인 이름은 서버가 가려서 내보낸다.** 화면이 따로 가릴 것은 없고, 개발자가 "
+        "자기 프로필에서 볼 때도 같은 값이다. 어느 프로젝트의 리뷰인지는 의뢰인의 사업 "
+        "정보라 담지 않으며, 계약 종류만 `contractType`으로 알려준다.\n\n"
+        "`totalElements`는 개발자 프로필의 `devRating.reviewCount`와 언제나 같다. 리뷰 "
+        "하나가 두 점수를 다 받으므로 두 수가 갈릴 일이 없다.\n\n"
+        "**`page`는 1부터 센다.** 0이 첫 장이 아니다.\n\n"
         "- **200**: 개발자가 있을 때. 받은 리뷰가 없으면 `content`가 빈 배열이다\n"
         "- **404 / DEVELOPER_NOT_FOUND**: `developerId`가 404일 때\n"
+        "- **422 / INVALID_REQUEST**: `page`나 `size`가 범위를 벗어날 때\n"
         "- **500 / INTERNAL_ERROR**: 목록을 만들지 못했을 때"
     ),
 )
@@ -3022,12 +3421,27 @@ def get_developer_reviews(
         "**화면 — `2_요구사항선택` › 상담 요청하기. 결과는 `3_의뢰인_개발자추천`에 나온다**\n\n"
         "고른 요구사항을 근거로 맞는 개발자를 찾아 추천 회차를 만든다. 이 회차의 결과가 "
         "추천 화면에 순위대로 나온다.\n\n"
+        "**직접 찾아 고른 개발자는 이 API를 거치지 않는다.** 그 길은 프로젝트 상담 요청 "
+        "API가 맡고, 회차 없이 방이 바로 열린다.\n\n"
         "같은 프로젝트에서 다시 찾으면 회차 번호가 1 오른다. 이전 회차는 지우지 않고 "
-        "남겨서 어떤 추천이 계약으로 이어졌는지 볼 수 있다.\n\n"
+        "남기지만, 지난 회차를 늘어놓는 화면도 API도 없다. 어떤 추천이 계약으로 "
+        "이어졌는지는 서버가 집계에 쓴다.\n\n"
+        "**아직 열어보지 않은 회차가 있으면 새로 만들지 않는다.** 직전 회차를 한 번도 "
+        "열지 않았다면 그 회차를 그대로 돌려준다. 새로고침하거나 버튼을 두 번 눌러 빈 "
+        "회차가 쌓이는 것을 막기 위해서다. 한 번이라도 열어본 뒤에 다시 부르면 그때는 "
+        "새 회차가 생긴다.\n\n"
+        "**추천을 무엇 때문에 만들었는지는 서버가 정한다.** 이 프로젝트의 첫 회차면 상담 "
+        "요청, 이미 회차가 있으면 재매칭으로 기록하고 직전 회차를 부모로 잇는다. 요청에 "
+        "담아 보낼 것은 없다.\n\n"
         "- **201**: 추천을 만들었을 때. 맞는 개발자가 없으면 `items`가 빈 배열이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / PROJECT_NOT_FOUND**: `projectId`가 404일 때. 없거나 남의 프로젝트다\n"
-        "- **500 / INTERNAL_ERROR**: 추천을 만들지 못했을 때"
+        "- **422 / INVALID_REQUEST**: `diagnosisId`가 없거나, `issueIds`가 비었거나, "
+        "**이 진단에서 나오지 않은 요구사항이 섞였을 때.** 고르지 않은 것이 요청서에 "
+        "실리면 계약까지 따라가므로 조용히 버리지 않고 막는다\n"
+        "- **500 / INTERNAL_ERROR**: 추천을 만들지 못했을 때\n\n"
+        "목에서는 `issueIds`에 이 진단의 요구사항(311·312·313·314)이 아닌 값이 하나라도 "
+        "있으면 422를 준다."
     ),
 )
 def create_recommendation(
@@ -3042,6 +3456,22 @@ def create_recommendation(
 ) -> RecommendationBatchResponse | JSONResponse:
     if projectId == NOT_FOUND_PROJECT_ID:
         return _error_response(404, PROJECT_NOT_FOUND)
+
+    known = {issue["issueId"] for issue in ISSUES}
+    unknown = [issue_id for issue_id in request.issueIds if issue_id not in known]
+    if unknown:
+        body = ValidationErrorResponse(
+            code=INVALID_REQUEST[0],
+            message=INVALID_REQUEST[1],
+            errors=[
+                FieldError(
+                    field="issueIds",
+                    reason="이 진단에서 나온 요구사항만 보낼 수 있습니다.",
+                )
+            ],
+        )
+        return JSONResponse(status_code=422, content=jsonable_encoder(body))
+
     return RecommendationBatchResponse(**RECOMMENDATION_BATCH)
 
 
@@ -3069,9 +3499,16 @@ def create_recommendation(
     summary="추천 결과 조회",
     description=(
         "**화면 — `3_의뢰인_개발자추천` › 추천 개발자 목록**\n\n"
-        "추천 회차의 결과를 순위대로 내려준다. 개발자마다 상담을 요청했는지, 요청했다면 "
-        "수락했는지가 `status`에 담긴다.\n\n"
-        "- **200**: 추천 회차가 있고 내 것일 때\n"
+        "추천 회차의 결과를 순위대로 내려준다. 개발자마다 상담을 요청했는지는 `roomId`로 "
+        "안다. 비어 있으면 아직 요청하지 않은 개발자다.\n\n"
+        "**이 조회가 회차를 '열어본 것'으로 표시한다.** 처음 불릴 때 열람 시각을 남기며, "
+        "그 표시가 있어야 추천 받기를 다시 불렀을 때 새 회차가 만들어진다. 표시가 없는 "
+        "동안에는 추천 받기가 같은 회차를 계속 돌려주므로, **이 API를 부르지 않으면 "
+        "두 번째 회차가 영영 생기지 않는다.**\n\n"
+        "조회인데 기록을 남기지만 몇 번을 불러도 결과는 같다. 열람 시각은 처음 한 번만 "
+        "찍히고 그 뒤로는 아무것도 바뀌지 않는다.\n\n"
+        "- **200**: 추천 회차가 있고 내 것일 때. 맞는 개발자가 없던 회차면 `items`가 "
+        "빈 배열이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / RECOMMENDATION_NOT_FOUND**: `batchId`가 404일 때. 없거나 남의 추천이다\n"
         "- **500 / INTERNAL_ERROR**: 결과를 읽지 못했을 때"
@@ -3110,18 +3547,6 @@ def get_recommendation(
                 }
             },
         },
-        409: {
-            "model": ErrorResponse,
-            "description": "이미 상담을 요청함",
-            "content": {
-                "application/json": {
-                    "example": {
-                        "code": "CONSULTATION_ALREADY_REQUESTED",
-                        "message": "이미 상담을 요청한 개발자입니다.",
-                    }
-                }
-            },
-        },
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -3130,23 +3555,29 @@ def get_recommendation(
         "**화면 — `3_의뢰인_개발자추천` › N명에게 상담 요청**\n\n"
         "고른 개발자들에게 같은 요청서를 보낸다. 여러 명에게 한 번에 보낼 수 있고, "
         "개발자마다 무료 상담방이 하나씩 열린다. 상담은 무료다.\n\n"
-        "같은 요청을 다시 보내도 방이 더 생기지 않는다.\n\n"
-        "- **201**: 요청을 보냈을 때. 열린 방 목록이 내려온다\n"
+        "**개발자의 수락을 기다리지 않는다.** 요청하면 그 자리에서 방이 열리고, 개발자는 "
+        "사이드바의 '받은 의뢰'에서 그 방을 본다.\n\n"
+        "열린 방은 보낸 순서가 아니라 `recommendationItemId`로 맞춘다. 그 값이 이 요청에 "
+        "담아 보낸 추천 항목과 같으므로, 화면은 어느 개발자 카드에 어느 방을 붙일지 안다.\n\n"
+        "**몇 번을 보내도 방은 개발자마다 하나다.** 이미 방이 있는 개발자는 그 방을 그대로 "
+        "응답에 담고 새로 만들지 않는다. 같은 개발자를 두 번 담아 보내도, 새로고침해도, "
+        "두 화면에서 동시에 눌러도 결과가 같다. 이미 요청했다는 이유로 막지 않으므로 "
+        "**여러 명 중 한 명이 걸려 나머지가 못 나가는 일도 없다.**\n\n"
+        "- **201**: 요청을 보냈을 때. 이번에 연 방과 이미 있던 방이 함께 내려온다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / RECOMMENDATION_NOT_FOUND**: `batchId`가 404일 때\n"
-        "- **409 / CONSULTATION_ALREADY_REQUESTED**: `batchId`가 409일 때. 이미 상담을 "
-        "요청한 개발자가 목록에 들어 있다\n"
-        "- **422 / INVALID_REQUEST**: `recommendationItemIds`가 비었을 때\n"
-        "- **500 / INTERNAL_ERROR**: 요청을 보내지 못했을 때"
+        "- **422 / INVALID_REQUEST**: `recommendationItemIds`가 비었거나, **이 회차의 "
+        "추천 항목이 아닌 값이 섞였을 때.** 고르지 않은 개발자에게 요청이 나가면 안 되므로 "
+        "조용히 버리지 않고 막는다\n"
+        "- **500 / INTERNAL_ERROR**: 요청을 보내지 못했을 때\n\n"
+        "목에서는 이 회차의 추천 항목(501·502)이 아닌 값을 보내면 422를 준다."
     ),
 )
 def request_consultations(
     batchId: Annotated[
         int,
         Path(
-            description=(
-                "추천 회차 식별자. 404는 없음, 409는 중복 요청 재현용 예약값이다."
-            ),
+            description="추천 회차 식별자. 404는 없음 재현용 예약값이다.",
             examples=[61],
         ),
     ],
@@ -3154,20 +3585,113 @@ def request_consultations(
 ) -> RoomListResponse | JSONResponse:
     if batchId == NOT_FOUND_BATCH_ID:
         return _error_response(404, RECOMMENDATION_NOT_FOUND)
-    if batchId == ALREADY_REQUESTED_BATCH_ID:
-        return _error_response(409, CONSULTATION_ALREADY_REQUESTED)
-    if not request.recommendationItemIds:
-        body = ValidationErrorResponse(
-            code=INVALID_REQUEST[0],
-            message=INVALID_REQUEST[1],
-            errors=[
-                FieldError(
-                    field="recommendationItemIds", reason="한 명 이상 골라야 합니다."
-                )
-            ],
+
+    items = {
+        item["recommendationItemId"]: item for item in RECOMMENDATION_BATCH["items"]
+    }
+    if any(item_id not in items for item_id in request.recommendationItemIds):
+        return _field_error(
+            "recommendationItemIds", "이 회차의 추천 항목만 보낼 수 있습니다."
         )
-        return JSONResponse(status_code=422, content=jsonable_encoder(body))
-    return RoomListResponse(content=[RoomSummaryResponse(**ROOMS[0])])
+
+    # 같은 항목을 거듭 보내도 방은 하나다. 보낸 순서는 지킨다.
+    rooms = [
+        {
+            **ROOMS[0],
+            "roomId": ROOM_ID_BY_ITEM[item_id],
+            "recommendationItemId": item_id,
+            "developerId": items[item_id]["developer"]["developerId"],
+            "counterpartName": items[item_id]["developer"]["name"],
+            "chatRefId": f"room-{ROOM_ID_BY_ITEM[item_id]}-chat",
+        }
+        for item_id in dict.fromkeys(request.recommendationItemIds)
+    ]
+    return RoomListResponse(content=[RoomSummaryResponse(**room) for room in rooms])
+
+
+@router.post(
+    "/projects/{projectId}/consultation-requests",
+    response_model=RoomListResponse,
+    status_code=201,
+    tags=[AREA3_TAG],
+    responses={
+        201: {"content": {"application/json": {"example": {"content": [DIRECT_ROOM]}}}},
+        404: {
+            "model": ErrorResponse,
+            "description": "프로젝트 없음",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": "PROJECT_NOT_FOUND",
+                        "message": "프로젝트를 찾을 수 없습니다.",
+                    }
+                }
+            },
+        },
+        **AREA1_UNAUTHORIZED,
+        **AREA1_ERRORS,
+    },
+    summary="직접 찾은 개발자에게 상담 요청 보내기",
+    description=(
+        "**화면 — `1_랜딩홈` › 추천 개발자 › 상담 시작하기 · "
+        "`3_의뢰인_개발자프로필` › 무료로 물어보기**\n\n"
+        "추천을 거치지 않고 직접 찾은 개발자에게 상담을 요청한다. 개발자마다 무료 "
+        "상담방이 하나씩 열린다. 상담은 무료다.\n\n"
+        "**부르려면 로그인과 프로젝트가 있어야 한다.** 두 진입점 모두 로그인 전에도 보이는 "
+        "화면이라, 둘 중 하나라도 없으면 화면이 로그인 → 사전점검으로 보낸 뒤 프로젝트가 "
+        "생긴 다음에 이 API를 부른다. 프로젝트는 진단을 시작할 때 만들어지며, 여럿이면 "
+        "어느 프로젝트의 상담인지 고르게 한다.\n\n"
+        "**프로젝트에 진단이 있으면 요청서가 함께 걸린다.** 개발자가 방에 들어오자마자 "
+        "무엇을 고치고 싶은지 볼 수 있게 하기 위해서다. 진단 전이라면 요청서 없이 방만 "
+        "열리고 방 상세의 `request`가 null이다.\n\n"
+        "**추천 회차를 만들지 않는다.** 그래서 이렇게 열린 방은 "
+        "`recommendationItemId`가 비어 있다. 추천 화면에서 고른 개발자는 이 API가 "
+        "아니라 추천 회차의 상담 요청 API로 보낸다.\n\n"
+        "**개발자의 수락을 기다리지 않는다.** 요청하면 그 자리에서 방이 열리고, "
+        "개발자는 사이드바의 '받은 의뢰'에서 그 방을 본다.\n\n"
+        "**몇 번을 보내도 방은 개발자마다 하나다.** 이미 방이 있는 개발자는 그 방을 그대로 "
+        "응답에 담고 새로 만들지 않는다. 같은 개발자를 두 번 담아 보내도, 새로고침해도 "
+        "결과가 같다.\n\n"
+        "- **201**: 요청을 보냈을 때. 이번에 연 방과 이미 있던 방이 함께 내려온다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **404 / PROJECT_NOT_FOUND**: `projectId`가 404일 때. 없거나 남의 프로젝트다\n"
+        "- **422 / INVALID_REQUEST**: `developerIds`가 비었거나, 없는 개발자가 섞였거나, "
+        "**자기 자신에게 요청했을 때.** 개발자이면서 의뢰인인 사용자가 자기 프로필에서 "
+        "누를 수 있어 서버가 막는다\n"
+        "- **500 / INTERNAL_ERROR**: 요청을 보내지 못했을 때\n\n"
+        "목에서는 등록된 개발자(3·5·7)가 아닌 값을 보내면 422를 준다. 자기 자신인지는 "
+        "토큰을 봐야 알 수 있어 목이 가려내지 않는다."
+    ),
+)
+def request_direct_consultations(
+    projectId: Annotated[
+        int,
+        Path(
+            description="프로젝트 식별자. 404는 없음 재현용 예약값이다.",
+            examples=[8],
+        ),
+    ],
+    request: CreateDirectConsultationRequest,
+) -> RoomListResponse | JSONResponse:
+    if projectId == NOT_FOUND_PROJECT_ID:
+        return _error_response(404, PROJECT_NOT_FOUND)
+
+    developers = {row["developerId"]: row for row in DEVELOPERS}
+    if any(dev_id not in developers for dev_id in request.developerIds):
+        return _field_error("developerIds", "등록된 개발자만 보낼 수 있습니다.")
+
+    # 같은 개발자를 거듭 보내도 방은 하나다. 보낸 순서는 지킨다.
+    rooms = [
+        {
+            **DIRECT_ROOM,
+            "roomId": ROOM_ID_BY_DEVELOPER[dev_id],
+            "developerId": dev_id,
+            "counterpartName": developers[dev_id]["name"],
+            "chatRefId": f"room-{ROOM_ID_BY_DEVELOPER[dev_id]}-chat",
+        }
+        for dev_id in dict.fromkeys(request.developerIds)
+    ]
+    return RoomListResponse(content=[RoomSummaryResponse(**room) for room in rooms])
 
 
 # --------------------------------------------------------------------------- #
@@ -3187,11 +3711,23 @@ def request_consultations(
     summary="방 목록 조회",
     description=(
         "**화면 — 영역 3~5의 모든 방 화면 › 왼쪽 사이드바의 보낸 의뢰 · 받은 의뢰**\n\n"
-        "내가 들어가 있는 방을 프로젝트별로 묶어 내려준다. 의뢰인이 보면 '보낸 의뢰', "
-        "개발자가 보면 '받은 의뢰'가 된다. 두 갈래는 `clientId`·`developerId`를 내 "
-        "사용자 식별자와 견주어 가른다.\n\n"
+        "내가 들어가 있는 방을 내려준다. 의뢰인이 보면 '보낸 의뢰', 개발자가 보면 "
+        "'받은 의뢰'가 된다.\n\n"
+        "**가르는 값은 `developerId` 하나다.** 방의 `developerId`가 내 개발자 식별자와 "
+        "같으면 받은 의뢰, 아니면 보낸 의뢰다. 이 목록에는 내가 들어가 있는 방만 오고 "
+        "한 방에서 나는 의뢰인이거나 개발자 둘 중 하나이므로 비교는 한 번으로 끝난다. "
+        "의뢰인 식별자를 따로 내려주지 않는 것도 그래서다.\n\n"
+        "**한 사람이 양쪽일 수 있다.** 개발자이면서 의뢰인인 사용자는 보낸 의뢰와 받은 "
+        "의뢰에 방이 모두 있다. 역할별로 따로 부르는 API는 두지 않으며, 이 API가 둘 다 "
+        "내려주고 화면이 가른다.\n\n"
+        "**마지막으로 움직인 방이 먼저 온다.** 메시지가 오거나 계약이 바뀌면 그 방이 "
+        "위로 올라온다. 프로젝트로 묶어 보여주는 화면은 그 안에서 가장 최근에 움직인 "
+        "방을 따라 그룹 순서를 정하면 된다.\n\n"
+        "**닫힌 방도 내려간다.** 갈래가 정해져 닫힌 상담방은 나눈 이야기를 계속 볼 수 "
+        "있어야 하므로 목록에 남는다. 거르려면 `status`를 준다.\n\n"
         "**마지막 메시지와 미리보기는 이 응답에 없다.** 메시지는 채팅 쪽이 다루므로 "
-        "`chatRefId`로 그쪽에서 가져온다.\n\n"
+        "`chatRefId`로 그쪽에서 가져온다. 순서는 이 응답이 이미 정해 주므로 채팅 쪽 "
+        "데이터를 기다리지 않아도 된다.\n\n"
         "- **200**: 항상. 들어가 있는 방이 없으면 `content`가 빈 배열이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **422 / INVALID_REQUEST**: `type`이나 `status`가 허용된 값이 아닐 때\n"
@@ -3202,7 +3738,10 @@ def get_rooms(
     type: Annotated[
         Literal["INQUIRY", "CONSULTING", "DEVELOPMENT"] | None,
         Query(
-            description="방 용도로 거른다. 비우면 전부 내려간다.",
+            description=(
+                "방 용도로 거른다. 비우면 전부 내려간다. 사이드바는 모든 방을 한 번에 "
+                "보여주므로 거르지 않는다."
+            ),
             examples=["INQUIRY"],
         ),
     ] = None,
@@ -3219,6 +3758,9 @@ def get_rooms(
         rows = [r for r in rows if r["type"] == type]
     if status is not None:
         rows = [r for r in rows if r["status"] == status]
+
+    # 실서버는 마지막으로 움직인 시각으로 줄 세운다. 목에는 그 값이 없어 개설 시각을 쓴다.
+    rows = sorted(rows, key=lambda r: r["openedAt"], reverse=True)
     return RoomListResponse(content=[RoomSummaryResponse(**r) for r in rows])
 
 
@@ -3275,9 +3817,19 @@ def get_room(
         201: {
             "content": {
                 "application/json": {
-                    "example": {**ROOM_DETAIL, "status": "CLOSED", "convertedRoomId": 92}
+                    "example": {
+                        **ROOM_DETAIL,
+                        "status": "CLOSED",
+                        "convertedRoomId": CONVERTED_CONSULTING_ROOM_ID,
+                        "convertedRoomType": "CONSULTING",
+                    }
                 }
             }
+        },
+        403: {
+            "model": ErrorResponse,
+            "description": "이 방의 의뢰인이 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
         },
         404: {
             "model": ErrorResponse,
@@ -3304,10 +3856,15 @@ def get_room(
         "**화면 — `3_의뢰인_상담방_대화` › 컨설팅 계약 진행 · 개발 계약 진행**\n\n"
         "무료 상담을 마치고 컨설팅과 개발 중 하나로 이어간다. 상담방은 닫히고 고른 갈래의 "
         "방이 새로 열린다. 닫힌 상담방도 지우지 않고 남겨서 나눈 이야기를 계속 볼 수 있다.\n\n"
-        "응답의 `convertedRoomId`가 새로 열린 방이다. 화면은 '컨설팅 방으로' 또는 "
-        "'개발 방으로' 버튼으로 그 방에 보낸다. 개발자 화면에는 '개발 계약서 작성'이 뜬다.\n\n"
+        "응답의 `convertedRoomId`가 새로 열린 방이고 `convertedRoomType`이 그 방의 "
+        "용도다. 화면은 둘로 '컨설팅 방으로' 또는 '개발 방으로' 버튼을 그린다. 개발자 "
+        "화면에는 대신 '개발 계약서 작성'이 뜬다.\n\n"
+        "**갈래는 의뢰인이 정한다.** 개발자는 이 API를 부를 수 없다 — 상담을 어디로 "
+        "이어갈지는 돈을 내는 쪽이 고르기 때문이다. 개발자는 그 방의 당사자라 방이 있다는 "
+        "것을 이미 아는 상태이므로, 없는 척 감추지 않고 권한이 없다고 답한다.\n\n"
         "- **201**: 갈래를 정해 새 방이 열렸을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **403 / FORBIDDEN**: 이 방의 의뢰인이 아닐 때. 갈래는 의뢰인이 정한다\n"
         "- **404 / ROOM_NOT_FOUND**: `roomId`가 404일 때\n"
         "- **409 / ROOM_ALREADY_CONVERTED**: `roomId`가 409일 때. 이미 갈래가 정해졌다\n"
         "- **422 / INVALID_REQUEST**: `targetType`이 CONSULTING도 DEVELOPMENT도 아닐 때\n"
@@ -3330,8 +3887,18 @@ def convert_room(
         return _error_response(404, ROOM_NOT_FOUND)
     if roomId == CONVERTED_ROOM_ID:
         return _error_response(409, ROOM_ALREADY_CONVERTED)
+    converted_room_id = (
+        CONVERTED_CONSULTING_ROOM_ID
+        if request.targetType == "CONSULTING"
+        else CONVERTED_DEVELOPMENT_ROOM_ID
+    )
     return RoomDetailResponse(
-        **{**ROOM_DETAIL, "status": "CLOSED", "convertedRoomId": 92}
+        **{
+            **ROOM_DETAIL,
+            "status": "CLOSED",
+            "convertedRoomId": converted_room_id,
+            "convertedRoomType": request.targetType,
+        }
     )
 
 
@@ -4644,11 +5211,16 @@ class ConfirmMilestoneRequest(BaseModel):
 class WriteReviewRequest(BaseModel):
     """계약을 마친 뒤 남기는 리뷰."""
 
-    devScore: int = Field(description="개발력 점수. 1에서 5 사이다.", examples=[5])
-    commScore: int = Field(description="설명력 점수. 1에서 5 사이다.", examples=[5])
+    devScore: int = Field(
+        ge=1, le=5, description="개발력 점수. 1에서 5 사이다.", examples=[5]
+    )
+    commScore: int = Field(
+        ge=1, le=5, description="설명력 점수. 1에서 5 사이다.", examples=[5]
+    )
     content: str | None = Field(
         default=None,
-        description="리뷰 내용. 점수만 주고 넘어가도 된다.",
+        max_length=1000,
+        description="리뷰 내용. 1000자까지 받는다. 점수만 주고 넘어가도 된다.",
         examples=["말이 잘 통했습니다."],
     )
 
@@ -5330,7 +5902,8 @@ def upload_deliverable(
         "- **403 / FORBIDDEN**: 이 계약의 의뢰인이 아닐 때\n"
         "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때\n"
         "- **409 / REVIEW_ALREADY_WRITTEN**: `contractId`가 409일 때\n"
-        "- **422 / INVALID_REQUEST**: 점수가 1에서 5 사이가 아닐 때\n"
+        "- **422 / INVALID_REQUEST**: 점수가 1에서 5 사이가 아니거나 `content`가 "
+        "1000자를 넘을 때\n"
         "- **500 / INTERNAL_ERROR**: 남기지 못했을 때"
     ),
 )
@@ -6729,8 +7302,10 @@ class WriteDeveloperProfileRequest(BaseModel):
         examples=["AI로 만든 걸 실제로 돌아가게 만드는 일을 주로 합니다."],
     )
     fieldCodeId: int | None = Field(
-        description="주로 담당하는 개발 분야 코드 식별자.",
-        examples=[4],
+        description=(
+            "주로 담당하는 개발 분야 코드 식별자. 코드 분류 `DEV_FIELD`의 항목이다."
+        ),
+        examples=[42],
     )
     yearsOfExperience: float | None = Field(
         description="경력 연차.",
@@ -6746,7 +7321,7 @@ class WriteDeveloperProfileRequest(BaseModel):
     )
     techCodeIds: list[int] = Field(
         description="다룰 수 있는 기술의 코드 식별자. 보낸 목록이 그대로 저장된다.",
-        examples=[[31, 32, 33]],
+        examples=[[21, 22, 23]],
     )
     careers: list[WriteCareerRequest] = Field(
         description=(
@@ -6755,7 +7330,10 @@ class WriteDeveloperProfileRequest(BaseModel):
         ),
     )
     portfolioItems: list[WritePortfolioItemRequest] = Field(
-        description="작업물 전부. 보낸 순서가 화면에 보이는 순서다.",
+        description=(
+            "작업물 전부. 보낸 목록에 없는 기존 작업물은 지운 것으로 본다. 새로 추가한 "
+            "줄은 뒤에 붙으며, 이미 등록된 줄의 순서는 보낸 순서로 바뀌지 않는다."
+        ),
     )
     prices: list[WritePriceRequest] = Field(
         description="가격표 전부. 보낸 목록에 없는 기존 줄은 지운 것으로 본다.",
@@ -6767,7 +7345,8 @@ class WriteReviewReplyRequest(BaseModel):
 
     reply: str = Field(
         min_length=1,
-        description="답글 내용.",
+        max_length=1000,
+        description="답글 내용. 1000자까지 받는다.",
         examples=["감사합니다. 도메인 만료 전에 미리 알려드리겠습니다."],
     )
 
@@ -7126,14 +7705,14 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
     "profileImageFileId": None,
     "intro": "간단한 상담도 받습니다. 용어부터 풀어서 설명합니다.",
     "yearsOfExperience": 5.0,
-    "field": {"codeId": 4, "codeName": "백엔드"},
+    "field": {"codeId": 42, "codeName": "DB 연결"},
     "isCareerVerified": True,
-    "devRating": {"score": 4.8, "reviewCount": 20},
-    "explanatoryRating": {"score": 4.9, "reviewCount": 20},
+    "devRating": {"score": 4.8, "reviewCount": 2},
+    "explanatoryRating": {"score": 4.9, "reviewCount": 2},
     "techCategories": [
-        {"codeId": 31, "codeName": "TypeScript"},
-        {"codeId": 32, "codeName": "Next.js"},
-        {"codeId": 33, "codeName": "Supabase"},
+        {"codeId": 23, "codeName": "TypeScript"},
+        {"codeId": 21, "codeName": "Next.js"},
+        {"codeId": 22, "codeName": "Supabase"},
     ],
     "description": (
         "AI로 만든 걸 실제로 돌아가게 만드는 일을 주로 합니다. 지난 1년 동안 소상공인 "
@@ -7226,7 +7805,8 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
     "reviews": [
         {
             "reviewId": 88,
-            "clientName": "김미미",
+            "clientName": "김O미",
+            "contractType": "DEVELOPMENT",
             "devScore": 5,
             "commScore": 5,
             "content": (
@@ -7238,7 +7818,8 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
         },
         {
             "reviewId": 84,
-            "clientName": "최수진",
+            "clientName": "최O진",
+            "contractType": "CONSULTING",
             "devScore": 4,
             "commScore": 5,
             "content": "일정이 하루 밀렸지만 미리 알려주셔서 괜찮았습니다.",
@@ -7699,7 +8280,7 @@ def withdraw() -> WithdrawalResultResponse | JSONResponse:
         "편집 화면이 쓰는 값을 한 번에 내려준다. 남에게 보이는 개발자 상세에 가격표 "
         "전부와 받은 리뷰를 더한 모양이다.\n\n"
         "`prices`는 남에게 보이는 것과 같은 유형별 최저가이고, 편집에 쓰는 줄 단위 "
-        "가격표는 `myPrices`에 있다.\n\n"
+        "가격표는 개발자 상세에서 물려받은 `priceCatalog`에 있다.\n\n"
         "평점은 읽기 전용이다. 유료 거래를 마친 의뢰인의 리뷰로만 매겨지므로 저장 "
         "요청으로 바꿀 수 없다.\n\n"
         "- **200**: 항상\n"
@@ -7796,7 +8377,7 @@ def write_my_developer_profile(
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: `sub`가 받은 리뷰가 아닐 때\n"
         "- **404 / REVIEW_NOT_FOUND**: `reviewId`가 404일 때\n"
-        "- **422 / INVALID_REQUEST**: `reply`가 비었을 때\n"
+        "- **422 / INVALID_REQUEST**: `reply`가 비었거나 1000자를 넘을 때\n"
         "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
     ),
 )
@@ -9267,6 +9848,62 @@ WriteDevelopmentContractRequest.model_rebuild()
 # 개발자가 상담 요청을 수락·거절하는 기능은 만들지 않기로 했다.
 # ERD의 recommendation_items.status(RECOMMENDATION_DEV_RESPONSE)는 쓰지 않는다.
 # 의뢰인이 상담을 요청하면 방이 바로 열린다.
+#
+# 추천 관련 ERD 컬럼을 어떻게 채우는지 — API 응답에는 나가지 않는 값들이다.
+#
+#   recommendation_batches.viewed_at
+#       추천 결과 조회가 처음 불릴 때 찍는다. 이 값이 비어 있으면 아직 열어보지 않은
+#       회차이므로, 추천 받기를 다시 불러도 새 회차를 만들지 않고 그 회차를 돌려준다.
+#   recommendation_batches.trigger_type / parent_batch_id
+#       서버가 정한다. 프로젝트의 첫 회차면 CONSULT_REQUEST, 이미 회차가 있으면
+#       REMATCH 로 적고 직전 회차를 부모로 잇는다. MANUAL 은 운영에서만 쓴다.
+#   recommendation_batches.outcome
+#       계약이 완료되거나 파기될 때 서버가 갱신한다. 추천으로 만난 개발자와 계약했으면
+#       CONTRACTED, 상담만 하고 끝났으면 CONSULTED_ONLY, 추천 밖 개발자와 계약했으면
+#       OUTSIDE 다. 확정 전에는 비어 있다.
+#   recommendation_items.impressed_at
+#       추천 결과 조회가 목록에 실어 보낸 항목 전부에 찍는다. 화면이 스크롤로 실제로
+#       보여준 것만 가려내지는 않는다. 그 정확도를 얻으려면 화면이 노출을 따로
+#       알려줘야 하는데, 그만한 API 를 두지 않기로 했다.
+#   recommendation_items.profile_viewed_at
+#       쓰지 않는다. 개발자 프로필 조회는 로그인 없이도 부르는 공개 API 라 어느
+#       추천에서 눌러 들어왔는지 알 수 없고, 그것을 알리자고 공개 API 에 추적 값을
+#       얹지 않는다.
+#
+# 방 상세의 값을 어디서 만드는지 — 한 컬럼으로 바로 나오지 않는 것들이다.
+#
+#   RoomSummaryResponse 에 의뢰인 식별자를 담지 않는 이유
+#       rooms 에 client_id 가 없다. 방의 의뢰인은 projects.client_id 이며 같은
+#       프로젝트의 방은 모두 같은 사람이다. 화면도 developer_id 하나로 보낸 의뢰와
+#       받은 의뢰를 가르므로 응답에 넣지 않는다.
+#   counterpartName
+#       의뢰인이 보면 rooms.developer_id -> developers.user_id -> users.name,
+#       개발자가 보면 projects.client_id -> users.name 이다. users.is_deleted 가
+#       참이면 이름 대신 '탈퇴한 사용자' 를 내보낸다.
+#   request.issueCount
+#       rooms.project_id -> diagnoses -> inspections -> issues 로 내려가 센다.
+#       **이번 회차만 센다** — inspections.diagnosis_version = diagnoses.version 인
+#       검사의 이슈만 대상이며, 그중 status 가 RESOLVED 가 아닌 것을 센다. 회차
+#       조건을 빠뜨리면 재진단한 프로젝트에서 숫자가 회차만큼 불어난다.
+#   request.updatedAt
+#       diagnoses.updated_at 을 쓴다. issues 에는 updated_at 컬럼이 없고
+#       qa_criteria 의 것만 보면 요구사항 제목을 고쳤을 때 값이 움직이지 않는다.
+#       요청서 저장이 진단 행도 함께 갱신하게 해서 한 값으로 모은다.
+#   contractId
+#       contracts.room_id = rooms.id 로 찾는다. 컬럼에 UNIQUE 가 걸려 있지 않지만
+#       방 하나에 계약은 하나로 두기로 했다. 파기 뒤 재계약을 허용하게 되면 그때
+#       어느 것을 내려줄지 다시 정해야 한다.
+#   convertedRoomId / convertedRoomType
+#       rooms 에 상담방과 이어진 방을 잇는 컬럼이 없다. 같은 프로젝트·같은 개발자의
+#       방 가운데 용도가 INQUIRY 가 아닌 것을 찾아 잇는다.
+#           WHERE project_id = ? AND developer_id = ? AND type <> 'INQUIRY'
+#       이 추정이 성립하는 근거는 두 가지다. 상담 요청이 멱등이라 (프로젝트, 개발자)
+#       마다 상담방이 하나뿐이고, 한 상담방은 한 번만 전환되므로(두 번째는 409)
+#       이어지는 방도 하나다.
+#
+#       ⚠️ 컨설팅 방에서 개발로 다시 이어가는 길을 만들면 이 규칙이 깨진다. 한
+#       (프로젝트, 개발자)에 CONSULTING 과 DEVELOPMENT 가 함께 생겨 어느 것이 상담방의
+#       다음인지 가릴 수 없다. 그때는 rooms.parent_room_id 를 두어야 한다.
 
 
 # =========================================================================== #
@@ -9298,6 +9935,9 @@ SERVICE_TAGS = [
             "---\n\n"
             "### 인증\n\n"
             "로그인과 재발급을 뺀 모든 API는 헤더에 `Authorization: Bearer <accessToken>`을 실어 부른다.\n\n"
+            "**공개 API 넷은 예외다.** 코드 목록, 개발자 찾기, 개발자 프로필, 개발자 리뷰 목록은 "
+            "토큰 없이 부를 수 있다. 랜딩의 '증상별로 찾기'가 로그인 전 진입 경로라서다. 이 넷은 "
+            "`401`을 선언하지 않는다.\n\n"
             "**토큰에는 사용자 id와 만료 시각만 들어 있다.**\n\n"
             "**리프레시 토큰은 액세스 토큰을 다시 받을 때만 쓴다.** 다시 받으면 리프레시 토큰도 새 값이 되고 이전 값은 못 쓴다.\n\n"
             "**운영 콘솔은 토큰이 따로다.** `9 운영 콘솔`의 로그인으로 받으며, 사용자 토큰으로는 운영 API를 부를 수 없다.\n\n"
@@ -9332,6 +9972,11 @@ SERVICE_TAGS = [
             "**화면** `3_의뢰인_개발자찾기` · `3_의뢰인_개발자프로필` · "
             "`3_의뢰인_개발자추천` · `3_의뢰인_상담방_대화` · `3_의뢰인_상담방_컨설팅전환` · `3_의뢰인_상담방_개발전환` · "
             "`3_개발자_개발계약서요청받음`\n\n"
+            "**상담 요청 API는 들어온 길에 따라 둘이다.** 추천에서 고른 개발자는 추천 "
+            "회차의 상담 요청 API로, 직접 찾은 개발자는 프로젝트 상담 요청 API로 보낸다. "
+            "직접 찾은 길은 회차를 만들지 않아 방의 `recommendationItemId`가 비어 있다.\n\n"
+            "**개발자가 상담 요청을 수락하거나 거절하지 않는다.** 요청하면 그 자리에서 "
+            "무료 상담방이 열리고, 개발자는 사이드바의 '받은 의뢰'에서 본다.\n\n"
             "**채팅 메시지는 이 API가 다루지 않는다.** 방 응답의 `chatRefId`로 채팅 쪽에 "
             "넘긴다. 사이드바의 마지막 메시지 미리보기도 그쪽에서 가져온다.\n\n"
             "**함께 쓰는 API** `GET /api/users/me` · `GET /api/diagnoses/{id}`"
