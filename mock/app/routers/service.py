@@ -2409,7 +2409,7 @@ class ReviewResponse(BaseModel):
         description="개발력 점수. 1에서 5 사이이며 비울 수 없다.",
         examples=[5],
     )
-    commScore: int = Field(
+    expScore: int = Field(
         description=(
             "설명력 점수. 1에서 5 사이이며 비울 수 없다. 컨설팅 계약이든 개발 계약이든 "
             "리뷰 하나는 두 점수를 다 받는다."
@@ -3008,7 +3008,7 @@ REVIEWS = [
         "clientName": "김O미",
         "contractType": "DEVELOPMENT",
         "devScore": 5,
-        "commScore": 5,
+        "expScore": 5,
         "content": "말이 잘 통했습니다.",
         "reply": None,
         "createdAt": "2026-08-19T14:20:00+09:00",
@@ -3018,7 +3018,7 @@ REVIEWS = [
         "clientName": "최O진",
         "contractType": "CONSULTING",
         "devScore": 4,
-        "commScore": 5,
+        "expScore": 5,
         "content": None,
         "reply": "감사합니다.",
         "createdAt": "2026-08-02T09:10:00+09:00",
@@ -5319,8 +5319,11 @@ class WriteReviewRequest(BaseModel):
     devScore: int = Field(
         ge=1, le=5, description="개발력 점수. 1에서 5 사이다.", examples=[5]
     )
-    commScore: int = Field(
-        ge=1, le=5, description="설명력 점수. 1에서 5 사이다.", examples=[5]
+    expScore: int = Field(
+        ge=1,
+        le=5,
+        description="설명력 점수. 1에서 5 사이다. ERD reviews.exp_score에 대응한다.",
+        examples=[5],
     )
     content: str | None = Field(
         default=None,
@@ -6165,7 +6168,7 @@ def write_review(
         **{
             **REVIEWS[0],
             "devScore": request.devScore,
-            "commScore": request.commScore,
+            "expScore": request.expScore,
             "content": request.content,
         }
     )
@@ -7990,7 +7993,7 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
             "clientName": "김O미",
             "contractType": "DEVELOPMENT",
             "devScore": 5,
-            "commScore": 5,
+            "expScore": 5,
             "content": (
                 "예약이 저장되지 않던 문제를 고쳐주셨고, 왜 그랬는지도 제가 알아듣게 "
                 "설명해주셨습니다."
@@ -8003,7 +8006,7 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
             "clientName": "최O진",
             "contractType": "CONSULTING",
             "devScore": 4,
-            "commScore": 5,
+            "expScore": 5,
             "content": "일정이 하루 밀렸지만 미리 알려주셔서 괜찮았습니다.",
             "reply": None,
             "createdAt": "2026-08-02T09:10:00+09:00",
