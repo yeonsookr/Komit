@@ -14,10 +14,8 @@ services:
       - |
         docker build --tag komit-service:local ./service
         docker build --tag komit-escrow:local ./escrow
-        docker build --tag komit-pgpool:local ./deploy/k3s/pgpool
         docker image save --output /images/komit-service.tar komit-service:local
         docker image save --output /images/komit-escrow.tar komit-escrow:local
-        docker image save --output /images/komit-pgpool.tar komit-pgpool:local
 
   k3s:
     image: rancher/k3s:v1.35.2-k3s1

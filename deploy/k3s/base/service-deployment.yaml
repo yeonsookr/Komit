@@ -48,9 +48,11 @@ spec:
             - configMapRef:
                 name: spring-common
           env:
-            # Pgpool이 쓰기는 service-db Primary로, 조회는 Standby로 나눕니다.
+            # 일반 트랜잭션은 Primary(-rw), readOnly 트랜잭션은 Standby(-ro)로 접속합니다.
             - name: DB_URL
-              value: jdbc:postgresql://service-db-pool:5432/service
+              value: jdbc:postgresql://service-db-rw:5432/service
+            - name: DB_READ_URL
+              value: jdbc:postgresql://service-db-ro:5432/service
             - name: DB_USERNAME
               valueFrom:
                 secretKeyRef:

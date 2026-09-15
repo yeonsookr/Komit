@@ -4,6 +4,10 @@ spring:
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
 
+app:
+  datasource:
+    read-url: ${DB_READ_URL}
+
 springdoc:
   swagger-ui:
     enabled: false

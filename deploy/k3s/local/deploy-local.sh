@@ -27,11 +27,9 @@ kubectl wait --for=condition=Established crd/clusters.postgresql.cnpg.io --timeo
 wait_for "CloudNativePG operator deployment" kubectl -n cnpg-system get deployment -l app.kubernetes.io/name=cloudnative-pg -o name
 kubectl -n cnpg-system wait --for=condition=Available deployment -l app.kubernetes.io/name=cloudnative-pg --timeout=300s
 
-# 2. service-db, escrow-db, Pgpool
+# 2. service-db, escrow-db
 kubectl apply -k "$K3S_DIR/local/database"
 kubectl -n komit wait --for=condition=Ready cluster/service-db cluster/escrow-db --timeout=600s
-kubectl -n komit rollout status deployment/service-db-pool --timeout=180s
-kubectl -n komit rollout status deployment/escrow-db-pool --timeout=180s
 
 # 3. 애플리케이션
 kubectl apply -k "$K3S_DIR/local/apps"
