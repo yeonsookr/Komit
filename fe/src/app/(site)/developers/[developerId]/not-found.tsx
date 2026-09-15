@@ -1,0 +1,23 @@
+import Link from "next/link";
+import { Container } from "@/components/layouts";
+import { EmptyState } from "@/components/feedback";
+
+/** 없거나 탈퇴한 개발자. 둘을 구분해 알려주지 않습니다. */
+export default function DeveloperNotFound() {
+  return (
+    <Container className="py-16">
+      <EmptyState
+        title="개발자를 찾을 수 없습니다"
+        description="주소가 바뀌었거나 더 이상 활동하지 않는 개발자입니다."
+        action={
+          <Link
+            href="/developers"
+            className="rounded-sm text-[13px] font-semibold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            개발자 찾기로
+          </Link>
+        }
+      />
+    </Container>
+  );
+}
