@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 /**
- * 개발자 찾기. 목 서버(:8080)가 떠 있어야 합니다.
+ * 개발자 찾기. 목 서버가 닿아야 합니다(BACKEND_API_BASE_URL).
  * 목에는 한서(버그 잡기) · 이준(DB 연결) · 정하(인터넷에 올리기) 3명이 있습니다.
  */
 test.describe('개발자 찾기', () => {
@@ -35,10 +35,18 @@ test.describe('개발자 찾기', () => {
     await page.goto('/developers?fieldCodeIds=42');
 
     await expect(page.getByRole('button', { name: /DB 연결/ })).toBeVisible();
-    // ✕ 는 칩 버튼 안의 별도 버튼입니다.
-    await page.getByRole('button', { name: /DB 연결/ }).getByRole('button', { name: '제거' }).click();
 
-    await expect(page).not.toHaveURL(/fieldCodeIds/);
+    // ✕ 는 칩 버튼 안의 별도 버튼입니다.
+    // 서버가 막 떠서 hydration 이 늦으면 첫 클릭에 핸들러가 붙어 있지 않아 아무 일도
+    // 일어나지 않으므로, 주소가 바뀔 때까지 클릭을 다시 시도합니다.
+    await expect(async () => {
+      await page
+        .getByRole('button', { name: /DB 연결/ })
+        .getByRole('button', { name: '제거' })
+        .click();
+      await expect(page).not.toHaveURL(/fieldCodeIds/, { timeout: 2_000 });
+    }).toPass({ timeout: 15_000 });
+
     await expect(page.getByRole('link', { name: '한서' })).toBeVisible();
   });
 

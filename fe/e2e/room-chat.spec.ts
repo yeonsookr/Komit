@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 /**
- * 방 대화 화면. 목 서버(:8080)가 떠 있어야 합니다.
+ * 방 대화 화면. 목 서버가 닿아야 합니다(BACKEND_API_BASE_URL).
  * 방 91 은 목의 무료 상담 방으로, 대화 3건과 요청서 요약이 붙어 있습니다.
  */
 test.describe('방 대화', () => {

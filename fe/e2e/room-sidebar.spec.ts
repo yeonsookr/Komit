@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 /**
- * 의뢰 사이드바. 목 서버(:8080)가 떠 있어야 합니다.
+ * 의뢰 사이드바. 목 서버가 닿아야 합니다(BACKEND_API_BASE_URL).
  * 목에는 '수제 비누 가게' 프로젝트의 방 3개(상담 91 · 컨설팅 92 · 개발 93)가 있습니다.
  */
 test.describe('의뢰 사이드바', () => {

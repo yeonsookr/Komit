@@ -58,3 +58,10 @@ export interface RoomListParams {
   type?: RoomType;
   status?: RoomStatus;
 }
+
+/** 상담을 이어갈 갈래. 의뢰인만 정할 수 있습니다. */
+export type ConversionTarget = "CONSULTING" | "DEVELOPMENT";
+
+export interface ConvertRoomRequest {
+  targetType: ConversionTarget;
+}

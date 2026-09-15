@@ -1,0 +1,73 @@
+name: komit-k3s
+
+services:
+  image-builder:
+    image: docker:29.6.2-cli
+    working_dir: /workspace
+    volumes:
+      - ../..:/workspace:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+      - k3s-images:/images
+    command:
+      - sh
+      - -ec
+      - |
+        docker build --tag komit-service:local ./service
+        docker build --tag komit-escrow:local ./escrow
+        # fe Dockerfile은 next build 중 서버 API 모듈을 불러오므로 값이 비어 있으면 안 됩니다.
+        # 로컬 실습용 값이며, 실행 시에는 local/apps의 fe-config ConfigMap 값으로 다시 넣습니다.
+        docker build --tag komit-fe:local \
+          --build-arg BACKEND_API_BASE_URL=http://service.komit.svc.cluster.local:8080 \
+          --build-arg AI_API_BASE_URL=http://ai.local.invalid \
+          ./fe
+        docker image save --output /images/komit-service.tar komit-service:local
+        docker image save --output /images/komit-escrow.tar komit-escrow:local
+        docker image save --output /images/komit-fe.tar komit-fe:local
+
+  k3s:
+    image: rancher/k3s:v1.35.2-k3s1
+    privileged: true
+    hostname: k3s-server
+    command:
+      - server
+      - --disable=traefik
+      - --disable=servicelb
+      - --write-kubeconfig-mode=644
+      - --tls-san=127.0.0.1
+    depends_on:
+      image-builder:
+        condition: service_completed_successfully
+    ports:
+      - "6443:6443"
+      - "8080:30080"
+      - "8081:30081"
+      - "3000:30082"
+    volumes:
+      - k3s-data:/var/lib/rancher/k3s
+      - k3s-config:/etc/rancher/k3s
+      - k3s-images:/var/lib/rancher/k3s/agent/images:ro
+    healthcheck:
+      test: ["CMD", "/bin/kubectl", "get", "--raw=/readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    restart: unless-stopped
+
+  deployer:
+    image: rancher/k3s:v1.35.2-k3s1
+    network_mode: service:k3s
+    entrypoint: ["/bin/sh"]
+    command: ["/workspace/deploy/k3s/local/deploy-local.sh"]
+    depends_on:
+      k3s:
+        condition: service_healthy
+    volumes:
+      - ../..:/workspace:ro
+      - k3s-config:/etc/rancher/k3s:ro
+    restart: "no"
+
+volumes:
+  k3s-data:
+  k3s-config:
+  k3s-images:

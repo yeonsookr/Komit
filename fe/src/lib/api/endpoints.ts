@@ -12,6 +12,7 @@ export const BACKEND = {
   ME: "/api/users/me",
   ROOMS: "/api/rooms",
   ROOM: (roomId: number) => `/api/rooms/${roomId}`,
+  ROOM_CONVERSION: (roomId: number) => `/api/rooms/${roomId}/conversion`,
   DEVELOPERS: "/api/developers",
   DEVELOPER: (developerId: number) => `/api/developers/${developerId}`,
   DEVELOPER_REVIEWS: (developerId: number) => `/api/developers/${developerId}/reviews`,
@@ -19,15 +20,28 @@ export const BACKEND = {
   RECOMMENDATION: (batchId: number) => `/api/recommendations/${batchId}`,
   CONSULTATION_REQUESTS: (batchId: number) =>
     `/api/recommendations/${batchId}/consultation-requests`,
+  DIAGNOSES: "/api/diagnoses",
+  SURVEY: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/survey`,
+  SURVEY_ANSWERS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/survey/answers`,
+  INSPECTIONS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/inspections`,
+  SCAN_FILE: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/scan-file`,
+  DIAGNOSIS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}`,
+  ISSUES: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/issues`,
 } as const;
 
 export const INTERNAL = {
+  SURVEY: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/survey`,
   ME: "/api/users/me",
   ROOMS: "/api/rooms",
   ROOM: (roomId: number) => `/api/rooms/${roomId}`,
   ROOM_MESSAGES: (roomId: number) => `/api/rooms/${roomId}/messages`,
+  ROOM_CONVERSION: (roomId: number) => `/api/rooms/${roomId}/conversion`,
   DEVELOPERS: "/api/developers",
   DEVELOPER: (developerId: number) => `/api/developers/${developerId}`,
   CONSULTATION_REQUESTS: (batchId: number) =>
     `/api/recommendations/${batchId}/consultation-requests`,
+  DIAGNOSES: "/api/diagnoses",
+  SURVEY_ANSWERS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/survey/answers`,
+  INSPECTIONS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/inspections`,
+  SCAN_FILE: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/scan-file`,
 } as const;

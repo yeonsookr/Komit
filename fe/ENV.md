@@ -1,0 +1,59 @@
+# FE 환경 변수
+
+## 값이 필요한 시점 — **빌드가 아니라 실행할 때**
+
+서버 주소는 첫 요청에서 읽습니다. 그래서
+
+- `npm run build` 는 변수 없이도 통과합니다.
+- 결과 이미지에 주소가 박히지 않아 **한 번 구운 이미지를 환경마다 그대로 씁니다.**
+- 값을 빠뜨린 채 실행하면 그 요청이 실패합니다. 안전하지 않은 기본값으로 돌지 않습니다.
+
+GitLab CI/CD 변수는 **빌드 잡이 아니라 실행(배포) 단계**에 주입합니다.
+
+```bash
+docker run -d \
+  -e BACKEND_API_BASE_URL="$BACKEND_API_BASE_URL" \
+  -e AI_API_BASE_URL="$AI_API_BASE_URL" \
+  -e NEXT_PUBLIC_SITE_URL="$NEXT_PUBLIC_SITE_URL" \
+  <이미지>
+```
+
+## 변수 목록
+
+| 변수 | 노출 | 필요 시점 | 값(현재) |
+| --- | --- | --- | --- |
+| `BACKEND_API_BASE_URL` | 서버 전용 | 실행 | `https://komit.site/mock/service` |
+| `AI_API_BASE_URL` | 서버 전용 | 실행 | `https://komit.site/mock/service` |
+| `ESCROW_API_BASE_URL` | 서버 전용 | 실행 | `https://komit.site/mock/escrow` |
+| `NEXT_PUBLIC_SITE_URL` | **공개** | **빌드** | 배포 도메인 |
+
+### 서버 전용 변수
+
+브라우저로 나가지 않습니다. 실제 호출은 Next Route Handler 가 대신합니다.
+**`NEXT_PUBLIC_` 접두사를 붙이지 마세요** — 붙이는 순간 브라우저 번들에 박힙니다.
+
+`ESCROW_API_BASE_URL` 은 아직 화면에서 쓰지 않지만, 에스크로 연동이 붙을 때
+같은 자리에서 읽도록 미리 적어 둡니다.
+
+### `NEXT_PUBLIC_SITE_URL` 만 빌드 시점
+
+Next 는 `NEXT_PUBLIC_` 변수를 빌드할 때 번들에 넣습니다. 도메인이 바뀌면
+**다시 빌드해야** 합니다. 메타데이터·canonical URL 처럼 공개해도 되는 값만 둡니다.
+
+## 로컬에서
+
+`.env.example` 을 `.env.local` 로 복사해 씁니다. `.env.local` 은 커밋되지 않습니다.
+
+```bash
+cp .env.example .env.local
+```
+
+목 명세를 고쳐 가며 작업할 때는 로컬 목 서버가 빠릅니다.
+
+```bash
+# mock/ 에서
+uvicorn app.main:app --reload --port 8080
+
+# fe/.env.local
+BACKEND_API_BASE_URL=http://localhost:8080/service
+```

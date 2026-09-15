@@ -3,6 +3,8 @@
 배포 서버(EC2) 설정. **이미지는 CI가 굽고 Docker Hub에 올린 것을 서버가 받아 쓴다.**
 서버에는 소스를 두지 않는다.
 
+K3s에서 `service`와 `escrow`를 여러 Pod로 운영하는 구성은 [`k3s/README.md`](k3s/README.md)를 참고한다. 기존 `docker-compose.yml`은 목 서버용 단일 EC2 배포 참고본으로 유지한다.
+
 ```
 개발자 → GitLab(develop) → CI: docker build/push → Docker Hub
                                                       ↓
