@@ -53,6 +53,21 @@ const sizes: Record<ButtonSize, string> = {
   xl: "h-14 px-6 text-base",
 };
 
+/**
+ * 버튼 모양 클래스만 뽑아 씁니다 — 링크(`<Link>`, `<a>`)를 버튼처럼 보이게 할 때.
+ * `<Link><Button/></Link>` 처럼 인터랙티브 요소를 겹치지 않기 위한 출구입니다.
+ *
+ *   <Link href={ROUTES.developer(id)} className={buttonClass({ fullWidth: true })}>상담 시작하기</Link>
+ */
+export function buttonClass({
+  variant = "primary",
+  size = "md",
+  fullWidth,
+  className,
+}: Pick<ButtonProps, "variant" | "size" | "fullWidth" | "className"> = {}): string {
+  return cn(base, variants[variant], sizes[size], fullWidth && "w-full", className);
+}
+
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   (
     {
@@ -76,7 +91,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         type={type}
         disabled={disabled || loading}
         aria-busy={loading || undefined}
-        className={cn(base, variants[variant], sizes[size], fullWidth && "w-full", className)}
+        className={buttonClass({ variant, size, fullWidth, className })}
         {...props}
       >
         {loading ? <Spinner /> : leftIcon}
