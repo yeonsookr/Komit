@@ -57,14 +57,15 @@ kubectl apply -k "$SCRIPT_DIR/database"
 kubectl -n komit wait --for=condition=Ready cluster/service-db cluster/escrow-db --timeout=600s
 
 # 3. 애플리케이션: 배포할 이미지를 Kustomize overlay에 고정해 한 번의 apply로 반영합니다.
-# Kustomize는 절대 경로 base를 받지 않으므로 임시 디렉터리에 base를 복사해 overlay를 만듭니다.
+# Kustomize는 절대 경로 base를 받지 않으므로 임시 디렉터리에 base와 prod를 복사해 overlay를 만듭니다.
 cp -R "$SCRIPT_DIR/base" "$WORK_DIR/base"
+cp -R "$SCRIPT_DIR/prod" "$WORK_DIR/prod"
 mkdir "$WORK_DIR/apps"
 cat > "$WORK_DIR/apps/kustomization.yaml" <<EOF
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
-  - ../base
+  - ../prod
 images:
   - name: komit-service
     newName: ${SERVICE_IMAGE%:*}

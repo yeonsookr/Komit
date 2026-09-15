@@ -576,6 +576,16 @@ fe-qg:
       fi
 
       echo "Published Docker image: $COMMIT_IMAGE"
+
+      # K3s 배포 잡이 이번에 빌드된 이미지만 교체하도록 이미지 주소를 넘깁니다.
+      : > image.env
+      if [ -n "${IMAGE_ENV_NAME:-}" ]; then
+        printf '%s=%s\n' "$IMAGE_ENV_NAME" "$COMMIT_IMAGE" > image.env
+      fi
+  artifacts:
+    reports:
+      dotenv: image.env
+    expire_in: 1 day
   after_script:
     - docker logout "$DOCKER_REGISTRY" >/dev/null 2>&1 || true
 
@@ -597,6 +607,7 @@ service-docker-build-push:
   variables:
     IMAGE_NAME: komit-service
     BUILD_CONTEXT: service
+    IMAGE_ENV_NAME: SERVICE_IMAGE
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
       changes:
@@ -609,6 +620,7 @@ escrow-docker-build-push:
   variables:
     IMAGE_NAME: komit-escrow
     BUILD_CONTEXT: escrow
+    IMAGE_ENV_NAME: ESCROW_IMAGE
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
       changes:
@@ -672,3 +684,68 @@ mock-docker-deploy:
         'cd "$HOME/mock" &&
         sudo -n docker compose up -d --pull always &&
         sudo -n docker compose ps'
+
+# SSH로 배포 서버에 접속 후 K3s에 service·escrow 배포
+# 이번 파이프라인에서 빌드된 이미지만 교체하고, 빌드되지 않은 모듈은 서버에서 돌고 있는 이미지를 유지합니다.
+# DB 비밀번호는 SERVICE_DB_PASSWORD, ESCROW_DB_PASSWORD CI/CD 변수(Masked, Protected)로 주입합니다.
+k3s-deploy:
+  stage: deploy
+  image: alpine:3.22
+  needs:
+    - job: service-docker-build-push
+      optional: true
+    - job: escrow-docker-build-push
+      optional: true
+  tags:
+    - "CI/CD"
+  allow_failure: false
+  # 배포가 겹치지 않도록 한 번에 하나씩만 실행합니다.
+  resource_group: k3s-deploy
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
+      changes:
+        - service/**/*
+        - escrow/**/*
+        - deploy/k3s/**/*
+    - when: never
+  before_script:
+    - apk add --no-cache openssh-client tar
+    - |
+      for NAME in SSH_ADDRESS SSH_PRIVATE_KEY SERVICE_DB_PASSWORD ESCROW_DB_PASSWORD; do
+        eval "VALUE=\${$NAME:-}"
+        test -n "$VALUE" || {
+          echo "$NAME CI/CD variable is required"
+          exit 1
+        }
+      done
+
+      install -d -m 700 "$HOME/.ssh"
+
+      if [ -f "$SSH_PRIVATE_KEY" ]; then
+        cp "$SSH_PRIVATE_KEY" "$HOME/.ssh/id_deploy"
+      else
+        printf '%s\n' "$SSH_PRIVATE_KEY" | tr -d '\r' > "$HOME/.ssh/id_deploy"
+      fi
+
+      chmod 600 "$HOME/.ssh/id_deploy"
+  script:
+    - |
+      SSH="ssh -i $HOME/.ssh/id_deploy -o BatchMode=yes -o StrictHostKeyChecking=accept-new"
+
+      echo "service image: ${SERVICE_IMAGE:-(유지)}"
+      echo "escrow image:  ${ESCROW_IMAGE:-(유지)}"
+
+      # 서버에는 소스를 두지 않고 배포에 필요한 deploy/k3s만 매번 새로 올립니다.
+      tar -C deploy -czf - k3s |
+        $SSH "$SSH_ADDRESS" 'rm -rf "$HOME/komit-k3s" && mkdir -p "$HOME/komit-k3s" && tar -xzf - -C "$HOME/komit-k3s"'
+
+      # 비밀번호는 명령줄 인자에 싣지 않고 표준입력으로 보내 서버 프로세스 목록에 남기지 않습니다.
+      b64() { printf '%s' "$1" | base64 | tr -d '\n'; }
+      {
+        echo 'set -eu'
+        echo "export SERVICE_DB_PASSWORD=\"\$(printf %s '$(b64 "$SERVICE_DB_PASSWORD")' | base64 -d)\""
+        echo "export ESCROW_DB_PASSWORD=\"\$(printf %s '$(b64 "$ESCROW_DB_PASSWORD")' | base64 -d)\""
+        echo "export SERVICE_IMAGE='${SERVICE_IMAGE:-}'"
+        echo "export ESCROW_IMAGE='${ESCROW_IMAGE:-}'"
+        echo 'sh "$1/komit-k3s/k3s/deploy.sh"'
+      } | $SSH "$SSH_ADDRESS" 'sudo -n sh -s "$HOME"'
