@@ -33,3 +33,10 @@ export interface CreateConsultationRequestBody {
   /** 이 회차의 추천 항목만 보낼 수 있습니다. 비우면 422. */
   recommendationItemIds: number[];
 }
+
+/** 고른 요구사항으로 추천 회차를 만듭니다. 진단 없이 부를 수 없습니다. */
+export interface CreateRecommendationRequest {
+  diagnosisId: number;
+  /** 요청서에 담을 요구사항. 한 건 이상 골라야 합니다. */
+  issueIds: number[];
+}

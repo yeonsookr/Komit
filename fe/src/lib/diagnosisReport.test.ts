@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { countByCategory, hasScore, splitByInput, versionLabel } from './diagnosisReport';
+import {
+  countByCategory,
+  dropSelection,
+  hasScore,
+  isResolved,
+  selectableIssues,
+  splitByInput,
+  versionLabel,
+} from './diagnosisReport';
 import type { Issue } from '@/types/diagnosis';
 
 function issue(overrides: Partial<Issue> = {}): Issue {
@@ -73,5 +81,38 @@ describe('hasScore', () => {
 describe('versionLabel', () => {
   it('회차를 사람 말로 적는다', () => {
     expect(versionLabel(2)).toBe('2차 진단');
+  });
+});
+
+describe('selectableIssues', () => {
+  it('해결된 요구사항은 고를 수 없다', () => {
+    const issues = [
+      issue({ issueId: 311, status: 'UNRESOLVED' }),
+      issue({ issueId: 312, status: 'RESOLVED' }),
+    ];
+
+    expect(selectableIssues(issues).map((i) => i.issueId)).toEqual([311]);
+  });
+
+  it('제안·계약 상태는 아직 고를 수 있다', () => {
+    // 해결(RESOLVED)만 제외합니다.
+    expect(selectableIssues([issue({ status: 'SUGGESTED' })])).toHaveLength(1);
+  });
+});
+
+describe('dropSelection', () => {
+  it('해결 처리한 요구사항을 고른 목록에서 뺀다', () => {
+    expect(dropSelection([311, 312, 313], 312)).toEqual([311, 313]);
+  });
+
+  it('고르지 않은 것을 빼도 그대로다', () => {
+    expect(dropSelection([311], 999)).toEqual([311]);
+  });
+});
+
+describe('isResolved', () => {
+  it('해결 여부를 가른다', () => {
+    expect(isResolved(issue({ status: 'RESOLVED' }))).toBe(true);
+    expect(isResolved(issue({ status: 'UNRESOLVED' }))).toBe(false);
   });
 });

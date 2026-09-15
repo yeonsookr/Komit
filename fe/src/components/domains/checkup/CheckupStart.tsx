@@ -9,6 +9,7 @@ import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
 import { ApiError } from "@/types/api";
 import type { Diagnosis, Survey } from "@/types/diagnosis";
+import { ROUTES } from "@/lib/routes";
 import { SurveyStep } from "./SurveyStep";
 
 /**
@@ -66,7 +67,7 @@ export function CheckupStart() {
         });
       }
 
-      router.push(`/checkup/${diagnosis.diagnosisId}?step=2`);
+      router.push(ROUTES.checkupSurvey(diagnosis.diagnosisId, 2));
     } catch (error) {
       showToast({
         tone: "danger",

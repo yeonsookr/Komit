@@ -3,6 +3,7 @@ import "server-only";
 import { backendApi } from "../server";
 import { BACKEND } from "../endpoints";
 import type {
+  CreateIssueRequest,
   Diagnosis,
   Issue,
   IssueListResponse,
@@ -10,6 +11,7 @@ import type {
   SaveSurveyAnswersRequest,
   StartDiagnosisRequest,
   Survey,
+  UpdateIssueStatusRequest,
 } from "@/types/diagnosis";
 
 /**
@@ -108,4 +110,22 @@ export async function getDiagnosis(diagnosisId: number): Promise<Diagnosis> {
 export async function getIssues(diagnosisId: number): Promise<Issue[]> {
   const { data } = await backendApi().get<IssueListResponse>(BACKEND.ISSUES(diagnosisId));
   return data.content;
+}
+
+/** 요구사항 직접 추가. 검사에서 찾지 못한 것을 의뢰인이 적습니다. */
+export async function createIssue(
+  diagnosisId: number,
+  body: CreateIssueRequest,
+): Promise<Issue> {
+  const { data } = await backendApi().post<Issue>(BACKEND.ISSUES(diagnosisId), body);
+  return data;
+}
+
+/** 요구사항 해결 처리 · 되돌리기. */
+export async function updateIssueStatus(
+  issueId: number,
+  body: UpdateIssueStatusRequest,
+): Promise<Issue> {
+  const { data } = await backendApi().patch<Issue>(BACKEND.ISSUE(issueId), body);
+  return data;
 }

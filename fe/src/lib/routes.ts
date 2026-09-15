@@ -23,11 +23,24 @@ export const ROUTES = {
   policiesPrivacy: "/policies#privacy",
   policiesDispute: "/policies#dispute",
 
+  /** 사전점검(진단) 시작. 로그인이 필요합니다. */
+  checkup: "/checkup",
+  /** 설문 2~4단계. 1단계는 진단이 없으므로 `checkup` 입니다. */
+  checkupSurvey: (diagnosisId: number, step: number) =>
+    `/checkup/${diagnosisId}?step=${step}`,
+  /** 진단서 — 발견된 문제점. 설문 「제출하기」가 여기로 옵니다. */
+  checkupResult: (diagnosisId: number) => `/checkup/${diagnosisId}/result`,
+  /** 요구사항 선택. 진단서 「요청서 만들기」가 여기로 옵니다. */
+  checkupRequirements: (diagnosisId: number) => `/checkup/${diagnosisId}/requirements`,
+
+  /** 방 대화. 상담·컨설팅·개발 방이 같은 주소를 씁니다. */
+  room: (roomId: number) => `/rooms/${roomId}`,
+  /** 개발자 추천 결과. 요구사항을 고르면 만들어지는 회차입니다. */
+  recommendation: (batchId: number) => `/recommendations/${batchId}`,
+
   // ---- 아래는 아직 화면이 없는 임시 경로입니다. 화면이 생기면 값만 고칩니다. ----
   /** 의뢰 목록. 방 화면(/rooms/{roomId})의 진입점이 됩니다. */
   requests: "/requests",
-  /** 사전점검(진단) 시작. 로그인이 필요합니다. */
-  checkup: "/checkup",
   settlements: "/settlements",
   /** 푸터 "정산 방식" 안내. */
   settlementsGuide: "/settlements/guide",

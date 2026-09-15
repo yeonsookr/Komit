@@ -27,6 +27,8 @@ export const BACKEND = {
   SCAN_FILE: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/scan-file`,
   DIAGNOSIS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}`,
   ISSUES: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/issues`,
+  ISSUE: (issueId: number) => `/api/issues/${issueId}`,
+  RECOMMENDATIONS: (projectId: number) => `/api/projects/${projectId}/recommendations`,
 } as const;
 
 export const INTERNAL = {
@@ -43,5 +45,8 @@ export const INTERNAL = {
   DIAGNOSES: "/api/diagnoses",
   SURVEY_ANSWERS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/survey/answers`,
   INSPECTIONS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/inspections`,
+  ISSUES: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/issues`,
+  ISSUE: (issueId: number) => `/api/issues/${issueId}`,
+  RECOMMENDATIONS: (projectId: number) => `/api/projects/${projectId}/recommendations`,
   SCAN_FILE: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/scan-file`,
 } as const;

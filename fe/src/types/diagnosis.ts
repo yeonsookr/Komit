@@ -124,3 +124,16 @@ export interface Issue {
 export interface IssueListResponse {
   content: Issue[];
 }
+
+/** 요구사항 직접 추가. */
+export interface CreateIssueRequest {
+  title: string;
+  detail?: string | null;
+  categoryCodeId: number;
+  severity: IssueSeverity;
+}
+
+/** 해결 처리 · 되돌리기. */
+export interface UpdateIssueStatusRequest {
+  status: "UNRESOLVED" | "RESOLVED";
+}
