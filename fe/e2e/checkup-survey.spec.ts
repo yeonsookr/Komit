@@ -76,6 +76,27 @@ test.describe('사전점검 설문', () => {
     await expect(page.getByRole('button', { name: '다음 →' })).toBeDisabled();
   });
 
+  test('앞 단계를 거쳐 들어와도 업로드하면 다음이 열린다', async ({ page }) => {
+    // 단계 이동은 컴포넌트를 다시 만들지 않으므로, 앞 단계의 '저장 중' 이 풀리지
+    // 않으면 버튼이 잠긴 채로 남습니다.
+    await page.goto('/checkup/31?step=2');
+    await page.getByText('보안이 걱정돼요').click();
+    await page.getByRole('textbox').fill('결제가 안 돼요');
+    await page.getByRole('button', { name: '다음 →' }).click();
+    await expect(page.getByText('STEP 3 / 4')).toBeVisible();
+
+    await page.setInputFiles('input[type=file]', {
+      name: 'komit-scan-7K2M9.md',
+      mimeType: 'text/markdown',
+      buffer: Buffer.from('# result'),
+    });
+
+    await expect(page.getByRole('button', { name: '다음 →' })).toBeEnabled();
+
+    await page.getByRole('button', { name: '다음 →' }).click();
+    await expect(page.getByText('STEP 4 / 4')).toBeVisible();
+  });
+
   test('결과 파일을 올리면 파일 이름이 찍힌다', async ({ page }) => {
     await page.goto('/checkup/31?step=3');
 

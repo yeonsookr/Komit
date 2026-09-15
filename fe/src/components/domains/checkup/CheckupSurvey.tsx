@@ -130,6 +130,9 @@ export function CheckupSurvey({
         tone: "danger",
         title: error instanceof ApiError ? error.message : "답을 저장하지 못했습니다.",
       });
+    } finally {
+      // 단계 이동은 같은 화면 안에서 일어나 이 컴포넌트가 다시 만들어지지 않습니다.
+      // 성공했을 때도 풀어 주지 않으면 다음 단계까지 '저장 중'이 따라와 버튼이 잠깁니다.
       setSaving(false);
     }
   };

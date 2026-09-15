@@ -23,6 +23,8 @@ export const BACKEND = {
   SURVEY_ANSWERS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/survey/answers`,
   INSPECTIONS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/inspections`,
   SCAN_FILE: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/scan-file`,
+  DIAGNOSIS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}`,
+  ISSUES: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/issues`,
 } as const;
 
 export const INTERNAL = {
