@@ -5590,6 +5590,13 @@ CONFIRM_QA_ERROR_EXAMPLE = {
 FILE_TOO_LARGE = ("FILE_TOO_LARGE", "파일이 너무 큽니다.")
 FILE_TOO_LARGE_EXAMPLE = {"code": FILE_TOO_LARGE[0], "message": FILE_TOO_LARGE[1]}
 
+# 인계물 올리기는 multipart의 file 파트 하나만 받고, 그것이 필수다.
+DELIVERABLE_FILE_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [{"field": "file", "reason": "필수 항목입니다."}],
+}
+
 STARTED_CONTRACT_ID = 409
 
 
@@ -6039,7 +6046,12 @@ def confirm_milestone(
             },
         },
         **AREA1_UNAUTHORIZED,
-        **AREA1_ERRORS,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": DELIVERABLE_FILE_ERROR_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
     },
     summary="인계물 올리기",
     description=(
@@ -6054,6 +6066,7 @@ def confirm_milestone(
         "- **403 / FORBIDDEN**: 이 계약의 개발자가 아닐 때\n"
         "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableId`가 404일 때. 없는 인계물이거나 이 "
         "계약의 당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 준다\n"
+        "- **422 / INVALID_REQUEST**: `file` 파트가 없을 때\n"
         "- **500 / INTERNAL_ERROR**: 올리지 못했을 때"
     ),
 )
