@@ -18,9 +18,15 @@ export const BACKEND = {
   RECOMMENDATION: (batchId: number) => `/api/recommendations/${batchId}`,
   CONSULTATION_REQUESTS: (batchId: number) =>
     `/api/recommendations/${batchId}/consultation-requests`,
+  DIAGNOSES: "/api/diagnoses",
+  SURVEY: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/survey`,
+  SURVEY_ANSWERS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/survey/answers`,
+  INSPECTIONS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/inspections`,
+  SCAN_FILE: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/scan-file`,
 } as const;
 
 export const INTERNAL = {
+  SURVEY: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/survey`,
   ME: "/api/users/me",
   ROOMS: "/api/rooms",
   ROOM: (roomId: number) => `/api/rooms/${roomId}`,
@@ -30,4 +36,8 @@ export const INTERNAL = {
   DEVELOPER: (developerId: number) => `/api/developers/${developerId}`,
   CONSULTATION_REQUESTS: (batchId: number) =>
     `/api/recommendations/${batchId}/consultation-requests`,
+  DIAGNOSES: "/api/diagnoses",
+  SURVEY_ANSWERS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/survey/answers`,
+  INSPECTIONS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/inspections`,
+  SCAN_FILE: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/scan-file`,
 } as const;
