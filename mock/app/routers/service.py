@@ -5369,6 +5369,14 @@ CONTRACT_NOT_COMPLETED_EXAMPLE = {
     "code": CONTRACT_NOT_COMPLETED[0],
     "message": CONTRACT_NOT_COMPLETED[1],
 }
+DUE_DATE_BEFORE_START = (
+    "DUE_DATE_BEFORE_START",
+    "납기일은 착수일보다 늦어야 합니다.",
+)
+DUE_DATE_BEFORE_START_EXAMPLE = {
+    "code": DUE_DATE_BEFORE_START[0],
+    "message": DUE_DATE_BEFORE_START[1],
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -5738,6 +5746,11 @@ def start_development(
     tags=[AREA5_TAG],
     responses={
         201: {"content": {"application/json": {"example": DEV_CONTRACT_EXAMPLE}}},
+        400: {
+            "model": ErrorResponse,
+            "description": "납기일이 착수일보다 이름",
+            "content": {"application/json": {"example": DUE_DATE_BEFORE_START_EXAMPLE}},
+        },
         404: {
             "model": ErrorResponse,
             "description": "방 없음",
@@ -5766,6 +5779,7 @@ def start_development(
         "인계물은 가격 0원짜리 작업 하나로 함께 들어간다. 0원인 작업은 화면에 가격을 "
         "보여주지 않는다.\n\n"
         "- **201**: 계약서를 보냈을 때\n"
+        "- **400 / DUE_DATE_BEFORE_START**: `dueDate`가 `startDate`보다 이를 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 방의 개발자가 아닐 때\n"
         "- **404 / ROOM_NOT_FOUND**: `roomId`가 404일 때\n"
@@ -5786,6 +5800,8 @@ def write_development_contract(
 ) -> ContractResponse | JSONResponse:
     if roomId == NOT_FOUND_ROOM_ID:
         return _error_response(404, ROOM_NOT_FOUND)
+    if request.dueDate < request.startDate:
+        return _error_response(400, DUE_DATE_BEFORE_START)
     return ContractResponse(
         **{
             **DEV_CONTRACT_EXAMPLE,
