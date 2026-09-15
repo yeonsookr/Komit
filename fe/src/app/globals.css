@@ -43,10 +43,6 @@
   --color-info: var(--k-info);
   --color-info-bg: var(--k-info-bg);
 
-  /* create-next-app 기본 페이지가 쓰던 이름 (bg-background, text-foreground) */
-  --color-background: var(--k-bg);
-  --color-foreground: var(--k-fg);
-
   --radius-xs: var(--k-radius-xs);
   --radius-sm: var(--k-radius-sm);
   --radius-md: var(--k-radius-md);
