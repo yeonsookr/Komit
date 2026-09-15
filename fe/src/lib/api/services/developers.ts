@@ -5,8 +5,10 @@ import { BACKEND } from "../endpoints";
 import type {
   CodeItem,
   CodeListResponse,
+  DeveloperDetail,
   DeveloperListResponse,
   DeveloperSearchParams,
+  ReviewListResponse,
 } from "@/types/developer";
 
 /**
@@ -31,4 +33,22 @@ export async function findDevelopers(
 export async function getCodes(groupKey: string): Promise<CodeItem[]> {
   const { data } = await backendApi.get<CodeListResponse>(BACKEND.CODES(groupKey));
   return data.content;
+}
+
+/** 개발자 프로필. 없거나 탈퇴했으면 404(DEVELOPER_NOT_FOUND). */
+export async function getDeveloper(developerId: number): Promise<DeveloperDetail> {
+  const { data } = await backendApi.get<DeveloperDetail>(BACKEND.DEVELOPER(developerId));
+  return data;
+}
+
+/** 개발자가 받은 리뷰. 최신순이고 `page` 는 1부터 셉니다. */
+export async function getDeveloperReviews(
+  developerId: number,
+  params: { page?: number; size?: number } = {},
+): Promise<ReviewListResponse> {
+  const { data } = await backendApi.get<ReviewListResponse>(
+    BACKEND.DEVELOPER_REVIEWS(developerId),
+    { params },
+  );
+  return data;
 }
