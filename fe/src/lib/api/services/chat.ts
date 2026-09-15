@@ -12,3 +12,22 @@ import type { ChatMessage } from "@/types/chat";
 export async function getChatMessages(chatRefId: string): Promise<ChatMessage[]> {
   return findChatMessages(chatRefId);
 }
+
+/**
+ * 여러 방의 마지막 메시지. 사이드바의 미리보기에 씁니다.
+ *
+ * ⚠️ 지금은 목 데이터라 한 번에 읽습니다. 실제 채팅이 붙으면 방마다 따로
+ * 부르지 말고 이 함수 하나를 목록 조회 API 로 바꿉니다.
+ */
+export async function getLastMessages(
+  chatRefIds: string[],
+): Promise<Record<string, ChatMessage | undefined>> {
+  const entries = await Promise.all(
+    chatRefIds.map(async (chatRefId) => {
+      const messages = await getChatMessages(chatRefId);
+      return [chatRefId, messages.at(-1)] as const;
+    }),
+  );
+
+  return Object.fromEntries(entries);
+}
