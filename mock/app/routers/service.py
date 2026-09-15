@@ -5294,7 +5294,10 @@ class DepositRequest(BaseModel):
     """예치 요청."""
 
     paymentMethodId: int = Field(
-        description="쓸 결제 수단 식별자. 마이페이지에 등록해 둔 카드다.",
+        description=(
+            "쓸 결제 수단 식별자. 마이페이지에 등록해 둔 실시간 계좌이체 수단이다. "
+            "카드 결제는 쓰지 않는다. 목록은 결제 수단 조회로 받는다."
+        ),
         examples=[9],
     )
     idempotencyKey: str = Field(
@@ -5352,6 +5355,7 @@ class WriteReviewRequest(BaseModel):
 MILESTONE_NOT_FOUND = ("MILESTONE_NOT_FOUND", "작업을 찾을 수 없습니다.")
 DEPOSIT_REQUIRED = ("DEPOSIT_REQUIRED", "예치가 끝나야 착수할 수 있습니다.")
 ALREADY_DEPOSITED = ("ALREADY_DEPOSITED", "이미 예치가 끝났습니다.")
+ACCOUNT_REQUIRED = ("ACCOUNT_REQUIRED", "예치에 쓸 결제 수단을 먼저 등록해 주세요.")
 QA_NOT_ALL_CHECKED = (
     "QA_NOT_ALL_CHECKED",
     "확인 문장을 모두 체크해야 통과시킬 수 있습니다.",
@@ -5391,6 +5395,7 @@ NOT_FOUND_MILESTONE_ID = 404
 CONFLICT_MILESTONE_ID = 409
 NOT_DEPOSITED_CONTRACT_ID = 402
 DEPOSITED_CONTRACT_ID = 409
+NO_ACCOUNT_CONTRACT_ID = 405
 
 MILESTONES = [
     {
@@ -5834,12 +5839,24 @@ def write_development_contract(
         201: {"content": {"application/json": {"example": DEPOSIT_EXAMPLE}}},
         409: {
             "model": ErrorResponse,
-            "description": "이미 예치됨",
+            "description": "이미 예치됐거나 등록한 결제 수단이 없음",
             "content": {
                 "application/json": {
-                    "example": {
-                        "code": "ALREADY_DEPOSITED",
-                        "message": "이미 예치가 끝났습니다.",
+                    "examples": {
+                        "ALREADY_DEPOSITED": {
+                            "summary": "이미 예치됨",
+                            "value": {
+                                "code": ALREADY_DEPOSITED[0],
+                                "message": ALREADY_DEPOSITED[1],
+                            },
+                        },
+                        "ACCOUNT_REQUIRED": {
+                            "summary": "등록한 결제 수단 없음",
+                            "value": {
+                                "code": ACCOUNT_REQUIRED[0],
+                                "message": ACCOUNT_REQUIRED[1],
+                            },
+                        },
                     }
                 }
             },
@@ -5859,14 +5876,16 @@ def write_development_contract(
         "**돈의 원장은 이 서버가 갖지 않는다.** 결제와 보관은 Escrow 서버가 맡고, 여기서는 "
         "예치를 걸고 그 결과를 확인만 한다. 같은 `idempotencyKey`로 다시 보내면 결제가 "
         "두 번 나가지 않는다.\n\n"
-        "`paymentMethodId`는 마이페이지에 등록해 둔 카드다. 실시간 계좌이체를 고르면 "
-        "결제창에서 은행 앱으로 바로 내므로 미리 등록해 둘 것이 없다.\n\n"
+        "**돈은 의뢰인이 등록해 둔 계좌에서 빠진다.** 카드 결제는 쓰지 않는다. 등록해 "
+        "둔 수단이 하나도 없으면 409로 막고, 화면은 결제 수단 등록으로 보낸다.\n\n"
         "- **201**: 예치를 걸었을 때. 결제가 바로 확인되면 `DEPOSITED`, 결과를 기다리는 "
         "중이면 `PENDING`이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 계약의 의뢰인이 아닐 때. 예치는 의뢰인만 한다\n"
         "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때\n"
         "- **409 / ALREADY_DEPOSITED**: `contractId`가 409일 때\n"
+        "- **409 / ACCOUNT_REQUIRED**: `contractId`가 405일 때. 등록해 둔 결제 수단이 "
+        "없어 출금할 곳이 없다\n"
         "- **422 / INVALID_REQUEST**: `paymentMethodId`나 `idempotencyKey`가 없을 때\n"
         "- **500 / INTERNAL_ERROR**: 예치를 걸지 못했을 때"
     ),
@@ -5876,7 +5895,8 @@ def deposit_contract(
         int,
         Path(
             description=(
-                "계약 식별자. 404는 없음, 409는 이미 예치됨 재현용 예약값이다."
+                "계약 식별자. 404는 없음, 409는 이미 예치됨, 405는 계좌 없음 "
+                "재현용 예약값이다."
             ),
             examples=[DEV_CONTRACT_ID],
         ),
@@ -5887,6 +5907,8 @@ def deposit_contract(
         return _error_response(404, CONTRACT_NOT_FOUND)
     if contractId == DEPOSITED_CONTRACT_ID:
         return _error_response(409, ALREADY_DEPOSITED)
+    if contractId == NO_ACCOUNT_CONTRACT_ID:
+        return _error_response(409, ACCOUNT_REQUIRED)
     return EscrowDepositResponse(**DEPOSIT_EXAMPLE)
 
 
@@ -7030,6 +7052,70 @@ VERIFICATION_EXAMPLE = {
     "accountHolder": "이준",
     "expiresAt": "2026-09-02T14:12:00+09:00",
 }
+
+
+class PaymentMethodResponse(BaseModel):
+    """예치에 쓸 결제 수단 한 건."""
+
+    paymentMethodId: int = Field(description="결제 수단 식별자.", examples=[9])
+    methodType: Literal["CARD", "REALTIME_TRANSFER"] = Field(
+        description=(
+            "수단 종류. 지금 서비스는 실시간 계좌이체만 쓰므로 REALTIME_TRANSFER만 "
+            "내려간다. CARD는 ERD 코드에 있어 자리만 남겨 둔다."
+        ),
+        examples=["REALTIME_TRANSFER"],
+    )
+    maskedNumber: str | None = Field(
+        description="가린 계좌번호. 화면에 그대로 보여준다.",
+        examples=["우리은행 ···· 4412"],
+    )
+    isDefault: bool = Field(
+        description="기본 수단인지. 예치 화면이 처음에 고르는 것이다.",
+        examples=[True],
+    )
+
+
+class PaymentMethodListResponse(BaseModel):
+    """등록해 둔 결제 수단 전부. 수가 적어 content만 담는다."""
+
+    content: list[PaymentMethodResponse] = Field(
+        description="등록한 수단. 하나도 없으면 빈 배열이다.",
+    )
+
+
+PAYMENT_METHODS = [
+    {
+        "paymentMethodId": 9,
+        "methodType": "REALTIME_TRANSFER",
+        "maskedNumber": "우리은행 ···· 4412",
+        "isDefault": True,
+    }
+]
+
+
+@router.get(
+    "/payment-methods",
+    response_model=PaymentMethodListResponse,
+    tags=[AREA8_TAG],
+    responses={
+        200: {"content": {"application/json": {"example": {"content": PAYMENT_METHODS}}}},
+        **AREA1_UNAUTHORIZED,
+        **AREA1_ERRORS,
+    },
+    summary="결제 수단 조회",
+    description=(
+        "**화면 — `5_의뢰인_계약예치` › 결제 수단**\n\n"
+        "예치에 쓸 수 있는 수단을 내려준다. **카드 결제는 쓰지 않으므로 실시간 계좌이체 "
+        "수단만 담긴다.** 예치 API가 받는 `paymentMethodId`가 여기서 나온다.\n\n"
+        "**빈 배열이면 아직 등록한 것이 없다는 뜻이다.** 그대로 예치를 걸면 409로 막히므로 "
+        "화면은 먼저 등록으로 보낸다.\n\n"
+        "- **200**: 읽었을 때. 등록한 것이 없으면 `content`가 빈 배열이다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **500 / INTERNAL_ERROR**: 목록을 읽지 못했을 때"
+    ),
+)
+def get_payment_methods() -> PaymentMethodListResponse:
+    return PaymentMethodListResponse(content=PAYMENT_METHODS)
 
 
 @router.post(
