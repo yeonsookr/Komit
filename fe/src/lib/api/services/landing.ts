@@ -19,7 +19,7 @@ export const FEATURED_DEVELOPER_COUNT = 3;
  */
 export async function getLandingSummary(): Promise<LandingSummary | null> {
   try {
-    const { data } = await backendApi.get<LandingSummary>(BACKEND.LANDING_SUMMARY);
+    const { data } = await backendApi().get<LandingSummary>(BACKEND.LANDING_SUMMARY);
     return data;
   } catch (error) {
     console.error("[landing] 지표를 읽지 못했습니다", error);
@@ -31,7 +31,7 @@ export async function getLandingSummary(): Promise<LandingSummary | null> {
 export async function getFeaturedDevelopers(
   size: number = FEATURED_DEVELOPER_COUNT,
 ): Promise<FeaturedDeveloper[]> {
-  const { data } = await backendApi.get<FeaturedDeveloperListResponse>(
+  const { data } = await backendApi().get<FeaturedDeveloperListResponse>(
     BACKEND.LANDING_FEATURED,
     { params: { size } },
   );
