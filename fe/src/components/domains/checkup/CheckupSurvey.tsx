@@ -14,6 +14,7 @@ import {
 } from "@/lib/survey";
 import { ApiError } from "@/types/api";
 import type { Survey, SurveyAnswer } from "@/types/diagnosis";
+import { ROUTES } from "@/lib/routes";
 import { QuestionField } from "./QuestionField";
 import { ScanFileStep } from "./ScanFileStep";
 import { SurveyStep } from "./SurveyStep";
@@ -94,7 +95,9 @@ export function CheckupSurvey({
       questions.every((q) => isAnswered(q, values[q.questionId] ?? { selectedOptionIds: [], text: "" }));
 
   const goTo = (target: number) =>
-    target <= 1 ? router.push("/checkup") : router.push(`/checkup/${diagnosisId}?step=${target}`);
+    target <= 1
+      ? router.push(ROUTES.checkup)
+      : router.push(ROUTES.checkupSurvey(diagnosisId, target));
 
   const next = async () => {
     if (saving || !canGoNext) return;
@@ -123,7 +126,7 @@ export function CheckupSurvey({
       );
       setSurvey(data);
 
-      if (step >= TOTAL_STEPS) router.push(`/checkup/${diagnosisId}/result`);
+      if (step >= TOTAL_STEPS) router.push(ROUTES.checkupResult(diagnosisId));
       else goTo(step + 1);
     } catch (error) {
       showToast({

@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Container } from "@/components/layouts";
 import { DiagnosisReport } from "@/components/domains/checkup";
 import { getDiagnosis, getIssues } from "@/lib/api/services";
+import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
 
 export const metadata: Metadata = {
@@ -37,7 +38,7 @@ export default async function DiagnosisResultPage({
 
         <div className="mt-10">
           <Link
-            href={`/checkup/${id}/requirements`}
+            href={ROUTES.checkupRequirements(id)}
             className="inline-flex h-12 items-center gap-2 rounded-md bg-primary px-6 text-sm font-semibold text-on-primary hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
             요청서 만들기 →

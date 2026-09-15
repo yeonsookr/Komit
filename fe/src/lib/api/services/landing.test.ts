@@ -10,7 +10,8 @@ import { FEATURED_DEVELOPER_COUNT, getFeaturedDevelopers, getLandingSummary } fr
  */
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock('server-only', () => ({}));
-vi.mock('../server', () => ({ backendApi: { get } }));
+// backendApi 는 첫 호출에서 인스턴스를 만드는 함수입니다(lib/api/server.ts).
+vi.mock('../server', () => ({ backendApi: () => ({ get }) }));
 
 beforeEach(() => get.mockReset());
 
