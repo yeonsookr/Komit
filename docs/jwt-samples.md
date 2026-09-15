@@ -61,9 +61,3 @@ eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiaWF0IjoxNzg5MzQ0MDAwLCJleHA
 ```bash
 curl -H "Authorization: Bearer <토큰>" http://localhost:8000/mock/service/api/users/me
 ```
-
-## 재생성
-
-```bash
-python scripts/make_jwt.py
-```
