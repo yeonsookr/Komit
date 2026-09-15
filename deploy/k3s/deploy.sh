@@ -8,6 +8,10 @@ ESCROW_IMAGE=${ESCROW_IMAGE:-}
 FE_IMAGE=${FE_IMAGE:-}
 : "${SERVICE_DB_PASSWORD:?SERVICE_DB_PASSWORD is required}"
 : "${ESCROW_DB_PASSWORD:?ESCROW_DB_PASSWORD is required}"
+# fe 서버가 백엔드를 호출할 주소입니다. 이미지 빌드와 같은 GitLab CI/CD 변수 값을 실행 환경에도 넣습니다.
+: "${BACKEND_API_BASE_URL:?BACKEND_API_BASE_URL is required}"
+: "${AI_API_BASE_URL:?AI_API_BASE_URL is required}"
+ESCROW_API_BASE_URL=${ESCROW_API_BASE_URL:-}
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 WORK_DIR=$(mktemp -d)
@@ -27,6 +31,11 @@ resolve_image() {
     return 1
   fi
   printf '%s' "$current"
+}
+
+# Kustomize literal 한 줄로 씁니다. YAML 작은따옴표 안에서는 '를 ''로 적습니다.
+config_literal() {
+  printf "      - '%s=%s'\n" "$1" "$(printf '%s' "$2" | sed "s/'/''/g")"
 }
 
 apply_basic_auth_secret() {
@@ -79,7 +88,19 @@ images:
   - name: komit-fe
     newName: ${FE_IMAGE%:*}
     newTag: ${FE_IMAGE##*:}
+# 값이 바뀌면 ConfigMap 이름의 해시가 바뀌어 fe Pod가 새 값으로 다시 뜹니다.
+configMapGenerator:
+  - name: fe-config
+    namespace: komit
+    literals:
 EOF
+{
+  config_literal BACKEND_API_BASE_URL "$BACKEND_API_BASE_URL"
+  config_literal AI_API_BASE_URL "$AI_API_BASE_URL"
+  if [ -n "$ESCROW_API_BASE_URL" ]; then
+    config_literal ESCROW_API_BASE_URL "$ESCROW_API_BASE_URL"
+  fi
+} >> "$WORK_DIR/apps/kustomization.yaml"
 kubectl apply -k "$WORK_DIR/apps"
 kubectl -n komit rollout status deployment/service --timeout=300s
 kubectl -n komit rollout status deployment/escrow --timeout=300s

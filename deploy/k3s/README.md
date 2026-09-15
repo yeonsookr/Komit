@@ -330,8 +330,11 @@ fe image is required because deployment/fe does not exist yet
    read -rsp "ESCROW_DB_PASSWORD: " ESCROW_DB_PASSWORD; echo
    export SERVICE_DB_PASSWORD ESCROW_DB_PASSWORD
    export FE_IMAGE=docker.io/<계정>/komit-fe:<태그>
+   # GitLab CI/CD 변수에 등록된 값과 같게 넣습니다.
+   export BACKEND_API_BASE_URL=<GitLab 변수 값>
+   export AI_API_BASE_URL=<GitLab 변수 값>
 
-   sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,FE_IMAGE \
+   sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,FE_IMAGE,BACKEND_API_BASE_URL,AI_API_BASE_URL \
      sh ~/komit-k3s/k3s/deploy.sh
    ```
 
@@ -370,8 +373,13 @@ export SERVICE_DB_PASSWORD ESCROW_DB_PASSWORD
 
 export SERVICE_IMAGE=docker.io/<계정>/komit-service:<태그>
 export ESCROW_IMAGE=docker.io/<계정>/komit-escrow:<태그>
+export FE_IMAGE=docker.io/<계정>/komit-fe:<태그>
 
-sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,SERVICE_IMAGE,ESCROW_IMAGE \
+# GitLab CI/CD 변수에 등록된 값과 같게 넣습니다.
+export BACKEND_API_BASE_URL=<GitLab 변수 값>
+export AI_API_BASE_URL=<GitLab 변수 값>
+
+sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,SERVICE_IMAGE,ESCROW_IMAGE,FE_IMAGE,BACKEND_API_BASE_URL,AI_API_BASE_URL \
   sh ~/komit-k3s-manual/deploy.sh
 ```
 
@@ -391,7 +399,8 @@ rm -rf ~/komit-k3s-manual
 | 잡 로그: `sudo: a password is required` | 배포 계정 sudo 권한 부족 | A-0의 `sudo -n -l` 확인 |
 | 잡 로그: `service image is required because deployment/service does not exist yet` | 한쪽 모듈만 빌드됨 | A-2의 `git diff` 확인, 또는 방법 B |
 | 잡 로그: `fe image is required because deployment/fe does not exist yet` | FE를 처음 추가하는데 FE 이미지가 빌드되지 않음 | 「이미 돌고 있는 클러스터에 FE를 처음 추가할 때」 |
-| `fe` Pod는 Running인데 페이지에서 API 호출이 실패 | FE 서버가 백엔드에 닿지 못함 | `sudo kubectl -n komit logs deploy/fe`. `fe-config` ConfigMap의 `BACKEND_API_BASE_URL` 확인 |
+| `fe` Pod는 Running인데 페이지에서 API 호출이 실패 | FE 서버가 백엔드에 닿지 못함 | `sudo kubectl -n komit logs deploy/fe`. `sudo kubectl -n komit exec deploy/fe -- env \| grep API_BASE_URL`로 GitLab 변수 값이 들어갔는지 확인 |
+| 잡 로그: `BACKEND_API_BASE_URL CI/CD variable is required` | FE 주소 변수 미등록 | GitLab 변수 `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` 확인 |
 | `cluster ... condition met`에서 10분 넘게 멈춤 | DB Pod가 못 뜸 | `sudo kubectl -n komit get pods`로 DB Pod 상태 확인. `Pending`이면 메모리 부족, `ImagePullBackOff`이면 서버의 인터넷(ghcr.io) 접속 확인 |
 | `komit-service` Pod가 `ImagePullBackOff` | Docker Hub 저장소가 private | 3단계 Docker Hub 인증 |
 | 앱 Pod가 `CrashLoopBackOff` | 앱 기동 실패 | `sudo kubectl -n komit logs deploy/service`. `password authentication failed`이면 비밀번호가 DB와 다름 |
@@ -416,6 +425,7 @@ fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
 |---|---|---|
 | `SSH_ADDRESS`, `SSH_PRIVATE_KEY` | 목 배포와 공용 | 서버 접속 |
 | `SERVICE_DB_PASSWORD`, `ESCROW_DB_PASSWORD` | Masked, Protected | DB 계정 Secret |
+| `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` | FE 이미지 빌드와 공용 | fe 실행 환경(`fe-config`). `ESCROW_API_BASE_URL`은 등록되어 있을 때만 넣습니다 |
 
 - 이번 파이프라인에서 빌드되지 않은 모듈은 서버에서 돌고 있는 이미지를 유지합니다. `deploy/k3s/`만 바뀌면 이미지 교체 없이 설정만 반영합니다.
 - 비밀번호는 SSH 명령줄 인자가 아니라 표준입력으로 전달해 서버 프로세스 목록에 남기지 않습니다.
@@ -428,6 +438,8 @@ fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
 ```bash
 export SERVICE_DB_PASSWORD=<password>
 export ESCROW_DB_PASSWORD=<password>
+export BACKEND_API_BASE_URL=<fe가 호출할 백엔드 주소>
+export AI_API_BASE_URL=<fe가 호출할 AI 주소>
 
 # 이번에 바뀐 모듈만 넘깁니다. 클러스터에 아직 없는 모듈은 반드시 넘깁니다.
 export SERVICE_IMAGE=docker.io/<account>/komit-service:<commit-sha>
@@ -441,6 +453,8 @@ chmod +x deploy/k3s/deploy.sh
 | 환경변수 | 필수 | 설명 |
 |---|---|---|
 | `SERVICE_DB_PASSWORD`, `ESCROW_DB_PASSWORD` | 예 | DB 소유자 계정 비밀번호. `service-db-app`, `escrow-db-app` Secret이 되어 CloudNativePG initdb와 Spring이 함께 읽습니다. |
+| `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` | 예 | fe 서버가 백엔드·AI를 호출할 주소. GitLab CI/CD 변수와 같은 값을 넣습니다. 값이 바뀌면 fe Pod가 새 값으로 다시 뜹니다. |
+| `ESCROW_API_BASE_URL` | 아니요 | 값이 있을 때만 fe 실행 환경에 넣습니다. |
 | `SERVICE_IMAGE`, `ESCROW_IMAGE`, `FE_IMAGE` | 아니요 | 비어 있으면 클러스터에서 돌고 있는 이미지를 유지합니다. 바뀌지 않은 모듈은 재시작하지 않습니다. 클러스터에 아직 없는 모듈은 필수입니다. |
 
 스크립트는 배포할 이미지 태그를 임시 디렉터리의 Kustomize overlay에 고정해 적용하고, 각 단계의 준비 완료를 기다린 뒤 다음 단계로 넘어갑니다. DB 주소는 클러스터 내부 DNS 이름으로 고정되어 있어 주입하지 않습니다.
