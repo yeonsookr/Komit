@@ -5,6 +5,21 @@ import { expect, test } from '@playwright/test';
  * 약관 화면과 카카오 인가 시작 경로는 아직 없어 이동한 주소만 확인합니다.
  */
 test.describe('로그인', () => {
+  /**
+   * 헤더가 가리키는 주소와 화면이 실제로 있는 위치를 잇는 유일한 검사입니다.
+   * 다른 테스트는 `/login` 을 직접 열기 때문에, 헤더 링크만 어긋나면 잡히지 않습니다.
+   * 헤더는 모든 화면이 쓰는 공용 컴포넌트라 앞으로 고칠 일이 많습니다.
+   */
+  test('헤더의 로그인을 누르면 로그인 화면으로 간다', async ({ page }) => {
+    await page.goto('/');
+
+    // 랜딩의 "로그인을 넣고 싶어요" 증상 카드와 구분하려고 이름을 정확히 맞춥니다.
+    await page.getByRole('link', { name: '로그인', exact: true }).click();
+
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByRole('heading', { name: '시작하기' })).toBeVisible();
+  });
+
   test('카드와 카카오 버튼이 보인다', async ({ page }) => {
     await page.goto('/login');
 
