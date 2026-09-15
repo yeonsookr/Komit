@@ -14,6 +14,9 @@ export const BACKEND = {
   DEVELOPER: (developerId: number) => `/api/developers/${developerId}`,
   DEVELOPER_REVIEWS: (developerId: number) => `/api/developers/${developerId}/reviews`,
   CODES: (groupKey: string) => `/api/codes/${groupKey}`,
+  RECOMMENDATION: (batchId: number) => `/api/recommendations/${batchId}`,
+  CONSULTATION_REQUESTS: (batchId: number) =>
+    `/api/recommendations/${batchId}/consultation-requests`,
 } as const;
 
 export const INTERNAL = {
@@ -23,4 +26,6 @@ export const INTERNAL = {
   ROOM_MESSAGES: (roomId: number) => `/api/rooms/${roomId}/messages`,
   DEVELOPERS: "/api/developers",
   DEVELOPER: (developerId: number) => `/api/developers/${developerId}`,
+  CONSULTATION_REQUESTS: (batchId: number) =>
+    `/api/recommendations/${batchId}/consultation-requests`,
 } as const;
