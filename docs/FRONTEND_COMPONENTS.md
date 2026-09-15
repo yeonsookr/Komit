@@ -10,19 +10,26 @@ fe/src/
 ├─ styles/tokens.css        ← 디자인 토큰(CSS 변수). 색·폰트·라운드·그림자·레이아웃 폭
 ├─ app/globals.css          ← tokens.css import + @theme(토큰 → Tailwind 유틸리티) + base/components 레이어
 ├─ lib/cn.ts                ← clsx + tailwind-merge
+├─ lib/routes.ts            ← 화면 경로 상수 ROUTES (컨벤션 8.1). href 에 URL 문자열을 직접 적지 않습니다
 ├─ components/
 │  ├─ layouts/  AppShell.tsx     AppShell (GNB + 본문 + 푸터)
 │  │            Header.tsx       Header, PUBLIC_NAV, APP_NAV
 │  │            Footer.tsx       Footer
 │  │            Container.tsx    Container (본문 폭 720 / 840 / 960)
 │  ├─ buttons/  Button.tsx      Button, IconButton
+│  │            buttonStyles.ts buttonClass — 링크(<Link>)에 버튼 모양을 입힐 때. 서버 컴포넌트에서도 호출 가능
 │  ├─ feedback/ Callout.tsx     Callout, HelpRow, EmptyState
 │  │            Modal.tsx       Modal(+Header/Body/Footer), Popover, MenuItem, MenuDivider
 │  │            Toast.tsx       ToastProvider, useToast
 │  ├─ domains/
-│  │  └─ chat/     ChatRoom.tsx     ChatRoom, ChatNotice, ChatSessionBanner
-│  │                ChatMessage.tsx  ChatMessage, ChatDateDivider
-│  │                ChatComposer.tsx ChatComposer
+│  │  ├─ chat/     ChatRoom.tsx     ChatRoom, ChatNotice, ChatSessionBanner
+│  │  │             ChatMessage.tsx  ChatMessage, ChatDateDivider
+│  │  │             ChatComposer.tsx ChatComposer
+│  │  └─ landing/  LandingHero.tsx        히어로 (검색 폼 · 예시 칩 · 이번 주 상담 N건) — 유일한 클라이언트 컴포넌트
+│  │                SymptomGrid.tsx        증상별로 찾기 (증상 → 분야 코드 대응 상수 포함)
+│  │                FeaturedDevelopers.tsx 추천 개발자 카드 3장
+│  │                ProcessSteps.tsx       진행 순서 (id="process", ROUTES.howTo 의 앵커)
+│  │                CheckupIntro.tsx       사전 점검 소개 (정적 예시 카드)
 │  └─ common/   Input.tsx       Field, Input, Textarea, SearchInput
 │               Select.tsx      NativeSelect, Dropdown
 │               Choice.tsx      Checkbox, Radio, ChoiceCard, Switch, RatingScale
