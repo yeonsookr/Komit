@@ -12,8 +12,9 @@ import { cn } from "@/lib/cn";
  *  - outline : 흰 배경 + 회색 테두리 (취소, 수정 제안하기, 사진 바꾸기, 파일 고르기)
  *  - ghost   : 텍스트만, 보라 (+ 항목 추가, 보기 ›, 모두 읽음으로)
  *  - danger  : 연분홍 배경 + 빨간 테두리/텍스트 (문제 신고, 세션 종료, 탈퇴하기)
+ *  - kakao   : 카카오 노랑 (로그인 화면의 「카카오로 시작하기」 하나뿐)
  */
-export type ButtonVariant = "primary" | "dark" | "outline" | "ghost" | "danger";
+export type ButtonVariant = "primary" | "dark" | "outline" | "ghost" | "danger" | "kakao";
 export type ButtonSize = "sm" | "md" | "lg" | "xl";
 
 export interface ButtonStyleOptions {
@@ -42,6 +43,8 @@ const variants: Record<ButtonVariant, string> = {
   danger:
     "bg-danger-bg-strong text-danger border border-danger-border hover:bg-danger-bg " +
     "disabled:bg-bg",
+  // 포커스 링도 카카오 노랑 위에서 보이도록 브랜드 보라 대신 먹색을 씁니다.
+  kakao: "bg-kakao text-on-kakao hover:bg-kakao-hover focus-visible:outline-ink",
 };
 
 const sizes: Record<ButtonSize, string> = {
