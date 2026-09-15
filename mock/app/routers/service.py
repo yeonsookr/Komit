@@ -5751,6 +5751,11 @@ def start_development(
             "description": "납기일이 착수일보다 이름",
             "content": {"application/json": {"example": DUE_DATE_BEFORE_START_EXAMPLE}},
         },
+        403: {
+            "model": ErrorResponse,
+            "description": "이 방의 개발자가 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
         404: {
             "model": ErrorResponse,
             "description": "방 없음",
@@ -5783,8 +5788,9 @@ def start_development(
         "- **201**: 계약서를 보냈을 때. 협의 중인 계약서가 있었으면 그 내용이 이걸로 바뀐다\n"
         "- **400 / DUE_DATE_BEFORE_START**: `dueDate`가 `startDate`보다 이를 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / FORBIDDEN**: 이 방의 개발자가 아닐 때\n"
-        "- **404 / ROOM_NOT_FOUND**: `roomId`가 404일 때\n"
+        "- **403 / FORBIDDEN**: 이 방의 개발자가 아닐 때. 계약서는 개발자만 쓴다\n"
+        "- **404 / ROOM_NOT_FOUND**: `roomId`가 404일 때. 없는 방이거나 이 방의 당사자가 "
+        "아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 준다\n"
         "- **422 / INVALID_REQUEST**: `milestones`가 비었거나, 작업의 `qaCriteria`가 비었거나, "
         "`issueIds`·`startDate`·`dueDate`·`freeRepairDays`·`milestones` 중 빠진 것이 있을 때\n"
         "- **500 / INTERNAL_ERROR**: 계약서를 만들지 못했을 때"
