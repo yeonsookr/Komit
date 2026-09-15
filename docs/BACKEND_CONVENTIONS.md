@@ -650,7 +650,7 @@ src/main/resources/
 - Writer/Reader는 Spring profile이 아닙니다. `local-writer`, `prod-reader` 같은 조합 프로필을 만들지 않고 `APP_INSTANCE_ROLE` 같은 별도 배포 설정으로 구분합니다.
 - local은 로컬 PostgreSQL을 사용하고 prod는 환경 변수로 운영 PostgreSQL과 외부 인프라에 연결합니다.
 - 테스트는 `application-test.yml`을 만들지 않습니다. Testcontainers의 `@ServiceConnection` 또는 동적 property 주입으로 격리된 PostgreSQL에 연결합니다.
-- 비밀번호, JWT secret, API key, access token을 설정 파일이나 Git에 커밋하지 않습니다.
+- 비밀번호, JWT secret, API key, access token을 설정 파일이나 Git에 커밋하지 않습니다. 운영에 쓰지 않는 개발용 예시 값은 예외입니다. `docs/jwt-samples.md`의 샘플 서명 키처럼 값에 `dev-only`를 명시하고 운영 값으로 쓰지 않습니다.
 - `.env`는 예시 파일만 공유하고 실제 값은 개인 환경 또는 CI/CD secret으로 관리합니다.
 - 환경 변수 누락 시 안전하지 않은 기본값으로 실행하지 말고 애플리케이션 시작을 실패시킵니다.
 
