@@ -184,7 +184,8 @@ import { Card, CardHeader, Field, Input, KeyValueRow, Money, Badge } from "@/com
   두었습니다. Pretendard woff2 를 확보하면 `app/layout.tsx` 에서 `next/font/local` 로 교체합니다.
 - **사이드바 레이아웃**: 의뢰·정산 화면의 좌측 스레드 목록(320px)은 아직 없습니다. 도메인 레이아웃이라
   `components/domains/` 또는 해당 route group 의 layout 으로 만듭니다.
-- **푸터·헤더 링크 경로**: `/how-to`, `/requests`, `/checkup` 등은 임시로 정한 값입니다. 라우팅이
-  확정되면 `Header.tsx`·`Footer.tsx` 의 상수를 함께 고칩니다.
+- **푸터·헤더 링크 경로**: 목적지는 `src/lib/routes.ts` 의 `ROUTES` 에서 관리합니다(컨벤션 8.1).
+  `/requests`, `/checkup`, `/settlements`, `/mypage/*` 는 아직 화면이 없는 임시 값이라 화면이 생기면
+  `ROUTES` 의 값만 고칩니다. `Header.tsx`·`Footer.tsx` 의 메뉴 상수는 URL 을 직접 적지 않습니다.
 - **도메인 복합 컴포넌트**: 채팅 말풍선/입력바, 좌측 스레드 목록, 테이블(정산/관리자), OTP 4칸 입력,
   서명판 캔버스, 캘린더, 세션 컨트롤 바는 위 기본 요소를 조합해 `components/domains/` 아래에 만듭니다.
