@@ -7,7 +7,7 @@ KOMIT_USER_JWT_SECRET  = komit-user-jwt-secret-dev-only-change-me
 KOMIT_ADMIN_JWT_SECRET = komit-admin-jwt-secret-dev-only-change-me
 ```
 
-> 개발용 값이다. 운영 시크릿은 커밋하지 않는다 (BACKEND_CONVENTIONS 610).
+> 개발용 값이다. 운영 시크릿은 커밋하지 않는다 (BACKEND_CONVENTIONS 14. 설정과 프로필).
 
 ## 1. 사용자 · 유효 (userId 12, 만료 2027-09-14)
 
