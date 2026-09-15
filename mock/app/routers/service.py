@@ -6114,6 +6114,11 @@ def upload_deliverable(
                 "application/json": {"example": CONTRACT_NOT_COMPLETED_EXAMPLE}
             },
         },
+        403: {
+            "model": ErrorResponse,
+            "description": "이 계약의 의뢰인이 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
         409: {
             "model": ErrorResponse,
             "description": "이미 리뷰를 남김",
