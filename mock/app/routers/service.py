@@ -5687,7 +5687,8 @@ STARTED_CONTRACT_ID = 409
         "- **200**: 착수했을 때. `development.status`가 `IN_PROGRESS`가 된다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 계약의 개발자가 아닐 때. 착수는 개발자만 한다\n"
-        "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때\n"
+        "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때. 없는 계약이거나 이 계약의 "
+        "당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 준다\n"
         "- **409 / DEPOSIT_REQUIRED**: `contractId`가 402일 때. 예치가 끝나지 않아 아직 "
         "착수할 상태가 아니다\n"
         "- **409 / ALREADY_STARTED**: `contractId`가 409일 때\n"
@@ -5892,6 +5893,11 @@ def get_deposit(
     tags=[AREA5_TAG],
     responses={
         201: {"content": {"application/json": {"example": MILESTONES[1]}}},
+        403: {
+            "model": ErrorResponse,
+            "description": "이 계약의 개발자가 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
         409: {
             "model": ErrorResponse,
             "description": "지금 상태에서는 처리할 수 없음",
@@ -5923,7 +5929,9 @@ def get_deposit(
         "보여준다.\n\n"
         "- **201**: 확인 요청을 보냈을 때. 상태가 SUBMITTED가 되고 `submittedAt`이 채워진다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **404 / MILESTONE_NOT_FOUND**: `milestoneId`가 404일 때\n"
+        "- **403 / FORBIDDEN**: 이 계약의 개발자가 아닐 때. 확인 요청은 개발자만 보낸다\n"
+        "- **404 / MILESTONE_NOT_FOUND**: `milestoneId`가 404일 때. 없는 작업이거나 이 계약의 "
+        "당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 준다\n"
         "- **409 / MILESTONE_STATE_CONFLICT**: `milestoneId`가 409일 때. 이미 통과된 "
         "작업이다\n"
         "- **422 / INVALID_REQUEST**: `message`가 300자를 넘을 때\n"
