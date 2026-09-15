@@ -7,6 +7,8 @@
  */
 
 export const BACKEND = {
+  LANDING_SUMMARY: "/api/landing/summary",
+  LANDING_FEATURED: "/api/landing/featured-developers",
   ME: "/api/users/me",
   ROOMS: "/api/rooms",
   ROOM: (roomId: number) => `/api/rooms/${roomId}`,

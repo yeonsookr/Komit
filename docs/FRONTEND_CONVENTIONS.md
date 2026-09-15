@@ -135,6 +135,30 @@ Next.js를 사용하는 목적 중 하나는 검색엔진 최적화입니다. �
 - 정적 페이지 라우트와 `app/api`의 Route Handler는 같은 트리 안에 공존합니다. 경로가 겹치지 않도록 API는 `/api` 아래에만 둡니다.
 - 로딩과 에러 상태는 `loading.tsx`, `error.tsx`로 처리하고 페이지 내부에 즉석 처리 코드를 흩뿌리지 않습니다.
 
+### 8.1 화면 경로 상수
+
+화면 경로는 `src/lib/routes.ts`의 `ROUTES` 상수 한 곳에서 관리합니다. API 경로를 `endpoints.ts`에 모으는 것과 같은 원칙입니다. 컴포넌트, 레이아웃, Header·Footer의 메뉴 상수는 URL 문자열을 직접 적지 않고 `ROUTES`를 참조합니다.
+
+```ts
+// src/lib/routes.ts
+export const ROUTES = {
+  home: "/",
+  login: "/login",
+  developers: "/developers",
+  developer: (developerId: number) => `/developers/${developerId}`,
+  policiesTerms: "/policies#terms",
+} as const;
+
+// 사용
+<Link href={ROUTES.developer(developer.developerId)}>{developer.name}</Link>
+```
+
+- 고정 경로는 문자열, 파라미터가 있는 경로는 함수로 둡니다. 함수의 인자 타입은 목 명세의 식별자 타입과 맞춥니다.
+- 같은 목적지가 여러 화면에 등장하면(약관, 개발자 프로필 등) 반드시 같은 `ROUTES` 항목을 씁니다. 파일마다 따로 적어 두면 한쪽만 고쳐져 어긋납니다.
+- 아직 화면이 없는 목적지도 `ROUTES`에 먼저 등록하고 주석으로 상태를 적습니다. 화면이 생기면 값만 바꿉니다.
+- 검색 조건처럼 query가 동적으로 조합되는 경로는 `ROUTES`의 기본 경로에 query 문자열을 붙입니다. 기본 경로 자체를 다시 적지 않습니다.
+- 외부 사이트 링크(포트폴리오 URL 등 서버가 내려주는 값)는 `ROUTES` 대상이 아닙니다.
+
 ## 9. 서버 컴포넌트와 클라이언트 컴포넌트
 
 - 기본은 서버 컴포넌트입니다. `'use client'`는 필요한 컴포넌트에만 붙입니다.
@@ -286,6 +310,7 @@ PR 설명에는 다음을 포함합니다.
 - [ ] 호출하는 method, 경로, 필드, 상태 코드가 목 Swagger 계약과 일치하는가?
 - [ ] 목 명세에 없는 필드를 화면에서 임의로 만들거나 채우지 않았는가?
 - [ ] API 경로가 상수로 관리되고 문자열이 흩어져 있지 않은가?
+- [ ] 화면 경로가 `lib/routes.ts`의 `ROUTES`로 관리되고 `href`에 URL 문자열을 직접 적지 않았는가?
 - [ ] 요청·응답 타입이 명시되어 있는가?
 - [ ] 고정 콘텐츠 페이지가 SSG로 생성되는가?
 - [ ] 의도치 않게 정적 생성을 해제하는 요청 의존 API를 쓰지 않았는가?

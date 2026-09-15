@@ -2,6 +2,7 @@ import * as React from "react";
 import Link from "next/link";
 import { cn } from "@/lib/cn";
 import { Container, type ContainerWidth } from "./Container";
+import { ROUTES } from "@/lib/routes";
 
 /**
  * Footer — 모든 공개 화면 하단의 공통 푸터.
@@ -40,23 +41,23 @@ export const DEFAULT_FOOTER_COLUMNS: FooterColumn[] = [
   {
     title: "서비스",
     links: [
-      { label: "이용 방법", href: "/how-to" },
-      { label: "개발자 찾기", href: "/developers" },
+      { label: "이용 방법", href: ROUTES.howTo },
+      { label: "개발자 찾기", href: ROUTES.developers },
     ],
   },
   {
     title: "개발자",
     links: [
-      { label: "프로필 등록", href: "/developers/profile" },
-      { label: "정산 방식", href: "/settlements/guide" },
+      { label: "프로필 등록", href: ROUTES.mypageProfile },
+      { label: "정산 방식", href: ROUTES.settlementsGuide },
     ],
   },
   {
     title: "정책",
     links: [
-      { label: "이용약관", href: "/policies/terms" },
-      { label: "개인정보 처리", href: "/policies/privacy" },
-      { label: "분쟁 처리", href: "/policies/dispute" },
+      { label: "이용약관", href: ROUTES.policiesTerms },
+      { label: "개인정보 처리", href: ROUTES.policiesPrivacy },
+      { label: "분쟁 처리", href: ROUTES.policiesDispute },
     ],
   },
 ];

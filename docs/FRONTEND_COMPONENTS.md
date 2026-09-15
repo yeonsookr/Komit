@@ -10,19 +10,26 @@ fe/src/
 ├─ styles/tokens.css        ← 디자인 토큰(CSS 변수). 색·폰트·라운드·그림자·레이아웃 폭
 ├─ app/globals.css          ← tokens.css import + @theme(토큰 → Tailwind 유틸리티) + base/components 레이어
 ├─ lib/cn.ts                ← clsx + tailwind-merge
+├─ lib/routes.ts            ← 화면 경로 상수 ROUTES (컨벤션 8.1). href 에 URL 문자열을 직접 적지 않습니다
 ├─ components/
 │  ├─ layouts/  AppShell.tsx     AppShell (GNB + 본문 + 푸터)
 │  │            Header.tsx       Header, PUBLIC_NAV, APP_NAV
 │  │            Footer.tsx       Footer
 │  │            Container.tsx    Container (본문 폭 720 / 840 / 960)
 │  ├─ buttons/  Button.tsx      Button, IconButton
+│  │            buttonStyles.ts buttonClass — 링크(<Link>)에 버튼 모양을 입힐 때. 서버 컴포넌트에서도 호출 가능
 │  ├─ feedback/ Callout.tsx     Callout, HelpRow, EmptyState
 │  │            Modal.tsx       Modal(+Header/Body/Footer), Popover, MenuItem, MenuDivider
 │  │            Toast.tsx       ToastProvider, useToast
 │  ├─ domains/
-│  │  └─ chat/     ChatRoom.tsx     ChatRoom, ChatNotice, ChatSessionBanner
-│  │                ChatMessage.tsx  ChatMessage, ChatDateDivider
-│  │                ChatComposer.tsx ChatComposer
+│  │  ├─ chat/     ChatRoom.tsx     ChatRoom, ChatNotice, ChatSessionBanner
+│  │  │             ChatMessage.tsx  ChatMessage, ChatDateDivider
+│  │  │             ChatComposer.tsx ChatComposer
+│  │  └─ landing/  LandingHero.tsx        히어로 (검색 폼 · 예시 칩 · 이번 주 상담 N건) — 유일한 클라이언트 컴포넌트
+│  │                SymptomGrid.tsx        증상별로 찾기 (증상 → 분야 코드 대응 상수 포함)
+│  │                FeaturedDevelopers.tsx 추천 개발자 카드 3장
+│  │                ProcessSteps.tsx       진행 순서 (id="process", ROUTES.howTo 의 앵커)
+│  │                CheckupIntro.tsx       사전 점검 소개 (정적 예시 카드)
 │  └─ common/   Input.tsx       Field, Input, Textarea, SearchInput
 │               Select.tsx      NativeSelect, Dropdown
 │               Choice.tsx      Checkbox, Radio, ChoiceCard, Switch, RatingScale
@@ -184,7 +191,8 @@ import { Card, CardHeader, Field, Input, KeyValueRow, Money, Badge } from "@/com
   두었습니다. Pretendard woff2 를 확보하면 `app/layout.tsx` 에서 `next/font/local` 로 교체합니다.
 - **사이드바 레이아웃**: 의뢰·정산 화면의 좌측 스레드 목록(320px)은 아직 없습니다. 도메인 레이아웃이라
   `components/domains/` 또는 해당 route group 의 layout 으로 만듭니다.
-- **푸터·헤더 링크 경로**: `/how-to`, `/requests`, `/checkup` 등은 임시로 정한 값입니다. 라우팅이
-  확정되면 `Header.tsx`·`Footer.tsx` 의 상수를 함께 고칩니다.
+- **푸터·헤더 링크 경로**: 목적지는 `src/lib/routes.ts` 의 `ROUTES` 에서 관리합니다(컨벤션 8.1).
+  `/requests`, `/checkup`, `/settlements`, `/mypage/*` 는 아직 화면이 없는 임시 값이라 화면이 생기면
+  `ROUTES` 의 값만 고칩니다. `Header.tsx`·`Footer.tsx` 의 메뉴 상수는 URL 을 직접 적지 않습니다.
 - **도메인 복합 컴포넌트**: 채팅 말풍선/입력바, 좌측 스레드 목록, 테이블(정산/관리자), OTP 4칸 입력,
   서명판 캔버스, 캘린더, 세션 컨트롤 바는 위 기본 요소를 조합해 `components/domains/` 아래에 만듭니다.
