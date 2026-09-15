@@ -10,6 +10,7 @@ export const BACKEND = {
   ME: "/api/users/me",
   ROOMS: "/api/rooms",
   ROOM: (roomId: number) => `/api/rooms/${roomId}`,
+  ROOM_CONVERSION: (roomId: number) => `/api/rooms/${roomId}/conversion`,
   DEVELOPERS: "/api/developers",
   DEVELOPER: (developerId: number) => `/api/developers/${developerId}`,
   DEVELOPER_REVIEWS: (developerId: number) => `/api/developers/${developerId}/reviews`,
@@ -24,6 +25,7 @@ export const INTERNAL = {
   ROOMS: "/api/rooms",
   ROOM: (roomId: number) => `/api/rooms/${roomId}`,
   ROOM_MESSAGES: (roomId: number) => `/api/rooms/${roomId}/messages`,
+  ROOM_CONVERSION: (roomId: number) => `/api/rooms/${roomId}/conversion`,
   DEVELOPERS: "/api/developers",
   DEVELOPER: (developerId: number) => `/api/developers/${developerId}`,
   CONSULTATION_REQUESTS: (batchId: number) =>

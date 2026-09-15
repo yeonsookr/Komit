@@ -5,7 +5,7 @@ import { Badge, Breadcrumb, PageHeader } from "@/components/common";
 import {
   RequestSummaryBar,
   RequestSummaryEmpty,
-  RoomChatPanel,
+  RoomConversation,
 } from "@/components/domains/room";
 import { getChatMessages, getMe, getRoom } from "@/lib/api/services";
 import { ApiError } from "@/types/api";
@@ -95,12 +95,13 @@ export default async function RoomPage({ params }: { params: Promise<{ roomId: s
         )}
       </div>
 
-      <section className="mt-10">
-        <h2 className="text-xl font-bold text-fg">채팅</h2>
-        <div className="mt-4">
-          <RoomChatPanel room={room} initialMessages={messages} myName={me.name} />
-        </div>
-      </section>
+      {/* 갈래는 의뢰인이 정합니다 — 개발자에게는 버튼을 보이지 않습니다. */}
+      <RoomConversation
+        room={room}
+        initialMessages={messages}
+        myName={me.name}
+        canConvert={!received}
+      />
     </Container>
   );
 }
