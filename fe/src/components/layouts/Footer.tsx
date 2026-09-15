@@ -57,7 +57,7 @@ export const DEFAULT_FOOTER_COLUMNS: FooterColumn[] = [
     links: [
       { label: "이용약관", href: ROUTES.policiesTerms },
       { label: "개인정보 처리", href: ROUTES.policiesPrivacy },
-      { label: "분쟁 처리", href: ROUTES.policiesDispute },
+      { label: "분쟁 처리", href: ROUTES.policiesRefundDispute },
     ],
   },
 ];
