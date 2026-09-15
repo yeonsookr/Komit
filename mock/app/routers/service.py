@@ -5218,7 +5218,8 @@ class WriteDevelopmentContractRequest(BaseModel):
         examples=[14],
     )
     milestones: list["WriteMilestoneRequest"] = Field(
-        description="맡기로 한 작업. 가격의 합이 계약 금액이 된다.",
+        min_length=1,
+        description="맡기로 한 작업. 가격의 합이 계약 금액이 된다. 하나 이상이어야 한다.",
     )
     rejectedIssues: list["RejectedIssueRequest"] = Field(
         default_factory=list,
@@ -5265,7 +5266,8 @@ class WriteMilestoneRequest(BaseModel):
         examples=[400000],
     )
     qaCriteria: list[str] = Field(
-        description="이 작업의 확인 문장.",
+        min_length=1,
+        description="이 작업의 확인 문장. 하나 이상이어야 한다.",
         examples=[["관리자 주소로 들어가면 로그인 화면이 뜬다"]],
     )
 
@@ -5584,6 +5586,18 @@ CONTRACT_ID_ERROR_EXAMPLE = {
     "errors": [{"field": "contractId", "reason": "정수여야 합니다."}],
 }
 
+# 계약서 작성 바디에서 스키마로 걸리는 건 필수 항목 누락과 빈 배열(milestones, 작업의 qaCriteria)이다.
+# 배열 안 항목의 필드는 `milestones.0.qaCriteria`처럼 위치가 붙어 나온다.
+# 납기가 착수일보다 이른 것은 필드 사이 규칙이라 422가 아니라 400이다.
+WRITE_CONTRACT_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [
+        {"field": "dueDate", "reason": "필수 항목입니다."},
+        {"field": "milestones.0.qaCriteria", "reason": "1개 이상이어야 합니다."},
+    ],
+}
+
 # 확인 요청 바디는 message 하나뿐이고 300자 제한이 유일한 검증 조건이다.
 SUBMIT_MESSAGE_ERROR_EXAMPLE = {
     "code": "INVALID_REQUEST",
@@ -5730,7 +5744,12 @@ def start_development(
             "content": {"application/json": {"example": ROOM_NOT_FOUND_EXAMPLE}},
         },
         **AREA1_UNAUTHORIZED,
-        **AREA1_ERRORS,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": WRITE_CONTRACT_ERROR_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
     },
     summary="개발 계약서 작성",
     description=(
@@ -5750,8 +5769,8 @@ def start_development(
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 방의 개발자가 아닐 때\n"
         "- **404 / ROOM_NOT_FOUND**: `roomId`가 404일 때\n"
-        "- **422 / INVALID_REQUEST**: 작업이 하나도 없거나, `dueDate`가 `startDate`보다 "
-        "이르거나, 확인 문장이 없는 작업이 있을 때\n"
+        "- **422 / INVALID_REQUEST**: `milestones`가 비었거나, 작업의 `qaCriteria`가 비었거나, "
+        "`issueIds`·`startDate`·`dueDate`·`freeRepairDays`·`milestones` 중 빠진 것이 있을 때\n"
         "- **500 / INTERNAL_ERROR**: 계약서를 만들지 못했을 때"
     ),
 )
