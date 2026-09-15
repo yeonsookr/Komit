@@ -2,6 +2,8 @@
  * 사전점검(진단) 타입. 목 Swagger `/service/docs` 영역 2 와 필드가 같습니다.
  */
 
+import type { CodeItem } from "./developer";
+
 /** 답 형식. SINGLE 단수 객관식 · MULTI 복수 객관식 · TEXT 주관식. */
 export type AnswerType = "SINGLE" | "MULTI" | "TEXT";
 
@@ -79,4 +81,46 @@ export interface Inspection {
   inspectionId: number;
   diagnosisVersion: number;
   status: InspectionStatus;
+}
+
+/** 결함 처리 상태. */
+export type IssueStatus =
+  | "UNRESOLVED"
+  | "RESOLVED"
+  | "SUGGESTED"
+  | "CONTRACTED"
+  | "DISABLED";
+
+/** 결함 위험도. */
+export type IssueSeverity = "LOW" | "MEDIUM" | "HIGH";
+
+/** 확인 문장. 계약에서 통과 판정의 기준이 됩니다. */
+export interface QaCriterion {
+  qaCriterionId: number;
+  testCase: string | null;
+  condition: string | null;
+  status: "UNRESOLVED" | "RESOLVED";
+  issueId: number;
+}
+
+/** 검사에서 나온 결함 하나. 진단서와 요구사항 선택에서 함께 씁니다. */
+export interface Issue {
+  issueId: number;
+  title: string;
+  detail: string | null;
+  /** 문제가 있는 위치. 코드에서 찾지 못했으면 null. */
+  location: string | null;
+  /** 사용자가 적은 증상과 관련된 결함인지. 진단서는 참인 것을 위에 따로 보여줍니다. */
+  isInput: boolean | null;
+  category: CodeItem;
+  status: IssueStatus;
+  severity: IssueSeverity;
+  /** 문제가 사라진 것을 확인한 진단 회차. 아직 남아 있으면 null. */
+  fixedVersion: number | null;
+  originIssueId: number | null;
+  qaCriteria: QaCriterion[];
+}
+
+export interface IssueListResponse {
+  content: Issue[];
 }

@@ -4,6 +4,8 @@ import { backendApi } from "../server";
 import { BACKEND } from "../endpoints";
 import type {
   Diagnosis,
+  Issue,
+  IssueListResponse,
   Inspection,
   SaveSurveyAnswersRequest,
   StartDiagnosisRequest,
@@ -94,4 +96,16 @@ export async function downloadScanFile(diagnosisId: number): Promise<ScanFile> {
     fileName: matched?.[1] ?? "komit-scan.md",
     contentType: String(response.headers["content-type"] ?? "text/markdown"),
   };
+}
+
+/** 진단 머리. 준비도 점수와 검사 시각, 프로젝트가 옵니다. */
+export async function getDiagnosis(diagnosisId: number): Promise<Diagnosis> {
+  const { data } = await backendApi().get<Diagnosis>(BACKEND.DIAGNOSIS(diagnosisId));
+  return data;
+}
+
+/** 검사에서 나온 결함 목록. 진단서와 요구사항 선택이 함께 씁니다. */
+export async function getIssues(diagnosisId: number): Promise<Issue[]> {
+  const { data } = await backendApi().get<IssueListResponse>(BACKEND.ISSUES(diagnosisId));
+  return data.content;
 }
