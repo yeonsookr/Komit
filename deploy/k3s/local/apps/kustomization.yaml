@@ -16,3 +16,11 @@ images:
   - name: komit-fe
     newName: komit-fe
     newTag: local
+# 로컬 실습 전용 값입니다. 운영은 deploy.sh가 GitLab CI/CD 변수로 만듭니다.
+# 로컬에는 AI 서버가 없어 AI 호출은 실패합니다.
+configMapGenerator:
+  - name: fe-config
+    namespace: komit
+    literals:
+      - BACKEND_API_BASE_URL=http://service.komit.svc.cluster.local:8080
+      - AI_API_BASE_URL=http://ai.local.invalid

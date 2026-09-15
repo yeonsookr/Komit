@@ -7,7 +7,6 @@ resources:
   - service-service.yaml
   - escrow-deployment.yaml
   - escrow-service.yaml
-  - fe-config.yaml
   - fe-deployment.yaml
   - fe-service.yaml
   - pod-disruption-budgets.yaml

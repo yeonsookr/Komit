@@ -728,7 +728,7 @@ k3s-deploy:
   before_script:
     - apk add --no-cache openssh-client tar
     - |
-      for NAME in SSH_ADDRESS SSH_PRIVATE_KEY SERVICE_DB_PASSWORD ESCROW_DB_PASSWORD; do
+      for NAME in SSH_ADDRESS SSH_PRIVATE_KEY SERVICE_DB_PASSWORD ESCROW_DB_PASSWORD BACKEND_API_BASE_URL AI_API_BASE_URL; do
         eval "VALUE=\${$NAME:-}"
         test -n "$VALUE" || {
           echo "$NAME CI/CD variable is required"
@@ -766,5 +766,9 @@ k3s-deploy:
         echo "export SERVICE_IMAGE='${SERVICE_IMAGE:-}'"
         echo "export ESCROW_IMAGE='${ESCROW_IMAGE:-}'"
         echo "export FE_IMAGE='${FE_IMAGE:-}'"
+        # fe 이미지 빌드에 쓰는 CI/CD 변수를 실행 환경(fe-config)에도 그대로 넣습니다.
+        echo "export BACKEND_API_BASE_URL=\"\$(printf %s '$(b64 "$BACKEND_API_BASE_URL")' | base64 -d)\""
+        echo "export AI_API_BASE_URL=\"\$(printf %s '$(b64 "$AI_API_BASE_URL")' | base64 -d)\""
+        echo "export ESCROW_API_BASE_URL=\"\$(printf %s '$(b64 "${ESCROW_API_BASE_URL:-}")' | base64 -d)\""
         echo 'sh "$1/komit-k3s/k3s/deploy.sh"'
       } | $SSH "$SSH_ADDRESS" 'sudo -n sh -s "$HOME"'
