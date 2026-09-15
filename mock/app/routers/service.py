@@ -5600,6 +5600,16 @@ DELIVERABLE_FILE_ERROR_EXAMPLE = {
     "errors": [{"field": "file", "reason": "필수 항목입니다."}],
 }
 
+# 리뷰는 점수 1~5와 content 1000자가 검증 조건이다. 둘을 함께 어긴 경우를 예시로 든다.
+REVIEW_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [
+        {"field": "devScore", "reason": "5 이하여야 합니다."},
+        {"field": "content", "reason": "1000자 이하여야 합니다."},
+    ],
+}
+
 STARTED_CONTRACT_ID = 409
 
 
@@ -6131,7 +6141,14 @@ def upload_deliverable(
                 }
             },
         },
-        **CONTRACT_ERRORS,
+        404: CONTRACT_ERRORS[404],
+        **AREA1_UNAUTHORIZED,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": REVIEW_ERROR_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
     },
     summary="리뷰 남기기",
     description=(
