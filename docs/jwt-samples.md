@@ -45,6 +45,23 @@ eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMiIsImlhdCI6MTc4OTI1NzYwMCwiZXh
 eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiaWF0IjoxNzg5MzQ0MDAwLCJleHAiOjE4MjA4ODAwMDB9.PHvB4fHadcLDiyvn-Eldn-9k9OOvfh6vXoviY7CGZ4A
 ```
 
+## 리프레시 토큰
+
+액세스 토큰과 달리 JWT가 아니다. 서버가 만든 **UUID 문자열**이고 클레임이 없어 서명 검증도 없다.
+
+| 항목 | 값 |
+|---|---|
+| 형식 | UUID v4 (`f8c1d2e3-4b5a-6789-abcd-ef0123456789`) |
+| 저장 | Redis, TTL로 만료 (BACKEND_CONVENTIONS 6.4). DB 테이블에는 저장하지 않는다 |
+| 만료 기간 | **미정** |
+| 재발급 시 | 새 값으로 바뀌고 이전 값은 삭제된다 |
+| 로그아웃 시 | 삭제된다 |
+
+```
+f8c1d2e3-4b5a-6789-abcd-ef0123456789   유효 (mock의 응답 예시)
+expired-refresh-token                  만료 · 재발급 401 REFRESH_TOKEN_INVALID 재현용 (mock 예약값)
+```
+
 ## 검증 케이스
 
 | # | 토큰 | 호출 | 기대 |
