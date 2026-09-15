@@ -13,6 +13,7 @@ export const BACKEND = {
   DEVELOPERS: "/api/developers",
   DEVELOPER: (developerId: number) => `/api/developers/${developerId}`,
   DEVELOPER_REVIEWS: (developerId: number) => `/api/developers/${developerId}/reviews`,
+  CODES: (groupKey: string) => `/api/codes/${groupKey}`,
 } as const;
 
 export const INTERNAL = {
