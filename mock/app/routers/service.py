@@ -5610,6 +5610,13 @@ REVIEW_ERROR_EXAMPLE = {
     ],
 }
 
+# 인계물 내려받기는 바디가 없어 검증 실패는 경로 변수 deliverableId가 정수가 아닐 때만 난다.
+DELIVERABLE_ID_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [{"field": "deliverableId", "reason": "정수여야 합니다."}],
+}
+
 STARTED_CONTRACT_ID = 409
 
 
@@ -10013,6 +10020,11 @@ def download_scan_file(
             },
         },
         **AREA1_UNAUTHORIZED,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": DELIVERABLE_ID_ERROR_EXAMPLE}},
+        },
         500: AREA1_ERRORS[500],
     },
     summary="인계물 내려받기",
@@ -10028,6 +10040,7 @@ def download_scan_file(
         "계약의 당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 404를 준다\n"
         "- **409 / DELIVERABLE_NOT_UPLOADED**: `deliverableId`가 409일 때. 개발자가 아직 "
         "올리지 않아 받을 파일이 없다\n"
+        "- **422 / INVALID_REQUEST**: `deliverableId`가 정수가 아닐 때\n"
         "- **500 / INTERNAL_ERROR**: 내려주지 못했을 때"
     ),
 )
