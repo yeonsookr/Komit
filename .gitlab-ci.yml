@@ -611,10 +611,6 @@ mock-docker-build-push:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
       changes:
         - mock/**/*
-    # TODO: 배포 테스트용 임시 트리거. 테스트가 끝나면 삭제합니다.
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      changes:
-        - mock/**/*
     - when: never
 
 # 서비스 서버 도커 빌드/도커허브 푸시
@@ -628,10 +624,6 @@ service-docker-build-push:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
       changes:
         - service/**/*
-    # TODO: 배포 테스트용 임시 트리거. 테스트가 끝나면 삭제합니다.
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      changes:
-        - service/**/*
     - when: never
 
 # 에스크로 서버 도커 빌드/도커허브 푸시
@@ -643,10 +635,6 @@ escrow-docker-build-push:
     IMAGE_ENV_NAME: ESCROW_IMAGE
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
-      changes:
-        - escrow/**/*
-    # TODO: 배포 테스트용 임시 트리거. 테스트가 끝나면 삭제합니다.
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes:
         - escrow/**/*
     - when: never
@@ -663,10 +651,6 @@ fe-docker-build-push:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
       changes:
         - fe/**/*
-    # TODO: 배포 테스트용 임시 트리거. 테스트가 끝나면 삭제합니다.
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
-      changes:
-        - fe/**/*
     - when: never
 
 # SSH로 배포 서버에 접속 후 Docker Compose
@@ -680,10 +664,6 @@ mock-docker-deploy:
   allow_failure: false
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
-      changes:
-        - mock/**/*
-    # TODO: 배포 테스트용 임시 트리거. 테스트가 끝나면 삭제합니다.
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes:
         - mock/**/*
     - when: never
@@ -739,13 +719,6 @@ k3s-deploy:
   resource_group: k3s-deploy
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
-      changes:
-        - service/**/*
-        - escrow/**/*
-        - fe/**/*
-        - deploy/k3s/**/*
-    # TODO: 배포 테스트용 임시 트리거. 테스트가 끝나면 삭제합니다.
-    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes:
         - service/**/*
         - escrow/**/*
