@@ -18,6 +18,10 @@
   --color-ink-hover: var(--k-ink-hover);
   --color-on-ink: var(--k-on-ink);
 
+  --color-kakao: var(--k-kakao);
+  --color-kakao-hover: var(--k-kakao-hover);
+  --color-on-kakao: var(--k-on-kakao);
+
   --color-fg: var(--k-fg);
   --color-fg-secondary: var(--k-fg-secondary);
   --color-fg-muted: var(--k-fg-muted);

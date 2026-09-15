@@ -25,11 +25,12 @@ fe/src/
 │  │  ├─ chat/     ChatRoom.tsx     ChatRoom, ChatNotice, ChatSessionBanner
 │  │  │             ChatMessage.tsx  ChatMessage, ChatDateDivider
 │  │  │             ChatComposer.tsx ChatComposer
-│  │  └─ landing/  LandingHero.tsx        히어로 (검색 폼 · 예시 칩 · 이번 주 상담 N건) — 유일한 클라이언트 컴포넌트
-│  │                SymptomGrid.tsx        증상별로 찾기 (증상 → 분야 코드 대응 상수 포함)
-│  │                FeaturedDevelopers.tsx 추천 개발자 카드 3장
-│  │                ProcessSteps.tsx       진행 순서 (id="process", ROUTES.howTo 의 앵커)
-│  │                CheckupIntro.tsx       사전 점검 소개 (정적 예시 카드)
+│  │  ├─ landing/  LandingHero.tsx        히어로 (검색 폼 · 예시 칩 · 이번 주 상담 N건) — 유일한 클라이언트 컴포넌트
+│  │  │             SymptomGrid.tsx        증상별로 찾기 (증상 → 분야 코드 대응 상수 포함)
+│  │  │             FeaturedDevelopers.tsx 추천 개발자 카드 3장
+│  │  │             ProcessSteps.tsx       진행 순서 (id="process", ROUTES.howTo 의 앵커)
+│  │  │             CheckupIntro.tsx       사전 점검 소개 (정적 예시 카드)
+│  │  └─ auth/     LoginCard.tsx          로그인 카드 (카카오 버튼 · 약관 안내 · 문서 링크 4개)
 │  └─ common/   Input.tsx       Field, Input, Textarea, SearchInput
 │               Select.tsx      NativeSelect, Dropdown
 │               Choice.tsx      Checkbox, Radio, ChoiceCard, Switch, RatingScale
@@ -72,6 +73,9 @@ export default function SiteLayout({ children }) {
 - **본문 폭은 레이아웃이 정하지 않습니다.** 화면마다 다르기 때문에(일반 720 · 관리자 840)
   각 페이지가 `<Container width="content | wide | landing">` 로 감쌉니다.
 - `AppShell` 옵션: `user`(로그인 헤더로 전환) · `nav`(메뉴 교체) · `hideFooter` · `headerWidth` · `footerWidth`.
+
+`src/app/(auth)/layout.tsx` 는 GNB·푸터가 없는 화면의 골격입니다. 연회색 배경 위에 내용을 가운데 놓기만
+하고 카드는 각 페이지가 그립니다. 로그인(`1_로그인`)과 운영 콘솔 로그인(`9_로그인`)이 같은 골격입니다.
 - 세션(화상) 화면이나 운영 콘솔처럼 골격이 다른 화면은 이 그룹 밖에 두고 별도 레이아웃을 만듭니다.
 
 ### Header
@@ -125,7 +129,8 @@ export default function SiteLayout({ children }) {
 
 | 컴포넌트 | variant / 옵션 | 화면 예 |
 |---|---|---|
-| `Button` | `primary` `dark` `outline` `ghost` `danger` / `sm~xl` / `fullWidth` `loading` | 문제 진단하기 · 보내기 · 취소 · + 항목 추가 |
+| `Button` | `primary` `dark` `outline` `ghost` `danger` `kakao` / `sm~xl` / `fullWidth` `loading` | 문제 진단하기 · 보내기 · 취소 · + 항목 추가 |
+| `buttonClass` | Button 과 같은 옵션 | 이동만 하는 요소에 버튼 모양 (`<Link className={buttonClass(...)}>`) |
 | `IconButton` | 정사각 | 행 삭제 ✕, 월 이동 ‹ › |
 | `Field` | `layout="vertical" \| "horizontal"`, `helper` `error` | 설문 라벨(세로) · 계좌/계약서 폼(가로) |
 | `Input` | `leftIcon` `suffix` `mono` `underline` `invalid` | 검색, 금액 400,000 원, 기간 10 일 |

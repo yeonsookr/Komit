@@ -17,11 +17,17 @@ export const ROUTES = {
   developersByField: (codeId: number) => `/developers?fieldCodeIds=${codeId}`,
   developer: (developerId: number) => `/developers/${developerId}`,
 
-  /** 약관과 정책은 한 페이지입니다. 문서별 링크는 앵커로 구분합니다. (화면 없음) */
+  /**
+   * 약관과 정책. `policies` 는 문서 목록이고 본문은 문서마다 따로입니다.
+   * 목록 화면(`8_약관`)이 문서별로 「읽기」를 두고, 개인정보 처리방침처럼 주소를 따로
+   * 제출해야 하는 문서가 있어 한 페이지에 모으지 않습니다. 서버가 주는 문서가 아니라
+   * 화면이 가진 정적 문서입니다. (화면 없음 — 별도 이슈)
+   */
   policies: "/policies",
-  policiesTerms: "/policies#terms",
-  policiesPrivacy: "/policies#privacy",
-  policiesDispute: "/policies#dispute",
+  policiesTerms: "/policies/terms",
+  policiesPrivacy: "/policies/privacy",
+  policiesElectronicFinance: "/policies/electronic-finance",
+  policiesRefundDispute: "/policies/refund-dispute",
 
   /** 사전점검(진단) 시작. 로그인이 필요합니다. */
   checkup: "/checkup",
