@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Button, IconButton } from "@/components/buttons";
 import { Container, Footer, Header } from "@/components/layouts";
+import { ChatComposer, ChatDateDivider, ChatMessage, ChatNotice, ChatRoom, ChatSessionBanner } from "@/components/domains/chat";
 import {
   Avatar,
   Badge,
@@ -100,50 +101,10 @@ export default function Preview() {
 
   return (
     <div className="flex min-h-screen flex-col bg-bg">
-      {/* GNB */}
-      <header className="sticky top-0 z-30 h-gnb border-b border-line bg-bg">
-        <div className="mx-auto flex h-full max-w-[1200px] items-center gap-6 px-8">
-          <span className="text-xl font-bold">Komit</span>
-          <nav className="flex items-center gap-1">
-            <NavPill href="#" active>의뢰</NavPill>
-            <NavPill href="#">개발자 찾기</NavPill>
-            <NavPill href="#">사전점검</NavPill>
-            <NavPill href="#">정산</NavPill>
-          </nav>
-          <div className="ml-auto flex items-center gap-4">
-            <SegmentedTabs
-              size="sm"
-              aria-label="역할"
-              items={[{ value: "client", label: "의뢰인" }, { value: "dev", label: "개발자" }]}
-              value={role}
-              onChange={setRole}
-            />
-            <span className="relative">
-              <IconButton aria-label="알림" size="sm">
-                <BellIcon />
-              </IconButton>
-              <CountBadge count={3} className="absolute -top-1 -right-1" />
-            </span>
-            <span className="relative">
-              <button type="button" onClick={() => setMenu((v) => !v)} aria-label="계정 메뉴">
-                <Avatar name="김미미" />
-              </button>
-              <Popover open={menu} onClose={() => setMenu(false)} align="end" className="p-1.5">
-                <p className="px-3 py-2 text-sm font-bold">김미미</p>
-                <MenuDivider />
-                <MenuItem>마이페이지</MenuItem>
-                <MenuItem>내 프로필</MenuItem>
-                <MenuItem>내 일정</MenuItem>
-                <MenuItem>설정</MenuItem>
-                <MenuDivider />
-                <MenuItem>로그아웃</MenuItem>
-              </Popover>
-            </span>
-          </div>
-        </div>
-      </header>
+      {/* GNB — 공통 Header 를 그대로 씁니다 */}
+      <Header user={{ name: "김미미", unreadCount: 3 }} onLogout={() => {}} />
 
-      <main className="mx-auto flex w-full max-w-[960px] flex-1 flex-col gap-16 px-8 py-12">
+      <main className="mx-auto flex w-full max-w-[960px] flex-1 flex-col gap-16 px-4 py-12 sm:px-8">
         <div>
           <Eyebrow>Komit Design System</Eyebrow>
           <h1 className="mt-1 text-[28px] font-bold">공통 컴포넌트</h1>
@@ -487,6 +448,53 @@ export default function Preview() {
           </Modal>
         </Section>
 
+        <Section title="채팅" description="ChatRoom · ChatMessage · ChatComposer — 상담/컨설팅/개발 방 공용">
+          <Row label="대화 + 입력바">
+            <ChatRoom
+              className="w-full"
+              bodyClassName="max-h-[320px]"
+              footer={<ChatComposer onSend={(text) => toast({ title: "보냈습니다", description: text })} />}
+            >
+              <ChatDateDivider date="8월 20일" />
+              <ChatMessage author="이준 개발자" time="10:14">
+                요청서 확인했습니다. 관리자 API 인증은 middleware에서 한 번에 처리 가능해 보입니다. 회원탈퇴는 데이터 보관 정책을 어떻게 하실지 알려주세요.
+              </ChatMessage>
+              <ChatMessage mine time="10:32">
+                보관은 30일 후 완전 삭제로 부탁드려요
+              </ChatMessage>
+              <ChatMessage author="이준 개발자" time="11:02">
+                알겠습니다. 계약서 보내드릴게요.
+              </ChatMessage>
+            </ChatRoom>
+          </Row>
+
+          <Row label="세션 안내 + 마무리 안내">
+            <ChatRoom
+              className="w-full"
+              banner={
+                <ChatSessionBanner
+                  title="컨설팅 세션 · 8월 29일 (토) 14:00 · 45분"
+                  description="시작 10분 전부터 들어갈 수 있습니다"
+                  action={<Button size="sm">입장</Button>}
+                />
+              }
+              footer={
+                <ChatNotice action={<Button variant="dark" size="sm">개발 방으로</Button>}>
+                  개발 계약으로 진행해 이 상담은 마무리됐습니다. 이어지는 이야기는 개발 방에서 합니다.
+                </ChatNotice>
+              }
+            >
+              <ChatDateDivider date="8월 22일" />
+              <ChatMessage author="이준 개발자" time="11:20">
+                세션 전에 결제 실패가 언제 나는지 대충이라도 알려주시면 미리 볼게요.
+              </ChatMessage>
+              <ChatMessage mine time="11:44">
+                네, 이미지 쪽부터 부탁드립니다
+              </ChatMessage>
+            </ChatRoom>
+          </Row>
+        </Section>
+
         <Section title="레이아웃" description="공통 GNB · 본문 폭 (AppShell) · 푸터는 이 페이지 맨 아래">
           <Row label="Header — 비로그인">
             <div className="w-full overflow-hidden rounded-xl border border-line">
@@ -495,7 +503,7 @@ export default function Preview() {
           </Row>
           <Row label="Header — 로그인">
             <div className="w-full overflow-hidden rounded-xl border border-line">
-              <Header className="static" user={{ name: "김미미", role: "client", unreadCount: 3 }} onLogout={() => {}} />
+              <Header className="static" user={{ name: "김미미", unreadCount: 3 }} onLogout={() => {}} />
             </div>
           </Row>
           <Row label="Container — 본문 폭">
@@ -514,9 +522,6 @@ export default function Preview() {
 }
 
 /* icons (demo) */
-function BellIcon() {
-  return <svg viewBox="0 0 24 24" className="size-5" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.94 1.94 0 0 0 3.4 0" /></svg>;
-}
 function ArrowIcon() {
   return <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M5 12h14M13 6l6 6-6 6" /></svg>;
 }

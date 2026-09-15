@@ -58,7 +58,7 @@ export function SegmentedTabs<T extends string = string>({
       role="tablist"
       onKeyDown={onKeyDown}
       className={cn(
-        "inline-flex items-center gap-0.5 rounded-lg bg-surface p-1",
+        "inline-flex max-w-full items-center gap-0.5 overflow-x-auto rounded-lg bg-surface p-1",
         fullWidth && "flex w-full",
         className,
       )}
@@ -109,7 +109,7 @@ export function NavPill({ active, as: Comp = "a", className, ...props }: NavPill
     <Comp
       aria-current={active ? "page" : undefined}
       className={cn(
-        "inline-flex h-8 items-center rounded-md px-3 text-sm font-medium transition-colors",
+        "inline-flex h-8 shrink-0 items-center rounded-md px-3 text-sm font-medium whitespace-nowrap transition-colors",
         active ? "bg-primary-soft text-primary" : "text-fg-secondary hover:bg-surface hover:text-fg",
         className,
       )}

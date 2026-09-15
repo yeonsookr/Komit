@@ -19,6 +19,10 @@ fe/src/
 │  ├─ feedback/ Callout.tsx     Callout, HelpRow, EmptyState
 │  │            Modal.tsx       Modal(+Header/Body/Footer), Popover, MenuItem, MenuDivider
 │  │            Toast.tsx       ToastProvider, useToast
+│  ├─ domains/
+│  │  └─ chat/     ChatRoom.tsx     ChatRoom, ChatNotice, ChatSessionBanner
+│  │                ChatMessage.tsx  ChatMessage, ChatDateDivider
+│  │                ChatComposer.tsx ChatComposer
 │  └─ common/   Input.tsx       Field, Input, Textarea, SearchInput
 │               Select.tsx      NativeSelect, Dropdown
 │               Choice.tsx      Checkbox, Radio, ChoiceCard, Switch, RatingScale
@@ -39,6 +43,7 @@ import { Button } from "@/components/buttons";
 import { Card, CardHeader, Field, Input, Money } from "@/components/common";
 import { Modal, useToast } from "@/components/feedback";
 import { AppShell, Container } from "@/components/layouts";
+import { ChatRoom, ChatMessage } from "@/components/domains/chat";
 ```
 
 `ToastProvider` 는 `app/layout.tsx` 에서 이미 트리 전체를 감싸고 있습니다. `useToast()` 만 호출하면 됩니다.
@@ -67,11 +72,22 @@ export default function SiteLayout({ children }) {
 | 상태 | 구성 |
 |---|---|
 | 비로그인 | 로고 + `PUBLIC_NAV`(이용 방법 · 의뢰 · 개발자 찾기 · 사전점검) + 로그인 |
-| 로그인 | 로고 + `APP_NAV`(의뢰 · 개발자 찾기 · 사전점검 · 정산) + 역할 전환(의뢰인｜개발자) + 알림 + 아바타 메뉴 |
+| 로그인 | 로고 + `APP_NAV`(의뢰 · 개발자 찾기 · 사전점검 · 정산) + 알림 + 아바타 메뉴 |
 
 높이는 56px(`h-gnb`) 고정이고, 현재 경로를 `usePathname` 으로 읽어 `NavPill` 활성 상태를 정합니다.
+**md 미만에서는 메뉴가 햄버거 패널로 접힙니다.** 알림·아바타는 자주 쓰는 동작이라 접지 않습니다.
 `user` 를 넘기지 않으면 비로그인 헤더입니다. 인증이 붙으면 `(site)/layout.tsx` 에서 세션을 읽어
-`<AppShell user={{ name, role, unreadCount }}>` 로 넘기고, 역할 전환·로그아웃 핸들러를 연결합니다.
+`<AppShell user={{ name, unreadCount }}>` 로 넘기고 로그아웃 핸들러를 연결합니다.
+
+### 좁은 화면 대응
+
+컨벤션 12장에 맞춰 컴포넌트 쪽에서 아래를 보장합니다. 화면을 만들 때 따로 처리하지 않아도 됩니다.
+
+- `Header`: md 미만에서 메뉴가 햄버거 패널로 접힙니다. 로고·알림·아바타는 항상 보입니다.
+- `NavPill`: `whitespace-nowrap` + `shrink-0` — 폭이 모자라도 글자가 세로로 쪼개지지 않습니다.
+- `SegmentedTabs`: 탭이 많으면 트랙 안에서만 가로 스크롤됩니다(페이지는 가로로 스크롤되지 않습니다).
+- `Field layout="horizontal"`: sm 미만에서 라벨이 입력 위로 쌓입니다.
+- `Container`: 좌우 여백 16px(sm 이상 24px), GNB 는 32px.
 
 ### Footer
 
@@ -121,7 +137,7 @@ export default function SiteLayout({ children }) {
 | `CardHeader` / `CardSection` | | 요구사항 · 3건 · 합계 650,000원 |
 | `KeyValueRow` | `mono` `action` | 계약서 조항, 마이페이지 설정 행 |
 | `StatCard` | `size` `tone` `badge` | 계약이 끝나면 받을 돈 650,000원 |
-| `SegmentedTabs` | `count` `disabled` `fullWidth` | 채팅 6 / 계약서 / 진행 / 확인 3 / 리뷰 |
+| `SegmentedTabs` | `count` `disabled` `fullWidth` | 채팅 6 / 계약서 / 진행 / 확인 3 / 리뷰 · 의뢰인｜개발자 |
 | `NavPill` | `active` | GNB 메뉴 |
 | `Avatar` / `RatingDots` | `xs~xl` `status` / `tone` | GNB 32, 리스트 44, 프로필 72 · 실력 ●●●●○ 4.4 |
 | `Callout` | `info` `neutral` `warning` `danger` `success` / `action` | 등록한 계좌가 없습니다 |
@@ -133,6 +149,12 @@ export default function SiteLayout({ children }) {
 | `PageHeader` / `Breadcrumb` | | 의뢰 / 개발 → 수제 비누 가게 |
 | `NumberedSteps` / `ProgressList` | `done` `active` `pending` | 예치금 처리 방식 1·2·3 · 진행 상황 |
 | `Divider` / `StickyBar` | `label` | 채팅 날짜 구분 · 하단 고정 CTA |
+| `ChatRoom` | `banner` `footer` `bodyClassName` | 상담·컨설팅·개발 방의 대화 카드 |
+| `ChatMessage` | `mine` `author` `time` `hideAvatar` | 내 말(연보라·우측) / 상대 말(흰 면·아바타) |
+| `ChatDateDivider` | | 8월 22일 |
+| `ChatComposer` | `onSend` `disabled` `sending` | 메시지를 입력하세요 + 보내기 (Enter 전송) |
+| `ChatNotice` | `action` | 개발 계약으로 진행해 이 상담은 마무리됐습니다 + 개발 방으로 |
+| `ChatSessionBanner` | `title` `description` `action` | 컨설팅 세션 · 8월 29일 14:00 · 45분 + 입장 |
 
 ## 5. 사용 예
 

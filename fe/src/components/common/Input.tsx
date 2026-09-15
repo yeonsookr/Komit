@@ -33,7 +33,7 @@ export function Field({
       htmlFor={htmlFor}
       className={cn(
         "text-[13px] font-semibold text-fg-secondary",
-        layout === "horizontal" && "w-[100px] shrink-0 pt-2.5 font-medium text-fg-subtle",
+        layout === "horizontal" && "font-medium text-fg-subtle sm:w-[100px] sm:shrink-0 sm:pt-2.5",
       )}
     >
       {label}
@@ -48,7 +48,7 @@ export function Field({
 
   if (layout === "horizontal") {
     return (
-      <div className={cn("flex items-start gap-4", className)}>
+      <div className={cn("flex flex-col gap-1.5 sm:flex-row sm:items-start sm:gap-4", className)}>
         {labelEl}
         <div className="min-w-0 flex-1">
           {children}
