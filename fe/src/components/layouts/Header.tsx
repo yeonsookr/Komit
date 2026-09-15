@@ -7,6 +7,7 @@ import { cn } from "@/lib/cn";
 import { Avatar, CountBadge, NavPill } from "@/components/common";
 import { MenuDivider, MenuItem, Popover } from "@/components/feedback";
 import { Container, type ContainerWidth } from "./Container";
+import { ROUTES } from "@/lib/routes";
 
 /**
  * Header — 56px 높이의 GNB.
@@ -41,25 +42,25 @@ export interface HeaderProps {
 
 /** 비로그인 화면(랜딩)의 메뉴 */
 export const PUBLIC_NAV: HeaderNavItem[] = [
-  { label: "이용 방법", href: "/how-to" },
-  { label: "의뢰", href: "/requests" },
-  { label: "개발자 찾기", href: "/developers" },
-  { label: "사전점검", href: "/checkup" },
+  { label: "이용 방법", href: ROUTES.howTo },
+  { label: "의뢰", href: ROUTES.requests },
+  { label: "개발자 찾기", href: ROUTES.developers },
+  { label: "사전점검", href: ROUTES.checkup },
 ];
 
 /** 로그인 화면의 메뉴 */
 export const APP_NAV: HeaderNavItem[] = [
-  { label: "의뢰", href: "/requests" },
-  { label: "개발자 찾기", href: "/developers" },
-  { label: "사전점검", href: "/checkup" },
-  { label: "정산", href: "/settlements" },
+  { label: "의뢰", href: ROUTES.requests },
+  { label: "개발자 찾기", href: ROUTES.developers },
+  { label: "사전점검", href: ROUTES.checkup },
+  { label: "정산", href: ROUTES.settlements },
 ];
 
 const DEFAULT_MENU_ITEMS: HeaderNavItem[] = [
-  { label: "마이페이지", href: "/mypage" },
-  { label: "내 프로필", href: "/mypage/profile" },
-  { label: "내 일정", href: "/mypage/schedule" },
-  { label: "설정", href: "/mypage/settings" },
+  { label: "마이페이지", href: ROUTES.mypage },
+  { label: "내 프로필", href: ROUTES.mypageProfile },
+  { label: "내 일정", href: ROUTES.mypageSchedule },
+  { label: "설정", href: ROUTES.mypageSettings },
 ];
 
 /** /requests 와 /requests/123 은 같은 메뉴로 봅니다. */
@@ -71,8 +72,8 @@ function isActive(pathname: string | null, href: string) {
 export function Header({
   nav,
   user,
-  loginHref = "/login",
-  notificationsHref = "/notifications",
+  loginHref = ROUTES.login,
+  notificationsHref = ROUTES.notifications,
   menuItems = DEFAULT_MENU_ITEMS,
   onLogout,
   width = "full",
@@ -100,7 +101,7 @@ export function Header({
   return (
     <header className={cn("sticky top-0 z-30 border-b border-line bg-bg", className)}>
       <Container width={width} className="flex h-gnb items-center gap-2 sm:gap-4 sm:px-8">
-        <Link href="/" className="mr-1 shrink-0 text-lg font-bold text-fg">
+        <Link href={ROUTES.home} className="mr-1 shrink-0 text-lg font-bold text-fg">
           Komit
         </Link>
 
