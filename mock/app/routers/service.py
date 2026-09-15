@@ -11,6 +11,7 @@
     - 에러 message에 내부 정보를 담지 않는다. 500은 고정 문구만 반환한다.
 """
 
+import copy
 import re
 
 from typing import Annotated, Literal
@@ -687,6 +688,30 @@ REFRESH_TOKEN_INVALID = (
 )
 UNAUTHORIZED = ("UNAUTHORIZED", "로그인이 필요합니다.")
 
+# featured-developers의 size는 1~10이라 공용 예시(size ≤ 100)와 한계값이 다르다.
+FEATURED_SIZE_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [{"field": "size", "reason": "10 이하여야 합니다."}],
+}
+
+# 카카오 로그인은 code·redirectUri가 둘 다 필수다. 빈 바디를 보내면 두 항목이 함께 온다.
+KAKAO_LOGIN_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [
+        {"field": "code", "reason": "필수 항목입니다."},
+        {"field": "redirectUri", "reason": "필수 항목입니다."},
+    ],
+}
+
+# 토큰 재발급은 refreshToken 하나만 받고, 그것이 필수다.
+TOKEN_REFRESH_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [{"field": "refreshToken", "reason": "필수 항목입니다."}],
+}
+
 
 # --------------------------------------------------------------------------- #
 # 영역 1 — 목 데이터
@@ -836,7 +861,7 @@ AREA1_UNAUTHORIZED: dict = {
     tags=["1 랜딩 · 로그인"],
     responses={
         200: {"content": {"application/json": {"example": SUMMARY_EXAMPLE}}},
-        **AREA1_ERRORS,
+        500: AREA1_ERRORS[500],
     },
     summary="랜딩 지표 조회",
     description=(
@@ -859,7 +884,12 @@ def get_landing_summary() -> LandingSummaryResponse:
     tags=["1 랜딩 · 로그인"],
     responses={
         200: {"content": {"application/json": {"example": FEATURED_EXAMPLE}}},
-        **AREA1_ERRORS,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": FEATURED_SIZE_ERROR_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
     },
     summary="추천 개발자 목록 조회",
     description=(
@@ -904,12 +934,17 @@ def get_featured_developers(
             "description": "카카오 인가 코드로 로그인하지 못함",
             "content": {"application/json": {"example": KAKAO_AUTH_FAILED_EXAMPLE}},
         },
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": KAKAO_LOGIN_ERROR_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
         503: {
             "model": ErrorResponse,
             "description": "카카오 서비스에 연결하지 못함",
             "content": {"application/json": {"example": KAKAO_UNAVAILABLE_EXAMPLE}},
         },
-        **AREA1_ERRORS,
     },
     summary="카카오 로그인",
     description=(
@@ -923,9 +958,10 @@ def get_featured_developers(
         "- **200**: 로그인에 성공했을 때. 이번에 새로 가입했으면 `isNewUser`가 true다\n"
         "- **401 / KAKAO_AUTH_FAILED**: `code`가 `invalid-code`일 때. 인가 코드가 "
         "만료되었거나 이미 쓴 값이다. 계정이 있는지 없는지는 구분해 알려주지 않는다\n"
+        "- **422 / INVALID_REQUEST**: `code`나 `redirectUri`가 없을 때\n"
+        "- **500 / INTERNAL_ERROR**: 로그인을 처리하지 못했을 때\n"
         "- **503 / KAKAO_UNAVAILABLE**: `code`가 `kakao-unavailable`일 때. 카카오 쪽 "
-        "문제라 잠시 뒤 다시 시도하면 된다\n"
-        "- **422 / INVALID_REQUEST**: `code`나 `redirectUri`가 없을 때\n\n"
+        "문제라 잠시 뒤 다시 시도하면 된다\n\n"
         "`code`가 `new-user`이면 새로 가입한 응답을, 그 밖의 값이면 기존 사용자로 "
         "로그인한 응답을 준다."
     ),
@@ -958,7 +994,12 @@ def login_with_kakao(request: KakaoLoginRequest) -> KakaoLoginResponse | JSONRes
                 "application/json": {"example": REFRESH_TOKEN_INVALID_EXAMPLE}
             },
         },
-        **AREA1_ERRORS,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": TOKEN_REFRESH_ERROR_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
     },
     summary="액세스 토큰 재발급",
     description=(
@@ -969,7 +1010,8 @@ def login_with_kakao(request: KakaoLoginRequest) -> KakaoLoginResponse | JSONRes
         "- **401 / REFRESH_TOKEN_INVALID**: `refreshToken`이 `expired-refresh-token`일 "
         "때. 만료되었거나 이미 다시 발급받아 쓸 수 없는 값이다. 이때는 로그인 화면으로 "
         "보낸다\n"
-        "- **422 / INVALID_REQUEST**: `refreshToken`이 없을 때"
+        "- **422 / INVALID_REQUEST**: `refreshToken`이 없을 때\n"
+        "- **500 / INTERNAL_ERROR**: 재발급을 처리하지 못했을 때"
     ),
 )
 def refresh_access_token(request: RefreshTokenRequest) -> TokenResponse | JSONResponse:
@@ -2367,7 +2409,7 @@ class ReviewResponse(BaseModel):
         description="개발력 점수. 1에서 5 사이이며 비울 수 없다.",
         examples=[5],
     )
-    commScore: int = Field(
+    expScore: int = Field(
         description=(
             "설명력 점수. 1에서 5 사이이며 비울 수 없다. 컨설팅 계약이든 개발 계약이든 "
             "리뷰 하나는 두 점수를 다 받는다."
@@ -2966,7 +3008,7 @@ REVIEWS = [
         "clientName": "김O미",
         "contractType": "DEVELOPMENT",
         "devScore": 5,
-        "commScore": 5,
+        "expScore": 5,
         "content": "말이 잘 통했습니다.",
         "reply": None,
         "createdAt": "2026-08-19T14:20:00+09:00",
@@ -2976,7 +3018,7 @@ REVIEWS = [
         "clientName": "최O진",
         "contractType": "CONSULTING",
         "devScore": 4,
-        "commScore": 5,
+        "expScore": 5,
         "content": None,
         "reply": "감사합니다.",
         "createdAt": "2026-08-02T09:10:00+09:00",
@@ -5256,7 +5298,8 @@ class SubmitMilestoneRequest(BaseModel):
 
     message: str | None = Field(
         default=None,
-        description="의뢰인에게 함께 남길 말. 적지 않아도 된다.",
+        max_length=300,
+        description="의뢰인에게 함께 남길 말. 적지 않아도 된다. 300자까지 받는다.",
         examples=[None],
     )
 
@@ -5276,8 +5319,11 @@ class WriteReviewRequest(BaseModel):
     devScore: int = Field(
         ge=1, le=5, description="개발력 점수. 1에서 5 사이다.", examples=[5]
     )
-    commScore: int = Field(
-        ge=1, le=5, description="설명력 점수. 1에서 5 사이다.", examples=[5]
+    expScore: int = Field(
+        ge=1,
+        le=5,
+        description="설명력 점수. 1에서 5 사이다. ERD reviews.exp_score에 대응한다.",
+        examples=[5],
     )
     content: str | None = Field(
         default=None,
@@ -5471,6 +5517,21 @@ DEV_CONTRACT_EXAMPLE = {
     "updatedAt": "2026-08-23T10:20:00+09:00",
 }
 
+# 착수 직후의 계약서. DEV_CONTRACT_EXAMPLE을 복사해 상태만 바꾼다 — 값을 따로 적으면
+# 작업 이름·가격·확인 문장을 고칠 때 두 예시가 어긋나므로 반드시 복사로 만든다.
+# DEV_CONTRACT_EXAMPLE은 1차 통과·2차 확인 대기인 진행 중 시점이라 착수 응답으로 쓰면
+# "착수하면 1차가 이미 통과돼 있다"고 읽힌다. 착수 직후는 1차만 IN_PROGRESS, 나머지는
+# SCHEDULED이고 확인 요청·통과 시각은 아직 없다.
+STARTED_CONTRACT_EXAMPLE = copy.deepcopy(DEV_CONTRACT_EXAMPLE)
+for _index, _milestone in enumerate(STARTED_CONTRACT_EXAMPLE["development"]["milestones"]):
+    _milestone["status"] = "IN_PROGRESS" if _index == 0 else "SCHEDULED"
+    _milestone["submittedAt"] = None
+    _milestone["confirmedAt"] = None
+    _milestone["autoPassAt"] = None
+    for _criterion in _milestone["qaCriteria"]:
+        _criterion["status"] = "UNRESOLVED"
+del _index, _milestone, _criterion
+
 DEPOSIT_EXAMPLE = {
     "contractId": DEV_CONTRACT_ID,
     "amount": 650000,
@@ -5505,6 +5566,57 @@ DEPOSIT_REQUIRED_EXAMPLE = {
     "message": DEPOSIT_REQUIRED[1],
 }
 
+# 착수는 바디가 없어 검증 실패는 경로 변수 contractId가 정수가 아닐 때만 난다.
+# FastAPI는 파라미터가 있는 API에 422를 자동으로 문서화하므로, 빼는 대신 이 앱 형식으로 선언한다.
+CONTRACT_ID_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [{"field": "contractId", "reason": "정수여야 합니다."}],
+}
+
+# 확인 요청 바디는 message 하나뿐이고 300자 제한이 유일한 검증 조건이다.
+SUBMIT_MESSAGE_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [{"field": "message", "reason": "300자 이하여야 합니다."}],
+}
+
+# 통과시키기 바디는 qaCriterionIds 하나뿐이고 필수다. 빈 배열은 422가 아니라 400(QA_NOT_ALL_CHECKED)이다.
+CONFIRM_QA_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [{"field": "qaCriterionIds", "reason": "필수 항목입니다."}],
+}
+
+# 파일 용량 초과. 영역 5(인계물 올리기)와 영역 8(파일 올리기)이 함께 쓴다.
+# 파일 순서상 먼저 쓰는 영역 5에 둔다. 허용 용량은 아직 정해지지 않아 목은 재현하지 않는다.
+FILE_TOO_LARGE = ("FILE_TOO_LARGE", "파일이 너무 큽니다.")
+FILE_TOO_LARGE_EXAMPLE = {"code": FILE_TOO_LARGE[0], "message": FILE_TOO_LARGE[1]}
+
+# 인계물 올리기는 multipart의 file 파트 하나만 받고, 그것이 필수다.
+DELIVERABLE_FILE_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [{"field": "file", "reason": "필수 항목입니다."}],
+}
+
+# 리뷰는 점수 1~5와 content 1000자가 검증 조건이다. 둘을 함께 어긴 경우를 예시로 든다.
+REVIEW_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [
+        {"field": "devScore", "reason": "5 이하여야 합니다."},
+        {"field": "content", "reason": "1000자 이하여야 합니다."},
+    ],
+}
+
+# 인계물 내려받기는 바디가 없어 검증 실패는 경로 변수 deliverableId가 정수가 아닐 때만 난다.
+DELIVERABLE_ID_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [{"field": "deliverableId", "reason": "정수여야 합니다."}],
+}
+
 STARTED_CONTRACT_ID = 409
 
 
@@ -5518,18 +5630,38 @@ STARTED_CONTRACT_ID = 409
     response_model=ContractResponse,
     tags=[AREA5_TAG],
     responses={
-        200: {"content": {"application/json": {"example": DEV_CONTRACT_EXAMPLE}}},
+        200: {"content": {"application/json": {"example": STARTED_CONTRACT_EXAMPLE}}},
         403: {
             "model": ErrorResponse,
-            "description": "예치 전이라 착수할 수 없음",
-            "content": {"application/json": {"example": DEPOSIT_REQUIRED_EXAMPLE}},
+            "description": "이 계약의 개발자가 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
         },
         409: {
             "model": ErrorResponse,
-            "description": "이미 착수한 계약",
-            "content": {"application/json": {"example": ALREADY_STARTED_EXAMPLE}},
+            "description": "지금 상태에서는 착수할 수 없음",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "deposit_required": {
+                            "summary": "예치가 끝나지 않음",
+                            "value": DEPOSIT_REQUIRED_EXAMPLE,
+                        },
+                        "already_started": {
+                            "summary": "이미 착수함",
+                            "value": ALREADY_STARTED_EXAMPLE,
+                        },
+                    }
+                }
+            },
         },
-        **CONTRACT_ERRORS,
+        404: CONTRACT_ERRORS[404],
+        **AREA1_UNAUTHORIZED,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": CONTRACT_ID_ERROR_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
     },
     summary="개발 착수",
     description=(
@@ -5545,9 +5677,11 @@ STARTED_CONTRACT_ID = 409
         "- **200**: 착수했을 때. `development.status`가 `IN_PROGRESS`가 된다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 계약의 개발자가 아닐 때. 착수는 개발자만 한다\n"
-        "- **403 / DEPOSIT_REQUIRED**: `contractId`가 402일 때. 예치가 끝나지 않았다\n"
         "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때\n"
+        "- **409 / DEPOSIT_REQUIRED**: `contractId`가 402일 때. 예치가 끝나지 않아 아직 "
+        "착수할 상태가 아니다\n"
         "- **409 / ALREADY_STARTED**: `contractId`가 409일 때\n"
+        "- **422 / INVALID_REQUEST**: `contractId`가 정수가 아닐 때\n"
         "- **500 / INTERNAL_ERROR**: 착수를 처리하지 못했을 때"
     ),
 )
@@ -5566,10 +5700,10 @@ def start_development(
     if contractId == NOT_FOUND_CONTRACT_ID:
         return _error_response(404, CONTRACT_NOT_FOUND)
     if contractId == NOT_DEPOSITED_CONTRACT_ID:
-        return _error_response(403, DEPOSIT_REQUIRED)
+        return _error_response(409, DEPOSIT_REQUIRED)
     if contractId == STARTED_CONTRACT_ID:
         return _error_response(409, ALREADY_STARTED)
-    return ContractResponse(**DEV_CONTRACT_EXAMPLE)
+    return ContractResponse(**STARTED_CONTRACT_EXAMPLE)
 
 
 @router.post(
@@ -5760,13 +5894,21 @@ def get_deposit(
                 }
             },
         },
-        **MILESTONE_ERRORS,
+        404: MILESTONE_ERRORS[404],
+        **AREA1_UNAUTHORIZED,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": SUBMIT_MESSAGE_ERROR_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
     },
     summary="작업 확인 요청",
     description=(
         "**화면 — `5_개발자_확인` › 확인 요청 보내기 · 확인 요청 다시 보내기**\n\n"
         "착수한 작업을 마치고 의뢰인에게 확인을 요청한다. 이때부터 **3일**을 세고, "
         "의뢰인이 답하지 않으면 자동으로 통과된다. 다시 보내면 기한도 다시 시작한다.\n\n"
+        "남길 말이 없으면 바디를 생략해도 된다. 빈 바디는 `{}`와 같게 처리한다.\n\n"
         "응답의 `autoPassAt`이 자동 통과 시각이다. 화면은 이 값으로 '9월 1일 자동 통과'를 "
         "보여준다.\n\n"
         "- **201**: 확인 요청을 보냈을 때. 상태가 SUBMITTED가 되고 `submittedAt`이 채워진다\n"
@@ -5774,6 +5916,7 @@ def get_deposit(
         "- **404 / MILESTONE_NOT_FOUND**: `milestoneId`가 404일 때\n"
         "- **409 / MILESTONE_STATE_CONFLICT**: `milestoneId`가 409일 때. 이미 통과된 "
         "작업이다\n"
+        "- **422 / INVALID_REQUEST**: `message`가 300자를 넘을 때\n"
         "- **500 / INTERNAL_ERROR**: 보내지 못했을 때"
     ),
 )
@@ -5787,7 +5930,8 @@ def submit_milestone(
             examples=[302],
         ),
     ],
-    request: SubmitMilestoneRequest,
+    # message가 선택이라 보낼 것이 없으면 바디를 생략할 수 있다. 빈 바디는 {}와 같게 본다.
+    request: SubmitMilestoneRequest | None = None,
 ) -> MilestoneResponse | JSONResponse:
     if milestoneId == NOT_FOUND_MILESTONE_ID:
         return _error_response(404, MILESTONE_NOT_FOUND)
@@ -5803,7 +5947,7 @@ def submit_milestone(
     tags=[AREA5_TAG],
     responses={
         201: {"content": {"application/json": {"example": MILESTONES[0]}}},
-        409: {
+        400: {
             "model": ErrorResponse,
             "description": "확인 문장을 다 체크하지 않음",
             "content": {
@@ -5815,7 +5959,31 @@ def submit_milestone(
                 }
             },
         },
-        **MILESTONE_ERRORS,
+        403: {
+            "model": ErrorResponse,
+            "description": "이 계약의 의뢰인이 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "지금 상태에서는 처리할 수 없음",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": "MILESTONE_STATE_CONFLICT",
+                        "message": "지금 상태에서는 처리할 수 없습니다.",
+                    }
+                }
+            },
+        },
+        404: MILESTONE_ERRORS[404],
+        **AREA1_UNAUTHORIZED,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": CONFIRM_QA_ERROR_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
     },
     summary="작업 통과시키기",
     description=(
@@ -5824,11 +5992,15 @@ def submit_milestone(
         "없다.** 확인 문장이 하나라도 남아 있으면 통과시킬 수 없다.\n\n"
         "대금은 여기서 나가지 않는다. 모든 작업이 통과된 뒤 한 번에 지급된다.\n\n"
         "- **201**: 통과시켰을 때. 상태가 CONFIRMED가 되고 `confirmedAt`이 채워진다\n"
+        "- **400 / QA_NOT_ALL_CHECKED**: `qaCriterionIds`에 이 작업의 확인 문장이 모두 들어 있지 "
+        "않을 때. 목에서는 201·202가 빠지면 이 응답을 준다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 계약의 의뢰인이 아닐 때. 통과 판정은 의뢰인만 한다\n"
-        "- **404 / MILESTONE_NOT_FOUND**: `milestoneId`가 404일 때\n"
-        "- **409 / QA_NOT_ALL_CHECKED**: `milestoneId`가 409일 때. 아직 체크하지 않은 "
-        "확인 문장이 있다\n"
+        "- **404 / MILESTONE_NOT_FOUND**: `milestoneId`가 404일 때. 없는 작업이거나 이 계약의 "
+        "당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 준다\n"
+        "- **409 / MILESTONE_STATE_CONFLICT**: `milestoneId`가 409일 때. 이미 통과됐거나 "
+        "아직 확인 요청이 오지 않은 작업이다\n"
+        "- **422 / INVALID_REQUEST**: `qaCriterionIds`가 없을 때. 빈 배열은 400이다\n"
         "- **500 / INTERNAL_ERROR**: 통과시키지 못했을 때"
     ),
 )
@@ -5837,7 +6009,7 @@ def confirm_milestone(
         int,
         Path(
             description=(
-                "작업 식별자. 404는 없음, 409는 확인 문장 미완료 재현용 예약값이다."
+                "작업 식별자. 404는 없음, 409는 상태 충돌 재현용 예약값이다."
             ),
             examples=[MILESTONE_ID],
         ),
@@ -5847,7 +6019,10 @@ def confirm_milestone(
     if milestoneId == NOT_FOUND_MILESTONE_ID:
         return _error_response(404, MILESTONE_NOT_FOUND)
     if milestoneId == CONFLICT_MILESTONE_ID:
-        return _error_response(409, QA_NOT_ALL_CHECKED)
+        return _error_response(409, MILESTONE_STATE_CONFLICT)
+    # 목 데이터의 작업 301은 확인 문장이 201·202 둘이다. 하나라도 빠지면 규칙 위반이다.
+    if not {201, 202} <= set(request.qaCriterionIds):
+        return _error_response(400, QA_NOT_ALL_CHECKED)
     return MilestoneResponse(**MILESTONES[0])
 
 
@@ -5868,6 +6043,16 @@ def confirm_milestone(
                 }
             }
         },
+        400: {
+            "model": ErrorResponse,
+            "description": "파일이 허용 용량을 넘음",
+            "content": {"application/json": {"example": FILE_TOO_LARGE_EXAMPLE}},
+        },
+        403: {
+            "model": ErrorResponse,
+            "description": "이 계약의 개발자가 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
         404: {
             "model": ErrorResponse,
             "description": "인계물 없음",
@@ -5881,18 +6066,27 @@ def confirm_milestone(
             },
         },
         **AREA1_UNAUTHORIZED,
-        **AREA1_ERRORS,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": DELIVERABLE_FILE_ERROR_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
     },
     summary="인계물 올리기",
     description=(
         "**화면 — `5_개발자_확인` › 인계 작업의 파일 첨부**\n\n"
         "소스·계정·설명서 같은 인계물을 파일로 올린다. 올린 시각이 인계 시각으로 남고, "
         "의뢰인 화면에서는 '받기'로 내려받을 수 있게 된다.\n\n"
+        "이미 올린 인계물에 다시 올리면 새 파일로 바뀌고 `deliveredAt`도 그 시각으로 갱신된다. "
+        "재업로드를 막지 않으므로 409는 없다.\n\n"
         "- **201**: 올렸을 때\n"
         "- **400 / FILE_TOO_LARGE**: 허용 용량을 넘겼을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 계약의 개발자가 아닐 때\n"
-        "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableId`가 404일 때\n"
+        "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableId`가 404일 때. 없는 인계물이거나 이 "
+        "계약의 당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 준다\n"
+        "- **422 / INVALID_REQUEST**: `file` 파트가 없을 때\n"
         "- **500 / INTERNAL_ERROR**: 올리지 못했을 때"
     ),
 )
@@ -5937,6 +6131,11 @@ def upload_deliverable(
                 "application/json": {"example": CONTRACT_NOT_COMPLETED_EXAMPLE}
             },
         },
+        403: {
+            "model": ErrorResponse,
+            "description": "이 계약의 의뢰인이 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
         409: {
             "model": ErrorResponse,
             "description": "이미 리뷰를 남김",
@@ -5949,7 +6148,14 @@ def upload_deliverable(
                 }
             },
         },
-        **CONTRACT_ERRORS,
+        404: CONTRACT_ERRORS[404],
+        **AREA1_UNAUTHORIZED,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": REVIEW_ERROR_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
     },
     summary="리뷰 남기기",
     description=(
@@ -5962,7 +6168,8 @@ def upload_deliverable(
         "계약이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 계약의 의뢰인이 아닐 때\n"
-        "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때\n"
+        "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때. 없는 계약이거나 이 계약의 "
+        "당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 준다\n"
         "- **409 / REVIEW_ALREADY_WRITTEN**: `contractId`가 409일 때\n"
         "- **422 / INVALID_REQUEST**: 점수가 1에서 5 사이가 아니거나 `content`가 "
         "1000자를 넘을 때\n"
@@ -5991,7 +6198,7 @@ def write_review(
         **{
             **REVIEWS[0],
             "devScore": request.devScore,
-            "commScore": request.commScore,
+            "expScore": request.expScore,
             "content": request.content,
         }
     )
@@ -7541,7 +7748,6 @@ NO_DEVELOPER_PROFILE = (
     "NO_DEVELOPER_PROFILE",
     "개발자 프로필이 없습니다.",
 )
-FILE_TOO_LARGE = ("FILE_TOO_LARGE", "파일이 너무 큽니다.")
 UNSUPPORTED_FILE_TYPE = ("UNSUPPORTED_FILE_TYPE", "올릴 수 없는 형식입니다.")
 UPLOAD_NOT_FOUND = ("UPLOAD_NOT_FOUND", "업로드 건을 찾을 수 없습니다.")
 UPLOAD_NOT_COMPLETED = (
@@ -7570,7 +7776,6 @@ NO_DEVELOPER_PROFILE_EXAMPLE = {
     "code": NO_DEVELOPER_PROFILE[0],
     "message": NO_DEVELOPER_PROFILE[1],
 }
-FILE_TOO_LARGE_EXAMPLE = {"code": FILE_TOO_LARGE[0], "message": FILE_TOO_LARGE[1]}
 UPLOAD_NOT_FOUND_EXAMPLE = {
     "code": UPLOAD_NOT_FOUND[0],
     "message": UPLOAD_NOT_FOUND[1],
@@ -7818,7 +8023,7 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
             "clientName": "김O미",
             "contractType": "DEVELOPMENT",
             "devScore": 5,
-            "commScore": 5,
+            "expScore": 5,
             "content": (
                 "예약이 저장되지 않던 문제를 고쳐주셨고, 왜 그랬는지도 제가 알아듣게 "
                 "설명해주셨습니다."
@@ -7831,7 +8036,7 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
             "clientName": "최O진",
             "contractType": "CONSULTING",
             "devScore": 4,
-            "commScore": 5,
+            "expScore": 5,
             "content": "일정이 하루 밀렸지만 미리 알려주셔서 괜찮았습니다.",
             "reply": None,
             "createdAt": "2026-08-02T09:10:00+09:00",
@@ -9815,18 +10020,27 @@ def download_scan_file(
             },
         },
         **AREA1_UNAUTHORIZED,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": DELIVERABLE_ID_ERROR_EXAMPLE}},
+        },
         500: AREA1_ERRORS[500],
     },
     summary="인계물 내려받기",
     description=(
         "**화면 — `5_의뢰인_확인` › 인계 · 소스 · 계정 · 설명서 › 받기**\n\n"
         "개발자가 올린 인계물을 내려받는다. 받아본 뒤 확인 문장을 체크한다.\n\n"
+        "이 계약의 의뢰인과 개발자 모두 받을 수 있다. 역할 제한이 없어 403은 없고, 당사자가 "
+        "아닌 사람은 404를 받는다.\n\n"
         "- **200**: 내려받았을 때. 본문이 파일 내용이고 파일 이름은 "
         "`Content-Disposition`에 담긴다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableId`가 404일 때\n"
+        "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableId`가 404일 때. 없는 인계물이거나 이 "
+        "계약의 당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 404를 준다\n"
         "- **409 / DELIVERABLE_NOT_UPLOADED**: `deliverableId`가 409일 때. 개발자가 아직 "
         "올리지 않아 받을 파일이 없다\n"
+        "- **422 / INVALID_REQUEST**: `deliverableId`가 정수가 아닐 때\n"
         "- **500 / INTERNAL_ERROR**: 내려주지 못했을 때"
     ),
 )
