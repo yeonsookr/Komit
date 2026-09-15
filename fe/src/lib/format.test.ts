@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { formatDateLabel, formatShortDateTime, formatTime, toDayKey } from './format';
+import {
+  formatDateLabel,
+  formatRelativeTime,
+  formatShortDateTime,
+  formatTime,
+  toDayKey,
+} from './format';
 
 // 목 서버가 내려주는 값은 +09:00 오프셋이 붙은 문자열입니다.
 const SENT_AT = '2026-08-20T10:14:00+09:00';
@@ -29,5 +35,33 @@ describe('날짜·시각 포맷터', () => {
 
   it('좁은 자리 표기는 앞의 0을 떼고 찍는다', () => {
     expect(formatShortDateTime('2026-08-18T16:40:00+09:00')).toBe('8/18 16:40');
+  });
+});
+
+describe('formatRelativeTime', () => {
+  const now = new Date('2026-08-28T14:00:00+09:00');
+
+  it('1분 안쪽은 지금이다', () => {
+    expect(formatRelativeTime('2026-08-28T13:59:30+09:00', now)).toBe('지금');
+  });
+
+  it('한 시간 안쪽은 분으로 센다', () => {
+    expect(formatRelativeTime('2026-08-28T13:48:00+09:00', now)).toBe('12분 전');
+  });
+
+  it('같은 날이면 시간으로 센다', () => {
+    expect(formatRelativeTime('2026-08-28T11:00:00+09:00', now)).toBe('3시간 전');
+  });
+
+  it('하루 전은 어제다', () => {
+    expect(formatRelativeTime('2026-08-27T23:50:00+09:00', now)).toBe('어제');
+  });
+
+  it('그보다 오래됐으면 날짜로 찍는다', () => {
+    expect(formatRelativeTime('2026-08-20T09:00:00+09:00', now)).toBe('8/20');
+  });
+
+  it('시계가 어긋나 미래로 보여도 지금으로 본다', () => {
+    expect(formatRelativeTime('2026-08-28T14:00:30+09:00', now)).toBe('지금');
   });
 });

@@ -50,3 +50,33 @@ export function formatShortDateTime(isoString: string): string {
   const [, month, day] = dayKeyFormat.format(date).split("-");
   return `${Number(month)}/${Number(day)} ${timeFormat.format(date)}`;
 }
+
+/**
+ * "지금 · 12분 전 · 3시간 전 · 어제 · 8/20" — 목록의 마지막 활동 시각.
+ *
+ * `now` 를 받는 이유는 두 가지입니다. 테스트에서 시점을 고정할 수 있고,
+ * 서버에서 한 번 계산해 문자열로 내려보내 hydration 이 어긋나지 않게 합니다.
+ */
+export function formatRelativeTime(isoString: string, now: Date = new Date()): string {
+  const target = new Date(isoString);
+  const diffMs = now.getTime() - target.getTime();
+  const diffMinutes = Math.floor(diffMs / 60_000);
+
+  // 미래 시각(서버와 시계가 조금 어긋난 경우)은 방금으로 봅니다.
+  if (diffMinutes < 1) return "지금";
+  if (diffMinutes < 60) return `${diffMinutes}분 전`;
+
+  const dayDiff = dayDistance(target, now);
+  if (dayDiff === 0) return `${Math.floor(diffMinutes / 60)}시간 전`;
+  if (dayDiff === 1) return "어제";
+
+  const [, month, day] = dayKeyFormat.format(target).split("-");
+  return `${Number(month)}/${Number(day)}`;
+}
+
+/** 두 시점이 한국 기준으로 며칠 떨어져 있는지. */
+function dayDistance(from: Date, to: Date): number {
+  const fromDay = Date.parse(`${dayKeyFormat.format(from)}T00:00:00Z`);
+  const toDay = Date.parse(`${dayKeyFormat.format(to)}T00:00:00Z`);
+  return Math.round((toDay - fromDay) / 86_400_000);
+}
