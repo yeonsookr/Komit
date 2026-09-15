@@ -1,0 +1,13 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - service-db.yaml
+  - escrow-db.yaml
+  - pgpool.yaml
+configMapGenerator:
+  # 설정이 바뀌면 이름 해시가 바뀌어 Pgpool Pod가 다시 뜹니다.
+  - name: pgpool-config
+    namespace: komit
+    files:
+      - pgpool/pgpool.conf
+      - pgpool/pool_hba.conf

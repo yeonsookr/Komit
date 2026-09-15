@@ -1,0 +1,14 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+patches:
+  - path: service-nodeport.yaml
+  - path: escrow-nodeport.yaml
+images:
+  - name: komit-service
+    newName: komit-service
+    newTag: local
+  - name: komit-escrow
+    newName: komit-escrow
+    newTag: local

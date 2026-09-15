@@ -9,7 +9,9 @@ WORKDIR /workspace
 # 의존성 해석에 필요한 파일만 먼저 넣어 레이어를 캐시합니다. 소스만 바뀌면 다시 받지 않습니다.
 COPY gradlew build.gradle settings.gradle ./
 COPY gradle ./gradle
-RUN chmod +x gradlew && ./gradlew --no-daemon dependencies > /dev/null 2>&1 || true
+RUN sed -i 's/\r$//' gradlew \
+    && chmod +x gradlew \
+    && ./gradlew --no-daemon dependencies > /dev/null
 
 COPY src ./src
 

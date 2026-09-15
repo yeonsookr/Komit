@@ -1,0 +1,22 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: service
+  namespace: komit
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: service
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: escrow
+  namespace: komit
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: escrow
+
