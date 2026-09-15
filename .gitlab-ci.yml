@@ -658,6 +658,7 @@ fe-docker-build-push:
     IMAGE_NAME: komit-fe
     BUILD_CONTEXT: fe
     BUILD_ARG_NAMES: BACKEND_API_BASE_URL AI_API_BASE_URL
+    IMAGE_ENV_NAME: FE_IMAGE
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
       changes:
@@ -718,7 +719,7 @@ mock-docker-deploy:
         sudo -n docker compose up -d --pull always &&
         sudo -n docker compose ps'
 
-# SSH로 배포 서버에 접속 후 K3s에 service·escrow 배포
+# SSH로 배포 서버에 접속 후 K3s에 service·escrow·fe 배포
 # 이번 파이프라인에서 빌드된 이미지만 교체하고, 빌드되지 않은 모듈은 서버에서 돌고 있는 이미지를 유지합니다.
 # DB 비밀번호는 SERVICE_DB_PASSWORD, ESCROW_DB_PASSWORD CI/CD 변수(Masked, Protected)로 주입합니다.
 k3s-deploy:
@@ -728,6 +729,8 @@ k3s-deploy:
     - job: service-docker-build-push
       optional: true
     - job: escrow-docker-build-push
+      optional: true
+    - job: fe-docker-build-push
       optional: true
   tags:
     - "CI/CD"
@@ -739,12 +742,14 @@ k3s-deploy:
       changes:
         - service/**/*
         - escrow/**/*
+        - fe/**/*
         - deploy/k3s/**/*
     # TODO: 배포 테스트용 임시 트리거. 테스트가 끝나면 삭제합니다.
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
       changes:
         - service/**/*
         - escrow/**/*
+        - fe/**/*
         - deploy/k3s/**/*
     - when: never
   before_script:
@@ -773,6 +778,7 @@ k3s-deploy:
 
       echo "service image: ${SERVICE_IMAGE:-(유지)}"
       echo "escrow image:  ${ESCROW_IMAGE:-(유지)}"
+      echo "fe image:      ${FE_IMAGE:-(유지)}"
 
       # 서버에는 소스를 두지 않고 배포에 필요한 deploy/k3s만 매번 새로 올립니다.
       tar -C deploy -czf - k3s |
@@ -786,5 +792,6 @@ k3s-deploy:
         echo "export ESCROW_DB_PASSWORD=\"\$(printf %s '$(b64 "$ESCROW_DB_PASSWORD")' | base64 -d)\""
         echo "export SERVICE_IMAGE='${SERVICE_IMAGE:-}'"
         echo "export ESCROW_IMAGE='${ESCROW_IMAGE:-}'"
+        echo "export FE_IMAGE='${FE_IMAGE:-}'"
         echo 'sh "$1/komit-k3s/k3s/deploy.sh"'
       } | $SSH "$SSH_ADDRESS" 'sudo -n sh -s "$HOME"'

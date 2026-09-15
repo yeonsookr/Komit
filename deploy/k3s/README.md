@@ -1,6 +1,6 @@
 # K3s 배포
 
-`service`와 `escrow`를 각각 2개의 Pod로 실행하고, 두 서버의 DB를 CloudNativePG 클러스터로 분리합니다. Spring이 트랜잭션 성격에 따라 쓰기는 Primary로, `readOnly` 조회는 Standby로 보냅니다.
+`service`, `escrow`, `fe`를 각각 2개의 Pod로 실행하고, 두 서버의 DB를 CloudNativePG 클러스터로 분리합니다. `fe`(Next.js 서버)는 클러스터 안에서 Service 이름으로 스프링을 호출합니다. Spring이 트랜잭션 성격에 따라 쓰기는 Primary로, `readOnly` 조회는 Standby로 보냅니다.
 
 ```text
 service Pod ×2 ─┬─ 일반 트랜잭션   → service-db-rw ─ Primary
@@ -15,7 +15,7 @@ escrow Pod ×2 ──┬─ 일반 트랜잭션   → escrow-db-rw ── Primar
 | `platform/` | CloudNativePG 오퍼레이터 (K3s HelmChart) |
 | `database/` | `service-db`, `escrow-db` Cluster |
 | `base/` | `service`, `escrow` 애플리케이션 |
-| `prod/` | 운영 overlay. `service`만 nginx용 NodePort로 엽니다 |
+| `prod/` | 운영 overlay. `service`(30080), `escrow`(30081), `fe`(30082)를 nginx용 NodePort로 엽니다 |
 | `local/` | 로컬 실습용 Secret, NodePort, 이미지 태그 |
 
 CloudNativePG Cluster는 오퍼레이터의 CRD가 설치된 뒤에만 만들 수 있습니다. 그래서 오퍼레이터 → DB → 애플리케이션 순서로 나눠 적용합니다.
@@ -68,7 +68,9 @@ K3s는 tar 이미지를 시작할 때만 가져옵니다. 이미지를 다시 �
 
 ```text
 인터넷 ─ 80/443 ─ nginx 컨테이너 ─┬─ /mock/    ─ mock 컨테이너
-                                  └─ /service/ ─ host.docker.internal:30080 ─ K3s service Pod
+                                  ├─ /service/ ─ 172.17.0.1:30080 ─ K3s service Pod
+                                  ├─ /escrow/  ─ 172.17.0.1:30081 ─ K3s escrow Pod
+                                  └─ /         ─ 172.17.0.1:30082 ─ K3s fe Pod ─ (클러스터 내부) ─ service Pod
 ```
 
 ### 1. K3s 설치
@@ -88,7 +90,7 @@ sudo kubectl get nodes
 ```
 
 - `--secrets-encryption`: DB 비밀번호 Secret을 암호화해 저장합니다.
-- `nodeport-addresses`: `127.0.0.1`은 서버 자신, `172.17.0.1`은 nginx 컨테이너가 `host.docker.internal`로 들어오는 주소입니다. 이 두 주소에만 NodePort가 열려 인터넷에서 30080으로 직접 들어올 수 없습니다. `docker0` 주소가 다르면 그 값으로 바꿉니다.
+- `nodeport-addresses`: `127.0.0.1`은 서버 자신, `172.17.0.1`은 nginx 컨테이너가 호스트로 들어오는 Docker 브리지 주소입니다. 이 두 주소에만 NodePort가 열려 인터넷에서 30080~30082로 직접 들어올 수 없습니다. `docker0` 주소가 다르면 그 값으로 바꿉니다.
 
 ### 2. 배포 계정 권한
 
@@ -109,25 +111,50 @@ sudo systemctl restart k3s
 
 ### 4. nginx 연결
 
-nginx 컨테이너 안의 `127.0.0.1`은 호스트가 아니라 컨테이너 자신입니다. 그래서 호스트를 가리키는 `host.docker.internal`을 씁니다.
+nginx 컨테이너 안의 `127.0.0.1`은 호스트가 아니라 컨테이너 자신입니다. 그래서 호스트의 Docker 브리지 주소(`172.17.0.1`)로 접속합니다.
 
-nginx 서비스(compose)에 호스트 주소를 추가합니다.
-
-```yaml
-extra_hosts:
-  - "host.docker.internal:host-gateway"
-```
-
-`conf.d/default.conf`에 추가합니다. `upstream`은 반드시 `server { }` 블록 **밖**에 둡니다.
+`conf.d/default.conf`에 추가합니다. `upstream`은 반드시 `server { }` 블록 **밖**에 둡니다. 기존의 `location = / { return 200 ... }`은 FE와 겹치므로 지웁니다.
 
 ```nginx
+upstream komit_fe {
+    server 172.17.0.1:30082;
+    keepalive 16;
+}
+
 upstream komit_service {
-    server host.docker.internal:30080;
+    server 172.17.0.1:30080;
+    keepalive 16;
+}
+
+upstream komit_escrow {
+    server 172.17.0.1:30081;
     keepalive 16;
 }
 
 server {
-    # ...기존 설정...
+    # ...기존 설정 (/mock/, /grafana/ 등)...
+
+    # 다른 location에 걸리지 않은 나머지 경로는 모두 FE로 보냅니다.
+    location / {
+        proxy_pass http://komit_fe;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /escrow/ {
+        proxy_pass http://komit_escrow/;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Prefix /escrow;
+    }
 
     # proxy_pass 끝의 /가 /service/ 접두사를 떼고 Spring에 넘깁니다.
     location /service/ {
@@ -271,7 +298,46 @@ curl https://komit.site/service/actuator/health
 {"groups":["liveness","readiness"],"status":"UP"}
 ```
 
-`/escrow/`는 운영 overlay에서 escrow를 외부에 열지 않았기 때문에 **502가 정상**입니다.
+```bash
+curl https://komit.site/escrow/actuator/health
+```
+
+같은 `UP` 응답이 나와야 합니다.
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' https://komit.site/
+```
+
+FE가 떠 있으면 `200`이 나옵니다.
+
+---
+
+#### 이미 돌고 있는 클러스터에 FE를 처음 추가할 때
+
+`deploy.sh`는 클러스터에 `fe` Deployment가 없으면 `FE_IMAGE`를 반드시 받아야 합니다. 그런데 `deploy/k3s/`만 바뀐 병합에서는 FE 이미지 빌드 잡이 돌지 않아 `FE_IMAGE`가 비어 있고, `k3s-deploy`가 아래 메시지로 실패합니다.
+
+```text
+fe image is required because deployment/fe does not exist yet
+```
+
+이 경우 한 번만 서버에서 직접 실행합니다. `k3s-deploy`는 실패하기 전에 새 `deploy/k3s`를 서버의 `~/komit-k3s/k3s`에 이미 올려 두었으므로 그 파일을 씁니다.
+
+1. Docker Hub의 `komit-fe` 저장소 → **Tags**에서 최신 커밋 태그를 확인합니다.
+2. 서버에서 실행합니다. service·escrow 이미지는 넘기지 않아 지금 돌고 있는 이미지가 유지됩니다.
+
+   ```bash
+   read -rsp "SERVICE_DB_PASSWORD: " SERVICE_DB_PASSWORD; echo
+   read -rsp "ESCROW_DB_PASSWORD: " ESCROW_DB_PASSWORD; echo
+   export SERVICE_DB_PASSWORD ESCROW_DB_PASSWORD
+   export FE_IMAGE=docker.io/<계정>/komit-fe:<태그>
+
+   sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,FE_IMAGE \
+     sh ~/komit-k3s/k3s/deploy.sh
+   ```
+
+3. `sudo kubectl -n komit get pods -l app.kubernetes.io/name=fe`로 `fe-…` Pod 2개가 `Running`인지 확인합니다.
+
+이후에는 `fe/`가 바뀐 병합마다 CI가 `FE_IMAGE`를 넘겨 자동으로 배포합니다.
 
 ---
 
@@ -324,6 +390,8 @@ rm -rf ~/komit-k3s-manual
 | 잡 로그: `SERVICE_DB_PASSWORD CI/CD variable is required` | 변수 미등록, 또는 `develop`이 보호 브랜치가 아님 | A-1의 3~4번 확인 |
 | 잡 로그: `sudo: a password is required` | 배포 계정 sudo 권한 부족 | A-0의 `sudo -n -l` 확인 |
 | 잡 로그: `service image is required because deployment/service does not exist yet` | 한쪽 모듈만 빌드됨 | A-2의 `git diff` 확인, 또는 방법 B |
+| 잡 로그: `fe image is required because deployment/fe does not exist yet` | FE를 처음 추가하는데 FE 이미지가 빌드되지 않음 | 「이미 돌고 있는 클러스터에 FE를 처음 추가할 때」 |
+| `fe` Pod는 Running인데 페이지에서 API 호출이 실패 | FE 서버가 백엔드에 닿지 못함 | `sudo kubectl -n komit logs deploy/fe`. `fe-config` ConfigMap의 `BACKEND_API_BASE_URL` 확인 |
 | `cluster ... condition met`에서 10분 넘게 멈춤 | DB Pod가 못 뜸 | `sudo kubectl -n komit get pods`로 DB Pod 상태 확인. `Pending`이면 메모리 부족, `ImagePullBackOff`이면 서버의 인터넷(ghcr.io) 접속 확인 |
 | `komit-service` Pod가 `ImagePullBackOff` | Docker Hub 저장소가 private | 3단계 Docker Hub 인증 |
 | 앱 Pod가 `CrashLoopBackOff` | 앱 기동 실패 | `sudo kubectl -n komit logs deploy/service`. `password authentication failed`이면 비밀번호가 DB와 다름 |
@@ -332,11 +400,12 @@ rm -rf ~/komit-k3s-manual
 
 ## CI/CD
 
-`develop`에 `service/`, `escrow/`, `deploy/k3s/` 변경이 병합되면 `k3s-deploy` 잡이 돕니다.
+`develop`에 `service/`, `escrow/`, `fe/`, `deploy/k3s/` 변경이 병합되면 `k3s-deploy` 잡이 돕니다.
 
 ```text
 service 변경 → service-docker-build-push ─┐ SERVICE_IMAGE (dotenv)
 escrow 변경  → escrow-docker-build-push  ─┤ ESCROW_IMAGE  (dotenv)
+fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
                                           ▼
                                     k3s-deploy
                                     1. deploy/k3s를 서버 ~/komit-k3s로 복사
@@ -360,9 +429,10 @@ escrow 변경  → escrow-docker-build-push  ─┤ ESCROW_IMAGE  (dotenv)
 export SERVICE_DB_PASSWORD=<password>
 export ESCROW_DB_PASSWORD=<password>
 
-# 이번에 바뀐 모듈만 넘깁니다. 첫 배포에는 둘 다 필요합니다.
+# 이번에 바뀐 모듈만 넘깁니다. 클러스터에 아직 없는 모듈은 반드시 넘깁니다.
 export SERVICE_IMAGE=docker.io/<account>/komit-service:<commit-sha>
 export ESCROW_IMAGE=docker.io/<account>/komit-escrow:<commit-sha>
+export FE_IMAGE=docker.io/<account>/komit-fe:<commit-sha>
 
 chmod +x deploy/k3s/deploy.sh
 ./deploy/k3s/deploy.sh
@@ -371,7 +441,7 @@ chmod +x deploy/k3s/deploy.sh
 | 환경변수 | 필수 | 설명 |
 |---|---|---|
 | `SERVICE_DB_PASSWORD`, `ESCROW_DB_PASSWORD` | 예 | DB 소유자 계정 비밀번호. `service-db-app`, `escrow-db-app` Secret이 되어 CloudNativePG initdb와 Spring이 함께 읽습니다. |
-| `SERVICE_IMAGE`, `ESCROW_IMAGE` | 아니요 | 비어 있으면 클러스터에서 돌고 있는 이미지를 유지합니다. 바뀌지 않은 모듈은 재시작하지 않습니다. |
+| `SERVICE_IMAGE`, `ESCROW_IMAGE`, `FE_IMAGE` | 아니요 | 비어 있으면 클러스터에서 돌고 있는 이미지를 유지합니다. 바뀌지 않은 모듈은 재시작하지 않습니다. 클러스터에 아직 없는 모듈은 필수입니다. |
 
 스크립트는 배포할 이미지 태그를 임시 디렉터리의 Kustomize overlay에 고정해 적용하고, 각 단계의 준비 완료를 기다린 뒤 다음 단계로 넘어갑니다. DB 주소는 클러스터 내부 DNS 이름으로 고정되어 있어 주입하지 않습니다.
 

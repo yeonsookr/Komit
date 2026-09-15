@@ -5,10 +5,14 @@ resources:
 patches:
   - path: service-nodeport.yaml
   - path: escrow-nodeport.yaml
+  - path: fe-nodeport.yaml
 images:
   - name: komit-service
     newName: komit-service
     newTag: local
   - name: komit-escrow
     newName: komit-escrow
+    newTag: local
+  - name: komit-fe
+    newName: komit-fe
     newTag: local

@@ -1,10 +1,11 @@
 #!/usr/bin/env sh
 set -eu
 
-# SERVICE_IMAGE, ESCROW_IMAGE는 이번에 바뀐 모듈만 넘깁니다.
-# 비어 있으면 클러스터에서 돌고 있는 이미지를 그대로 유지합니다. 첫 배포에는 둘 다 필요합니다.
+# SERVICE_IMAGE, ESCROW_IMAGE, FE_IMAGE는 이번에 바뀐 모듈만 넘깁니다.
+# 비어 있으면 클러스터에서 돌고 있는 이미지를 그대로 유지합니다. 모듈의 첫 배포에는 해당 이미지가 필요합니다.
 SERVICE_IMAGE=${SERVICE_IMAGE:-}
 ESCROW_IMAGE=${ESCROW_IMAGE:-}
+FE_IMAGE=${FE_IMAGE:-}
 : "${SERVICE_DB_PASSWORD:?SERVICE_DB_PASSWORD is required}"
 : "${ESCROW_DB_PASSWORD:?ESCROW_DB_PASSWORD is required}"
 
@@ -40,8 +41,10 @@ kubectl apply -f "$SCRIPT_DIR/base/namespace.yaml"
 
 SERVICE_IMAGE=$(resolve_image "$SERVICE_IMAGE" service)
 ESCROW_IMAGE=$(resolve_image "$ESCROW_IMAGE" escrow)
+FE_IMAGE=$(resolve_image "$FE_IMAGE" fe)
 echo "service image: $SERVICE_IMAGE"
 echo "escrow image:  $ESCROW_IMAGE"
+echo "fe image:      $FE_IMAGE"
 
 # 1. CloudNativePG 오퍼레이터
 kubectl apply -f "$SCRIPT_DIR/platform/cloudnative-pg.yaml"
@@ -73,8 +76,12 @@ images:
   - name: komit-escrow
     newName: ${ESCROW_IMAGE%:*}
     newTag: ${ESCROW_IMAGE##*:}
+  - name: komit-fe
+    newName: ${FE_IMAGE%:*}
+    newTag: ${FE_IMAGE##*:}
 EOF
 kubectl apply -k "$WORK_DIR/apps"
 kubectl -n komit rollout status deployment/service --timeout=300s
 kubectl -n komit rollout status deployment/escrow --timeout=300s
+kubectl -n komit rollout status deployment/fe --timeout=300s
 kubectl -n komit get pods -o wide
