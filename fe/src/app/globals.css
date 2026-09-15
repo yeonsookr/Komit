@@ -1,26 +1,137 @@
 @import "tailwindcss";
+@import "../styles/tokens.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
+/* Tailwind v4: 디자인 토큰을 유틸리티 클래스 이름으로 노출합니다.
+   → bg-primary, text-fg-muted, border-line, rounded-xl, font-mono ...
+   색상 값은 여기에서만 다루고 컴포넌트에는 hex 를 쓰지 않습니다.
+   (docs/FRONTEND_CONVENTIONS.md 11장) */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-primary: var(--k-primary);
+  --color-primary-hover: var(--k-primary-hover);
+  --color-primary-active: var(--k-primary-active);
+  --color-primary-soft: var(--k-primary-soft);
+  --color-primary-soft-hover: var(--k-primary-soft-hover);
+  --color-primary-border: var(--k-primary-border);
+  --color-on-primary: var(--k-on-primary);
+
+  --color-ink: var(--k-ink);
+  --color-ink-hover: var(--k-ink-hover);
+  --color-on-ink: var(--k-on-ink);
+
+  --color-fg: var(--k-fg);
+  --color-fg-secondary: var(--k-fg-secondary);
+  --color-fg-muted: var(--k-fg-muted);
+  --color-fg-subtle: var(--k-fg-subtle);
+  --color-fg-disabled: var(--k-fg-disabled);
+
+  --color-bg: var(--k-bg);
+  --color-bg-alt: var(--k-bg-alt);
+  --color-surface: var(--k-surface);
+  --color-surface-2: var(--k-surface-2);
+
+  --color-line: var(--k-border);
+  --color-line-subtle: var(--k-border-subtle);
+
+  --color-success: var(--k-success);
+  --color-success-bg: var(--k-success-bg);
+  --color-warning: var(--k-warning);
+  --color-warning-bg: var(--k-warning-bg);
+  --color-danger: var(--k-danger);
+  --color-danger-bg: var(--k-danger-bg);
+  --color-danger-bg-strong: var(--k-danger-bg-strong);
+  --color-danger-border: var(--k-danger-border);
+  --color-info: var(--k-info);
+  --color-info-bg: var(--k-info-bg);
+
+  /* create-next-app 기본 페이지가 쓰던 이름 (bg-background, text-foreground) */
+  --color-background: var(--k-bg);
+  --color-foreground: var(--k-fg);
+
+  --radius-xs: var(--k-radius-xs);
+  --radius-sm: var(--k-radius-sm);
+  --radius-md: var(--k-radius-md);
+  --radius-lg: var(--k-radius-lg);
+  --radius-xl: var(--k-radius-xl);
+  --radius-2xl: var(--k-radius-2xl);
+
+  --shadow-sm: var(--k-shadow-sm);
+  --shadow-md: var(--k-shadow-md);
+  --shadow-lg: var(--k-shadow-lg);
+
+  /* 본문 폭 (max-w-content / max-w-content-wide / max-w-landing) */
+  --container-content: var(--k-content-width);
+  --container-content-wide: var(--k-content-width-wide);
+  --container-landing: var(--k-landing-width);
+  --container-sidebar: var(--k-sidebar-width);
+
+  --spacing-gnb: var(--k-gnb-height);
+  --spacing-content: var(--k-content-width);
+  --spacing-content-wide: var(--k-content-width-wide);
+  --spacing-sidebar: var(--k-sidebar-width);
+  --spacing-landing: var(--k-landing-width);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  html {
+    font-family: var(--k-font-sans);
+    color: var(--k-fg);
+    background: var(--k-bg);
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "ss01";
+  }
+  body {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  /* 숫자·금액·시각은 항상 모노스페이스 + 탭 숫자 */
+  .font-mono,
+  [data-mono] {
+    font-family: var(--k-font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  ::placeholder {
+    color: var(--k-fg-disabled);
+  }
+  :focus-visible {
+    outline: 2px solid var(--k-primary);
+    outline-offset: 2px;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer components {
+  @keyframes k-modal-in {
+    from {
+      opacity: 0;
+      transform: translateY(6px) scale(0.98);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .k-modal-in {
+    animation: k-modal-in var(--k-duration) var(--k-ease);
+  }
+
+  @keyframes k-toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+  .k-toast-in {
+    animation: k-toast-in 200ms var(--k-ease);
+  }
+
+  /* 애니메이션은 prefers-reduced-motion 을 존중합니다 (컨벤션 13장) */
+  @media (prefers-reduced-motion: reduce) {
+    .k-modal-in,
+    .k-toast-in {
+      animation: none;
+    }
+  }
 }

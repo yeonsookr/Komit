@@ -955,6 +955,11 @@ def get_featured_developers(
         "간주합니다'라고 안내하므로 필수 약관 동의는 이 요청으로 함께 처리된다. "
         "마케팅 수신과 개발자 판매자 약관은 선택이라 각각 마이페이지와 개발자 전환에서 "
         "따로 받는다.\n\n"
+        "응답의 `accessToken`·`refreshToken`·`expiresIn`은 코밋 서버가 발급만 하는 값이라 "
+        "DB에 저장하지 않고 ERD에도 없다(`mock/AGENTS.md` ERD 예외). ERD의 "
+        "`users.kakao_refresh_token`은 카카오 API를 부를 때 쓰는 카카오 쪽 토큰으로, 여기 "
+        "`refreshToken`과 다르다. 두 토큰의 형식과 만료는 `docs/jwt-samples.md`를, "
+        "리프레시 토큰 저장은 `docs/BACKEND_CONVENTIONS.md` 6.4(Redis, TTL 만료)를 따른다.\n\n"
         "- **200**: 로그인에 성공했을 때. 이번에 새로 가입했으면 `isNewUser`가 true다\n"
         "- **401 / KAKAO_AUTH_FAILED**: `code`가 `invalid-code`일 때. 인가 코드가 "
         "만료되었거나 이미 쓴 값이다. 계정이 있는지 없는지는 구분해 알려주지 않는다\n"
@@ -1006,6 +1011,11 @@ def login_with_kakao(request: KakaoLoginRequest) -> KakaoLoginResponse | JSONRes
         "**화면 — 전 영역 공통. 액세스 토큰이 만료되는 어느 화면에서나 부른다**\n\n"
         "액세스 토큰이 만료되었을 때 리프레시 토큰으로 새 액세스 토큰을 받는다. "
         "재발급하면 리프레시 토큰도 함께 새 값으로 바뀌고 이전 값은 쓸 수 없다.\n\n"
+        "응답의 `accessToken`·`refreshToken`·`expiresIn`은 코밋 서버가 발급만 하는 값이라 "
+        "DB에 저장하지 않고 ERD에도 없다(`mock/AGENTS.md` ERD 예외). ERD의 "
+        "`users.kakao_refresh_token`은 카카오 API를 부를 때 쓰는 카카오 쪽 토큰으로, 여기 "
+        "`refreshToken`과 다르다. 두 토큰의 형식과 만료는 `docs/jwt-samples.md`를, "
+        "리프레시 토큰 저장은 `docs/BACKEND_CONVENTIONS.md` 6.4(Redis, TTL 만료)를 따른다.\n\n"
         "- **200**: 리프레시 토큰이 아직 살아 있을 때\n"
         "- **401 / REFRESH_TOKEN_INVALID**: `refreshToken`이 `expired-refresh-token`일 "
         "때. 만료되었거나 이미 다시 발급받아 쓸 수 없는 값이다. 이때는 로그인 화면으로 "
@@ -5208,7 +5218,8 @@ class WriteDevelopmentContractRequest(BaseModel):
         examples=[14],
     )
     milestones: list["WriteMilestoneRequest"] = Field(
-        description="맡기로 한 작업. 가격의 합이 계약 금액이 된다.",
+        min_length=1,
+        description="맡기로 한 작업. 가격의 합이 계약 금액이 된다. 하나 이상이어야 한다.",
     )
     rejectedIssues: list["RejectedIssueRequest"] = Field(
         default_factory=list,
@@ -5255,7 +5266,8 @@ class WriteMilestoneRequest(BaseModel):
         examples=[400000],
     )
     qaCriteria: list[str] = Field(
-        description="이 작업의 확인 문장.",
+        min_length=1,
+        description="이 작업의 확인 문장. 하나 이상이어야 한다.",
         examples=[["관리자 주소로 들어가면 로그인 화면이 뜬다"]],
     )
 
@@ -5356,6 +5368,14 @@ CONTRACT_NOT_COMPLETED = (
 CONTRACT_NOT_COMPLETED_EXAMPLE = {
     "code": CONTRACT_NOT_COMPLETED[0],
     "message": CONTRACT_NOT_COMPLETED[1],
+}
+DUE_DATE_BEFORE_START = (
+    "DUE_DATE_BEFORE_START",
+    "납기일은 착수일보다 늦어야 합니다.",
+)
+DUE_DATE_BEFORE_START_EXAMPLE = {
+    "code": DUE_DATE_BEFORE_START[0],
+    "message": DUE_DATE_BEFORE_START[1],
 }
 
 
@@ -5574,6 +5594,18 @@ CONTRACT_ID_ERROR_EXAMPLE = {
     "errors": [{"field": "contractId", "reason": "정수여야 합니다."}],
 }
 
+# 계약서 작성 바디에서 스키마로 걸리는 건 필수 항목 누락과 빈 배열(milestones, 작업의 qaCriteria)이다.
+# 배열 안 항목의 필드는 `milestones.0.qaCriteria`처럼 위치가 붙어 나온다.
+# 납기가 착수일보다 이른 것은 필드 사이 규칙이라 422가 아니라 400이다.
+WRITE_CONTRACT_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [
+        {"field": "dueDate", "reason": "필수 항목입니다."},
+        {"field": "milestones.0.qaCriteria", "reason": "1개 이상이어야 합니다."},
+    ],
+}
+
 # 확인 요청 바디는 message 하나뿐이고 300자 제한이 유일한 검증 조건이다.
 SUBMIT_MESSAGE_ERROR_EXAMPLE = {
     "code": "INVALID_REQUEST",
@@ -5677,7 +5709,8 @@ STARTED_CONTRACT_ID = 409
         "- **200**: 착수했을 때. `development.status`가 `IN_PROGRESS`가 된다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 계약의 개발자가 아닐 때. 착수는 개발자만 한다\n"
-        "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때\n"
+        "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때. 없는 계약이거나 이 계약의 "
+        "당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 준다\n"
         "- **409 / DEPOSIT_REQUIRED**: `contractId`가 402일 때. 예치가 끝나지 않아 아직 "
         "착수할 상태가 아니다\n"
         "- **409 / ALREADY_STARTED**: `contractId`가 409일 때\n"
@@ -5713,13 +5746,28 @@ def start_development(
     tags=[AREA5_TAG],
     responses={
         201: {"content": {"application/json": {"example": DEV_CONTRACT_EXAMPLE}}},
+        400: {
+            "model": ErrorResponse,
+            "description": "납기일이 착수일보다 이름",
+            "content": {"application/json": {"example": DUE_DATE_BEFORE_START_EXAMPLE}},
+        },
+        403: {
+            "model": ErrorResponse,
+            "description": "이 방의 개발자가 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
         404: {
             "model": ErrorResponse,
             "description": "방 없음",
             "content": {"application/json": {"example": ROOM_NOT_FOUND_EXAMPLE}},
         },
         **AREA1_UNAUTHORIZED,
-        **AREA1_ERRORS,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": WRITE_CONTRACT_ERROR_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
     },
     summary="개발 계약서 작성",
     description=(
@@ -5730,17 +5778,21 @@ def start_development(
         "**고르지 않은 요구사항은 맡지 않는 것으로 기록된다.** `rejectedIssues`에 사유와 "
         "함께 담아 보내면 의뢰인이 계약서에서 왜 빠졌는지 볼 수 있다.\n\n"
         "보낸 계약서는 **가계약** 상태다. 양쪽이 서명할 때까지 서로 주고받으며 조정하는 "
-        "구간이며, 서명이 끝나야 체결된다.\n\n"
+        "구간이며, 서명이 끝나야 체결된다. 협의 중에 다시 보내면 그 계약서의 내용을 이 "
+        "요청으로 덮어쓴다. 계약서는 방에 하나이고, 양쪽이 서명한 뒤에 내용을 바꾸려면 "
+        "그때 새 계약서를 쓴다.\n\n"
         "**작업마다 따로 납기를 두지 않는다.** 최종 납기일 하나만 있고, 대금도 모든 작업이 "
         "통과된 뒤 한 번에 나간다.\n\n"
         "인계물은 가격 0원짜리 작업 하나로 함께 들어간다. 0원인 작업은 화면에 가격을 "
         "보여주지 않는다.\n\n"
-        "- **201**: 계약서를 보냈을 때\n"
+        "- **201**: 계약서를 보냈을 때. 협의 중인 계약서가 있었으면 그 내용이 이걸로 바뀐다\n"
+        "- **400 / DUE_DATE_BEFORE_START**: `dueDate`가 `startDate`보다 이를 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / FORBIDDEN**: 이 방의 개발자가 아닐 때\n"
-        "- **404 / ROOM_NOT_FOUND**: `roomId`가 404일 때\n"
-        "- **422 / INVALID_REQUEST**: 작업이 하나도 없거나, `dueDate`가 `startDate`보다 "
-        "이르거나, 확인 문장이 없는 작업이 있을 때\n"
+        "- **403 / FORBIDDEN**: 이 방의 개발자가 아닐 때. 계약서는 개발자만 쓴다\n"
+        "- **404 / ROOM_NOT_FOUND**: `roomId`가 404일 때. 없는 방이거나 이 방의 당사자가 "
+        "아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 준다\n"
+        "- **422 / INVALID_REQUEST**: `milestones`가 비었거나, 작업의 `qaCriteria`가 비었거나, "
+        "`issueIds`·`startDate`·`dueDate`·`freeRepairDays`·`milestones` 중 빠진 것이 있을 때\n"
         "- **500 / INTERNAL_ERROR**: 계약서를 만들지 못했을 때"
     ),
 )
@@ -5756,6 +5808,8 @@ def write_development_contract(
 ) -> ContractResponse | JSONResponse:
     if roomId == NOT_FOUND_ROOM_ID:
         return _error_response(404, ROOM_NOT_FOUND)
+    if request.dueDate < request.startDate:
+        return _error_response(400, DUE_DATE_BEFORE_START)
     return ContractResponse(
         **{
             **DEV_CONTRACT_EXAMPLE,
@@ -5882,6 +5936,11 @@ def get_deposit(
     tags=[AREA5_TAG],
     responses={
         201: {"content": {"application/json": {"example": MILESTONES[1]}}},
+        403: {
+            "model": ErrorResponse,
+            "description": "이 계약의 개발자가 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
         409: {
             "model": ErrorResponse,
             "description": "지금 상태에서는 처리할 수 없음",
@@ -5913,7 +5972,9 @@ def get_deposit(
         "보여준다.\n\n"
         "- **201**: 확인 요청을 보냈을 때. 상태가 SUBMITTED가 되고 `submittedAt`이 채워진다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **404 / MILESTONE_NOT_FOUND**: `milestoneId`가 404일 때\n"
+        "- **403 / FORBIDDEN**: 이 계약의 개발자가 아닐 때. 확인 요청은 개발자만 보낸다\n"
+        "- **404 / MILESTONE_NOT_FOUND**: `milestoneId`가 404일 때. 없는 작업이거나 이 계약의 "
+        "당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 준다\n"
         "- **409 / MILESTONE_STATE_CONFLICT**: `milestoneId`가 409일 때. 이미 통과된 "
         "작업이다\n"
         "- **422 / INVALID_REQUEST**: `message`가 300자를 넘을 때\n"
