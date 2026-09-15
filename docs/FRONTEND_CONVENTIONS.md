@@ -166,6 +166,8 @@ src/
 └── types/
 ```
 
+공통 UI 컴포넌트(Button, Input, Badge, Card, Modal, Toast 등)는 이미 `buttons`, `common`, `feedback` 아래에 만들어져 있습니다. 목록과 디자인 토큰 사용법은 [`docs/FRONTEND_COMPONENTS.md`](./FRONTEND_COMPONENTS.md)를 참고합니다.
+
 - 파일은 실제 필요할 때 만듭니다. 빈 폴더를 미리 만들지 않습니다.
 - 컴포넌트 파일명과 export 이름은 PascalCase, 훅은 `useXxx`, 그 외 모듈은 camelCase를 사용합니다.
 - `domains/` 컴포넌트는 하위 계층(`buttons`, `layouts`, `common`)을 사용할 수 있지만 반대 방향은 금지합니다. 공용 컴포넌트가 특정 도메인 타입을 알지 않게 합니다.
