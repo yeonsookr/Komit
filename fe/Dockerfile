@@ -15,7 +15,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# 빌드 시점에 서버 전용 환경 변수를 요구하지 않도록 텔레메트리만 끕니다.
+# next build가 페이지 정보를 모으며 서버 API 모듈을 불러올 때 이 값들을 요구합니다.
+# ARG라서 builder 단계에서만 쓰이고 최종 이미지에는 남지 않으므로, 실행 시에는 컨테이너 환경 변수로 다시 넣어야 합니다.
+ARG BACKEND_API_BASE_URL
+ARG AI_API_BASE_URL
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 

@@ -515,6 +515,7 @@ fe-qg:
 # 도커 빌드/푸시 공통 설정
 # 확장하는 잡은 IMAGE_NAME(도커허브 리포지터리 이름)과
 # BUILD_CONTEXT(Dockerfile이 있는 디렉터리)를 반드시 지정해야 합니다.
+# 빌드에 필요한 CI/CD 변수가 있으면 BUILD_ARG_NAMES에 공백으로 구분해 적습니다.
 .docker-build-push:
   stage: deploy
   image: docker:29.6.2-cli
@@ -566,7 +567,18 @@ fe-qg:
       IMAGE_REPOSITORY="${DOCKER_REGISTRY}/${DOCKER_REGISTRY_USERNAME}/${IMAGE_NAME}"
       COMMIT_IMAGE="${IMAGE_REPOSITORY}:${CI_COMMIT_SHORT_SHA}"
 
-      docker build --pull --tag "$COMMIT_IMAGE" "$BUILD_CONTEXT"
+      # BUILD_ARG_NAMES에 적은 CI/CD 변수를 이름만 넘겨, 값이 명령줄에 찍히지 않게 합니다.
+      set --
+      for NAME in ${BUILD_ARG_NAMES:-}; do
+        eval "VALUE=\${$NAME:-}"
+        test -n "$VALUE" || {
+          echo "$NAME CI/CD variable is required"
+          exit 1
+        }
+        set -- "$@" --build-arg "$NAME"
+      done
+
+      docker build --pull "$@" --tag "$COMMIT_IMAGE" "$BUILD_CONTEXT"
       docker push "$COMMIT_IMAGE"
 
       if [ "$CI_COMMIT_BRANCH" = "develop" ]; then
@@ -645,6 +657,7 @@ fe-docker-build-push:
   variables:
     IMAGE_NAME: komit-fe
     BUILD_CONTEXT: fe
+    BUILD_ARG_NAMES: BACKEND_API_BASE_URL AI_API_BASE_URL
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
       changes:
