@@ -17,7 +17,7 @@ import type {
  * 설문1에서 받으므로 화면에 들어올 때가 아니라 **다음을 누를 때** 부릅니다.
  */
 export async function startDiagnosis(body: StartDiagnosisRequest): Promise<Diagnosis> {
-  const { data } = await backendApi.post<Diagnosis>(BACKEND.DIAGNOSES, body);
+  const { data } = await backendApi().post<Diagnosis>(BACKEND.DIAGNOSES, body);
   return data;
 }
 
@@ -28,7 +28,7 @@ export async function startDiagnosis(body: StartDiagnosisRequest): Promise<Diagn
  * 설문4 문항은 검사 결과를 올린 뒤에야 생깁니다.
  */
 export async function getSurvey(diagnosisId: number): Promise<Survey> {
-  const { data } = await backendApi.get<Survey>(BACKEND.SURVEY(diagnosisId));
+  const { data } = await backendApi().get<Survey>(BACKEND.SURVEY(diagnosisId));
   return data;
 }
 
@@ -42,7 +42,7 @@ export async function saveSurveyAnswers(
   diagnosisId: number,
   body: SaveSurveyAnswersRequest,
 ): Promise<Survey> {
-  const { data } = await backendApi.patch<Survey>(BACKEND.SURVEY_ANSWERS(diagnosisId), body);
+  const { data } = await backendApi().patch<Survey>(BACKEND.SURVEY_ANSWERS(diagnosisId), body);
   return data;
 }
 
@@ -59,7 +59,7 @@ export async function uploadInspection(
   const form = new FormData();
   form.append("file", file);
 
-  const { data } = await backendApi.post<Inspection>(
+  const { data } = await backendApi().post<Inspection>(
     BACKEND.INSPECTIONS(diagnosisId),
     form,
     // FormData 는 경계 문자열이 필요하므로 공통 JSON 헤더를 지웁니다.
@@ -82,7 +82,7 @@ export interface ScanFile {
  * 만들어지고, 그 결과 파일만 다시 올립니다. 소스 코드는 올리지 않습니다.
  */
 export async function downloadScanFile(diagnosisId: number): Promise<ScanFile> {
-  const response = await backendApi.get<ArrayBuffer>(BACKEND.SCAN_FILE(diagnosisId), {
+  const response = await backendApi().get<ArrayBuffer>(BACKEND.SCAN_FILE(diagnosisId), {
     responseType: "arraybuffer",
   });
 

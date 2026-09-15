@@ -15,13 +15,13 @@ import type {
  * 마지막으로 움직인 방이 먼저 옵니다.
  */
 export async function getRooms(params: RoomListParams = {}): Promise<RoomSummary[]> {
-  const { data } = await backendApi.get<RoomListResponse>(BACKEND.ROOMS, { params });
+  const { data } = await backendApi().get<RoomListResponse>(BACKEND.ROOMS, { params });
   return data.content;
 }
 
 /** 방 상세. 없거나 내가 들어가 있지 않은 방이면 404(ROOM_NOT_FOUND). */
 export async function getRoom(roomId: number): Promise<RoomDetail> {
-  const { data } = await backendApi.get<RoomDetail>(BACKEND.ROOM(roomId));
+  const { data } = await backendApi().get<RoomDetail>(BACKEND.ROOM(roomId));
   return data;
 }
 
@@ -38,6 +38,6 @@ export async function convertRoom(
   roomId: number,
   body: ConvertRoomRequest,
 ): Promise<RoomDetail> {
-  const { data } = await backendApi.post<RoomDetail>(BACKEND.ROOM_CONVERSION(roomId), body);
+  const { data } = await backendApi().post<RoomDetail>(BACKEND.ROOM_CONVERSION(roomId), body);
   return data;
 }
