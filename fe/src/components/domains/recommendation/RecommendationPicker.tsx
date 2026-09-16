@@ -8,6 +8,7 @@ import { Avatar, Checkbox, Divider, Tag } from "@/components/common";
 import { useToast } from "@/components/feedback";
 import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
+import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
 import type { RecommendationBatch, RecommendationItem } from "@/types/recommendation";
 import type { RoomSummary } from "@/types/room";
@@ -55,7 +56,7 @@ export function RecommendationPicker({ batch }: Readonly<RecommendationPickerPro
       });
 
       // 한 명이면 그 방으로, 여럿이면 목록에서 고르도록 첫 방으로 보냅니다.
-      if (first) router.push(`/rooms/${first.roomId}`);
+      if (first) router.push(ROUTES.room(first.roomId));
       else router.refresh();
     } catch (error) {
       const message =
@@ -73,7 +74,7 @@ export function RecommendationPicker({ batch }: Readonly<RecommendationPickerPro
         </p>
         <div className="mt-6 text-center">
           <Link
-            href="/developers"
+            href={ROUTES.developers}
             className="rounded-sm text-sm text-fg-muted hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
             다른 개발자 찾기
@@ -100,7 +101,7 @@ export function RecommendationPicker({ batch }: Readonly<RecommendationPickerPro
 
       <div className="mt-8 text-center">
         <Link
-          href="/developers"
+          href={ROUTES.developers}
           className="rounded-sm text-sm text-fg-muted hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         >
           다른 개발자 찾기
@@ -173,7 +174,7 @@ function RecommendationRow({ item, checked, onToggle }: Readonly<RecommendationR
       </dl>
 
       <Link
-        href={`/developers/${developer.developerId}`}
+        href={ROUTES.developer(developer.developerId)}
         className="shrink-0 rounded-sm text-[13px] font-semibold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
       >
         자세히 ›

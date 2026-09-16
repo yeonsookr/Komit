@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { LoginCard } from "@/components/domains/auth";
+import { ERROR_PARAM, NEXT_PARAM } from "@/lib/auth/params";
 import { safeNext } from "@/lib/auth/safeNext";
 
 export const metadata: Metadata = {
@@ -24,7 +25,12 @@ export default async function LoginPage({
 }: Readonly<{
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }>) {
-  const { next, error } = await searchParams;
+  const params = await searchParams;
 
-  return <LoginCard next={safeNext(next)} errorCode={first(error)} />;
+  return (
+    <LoginCard
+      next={safeNext(params[NEXT_PARAM])}
+      errorCode={first(params[ERROR_PARAM])}
+    />
+  );
 }

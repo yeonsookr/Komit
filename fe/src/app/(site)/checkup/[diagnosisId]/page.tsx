@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CheckupSurvey } from "@/components/domains/checkup";
 import { getSurvey } from "@/lib/api/services";
-import { parseStep } from "@/lib/survey";
+import { parseStep, STEP_PARAM } from "@/lib/survey";
 import { ApiError } from "@/types/api";
 
 export const metadata: Metadata = {
@@ -28,7 +28,7 @@ export default async function CheckupSurveyPage({
   const id = parseDiagnosisId(diagnosisId);
   if (id === null) notFound();
 
-  const step = parseStep((await searchParams).step);
+  const step = parseStep((await searchParams)[STEP_PARAM]);
 
   try {
     const survey = await getSurvey(id);

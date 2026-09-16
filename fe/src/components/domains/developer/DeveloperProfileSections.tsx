@@ -6,6 +6,7 @@ import {
   formatCareerPeriod,
   formatPeriodDays,
 } from "@/lib/developerProfile";
+import { ROUTES } from "@/lib/routes";
 import type { Career, DeveloperDetail, PortfolioItem, PriceCatalogItem } from "@/types/developer";
 
 /**
@@ -209,7 +210,7 @@ export function FreeInquiryRow() {
 export function BackToSearch() {
   return (
     <Link
-      href="/developers"
+      href={ROUTES.developers}
       className="inline-flex rounded-sm text-[13px] text-fg-subtle hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
     >
       ‹ 개발자 찾기

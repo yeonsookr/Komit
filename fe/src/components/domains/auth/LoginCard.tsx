@@ -2,6 +2,7 @@ import Link from "next/link";
 import { buttonClass } from "@/components/buttons";
 import { Card } from "@/components/common";
 import { Callout } from "@/components/feedback";
+import { NEXT_PARAM } from "@/lib/auth/params";
 import { ROUTES } from "@/lib/routes";
 
 /**
@@ -50,7 +51,7 @@ export interface LoginCardProps {
  */
 export function LoginCard({ next, errorCode }: Readonly<LoginCardProps>) {
   const kakaoHref = next
-    ? `${ROUTES.kakaoStart}?next=${encodeURIComponent(next)}`
+    ? `${ROUTES.kakaoStart}?${NEXT_PARAM}=${encodeURIComponent(next)}`
     : ROUTES.kakaoStart;
 
   // 카드 폭은 약관 링크 넷이 한 줄에 들어가는 값입니다. 좁히면 줄이 나뉩니다.

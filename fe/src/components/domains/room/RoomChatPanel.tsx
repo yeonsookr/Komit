@@ -11,6 +11,7 @@ import {
   ChatRoom,
 } from "@/components/domains/chat";
 import { formatDateLabel, formatTime, toDayKey } from "@/lib/format";
+import { ROUTES } from "@/lib/routes";
 import type { ChatMessage, ChatSender } from "@/types/chat";
 import type { RoomDetail } from "@/types/room";
 
@@ -69,7 +70,7 @@ export function RoomChatPanel({ room, initialMessages, myName }: RoomChatPanelPr
   const footer = converted ? (
     <ChatNotice
       action={
-        <Button variant="dark" onClick={() => router.push(`/rooms/${converted.id}`)}>
+        <Button variant="dark" onClick={() => router.push(ROUTES.room(converted.id))}>
           {converted.action}
         </Button>
       }
