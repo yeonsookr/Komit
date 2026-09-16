@@ -4,7 +4,11 @@
  *
  * API 경로는 `lib/api/endpoints.ts`, 화면 경로는 여기입니다.
  * 목적지가 바뀌면 이 파일만 고칩니다. 아직 화면이 없는 목적지는 주석으로 표시합니다.
+ *
+ * query 이름은 여기서 정하지 않고 그 값을 읽는 모듈에서 가져옵니다 (컨벤션 8.2).
  */
+import { FIELD_CODE_IDS_PARAM } from "./developerSearch";
+
 export const ROUTES = {
   home: "/",
   /** 이용 방법 화면은 따로 없습니다. 랜딩의 진행 순서 섹션이 그 역할입니다. */
@@ -14,7 +18,8 @@ export const ROUTES = {
   kakaoStart: "/api/auth/kakao",
 
   developers: "/developers",
-  developersByField: (codeId: number) => `/developers?fieldCodeIds=${codeId}`,
+  developersByField: (codeId: number) =>
+    `/developers?${FIELD_CODE_IDS_PARAM}=${codeId}`,
   developer: (developerId: number) => `/developers/${developerId}`,
 
   /**
