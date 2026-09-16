@@ -30,7 +30,8 @@ fe/src/
 │  │  │             FeaturedDevelopers.tsx 추천 개발자 카드 3장
 │  │  │             ProcessSteps.tsx       진행 순서 (id="process", ROUTES.howTo 의 앵커)
 │  │  │             CheckupIntro.tsx       사전 점검 소개 (정적 예시 카드)
-│  │  └─ auth/     LoginCard.tsx          로그인 카드 (카카오 버튼 · 약관 안내 · 문서 링크 4개)
+│  │  └─ auth/     LoginCard.tsx          로그인 카드 (카카오 버튼 · 약관 안내 · 문서 링크 4개 · 실패 안내)
+│  │                SessionShell.tsx       인증 스토어를 읽어 헤더를 채우는 AppShell — (site) 레이아웃이 씁니다
 │  └─ common/   Input.tsx       Field, Input, Textarea, SearchInput
 │               Select.tsx      NativeSelect, Dropdown
 │               Choice.tsx      Checkbox, Radio, ChoiceCard, Switch, RatingScale
@@ -87,8 +88,13 @@ export default function SiteLayout({ children }) {
 
 높이는 56px(`h-gnb`) 고정이고, 현재 경로를 `usePathname` 으로 읽어 `NavPill` 활성 상태를 정합니다.
 **md 미만에서는 메뉴가 햄버거 패널로 접힙니다.** 알림·아바타는 자주 쓰는 동작이라 접지 않습니다.
-`user` 를 넘기지 않으면 비로그인 헤더입니다. 인증이 붙으면 `(site)/layout.tsx` 에서 세션을 읽어
-`<AppShell user={{ name, unreadCount }}>` 로 넘기고 로그아웃 핸들러를 연결합니다.
+`user` 를 넘기지 않으면 비로그인 헤더입니다. `pending` 이 true 면 로그인 여부를 아직 모르는 상태라
+로그인 링크도 아바타도 그리지 않습니다(로그인한 사용자에게 '로그인' 이 잠깐 비치지 않게).
+
+`(site)/layout.tsx` 는 `AppShell` 대신 `SessionShell`(domains/auth) 을 씁니다. 인증 스토어(`stores/auth`)의
+상태를 읽어 `user`·`pending`·`onLogout` 을 채우고 본문은 서버 컴포넌트 그대로 지나갑니다. 레이아웃에서
+쿠키를 읽으면 랜딩까지 동적 렌더링이 되기 때문에 헤더만 클라이언트에서 채웁니다(컨벤션 7장).
+방 레이아웃처럼 이미 서버에서 `getMe()` 를 읽는 화면은 그 값을 `<AppShell user>` 로 그대로 넘깁니다.
 
 ### 좁은 화면 대응
 

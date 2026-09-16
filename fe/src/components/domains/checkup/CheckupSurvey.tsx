@@ -9,6 +9,7 @@ import { INTERNAL } from "@/lib/api/endpoints";
 import {
   isAnswered,
   questionsForStep,
+  toQuestionValue,
   TOTAL_STEPS,
   type QuestionValue,
 } from "@/lib/survey";
@@ -72,12 +73,11 @@ export function CheckupSurvey({
   const [values, setValues] = React.useState<Record<number, QuestionValue>>({});
 
   React.useEffect(() => {
-    // 빈 칸에서 시작합니다. 목이 보기 몇 개를 고른 채로 내려주지만, 처음 보는
-    // 화면이 이미 답해 둔 것처럼 보이지 않게 합니다.
+    // 서버가 준 `isSelected` 로 시작합니다. 「이전」으로 돌아오면 저장해 둔 답이
+    // 그대로 보입니다(설문 조회 명세). 목은 답하기 전에도 보기 몇 개를 고른 채로
+    // 내려주는데, 그건 목의 한계라 화면에서 우회하지 않습니다.
     setValues(
-      Object.fromEntries(
-        questions.map((q) => [q.questionId, { selectedOptionIds: [], text: "" }]),
-      ),
+      Object.fromEntries(questions.map((q) => [q.questionId, toQuestionValue(q)])),
     );
   }, [questions]);
 

@@ -56,6 +56,7 @@ API 명세의 단 하나의 진실은 `mock` 서버입니다. 프런트엔드는
 | 프레임워크 | Next.js App Router |
 | 언어 | TypeScript |
 | HTTP 클라이언트 | axios |
+| 클라이언트 전역 상태 | Zustand |
 | 애니메이션 | Motion(구 Framer Motion) |
 | 단위·로직 테스트 | Vitest |
 | E2E 테스트 | Playwright |
@@ -169,6 +170,24 @@ export const ROUTES = {
 - 서버 전용 모듈(환경 변수 사용, 서버 axios 인스턴스)을 클라이언트 컴포넌트에서 import하지 않습니다.
 - 클라이언트 상태는 필요한 범위에서만 사용합니다. 서버에서 이미 확정된 데이터를 전역 상태로 복제하지 않습니다.
 
+### 9.1 클라이언트 전역 상태: Zustand
+
+화면 여러 곳이 함께 보는 클라이언트 상태(로그인 상태 등)는 Zustand로 관리합니다. 한 컴포넌트 안에서 끝나는 상태는 `useState`로 충분하며 스토어로 올리지 않습니다.
+
+```text
+src/stores/<domain>/
+├── <domain>Store.ts        # createStore 팩토리, 상태·액션 타입
+├── <Domain>StoreProvider.tsx  # 'use client'. 스토어 생성 + Context + use<Domain>Store 훅
+└── index.ts
+```
+
+- **스토어를 모듈 전역 변수로 만들지 않습니다.** `create()`로 만든 전역 훅 대신 `createStore()` 팩토리를 두고 Provider가 `useState(createXxxStore)`로 마운트마다 하나씩 만듭니다. Next 서버는 요청을 동시에 처리하므로 전역 스토어는 요청 사이에 상태가 섞일 수 있습니다(Zustand 공식 Next.js 가이드).
+- **서버 컴포넌트는 스토어를 읽지도 쓰지도 않습니다.** 서버에서 확정된 데이터는 props로 내립니다.
+- 서버 렌더와 첫 클라이언트 렌더는 같은 초기 상태여야 합니다. 브라우저에서만 아는 값(쿠키로 정해지는 로그인 여부 등)은 "아직 모름" 상태로 시작해 마운트 뒤에 채웁니다. 그래야 hydration이 어긋나지 않습니다.
+- 컴포넌트는 `useXxxStore((s) => s.field)`처럼 필요한 조각만 고릅니다. 스토어 전체를 구독하면 무엇이 바뀌어도 다시 그려집니다.
+- 서버를 부르는 액션은 스토어 안에 두되 요청 자체는 `lib/api/services/`의 함수를 부릅니다. 스토어가 axios를 직접 알지 않게 합니다.
+- 토큰·비밀값을 스토어에 넣지 않습니다. 인증 토큰은 httpOnly 쿠키에만 있고 Next 서버가 다룹니다(5·6장). 스토어는 로그인 여부와 내 정보만 가집니다.
+
 ## 10. 컴포넌트 구조
 
 컴포넌트는 도메인과 역할로 계층화합니다. 평평한 `components` 한 폴더에 전부 넣지 않습니다.
@@ -186,6 +205,7 @@ src/
 │   └── common/               # 둘 이상의 도메인이 실제로 쓰는 범용 요소
 ├── hooks/
 ├── lib/                      # api, utils, 설정
+├── stores/                   # Zustand 스토어와 Provider (9.1)
 ├── styles/
 └── types/
 ```

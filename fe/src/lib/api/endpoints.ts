@@ -7,6 +7,9 @@
  */
 
 export const BACKEND = {
+  AUTH_KAKAO: "/api/auth/kakao",
+  AUTH_TOKEN_REFRESH: "/api/auth/token/refresh",
+  AUTH_LOGOUT: "/api/auth/logout",
   LANDING_SUMMARY: "/api/landing/summary",
   LANDING_FEATURED: "/api/landing/featured-developers",
   ME: "/api/users/me",
@@ -33,6 +36,12 @@ export const BACKEND = {
 } as const;
 
 export const INTERNAL = {
+  /** 카카오 인가 시작. 화면 링크는 `ROUTES.kakaoStart` 로 같은 값을 가리킵니다. */
+  AUTH_KAKAO: "/api/auth/kakao",
+  /** 카카오가 인가 코드를 돌려주는 곳. 콘솔의 Redirect URI 와 같아야 합니다. */
+  AUTH_KAKAO_CALLBACK: "/api/auth/kakao/callback",
+  AUTH_REFRESH: "/api/auth/refresh",
+  AUTH_LOGOUT: "/api/auth/logout",
   SURVEY: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/survey`,
   ME: "/api/users/me",
   ROOMS: "/api/rooms",

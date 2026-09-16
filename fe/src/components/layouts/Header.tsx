@@ -32,6 +32,11 @@ export interface HeaderUser {
 export interface HeaderProps {
   nav?: HeaderNavItem[];
   user?: HeaderUser;
+  /**
+   * 로그인 여부를 아직 모르는 동안 true. 로그인 링크도 아바타도 그리지 않아
+   * 로그인한 사용자에게 '로그인' 이 잠깐 비치지 않게 합니다. 메뉴는 비로그인 것을 씁니다.
+   */
+  pending?: boolean;
   loginHref?: string;
   notificationsHref?: string;
   menuItems?: HeaderNavItem[];
@@ -72,6 +77,7 @@ function isActive(pathname: string | null, href: string) {
 export function Header({
   nav,
   user,
+  pending = false,
   loginHref = ROUTES.login,
   notificationsHref = ROUTES.notifications,
   menuItems = DEFAULT_MENU_ITEMS,
@@ -115,7 +121,8 @@ export function Header({
         </nav>
 
         <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-3">
-          {user ? (
+          {pending && <span aria-hidden className="size-9" />}
+          {!pending && user && (
             <>
               <Link
                 href={notificationsHref}
@@ -169,7 +176,8 @@ export function Header({
                 </Popover>
               </div>
             </>
-          ) : (
+          )}
+          {!pending && !user && (
             <Link
               href={loginHref}
               className="hidden shrink-0 rounded-md px-2 py-1 text-sm font-medium whitespace-nowrap text-fg-secondary transition-colors hover:text-fg md:inline-flex"
@@ -216,7 +224,7 @@ export function Header({
                 ))}
               </nav>
 
-              {!user && (
+              {!pending && !user && (
                 <>
                   <MenuDivider />
                   <NavPill
