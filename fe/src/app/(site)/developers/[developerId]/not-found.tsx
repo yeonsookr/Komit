@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Container } from "@/components/layouts";
 import { EmptyState } from "@/components/feedback";
+import { ROUTES } from "@/lib/routes";
 
 /** 없거나 탈퇴한 개발자. 둘을 구분해 알려주지 않습니다. */
 export default function DeveloperNotFound() {
@@ -11,7 +12,7 @@ export default function DeveloperNotFound() {
         description="주소가 바뀌었거나 더 이상 활동하지 않는 개발자입니다."
         action={
           <Link
-            href="/developers"
+            href={ROUTES.developers}
             className="rounded-sm text-[13px] font-semibold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
             개발자 찾기로
