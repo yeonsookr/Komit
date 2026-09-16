@@ -1,6 +1,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { cn } from "@/lib/cn";
+import { COMPANY } from "@/lib/company";
 import { Container, type ContainerWidth } from "./Container";
 import { ROUTES } from "@/lib/routes";
 
@@ -67,11 +68,12 @@ export const DEFAULT_FOOTER_NOTICES = [
   "결제는 갤럭시아머니트리를 통해 처리됩니다. 예치한 대금은 계약이 전부 끝난 뒤 한 번에 지급됩니다.",
 ];
 
+/** 값은 `lib/company.ts` 한 곳에서 관리합니다. 약관 화면도 같은 값을 씁니다. */
 export const DEFAULT_BUSINESS_INFO: BusinessInfo = {
-  registrationNumber: "000-00-00000",
-  representative: "000",
-  address: "서울",
-  email: "help@komit.kr",
+  registrationNumber: COMPANY.registrationNumber,
+  representative: COMPANY.representative,
+  address: COMPANY.address,
+  email: COMPANY.email,
 };
 
 export function Footer({

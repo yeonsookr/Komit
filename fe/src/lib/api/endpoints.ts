@@ -33,6 +33,11 @@ export const BACKEND = {
   ISSUE: (issueId: number) => `/api/issues/${issueId}`,
   REQUIREMENTS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/requirements`,
   RECOMMENDATIONS: (projectId: number) => `/api/projects/${projectId}/recommendations`,
+  MYPAGE: "/api/mypage",
+  /** 알림톡 수신 설정. 마이페이지의 알림 칸이 씁니다. */
+  NOTIFICATION_SETTING: "/api/settings/notification",
+  /** 탈퇴 전 확인(GET)과 탈퇴(POST). 계정을 지우는 것이 아니라 삭제 표시를 켭니다. */
+  WITHDRAWAL: "/api/users/me/withdrawal",
   CONTRACT: (contractId: number) => `/api/contracts/${contractId}`,
   CONTRACT_SIGNATURES: (contractId: number) => `/api/contracts/${contractId}/signatures`,
   CONTRACT_DEPOSIT: (contractId: number) => `/api/contracts/${contractId}/deposit`,
@@ -74,6 +79,10 @@ export const INTERNAL = {
   REQUIREMENTS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/requirements`,
   RECOMMENDATIONS: (projectId: number) => `/api/projects/${projectId}/recommendations`,
   SCAN_FILE: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/scan-file`,
+  MY_NAME: "/api/users/me",
+  NOTIFICATION_SETTING: "/api/settings/notification",
+  /** 회원 탈퇴. 탈퇴 화면의 「탈퇴하기」가 부릅니다. */
+  WITHDRAWAL: "/api/users/me/withdrawal",
   CONTRACT_SIGNATURES: (contractId: number) => `/api/contracts/${contractId}/signatures`,
   CONTRACT_DEPOSIT: (contractId: number) => `/api/contracts/${contractId}/deposit`,
   CONTRACT_START: (contractId: number) => `/api/contracts/${contractId}/start`,

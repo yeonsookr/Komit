@@ -22,6 +22,13 @@ const dateLabelFormat = new Intl.DateTimeFormat("ko-KR", {
   day: "numeric",
 });
 
+const fullDateFormat = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: TIME_ZONE,
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+});
+
 const weekdayFormat = new Intl.DateTimeFormat("ko-KR", {
   timeZone: TIME_ZONE,
   weekday: "short",
@@ -44,9 +51,20 @@ export function formatDateLabel(isoString: string): string {
   return dateLabelFormat.format(new Date(isoString));
 }
 
+/** "2026년 3월 1일" — 약관 개정일처럼 연도까지 밝혀야 하는 자리. */
+export function formatFullDate(isoString: string): string {
+  return fullDateFormat.format(new Date(isoString));
+}
+
 /** "2026-08-20" — 같은 날 메시지를 묶을 때 쓰는 키. 화면에 찍지 않습니다. */
 export function toDayKey(isoString: string): string {
   return dayKeyFormat.format(new Date(isoString));
+}
+
+/** "8/17" — 마이페이지의 진단 날짜, 방 개설일처럼 시각까지는 필요 없는 자리. */
+export function formatShortDate(isoString: string): string {
+  const [, month, day] = dayKeyFormat.format(new Date(isoString)).split("-");
+  return `${Number(month)}/${Number(day)}`;
 }
 
 /** "8/18 16:40" — 요청서 갱신 시각처럼 좁은 자리에 넣는 표기. */
@@ -100,10 +118,4 @@ export function formatDayWithWeekday(date: string): string {
 export function formatDateTimeLabel(isoString: string): string {
   const date = new Date(isoString);
   return `${dateLabelFormat.format(date)} ${timeFormat.format(date)}`;
-}
-
-/** "8/22" — 개설일처럼 날짜만 짧게 적는 자리. */
-export function formatShortDate(isoString: string): string {
-  const [, month, day] = dayKeyFormat.format(new Date(isoString)).split("-");
-  return `${Number(month)}/${Number(day)}`;
 }

@@ -5,5 +5,6 @@ export * from "./Chip";
 export * from "./Choice";
 export * from "./Input";
 export * from "./Misc";
+export * from "./Section";
 export * from "./Select";
 export * from "./Tabs";

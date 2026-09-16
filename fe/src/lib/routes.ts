@@ -27,12 +27,11 @@ export const ROUTES = {
   developer: (developerId: number) => `/developers/${developerId}`,
 
   /**
-   * 약관과 정책. `policies` 는 문서 목록이고 본문은 문서마다 따로입니다.
-   * 목록 화면(`8_약관`)이 문서별로 「읽기」를 두고, 개인정보 처리방침처럼 주소를 따로
-   * 제출해야 하는 문서가 있어 한 페이지에 모으지 않습니다. 서버가 주는 문서가 아니라
-   * 화면이 가진 정적 문서입니다. (화면 없음 — 별도 이슈)
+   * 약관과 정책. 문서마다 주소가 따로입니다.
+   * 개인정보 처리방침처럼 주소 하나만 따로 제출해야 하는 문서가 있어 한 페이지에
+   * 모으지 않습니다. 목록은 마이페이지 약관 칸이 맡고 별도 목록 화면은 두지 않습니다.
+   * 문서 목록과 개정일은 `lib/policies.ts` 에 있습니다. (본문 화면 없음 — 별도 이슈)
    */
-  policies: "/policies",
   policiesTerms: "/policies/terms",
   policiesPrivacy: "/policies/privacy",
   policiesElectronicFinance: "/policies/electronic-finance",
@@ -75,6 +74,11 @@ export const ROUTES = {
   /** 개발자 추천 결과. 요구사항을 고르면 만들어지는 회차입니다. */
   recommendation: (batchId: number) => `/recommendations/${batchId}`,
 
+  /** 마이페이지. 계정·계좌·프로젝트·개발자 프로필·알림 설정을 한 화면에서 봅니다. */
+  mypage: "/mypage",
+  /** 회원 탈퇴. 마이페이지의 「탈퇴하기」가 옵니다. */
+  mypageWithdrawal: "/mypage/withdrawal",
+
   // ---- 아래는 아직 화면이 없는 임시 경로입니다. 화면이 생기면 값만 고칩니다. ----
   /** 의뢰 목록. 방 화면(/rooms/{roomId})의 진입점이 됩니다. */
   requests: "/requests",
@@ -82,9 +86,13 @@ export const ROUTES = {
   /** 푸터 "정산 방식" 안내. */
   settlementsGuide: "/settlements/guide",
   notifications: "/notifications",
-  mypage: "/mypage",
+  /** 계좌 등록. 마이페이지의 「계좌 변경」이 옵니다. */
+  accountRegister: "/mypage/account",
+  /** 계약서. 탈퇴 화면의 「이동」이 막고 있는 계약으로 보냅니다. */
+  contract: (contractId: number) => `/contracts/${contractId}`,
   /** 내 개발자 프로필. 푸터 "프로필 등록"도 여기로 옵니다. */
   mypageProfile: "/mypage/profile",
+  /** 내 일정. 마이페이지의 「일정 관리」가 옵니다. */
   mypageSchedule: "/mypage/schedule",
   mypageSettings: "/mypage/settings",
 } as const;
