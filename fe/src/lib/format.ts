@@ -22,6 +22,13 @@ const dateLabelFormat = new Intl.DateTimeFormat("ko-KR", {
   day: "numeric",
 });
 
+const fullDateFormat = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: TIME_ZONE,
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+});
+
 const dayKeyFormat = new Intl.DateTimeFormat("en-CA", {
   timeZone: TIME_ZONE,
   year: "numeric",
@@ -37,6 +44,11 @@ export function formatTime(isoString: string): string {
 /** "8월 20일" — 대화 사이 날짜 구분. */
 export function formatDateLabel(isoString: string): string {
   return dateLabelFormat.format(new Date(isoString));
+}
+
+/** "2026년 3월 1일" — 약관 개정일처럼 연도까지 밝혀야 하는 자리. */
+export function formatFullDate(isoString: string): string {
+  return fullDateFormat.format(new Date(isoString));
 }
 
 /** "2026-08-20" — 같은 날 메시지를 묶을 때 쓰는 키. 화면에 찍지 않습니다. */

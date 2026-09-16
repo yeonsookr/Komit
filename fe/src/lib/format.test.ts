@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   formatDateLabel,
   formatRelativeTime,
+  formatFullDate,
   formatShortDate,
   formatShortDateTime,
   formatTime,
@@ -37,6 +38,11 @@ describe('날짜·시각 포맷터', () => {
   it('좁은 자리 표기는 앞의 0을 떼고 찍는다', () => {
     expect(formatShortDateTime('2026-08-18T16:40:00+09:00')).toBe('8/18 16:40');
     expect(formatShortDate('2026-08-17T09:12:00+09:00')).toBe('8/17');
+  });
+
+  it('약관 개정일은 연도까지 찍는다', () => {
+    expect(formatFullDate('2026-03-01')).toBe('2026년 3월 1일');
+    expect(formatFullDate('2026-06-15')).toBe('2026년 6월 15일');
   });
 
   it('날짜만 찍을 때도 한국 시각으로 넘어간 날을 쓴다', () => {

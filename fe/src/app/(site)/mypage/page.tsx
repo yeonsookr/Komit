@@ -5,6 +5,7 @@ import {
   AccountSection,
   DeveloperSection,
   NotificationSection,
+  PolicySection,
   ProjectSection,
   SettlementAccountSection,
 } from "@/components/domains/mypage";
@@ -39,6 +40,8 @@ export default async function MyPage() {
       {/* 개발자 프로필이 없으면 이 칸은 아무것도 그리지 않습니다. */}
       <DeveloperSection developer={mypage.developer} />
       <NotificationSection setting={mypage.notificationSetting} />
+      {/* 약관은 서버가 주는 값이 아니라 화면이 가진 정적 목록입니다. */}
+      <PolicySection />
     </Container>
   );
 }

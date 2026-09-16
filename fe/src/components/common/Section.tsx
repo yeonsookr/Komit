@@ -12,8 +12,8 @@ export interface SectionCardProps {
  * SectionCard — 제목 (+ 우측 안내) 아래에 테두리 카드를 놓는 칸.
  *   카드 안에는 보통 `KeyValueRow` 를 쌓습니다.
  *
- * 마이페이지(계정·계좌·프로젝트·알림)와 약관·정책(문서·고지·사업자 정보)이 같은 모양이라
- * 공용으로 둡니다.
+ * 마이페이지(계정·계좌·프로젝트·알림·약관)가 쓰고, 설정처럼 같은 모양인 화면이 이어서
+ * 나오므로 한 도메인에 두지 않고 공용으로 둡니다.
  */
 export function SectionCard({ title, note, children }: Readonly<SectionCardProps>) {
   return (

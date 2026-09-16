@@ -27,12 +27,11 @@ export const ROUTES = {
   developer: (developerId: number) => `/developers/${developerId}`,
 
   /**
-   * 약관과 정책. `policies` 는 문서 목록이고 본문은 문서마다 따로입니다.
-   * 목록 화면(`8_약관`)이 문서별로 「읽기」를 두고, 개인정보 처리방침처럼 주소를 따로
-   * 제출해야 하는 문서가 있어 한 페이지에 모으지 않습니다. 서버가 주는 문서가 아니라
-   * 화면이 가진 정적 문서입니다. (화면 없음 — 별도 이슈)
+   * 약관과 정책. 문서마다 주소가 따로입니다.
+   * 개인정보 처리방침처럼 주소 하나만 따로 제출해야 하는 문서가 있어 한 페이지에
+   * 모으지 않습니다. 목록은 마이페이지 약관 칸이 맡고 별도 목록 화면은 두지 않습니다.
+   * 문서 목록과 개정일은 `lib/policies.ts` 에 있습니다. (본문 화면 없음 — 별도 이슈)
    */
-  policies: "/policies",
   policiesTerms: "/policies/terms",
   policiesPrivacy: "/policies/privacy",
   policiesElectronicFinance: "/policies/electronic-finance",
