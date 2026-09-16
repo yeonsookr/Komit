@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { buttonClass } from "@/components/buttons";
 import { Card } from "@/components/common";
-import { NEXT_PARAM } from "@/lib/auth";
+import { Callout } from "@/components/feedback";
+import { NEXT_PARAM } from "@/lib/auth/params";
 import { ROUTES } from "@/lib/routes";
 
 /**
@@ -15,12 +16,28 @@ const POLICY_LINKS = [
   { label: "환불과 분쟁 처리", href: ROUTES.policiesRefundDispute },
 ];
 
+/**
+ * 로그인에 실패해 돌아왔을 때 보여줄 문구. 키는 서버의 실패 코드입니다(목 명세 영역 1).
+ * 문구는 서버가 주는 message 와 같게 맞춰 두고, 모르는 코드는 일반 실패 문구로 덮습니다.
+ */
+const LOGIN_ERROR_MESSAGES: Record<string, string> = {
+  KAKAO_AUTH_FAILED: "로그인하지 못했습니다. 다시 시도해 주세요.",
+  KAKAO_UNAVAILABLE: "카카오 서비스에 연결하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+  REFRESH_TOKEN_INVALID: "로그인이 만료되었습니다. 다시 로그인해 주세요.",
+};
+
+export function loginErrorMessage(code: string): string {
+  return LOGIN_ERROR_MESSAGES[code] ?? LOGIN_ERROR_MESSAGES.KAKAO_AUTH_FAILED;
+}
+
 export interface LoginCardProps {
   /**
    * 로그인한 뒤 돌아갈 곳. 사전점검처럼 로그인이 필요한 화면이 사용자를 여기로 보낼 때
-   * 넘깁니다. 없으면 인가 시작 주소에 붙이지 않고, 백엔드가 기본 위치로 보냅니다.
+   * 넘깁니다. 없으면 인가 시작 주소에 붙이지 않고, 콜백이 랜딩으로 보냅니다.
    */
   next?: string;
+  /** 로그인에 실패해 돌아왔을 때의 실패 코드. 있으면 카드 위에 안내를 띄웁니다. */
+  errorCode?: string;
 }
 
 /**
@@ -30,9 +47,9 @@ export interface LoginCardProps {
  * 가입까지 끝나고, 필수 약관 동의는 아래 안내로 갈음합니다(목 명세 영역 1).
  *
  * 버튼은 이동만 하므로 `<button>` 이 아니라 `<Link>` 입니다. 목적지인 인가 시작
- * 경로는 백엔드 연동 단계에서 Route Handler 로 만들며, 그때까지는 열리지 않습니다.
+ * 경로는 Route Handler(`app/api/auth/kakao`)가 받아 카카오 로그인 화면으로 보냅니다.
  */
-export function LoginCard({ next }: Readonly<LoginCardProps>) {
+export function LoginCard({ next, errorCode }: Readonly<LoginCardProps>) {
   const kakaoHref = next
     ? `${ROUTES.kakaoStart}?${NEXT_PARAM}=${encodeURIComponent(next)}`
     : ROUTES.kakaoStart;
@@ -42,6 +59,12 @@ export function LoginCard({ next }: Readonly<LoginCardProps>) {
     <Card variant="elevated" padding="lg" className="mx-auto w-full max-w-[480px] sm:p-8">
       <p className="text-base font-bold text-fg">Komit</p>
       <h1 className="mt-4 text-3xl font-bold tracking-tight text-fg">시작하기</h1>
+
+      {errorCode && (
+        <Callout tone="danger" size="sm" className="mt-5">
+          {loginErrorMessage(errorCode)}
+        </Callout>
+      )}
 
       <Link
         href={kakaoHref}
