@@ -8,6 +8,7 @@ import {
   PolicySection,
   ProjectSection,
   SettlementAccountSection,
+  WithdrawalSection,
 } from "@/components/domains/mypage";
 import { getMyPage } from "@/lib/api/services";
 
@@ -42,6 +43,7 @@ export default async function MyPage() {
       <NotificationSection setting={mypage.notificationSetting} />
       {/* 약관은 서버가 주는 값이 아니라 화면이 가진 정적 목록입니다. */}
       <PolicySection />
+      <WithdrawalSection />
     </Container>
   );
 }

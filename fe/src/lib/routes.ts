@@ -71,6 +71,8 @@ export const ROUTES = {
   notifications: "/notifications",
   /** 계좌 등록. 마이페이지의 「계좌 변경」이 옵니다. */
   accountRegister: "/mypage/account",
+  /** 계약서. 탈퇴 화면의 「이동」이 막고 있는 계약으로 보냅니다. */
+  contract: (contractId: number) => `/contracts/${contractId}`,
   /** 내 개발자 프로필. 푸터 "프로필 등록"도 여기로 옵니다. */
   mypageProfile: "/mypage/profile",
   /** 내 일정. 마이페이지의 「일정 관리」가 옵니다. */

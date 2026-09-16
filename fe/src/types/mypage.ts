@@ -72,3 +72,36 @@ export interface UpdateMyNameBody {
 export interface UpdateNotificationSettingBody {
   notificationEnabled: boolean;
 }
+
+/**
+ * 탈퇴를 막고 있는 것 한 줄.
+ *
+ * 저장된 값이 아니라 계약·예치금·소득을 훑어 그때그때 만드는 목록입니다. (R-ACC-05)
+ */
+export interface WithdrawalBlocker {
+  /** CONTRACT 진행 중인 의뢰 · DEPOSIT 남은 예치금 · INCOME 못 받은 소득. */
+  type: "CONTRACT" | "DEPOSIT" | "INCOME";
+  /** 화면에 그대로 찍는 줄. "수제 비누 가게 · 진행 중인 의뢰" */
+  title: string;
+  /** 금액. 돈이 아닌 항목이면 null 입니다. */
+  amount: number | null;
+  /** 「이동」이 갈 계약. 갈 곳이 없으면 null 입니다. */
+  targetId: number | null;
+}
+
+/** 지금 탈퇴할 수 있는지. `blockers` 가 비어야 `canWithdraw` 가 참입니다. */
+export interface WithdrawalCheck {
+  canWithdraw: boolean;
+  blockers: WithdrawalBlocker[];
+}
+
+/**
+ * 탈퇴 처리 결과.
+ *
+ * 계정을 지우는 것이 아니라 삭제 표시를 켭니다. 상대가 있는 기록(계약·정산·메시지·
+ * 리뷰)은 그대로 두고 표시 이름만 바뀝니다. (R-ACC-06, R-ACC-07)
+ */
+export interface WithdrawalResult {
+  isDeleted: boolean;
+  deletedAt: string;
+}

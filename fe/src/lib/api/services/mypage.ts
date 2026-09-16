@@ -7,6 +7,8 @@ import type {
   MyPage,
   UpdateMyNameBody,
   UpdateNotificationSettingBody,
+  WithdrawalCheck,
+  WithdrawalResult,
 } from "@/types/mypage";
 import type { Me } from "@/types/user";
 
@@ -39,6 +41,35 @@ export async function updateNotificationSetting(
   const { data } = await backendApi().patch<UpdateNotificationSettingBody>(
     BACKEND.NOTIFICATION_SETTING,
     body,
+    await bearerHeaders(),
+  );
+  return data;
+}
+
+/**
+ * 탈퇴 전 확인.
+ *
+ * 지금 탈퇴할 수 있는지와 무엇이 막고 있는지를 내려줍니다. 화면은 `canWithdraw` 가
+ * 거짓이면 탈퇴 버튼을 잠급니다. (R-ACC-05)
+ */
+export async function checkWithdrawal(): Promise<WithdrawalCheck> {
+  const { data } = await backendApi().get<WithdrawalCheck>(
+    BACKEND.WITHDRAWAL,
+    await bearerHeaders(),
+  );
+  return data;
+}
+
+/**
+ * 회원 탈퇴. 되돌릴 수 없습니다.
+ *
+ * 행을 지우지 않고 삭제 표시만 켜므로 `DELETE` 가 아니라 `POST` 입니다.
+ * 화면이 버튼을 잠갔더라도 서버가 같은 조건을 다시 봅니다 — 막히면 409 입니다.
+ */
+export async function withdraw(): Promise<WithdrawalResult> {
+  const { data } = await backendApi().post<WithdrawalResult>(
+    BACKEND.WITHDRAWAL,
+    undefined,
     await bearerHeaders(),
   );
   return data;
