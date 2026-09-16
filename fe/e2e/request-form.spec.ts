@@ -28,12 +28,12 @@ test.describe('요청서', () => {
     await expect(page.getByText('직접 처리')).toBeVisible();
   });
 
-  test('요청서 수정하기는 요구사항 선택으로 되돌린다', async ({ page }) => {
+  test('요청서 수정하기는 수정 화면으로 간다', async ({ page }) => {
     await page.goto('/checkup/31/request');
 
     await expect(page.getByRole('link', { name: '요청서 수정하기' })).toHaveAttribute(
       'href',
-      '/checkup/31/requirements',
+      '/checkup/31/request/edit',
     );
   });
 
