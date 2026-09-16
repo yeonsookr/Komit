@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { JetBrains_Mono, Noto_Sans_KR } from "next/font/google";
 import "./globals.css";
 import { ToastProvider } from "@/components/feedback";
+import { AuthStoreProvider } from "@/stores/auth";
 
 // 본문 폰트. 디자인 기준은 Pretendard 이며, next/font 로 자체 호스팅할 수 있는
 // 한글 폰트로 대체해 두었습니다. Pretendard 파일을 확보하면 next/font/local 로 교체합니다.
@@ -31,7 +32,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${sans.variable} ${mono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <ToastProvider>{children}</ToastProvider>
+        <AuthStoreProvider>
+          <ToastProvider>{children}</ToastProvider>
+        </AuthStoreProvider>
       </body>
     </html>
   );

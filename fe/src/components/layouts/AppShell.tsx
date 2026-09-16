@@ -12,7 +12,10 @@ import { type ContainerWidth } from "./Container";
  * 세션(화상) 화면처럼 GNB·푸터가 없는 화면은 이 레이아웃을 쓰지 않습니다.
  */
 export interface AppShellProps extends React.HTMLAttributes<HTMLDivElement> {
-  /** 로그인 사용자. 없으면 헤더가 비로그인 상태(로그인 링크)로 그려집니다. */
+  /**
+   * 로그인 사용자. 없으면 헤더가 비로그인 상태(로그인 링크)로 그려집니다.
+   * 인증 스토어에서 읽어 채우려면 `SessionShell`(domains/auth) 을 대신 씁니다.
+   */
   user?: HeaderUser;
   nav?: HeaderNavItem[];
   /** GNB 안쪽 폭 (기본: 화면 전체) */

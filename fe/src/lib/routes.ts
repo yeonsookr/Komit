@@ -10,7 +10,9 @@ export const ROUTES = {
   /** 이용 방법 화면은 따로 없습니다. 랜딩의 진행 순서 섹션이 그 역할입니다. */
   howTo: "/#process",
   login: "/login",
-  /** 카카오 인가 시작. BE 단계에서 Route Handler 가 붙습니다. 지금은 링크만 둡니다. */
+  /** 로그인에 실패해 돌아올 때. `code` 는 서버의 실패 코드(KAKAO_AUTH_FAILED 등)입니다. */
+  loginFailed: (code: string) => `/login?error=${encodeURIComponent(code)}`,
+  /** 카카오 인가 시작. Route Handler(`app/api/auth/kakao`)가 카카오로 보냅니다. */
   kakaoStart: "/api/auth/kakao",
 
   developers: "/developers",
