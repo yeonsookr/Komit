@@ -46,7 +46,7 @@ export interface LoginCardProps {
  * 가입 화면과 약관 동의 화면이 따로 없습니다. 처음 들어온 사용자는 이 버튼 하나로
  * 가입까지 끝나고, 필수 약관 동의는 아래 안내로 갈음합니다(목 명세 영역 1).
  *
- * 버튼은 이동만 하므로 `<button>` 이 아니라 `<Link>` 입니다. 목적지인 인가 시작
+ * 버튼은 이동만 하므로 `<button>` 이 아니라 링크입니다. 목적지인 인가 시작
  * 경로는 Route Handler(`app/api/auth/kakao`)가 받아 카카오 로그인 화면으로 보냅니다.
  */
 export function LoginCard({ next, errorCode }: Readonly<LoginCardProps>) {
@@ -66,7 +66,12 @@ export function LoginCard({ next, errorCode }: Readonly<LoginCardProps>) {
         </Callout>
       )}
 
-      <Link
+      {/*
+        `<Link>` 가 아니라 `<a>` 입니다. 이 주소는 Route Handler 가 카카오로 리다이렉트하는
+        곳이라 Next 라우터가 가로채면 RSC fetch 가 다른 출처로 튕겨 실패하고 이동이 멈춥니다.
+        일반 브라우저 이동으로 보내야 카카오 로그인 화면이 열립니다.
+      */}
+      <a
         href={kakaoHref}
         className={buttonClass({
           variant: "kakao",
@@ -77,7 +82,7 @@ export function LoginCard({ next, errorCode }: Readonly<LoginCardProps>) {
       >
         <KakaoSymbol />
         카카오로 시작하기
-      </Link>
+      </a>
 
       <div className="mt-7 border-t border-line-subtle pt-5">
         <p className="text-[13px] leading-6 text-fg-muted">

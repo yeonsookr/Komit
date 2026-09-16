@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/layouts";
 import { Badge, Breadcrumb, PageHeader } from "@/components/common";
 import {
@@ -8,6 +8,7 @@ import {
   RoomConversation,
 } from "@/components/domains/room";
 import { getChatMessages, getMe, getRoom } from "@/lib/api/services";
+import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
 import type { RoomDetail, RoomType } from "@/types/room";
 import type { Me } from "@/types/user";
@@ -27,13 +28,14 @@ function isReceivedRequest(room: RoomDetail, me: Me): boolean {
   return me.developerId !== null && me.developerId === room.developerId;
 }
 
-/** 방과 내 정보를 함께 읽습니다. 없는 방이면 404 화면으로 보냅니다. */
+/** 방과 내 정보를 함께 읽습니다. 없는 방이면 404 화면, 로그인이 풀렸으면 로그인으로 보냅니다. */
 async function loadRoom(roomId: number) {
   try {
     const [room, me] = await Promise.all([getRoom(roomId), getMe()]);
     return { room, me };
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) notFound();
+    if (error instanceof ApiError && error.status === 401) redirect(ROUTES.login);
     throw error;
   }
 }
