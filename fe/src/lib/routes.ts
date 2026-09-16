@@ -8,6 +8,7 @@
  * query 이름은 여기서 정하지 않고 그 값을 읽는 모듈에서 가져옵니다 (컨벤션 8.2).
  */
 import { FIELD_CODE_IDS_PARAM } from "./developerSearch";
+import { STEP_PARAM } from "./survey";
 
 export const ROUTES = {
   home: "/",
@@ -38,7 +39,7 @@ export const ROUTES = {
   checkup: "/checkup",
   /** 설문 2~4단계. 1단계는 진단이 없으므로 `checkup` 입니다. */
   checkupSurvey: (diagnosisId: number, step: number) =>
-    `/checkup/${diagnosisId}?step=${step}`,
+    `/checkup/${diagnosisId}?${STEP_PARAM}=${step}`,
   /** 진단서 — 발견된 문제점. 설문 「제출하기」가 여기로 옵니다. */
   checkupResult: (diagnosisId: number) => `/checkup/${diagnosisId}/result`,
   /** 요구사항 선택. 진단서 「요청서 만들기」가 여기로 옵니다. */

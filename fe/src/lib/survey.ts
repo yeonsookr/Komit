@@ -82,6 +82,14 @@ export function toggleOption(
   return { selectedOptionIds: selected, text: "" };
 }
 
+/**
+ * 설문 단계를 주소에 싣는 query 이름.
+ *
+ * 설문 화면으로 보내는 쪽(`ROUTES.checkupSurvey`)이 가져다 씁니다. 양쪽이 글자를
+ * 따로 적으면 한쪽만 바뀌어도 타입 검사가 잡지 못하고 늘 2단계로 열립니다.
+ */
+export const STEP_PARAM = "step";
+
 /** 주소의 단계. 2~4만 허용하고 벗어나면 2로 되돌립니다. */
 export function parseStep(value: string | string[] | undefined): number {
   const raw = Array.isArray(value) ? value[0] : value;
