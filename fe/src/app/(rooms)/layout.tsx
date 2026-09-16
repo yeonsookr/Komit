@@ -1,8 +1,12 @@
+import { redirect } from "next/navigation";
 import { AppShell } from "@/components/layouts";
 import { RoomSidebar, type RoomPreview } from "@/components/domains/room";
 import { getLastMessages, getMe, getRooms } from "@/lib/api/services";
 import { formatRelativeTime } from "@/lib/format";
+import { ROUTES } from "@/lib/routes";
+import { ApiError } from "@/types/api";
 import type { RoomSummary } from "@/types/room";
+import type { Me } from "@/types/user";
 
 /**
  * 목록에 붙일 마지막 대화 요약.
@@ -31,9 +35,19 @@ async function buildPreviews(rooms: RoomSummary[]): Promise<Record<string, RoomP
  *
  * 목록은 여기서 한 번만 읽습니다. 방을 옮겨도 이 레이아웃은 다시 그려지지 않아
  * 사이드바가 깜빡이지 않습니다.
+ *
+ * 로그인이 필요한 화면입니다. 서버가 401 을 주면 오류 화면 대신 로그인으로 보냅니다.
+ * `redirect()` 는 예외를 던져 동작하므로 try 밖에서 부릅니다.
  */
-export default async function RoomsLayout({ children }: { children: React.ReactNode }) {
-  const [rooms, me] = await Promise.all([getRooms(), getMe()]);
+export default async function RoomsLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  let rooms: RoomSummary[];
+  let me: Me;
+  try {
+    [rooms, me] = await Promise.all([getRooms(), getMe()]);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) redirect(ROUTES.login);
+    throw error;
+  }
   const previews = await buildPreviews(rooms);
 
   return (
