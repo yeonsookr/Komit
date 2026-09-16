@@ -5586,6 +5586,20 @@ class SubmitMilestoneRequest(BaseModel):
     )
 
 
+class SaveQaResultsRequest(BaseModel):
+    """확인 결과 저장. 다 체크하지 않아도 보낼 수 있다."""
+
+    qaCriterionIds: list[int] = Field(
+        min_length=1,
+        description=(
+            "이번에 체크한 확인 문장 식별자. 이미 통과한 것에 더하기만 한다. "
+            "**체크는 되돌릴 수 없으므로** 빼고 보내도 풀리지 않는다. 이미 통과한 "
+            "값을 다시 보내도 결과가 같다."
+        ),
+        examples=[[201]],
+    )
+
+
 class ConfirmMilestoneRequest(BaseModel):
     """작업 통과 처리."""
 
@@ -5610,7 +5624,7 @@ class WriteReviewRequest(BaseModel):
     content: str | None = Field(
         default=None,
         max_length=1000,
-        description="리뷰 내용. 1000자까지 받는다. 점수만 주고 넘어가도 된다.",
+        description="리뷰 내용. 1,000자까지 받는다(R-REV-04). 점수만 주고 넘어가도 된다.",
         examples=["말이 잘 통했습니다."],
     )
 
@@ -6392,6 +6406,94 @@ def submit_milestone(
     return MilestoneResponse(**MILESTONES[1])
 
 
+@router.put(
+    "/milestones/{milestoneId}/qa-results",
+    response_model=MilestoneResponse,
+    tags=[AREA5_TAG],
+    responses={
+        200: {"content": {"application/json": {"example": MILESTONES[1]}}},
+        403: {
+            "model": ErrorResponse,
+            "description": "이 계약의 의뢰인이 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "지금 상태에서는 처리할 수 없음",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": MILESTONE_STATE_CONFLICT[0],
+                        "message": MILESTONE_STATE_CONFLICT[1],
+                    }
+                }
+            },
+        },
+        **MILESTONE_ERRORS,
+    },
+    summary="확인 결과 저장",
+    description=(
+        "**화면 — `5_의뢰인_확인` › 확인된 기능 제출**\n\n"
+        "의뢰인이 확인 문장을 직접 해보고 그 결과를 저장한다. **다 체크하지 않아도 "
+        "보낼 수 있다.** 3줄 중 2줄만 됐다면 그대로 보내고, 개발자는 무엇이 남았는지 "
+        "`5_개발자_확인`에서 본다. 고쳐서 다시 확인 요청을 보내는 흐름이다.\n\n"
+        "**작업 상태는 바뀌지 않는다.** 이 API는 완료 처리가 아니다. 확인 문장을 모두 "
+        "통과한 작업만 완료가 되며(R-QA-01) 그건 작업 통과시키기가 맡는다. 화면은 "
+        "전부 체크됐을 때 이 API 대신 통과시키기를 부른다.\n\n"
+        "**체크는 되돌릴 수 없다.** 이번에 체크한 것을 보내면 이미 통과한 것에 더한다. "
+        "빼고 보내도 풀리지 않고, 이미 통과한 값을 다시 보내도 결과가 같다.\n\n"
+        "- **200**: 저장했을 때. 저장된 뒤의 작업 전체를 준다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **403 / FORBIDDEN**: 이 계약의 의뢰인이 아닐 때. 확인은 의뢰인만 한다\n"
+        "- **404 / MILESTONE_NOT_FOUND**: `milestoneId`가 404일 때. 없는 작업이거나 이 "
+        "계약의 당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 "
+        "준다\n"
+        "- **409 / MILESTONE_STATE_CONFLICT**: `milestoneId`가 409일 때. 이미 통과된 "
+        "작업이라 결과를 바꿀 수 없다(R-QA-03)\n"
+        "- **422 / INVALID_REQUEST**: `qaCriterionIds`가 비었거나 이 작업의 확인 "
+        "문장이 아닌 값이 섞였을 때\n"
+        "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
+    ),
+)
+def save_qa_results(
+    milestoneId: Annotated[
+        int,
+        Path(
+            description=(
+                "작업 식별자. 404는 없음, 409는 상태 충돌 재현용 예약값이다."
+            ),
+            examples=[MILESTONE_ID],
+        ),
+    ],
+    request: SaveQaResultsRequest,
+) -> MilestoneResponse | JSONResponse:
+    if milestoneId == NOT_FOUND_MILESTONE_ID:
+        return _error_response(404, MILESTONE_NOT_FOUND)
+    if milestoneId == CONFLICT_MILESTONE_ID:
+        return _error_response(409, MILESTONE_STATE_CONFLICT)
+    # 목 데이터의 작업 301은 확인 문장이 201·202 둘이다. 그 밖의 값은 막는다.
+    known = {201, 202}
+    if not set(request.qaCriterionIds) <= known:
+        return _field_error("qaCriterionIds", "이 작업의 확인 문장만 보낼 수 있습니다.")
+    # 체크는 되돌릴 수 없으므로 이미 통과한 것에 더하기만 한다.
+    passed = {
+        qa["qaCriterionId"]
+        for qa in MILESTONES[1]["qaCriteria"]
+        if qa["status"] == "RESOLVED"
+    } | set(request.qaCriterionIds)
+    milestone = {
+        **MILESTONES[1],
+        "qaCriteria": [
+            {
+                **qa,
+                "status": "RESOLVED" if qa["qaCriterionId"] in passed else "UNRESOLVED",
+            }
+            for qa in MILESTONES[1]["qaCriteria"]
+        ],
+    }
+    return MilestoneResponse(**milestone)
+
+
 @router.post(
     "/milestones/{milestoneId}/confirmation",
     response_model=MilestoneResponse,
@@ -6442,6 +6544,9 @@ def submit_milestone(
         "**화면 — `5_의뢰인_확인` › 확인된 기능 제출**\n\n"
         "의뢰인이 확인 문장을 모두 체크하고 작업을 통과시킨다. **통과시키면 되돌릴 수 "
         "없다.** 확인 문장이 하나라도 남아 있으면 통과시킬 수 없다.\n\n"
+        "**같은 버튼이 두 API로 갈린다.** 다 체크하지 않은 채로 누르면 확인 결과 저장이 "
+        "개발자에게 거기까지의 결과를 알리고, 다 체크하고 누르면 이 API가 완료로 "
+        "확정한다(R-QA-01·R-QA-03).\n\n"
         "대금은 여기서 나가지 않는다. 모든 작업이 통과된 뒤 한 번에 지급된다.\n\n"
         "- **201**: 통과시켰을 때. 상태가 CONFIRMED가 되고 `confirmedAt`이 채워진다\n"
         "- **400 / QA_NOT_ALL_CHECKED**: `qaCriterionIds`에 이 작업의 확인 문장이 모두 들어 있지 "
