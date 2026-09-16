@@ -1,10 +1,9 @@
 import Link from "next/link";
 import { buttonClass } from "@/components/buttons";
-import { KeyValueRow } from "@/components/common";
+import { KeyValueRow, SectionCard } from "@/components/common";
 import { formatShortDate } from "@/lib/format";
 import { ROUTES } from "@/lib/routes";
 import type { MyProject } from "@/types/mypage";
-import { MyPageSection } from "./MyPageSection";
 
 /**
  * "8/17 진단 · 방 4개" — 프로젝트 한 줄의 요약.
@@ -31,7 +30,7 @@ export interface ProjectSectionProps {
  */
 export function ProjectSection({ projects }: Readonly<ProjectSectionProps>) {
   return (
-    <MyPageSection
+    <SectionCard
       title="등록한 프로젝트"
       note={
         projects.length > 0 ? (
@@ -78,6 +77,6 @@ export function ProjectSection({ projects }: Readonly<ProjectSectionProps>) {
           />
         ))
       )}
-    </MyPageSection>
+    </SectionCard>
   );
 }

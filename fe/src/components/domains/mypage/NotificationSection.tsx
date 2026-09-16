@@ -2,13 +2,12 @@
 
 import * as React from "react";
 import { Button } from "@/components/buttons";
-import { KeyValueRow } from "@/components/common";
+import { KeyValueRow, SectionCard } from "@/components/common";
 import { useToast } from "@/components/feedback";
 import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
 import { ApiError } from "@/types/api";
 import type { NotificationSetting } from "@/types/mypage";
-import { MyPageSection } from "./MyPageSection";
 
 export interface NotificationSectionProps {
   setting: NotificationSetting;
@@ -54,7 +53,7 @@ export function NotificationSection({ setting }: Readonly<NotificationSectionPro
   };
 
   return (
-    <MyPageSection title="알림">
+    <SectionCard title="알림">
       <KeyValueRow
         label="카카오 알림톡"
         value={
@@ -68,6 +67,6 @@ export function NotificationSection({ setting }: Readonly<NotificationSectionPro
           </Button>
         }
       />
-    </MyPageSection>
+    </SectionCard>
   );
 }

@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { buttonClass } from "@/components/buttons";
-import { KeyValueRow } from "@/components/common";
+import { KeyValueRow, SectionCard } from "@/components/common";
 import { ROUTES } from "@/lib/routes";
 import type { MyDeveloper } from "@/types/mypage";
-import { MyPageSection } from "./MyPageSection";
 
 export interface DeveloperSectionProps {
   /** 개발자 프로필이 없으면 null 입니다. 그때는 이 칸을 그리지 않습니다. */
@@ -23,7 +22,7 @@ export function DeveloperSection({ developer }: Readonly<DeveloperSectionProps>)
   if (developer === null) return null;
 
   return (
-    <MyPageSection title="개발자 프로필" note="개발자로 이용 중일 때만 보입니다">
+    <SectionCard title="개발자 프로필" note="개발자로 이용 중일 때만 보입니다">
       <KeyValueRow
         label="프로필"
         value={
@@ -58,6 +57,6 @@ export function DeveloperSection({ developer }: Readonly<DeveloperSectionProps>)
           </Link>
         }
       />
-    </MyPageSection>
+    </SectionCard>
   );
 }

@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { buttonClass } from "@/components/buttons";
-import { Avatar, KeyValueRow } from "@/components/common";
+import { Avatar, KeyValueRow, SectionCard } from "@/components/common";
 import { ROUTES } from "@/lib/routes";
 import type { MyAccount, SettlementAccount } from "@/types/mypage";
-import { MyPageSection } from "./MyPageSection";
 import { NameEditRow } from "./NameEditRow";
 
 export interface AccountSectionProps {
@@ -18,7 +17,7 @@ export interface AccountSectionProps {
  */
 export function AccountSection({ account }: Readonly<AccountSectionProps>) {
   return (
-    <MyPageSection title="계정">
+    <SectionCard title="계정">
       <KeyValueRow
         label="프로필 사진"
         value={
@@ -37,7 +36,7 @@ export function AccountSection({ account }: Readonly<AccountSectionProps>) {
 
       {/* 카카오 계정은 우리가 바꿀 수 없는 값이라 보여주기만 합니다. */}
       <KeyValueRow label="카카오 계정" value={account.email ?? "동의하지 않아 받지 못했습니다"} />
-    </MyPageSection>
+    </SectionCard>
   );
 }
 
@@ -54,7 +53,7 @@ export interface SettlementAccountSectionProps {
  */
 export function SettlementAccountSection({ account }: Readonly<SettlementAccountSectionProps>) {
   return (
-    <MyPageSection title="계좌" note="환불과 대금을 받는 계좌입니다">
+    <SectionCard title="계좌" note="환불과 대금을 받는 계좌입니다">
       <KeyValueRow
         label="등록 계좌"
         value={
@@ -70,6 +69,6 @@ export function SettlementAccountSection({ account }: Readonly<SettlementAccount
           </Link>
         }
       />
-    </MyPageSection>
+    </SectionCard>
   );
 }
