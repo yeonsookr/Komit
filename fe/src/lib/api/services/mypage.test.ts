@@ -37,10 +37,12 @@ describe('getMyPage', () => {
 });
 
 describe('updateMyName', () => {
-  it('바뀐 내 정보를 돌려준다', async () => {
-    patch.mockResolvedValueOnce({ data: { userId: 12, name: '김미미' } });
+  it('바뀐 계정 칸을 돌려준다', async () => {
+    // 목이 돌려주는 것은 계정 칸이지 헤더가 쓰는 내 정보가 아닙니다.
+    const account = { name: '김미미', email: 'mimi@kakao.com', profileImageUrl: null };
+    patch.mockResolvedValueOnce({ data: account });
 
-    await expect(updateMyName({ name: '김미미' })).resolves.toMatchObject({ name: '김미미' });
+    await expect(updateMyName({ name: '김미미' })).resolves.toEqual(account);
     expect(patch).toHaveBeenCalledWith('/api/users/me', { name: '김미미' }, AUTH);
   });
 });

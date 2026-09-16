@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/buttons";
 import { Input, KeyValueRow } from "@/components/common";
 import { useToast } from "@/components/feedback";
@@ -8,7 +9,6 @@ import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
 import { useAuthStore } from "@/stores/auth";
 import { ApiError } from "@/types/api";
-import type { Me } from "@/types/user";
 
 /** 목 명세가 정한 길이. 이보다 길면 서버가 422 를 줍니다. */
 const MAX_NAME_LENGTH = 20;
@@ -24,13 +24,15 @@ export interface NameEditRowProps {
  * 평소에는 이름과 「이름 바꾸기」만 보이고, 누르면 그 자리에서 입력칸으로 바뀝니다.
  * 별도 화면으로 넘기지 않는 것은 바꿀 값이 하나뿐이라서입니다.
  *
- * 저장하면 헤더의 이름도 함께 바꿔야 합니다. 헤더는 인증 스토어를 읽으므로 응답으로
- * 받은 내 정보를 스토어에 넣습니다. 이걸 빠뜨리면 마이페이지에는 새 이름이,
- * 헤더에는 옛 이름이 남습니다.
+ * 저장하면 헤더의 이름도 함께 바꿔야 합니다. 헤더는 인증 스토어를 읽는데, 이름
+ * 바꾸기 응답에는 알림 개수 같은 헤더에 필요한 값이 없습니다. 그래서 응답을 스토어에
+ * 넣지 않고 내 정보를 다시 읽습니다 — 응답을 그대로 넣으면 이름은 바뀌지만 알림
+ * 배지가 사라집니다.
  */
 export function NameEditRow({ name }: Readonly<NameEditRowProps>) {
+  const router = useRouter();
   const showToast = useToast();
-  const setUser = useAuthStore((s) => s.setUser);
+  const loadMe = useAuthStore((s) => s.loadMe);
 
   const [editing, setEditing] = React.useState(false);
   const [draft, setDraft] = React.useState(name);
@@ -52,10 +54,12 @@ export function NameEditRow({ name }: Readonly<NameEditRowProps>) {
     setSaving(true);
 
     try {
-      const { data } = await clientApi.patch<Me>(INTERNAL.MY_NAME, { name: trimmed });
+      await clientApi.patch(INTERNAL.MY_NAME, { name: trimmed });
 
-      // 헤더가 읽는 자리를 함께 갱신합니다.
-      setUser(data);
+      // 헤더가 읽는 자리를 다시 읽어 맞춥니다.
+      await loadMe();
+      // 이 줄이 보여주는 이름은 서버 컴포넌트가 내려준 값이라 다시 그려야 바뀝니다.
+      router.refresh();
       showToast({ tone: "success", title: "이름을 바꿨습니다." });
       setEditing(false);
     } catch (error) {

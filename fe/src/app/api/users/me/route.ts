@@ -37,7 +37,8 @@ function parseName(body: unknown): string | null {
  * PATCH /api/users/me — 이름 바꾸기. 마이페이지 계정 칸이 부릅니다.
  *
  * 요청을 그대로 흘려보내지 않고 이름만, 그것도 길이를 확인해 통과시킵니다.
- * 응답은 바뀐 내 정보이고 화면이 그 값으로 헤더를 갱신합니다.
+ * 응답은 마이페이지 계정 칸이지 헤더가 쓰는 내 정보가 아닙니다. 화면은 이 값으로
+ * 헤더를 갱신하지 말고 GET 으로 다시 읽어야 합니다.
  */
 export async function PATCH(request: Request) {
   try {

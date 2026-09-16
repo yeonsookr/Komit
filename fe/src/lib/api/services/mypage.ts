@@ -4,13 +4,13 @@ import { backendApi } from "../server";
 import { BACKEND } from "../endpoints";
 import { bearerHeaders } from "@/lib/auth/session";
 import type {
+  MyAccount,
   MyPage,
   UpdateMyNameBody,
   UpdateNotificationSettingBody,
   WithdrawalCheck,
   WithdrawalResult,
 } from "@/types/mypage";
-import type { Me } from "@/types/user";
 
 /**
  * 마이페이지 한 판.
@@ -26,11 +26,16 @@ export async function getMyPage(): Promise<MyPage> {
 /**
  * 이름 바꾸기. 20자까지입니다.
  *
- * 응답으로 바뀐 내 정보가 옵니다. 헤더도 이 이름을 쓰므로 화면은 받은 값으로
- * 인증 스토어를 갱신해야 합니다. 갱신하지 않으면 헤더에 옛 이름이 남습니다.
+ * 돌아오는 것은 마이페이지 계정 칸(`MyAccount`)이지 헤더가 쓰는 내 정보(`Me`)가
+ * 아닙니다. 알림 개수도 사용자 식별자도 들어 있지 않으므로 이 값을 인증 스토어에
+ * 그대로 넣으면 안 됩니다. 헤더는 `/api/users/me` 를 다시 읽어 맞춥니다.
  */
-export async function updateMyName(body: UpdateMyNameBody): Promise<Me> {
-  const { data } = await backendApi().patch<Me>(BACKEND.ME, body, await bearerHeaders());
+export async function updateMyName(body: UpdateMyNameBody): Promise<MyAccount> {
+  const { data } = await backendApi().patch<MyAccount>(
+    BACKEND.ME,
+    body,
+    await bearerHeaders(),
+  );
   return data;
 }
 
