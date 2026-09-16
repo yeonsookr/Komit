@@ -45,19 +45,28 @@ export interface HeaderProps {
   className?: string;
 }
 
-/** 비로그인 화면(랜딩)의 메뉴 */
-export const PUBLIC_NAV: HeaderNavItem[] = [
-  { label: "이용 방법", href: ROUTES.howTo },
+/**
+ * 로그인 여부와 상관없이 늘 보이는 메뉴.
+ *
+ * 두 목록에 같은 항목을 따로 적지 않고 이 배열을 공유합니다. 로그인 여부는
+ * 마운트 뒤에야 정해지므로(`pending`), 겹치는 항목이 어긋나 있으면 상태가
+ * 확정되는 순간 메뉴가 통째로 다시 배치됩니다. 차이를 정산 하나로 좁혀 둡니다.
+ */
+const BASE_NAV: HeaderNavItem[] = [
   { label: "의뢰", href: ROUTES.requests },
   { label: "개발자 찾기", href: ROUTES.developers },
   { label: "사전점검", href: ROUTES.checkup },
 ];
 
-/** 로그인 화면의 메뉴 */
+/** 비로그인 메뉴. 로그인 여부를 아직 모르는 동안에도 이 목록을 씁니다. */
+export const PUBLIC_NAV: HeaderNavItem[] = BASE_NAV;
+
+/**
+ * 로그인 메뉴 — 비로그인 메뉴 + 정산.
+ * 정산은 내 거래가 있어야 의미가 있어 로그인한 뒤에만 보입니다.
+ */
 export const APP_NAV: HeaderNavItem[] = [
-  { label: "의뢰", href: ROUTES.requests },
-  { label: "개발자 찾기", href: ROUTES.developers },
-  { label: "사전점검", href: ROUTES.checkup },
+  ...BASE_NAV,
   { label: "정산", href: ROUTES.settlements },
 ];
 
