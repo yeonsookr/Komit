@@ -27,13 +27,23 @@ test.describe('랜딩', () => {
     await expect(page.getByRole('region', { name: '진행 순서' }).getByRole('listitem')).toHaveCount(4);
   });
 
-  test('예시 칩을 누르면 입력칸이 채워지고, 문제 진단하기는 증상을 담아 로그인으로 보낸다', async ({ page }) => {
+  test('예시 칩을 누르면 입력칸이 채워지고, 적은 문장이 개발자 찾기의 검색어가 된다', async ({ page }) => {
     await page.getByRole('button', { name: '예약 버튼이 반응이 없어요' }).click();
     await expect(page.getByLabel('겪고 있는 문제')).toHaveValue('예약 버튼이 반응이 없어요');
 
     await page.getByRole('button', { name: '문제 진단하기' }).click();
-    await expect(page).toHaveURL(/\/login\?symptom=/);
-    expect(new URL(page.url()).searchParams.get('symptom')).toBe('예약 버튼이 반응이 없어요');
+
+    await expect(page).toHaveURL(/\/developers\?keyword=/);
+    expect(new URL(page.url()).searchParams.get('keyword')).toBe('예약 버튼이 반응이 없어요');
+    // 개발자 찾기가 그 문장을 검색어로 이어받습니다.
+    await expect(page.getByLabel('검색어')).toHaveValue('예약 버튼이 반응이 없어요');
+  });
+
+  test('아무것도 적지 않으면 조건 없는 개발자 찾기로 간다', async ({ page }) => {
+    await page.getByRole('button', { name: '문제 진단하기' }).click();
+
+    // 빈 검색어가 주소에 남지 않아야 합니다.
+    await expect(page).toHaveURL(/\/developers$/);
   });
 
   test('증상 카드는 그 분야의 개발자 찾기로 간다', async ({ page }) => {
@@ -41,9 +51,9 @@ test.describe('랜딩', () => {
     await expect(page).toHaveURL(/\/developers\?fieldCodeIds=42$/);
   });
 
-  test('뭐가 문제인지 몰라요는 로그인으로 간다', async ({ page }) => {
+  test('뭐가 문제인지 몰라요는 분야를 좁히지 않고 개발자 찾기로 간다', async ({ page }) => {
     await page.getByRole('link', { name: '뭐가 문제인지 몰라요' }).click();
-    await expect(page).toHaveURL(/\/login$/);
+    await expect(page).toHaveURL(/\/developers$/);
   });
 
   test('상담 시작하기는 그 개발자의 프로필로 간다', async ({ page }) => {

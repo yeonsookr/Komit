@@ -4,8 +4,8 @@ import { cn } from "@/lib/cn";
 import { ROUTES } from "@/lib/routes";
 
 /**
- * 증상 카드. 앞의 다섯은 그 증상을 다루는 분야(DEV_FIELD 코드)로 개발자 찾기를 열고,
- * 마지막은 무엇이 문제인지 모르는 사람을 진단으로 보냅니다.
+ * 증상 카드. 여섯 장 모두 개발자 찾기로 갑니다. 앞의 다섯은 그 증상을 다루는
+ * 분야(DEV_FIELD 코드)로 좁히고, 마지막은 무엇이 문제인지 모르는 사람이라 좁히지 않습니다.
  *
  * 증상 → 분야 대응은 목 명세에 없어 화면이 정합니다. 코드는 `GET /api/codes/DEV_FIELD` 의 값입니다.
  *   41 인터넷에 올리기 · 42 DB 연결 · 43 도메인 연결 · 44 로그인 붙이기 · 46 비용 진단
@@ -16,8 +16,8 @@ const SYMPTOMS = [
   { label: "돈이 많이 나가요", href: ROUTES.developersByField(46), icon: TrendingUpIcon },
   { label: "주소가 안 붙어요", href: ROUTES.developersByField(43), icon: LinkIcon },
   { label: "로그인을 넣고 싶어요", href: ROUTES.developersByField(44), icon: LogInIcon },
-  /** 진단은 로그인이 필요합니다. 강조 카드(soft)로 그립니다. */
-  { label: "뭐가 문제인지 몰라요", href: ROUTES.login, icon: ChatIcon, emphasis: true },
+  /** 분야를 고르지 않고 전체를 봅니다. 강조 카드(soft)로 그립니다. */
+  { label: "뭐가 문제인지 몰라요", href: ROUTES.developers, icon: ChatIcon, emphasis: true },
 ] as const;
 
 /** SymptomGrid — "증상별로 찾기". 카드 여섯 장을 3열로 놓습니다. */
