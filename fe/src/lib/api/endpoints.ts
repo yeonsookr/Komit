@@ -33,6 +33,9 @@ export const BACKEND = {
   ISSUE: (issueId: number) => `/api/issues/${issueId}`,
   REQUIREMENTS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/requirements`,
   RECOMMENDATIONS: (projectId: number) => `/api/projects/${projectId}/recommendations`,
+  MYPAGE: "/api/mypage",
+  /** 알림톡 수신 설정. 마이페이지의 알림 칸이 씁니다. */
+  NOTIFICATION_SETTING: "/api/settings/notification",
 } as const;
 
 export const INTERNAL = {
@@ -60,4 +63,6 @@ export const INTERNAL = {
   REQUIREMENTS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/requirements`,
   RECOMMENDATIONS: (projectId: number) => `/api/projects/${projectId}/recommendations`,
   SCAN_FILE: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/scan-file`,
+  MY_NAME: "/api/users/me",
+  NOTIFICATION_SETTING: "/api/settings/notification",
 } as const;

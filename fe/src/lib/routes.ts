@@ -58,6 +58,11 @@ export const ROUTES = {
   /** 개발자 추천 결과. 요구사항을 고르면 만들어지는 회차입니다. */
   recommendation: (batchId: number) => `/recommendations/${batchId}`,
 
+  /** 마이페이지. 계정·계좌·프로젝트·개발자 프로필·알림 설정을 한 화면에서 봅니다. */
+  mypage: "/mypage",
+  /** 회원 탈퇴. 마이페이지의 「탈퇴하기」가 옵니다. */
+  mypageWithdrawal: "/mypage/withdrawal",
+
   // ---- 아래는 아직 화면이 없는 임시 경로입니다. 화면이 생기면 값만 고칩니다. ----
   /** 의뢰 목록. 방 화면(/rooms/{roomId})의 진입점이 됩니다. */
   requests: "/requests",
@@ -65,9 +70,11 @@ export const ROUTES = {
   /** 푸터 "정산 방식" 안내. */
   settlementsGuide: "/settlements/guide",
   notifications: "/notifications",
-  mypage: "/mypage",
+  /** 계좌 등록. 마이페이지의 「계좌 변경」이 옵니다. */
+  accountRegister: "/mypage/account",
   /** 내 개발자 프로필. 푸터 "프로필 등록"도 여기로 옵니다. */
   mypageProfile: "/mypage/profile",
+  /** 내 일정. 마이페이지의 「일정 관리」가 옵니다. */
   mypageSchedule: "/mypage/schedule",
   mypageSettings: "/mypage/settings",
 } as const;
