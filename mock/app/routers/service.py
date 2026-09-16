@@ -805,8 +805,8 @@ ME_EXAMPLE = {
     "userId": 12,
     "name": "김미미",
     "profileImageFileId": None,
-    "hasDevProfile": False,
-    "developerId": None,
+    "hasDevProfile": True,
+    "developerId": 9,
     "unreadNotificationCount": 3,
 }
 
@@ -3095,6 +3095,102 @@ ROOMS = [
         "chatRefId": "room-93-chat",
         "openedAt": "2026-08-25T14:05:00+09:00",
     },
+    {
+        "roomId": 101,
+        "recommendationItemId": None,
+        "type": "INQUIRY",
+        "status": "OPEN",
+        "projectId": 21,
+        "projectName": "미미헤어샵 예약",
+        "developerId": 9,
+        "counterpartName": "박준호",
+        "chatRefId": "room-101-chat",
+        "openedAt": "2026-08-24T10:10:00+09:00",
+    },
+    {
+        "roomId": 102,
+        "recommendationItemId": None,
+        "type": "CONSULTING",
+        "status": "OPEN",
+        "projectId": 21,
+        "projectName": "미미헤어샵 예약",
+        "developerId": 9,
+        "counterpartName": "박준호",
+        "chatRefId": "room-102-chat",
+        "openedAt": "2026-08-26T15:30:00+09:00",
+    },
+    {
+        "roomId": 103,
+        "recommendationItemId": None,
+        "type": "DEVELOPMENT",
+        "status": "OPEN",
+        "projectId": 21,
+        "projectName": "미미헤어샵 예약",
+        "developerId": 9,
+        "counterpartName": "박준호",
+        "chatRefId": "room-103-chat",
+        "openedAt": "2026-08-28T09:20:00+09:00",
+    },
+    {
+        "roomId": 105,
+        "recommendationItemId": None,
+        "type": "DEVELOPMENT",
+        "status": "OPEN",
+        "projectId": 21,
+        "projectName": "미미헤어샵 예약",
+        "developerId": 9,
+        "counterpartName": "박준호",
+        "chatRefId": "room-105-chat",
+        "openedAt": "2026-08-22T16:10:00+09:00",
+    },
+    {
+        "roomId": 106,
+        "recommendationItemId": None,
+        "type": "DEVELOPMENT",
+        "status": "OPEN",
+        "projectId": 8,
+        "projectName": "수제 비누 가게",
+        "developerId": 3,
+        "counterpartName": "이준",
+        "chatRefId": "room-106-chat",
+        "openedAt": "2026-08-22T16:10:00+09:00",
+    },
+    {
+        "roomId": 107,
+        "recommendationItemId": None,
+        "type": "DEVELOPMENT",
+        "status": "OPEN",
+        "projectId": 21,
+        "projectName": "미미헤어샵 예약",
+        "developerId": 9,
+        "counterpartName": "박준호",
+        "chatRefId": "room-107-chat",
+        "openedAt": "2026-08-22T16:10:00+09:00",
+    },
+    {
+        "roomId": 108,
+        "recommendationItemId": None,
+        "type": "DEVELOPMENT",
+        "status": "OPEN",
+        "projectId": 21,
+        "projectName": "미미헤어샵 예약",
+        "developerId": 9,
+        "counterpartName": "박준호",
+        "chatRefId": "room-108-chat",
+        "openedAt": "2026-08-22T16:10:00+09:00",
+    },
+    {
+        "roomId": 104,
+        "recommendationItemId": None,
+        "type": "DEVELOPMENT",
+        "status": "CLOSED",
+        "projectId": 8,
+        "projectName": "수제 비누 가게",
+        "developerId": 3,
+        "counterpartName": "이준",
+        "chatRefId": "room-104-chat",
+        "openedAt": "2026-08-10T09:00:00+09:00",
+    },
 ]
 
 # 상담 요청으로 열리는 방. 같은 개발자에게 다시 요청해도 같은 방을 돌려주도록 고정해 둔다.
@@ -3184,6 +3280,12 @@ def _room_detail(room: dict) -> dict:
     contract_ids = {
         CONSULTING_CONTRACT_EXAMPLE["roomId"]: CONTRACT_ID,
         DEV_CONTRACT_EXAMPLE["roomId"]: DEV_CONTRACT_ID,
+        103: DEV_CONTRACT_ID,
+        104: DONE_CONTRACT_ID,
+        105: DRAFT_DEV_CONTRACT_ID,
+        106: DRAFT_CLIENT_CONTRACT_ID,
+        107: SIGNED_ONLY_CONTRACT_ID,
+        108: DEPOSITED_CONTRACT_ID,
     }
     return {
         **room,
@@ -3908,8 +4010,9 @@ def get_room(
         int,
         Path(
             description=(
-                "방 식별자. 방 목록의 91·92·93과 상담 요청으로 열리는 94~97이 있다. "
-                "그 밖의 값은 모두 없는 방이며 404는 없음 재현용 예약값이다."
+                "방 식별자. 맡긴 의뢰는 91·92·93, 맡은 의뢰는 101·102·103이다. "
+                "상담 요청으로 열리는 94~97도 있다. 그 밖의 값은 모두 없는 방이며 "
+                "404는 없음 재현용 예약값이다."
             ),
             examples=[91],
         ),
@@ -4592,6 +4695,8 @@ def write_consulting_contract(
         "자기 서명 여부를 보고 '서명하고 결제' 또는 '서명하고 계약하기'를 보여준다.\n\n"
         "체결 전에는 `contractText`가 null이다. 체결되는 순간 그때의 문구가 담기고 이후 "
         "바뀌지 않는다.\n\n"
+        "**갈래는 `contractId`로 갈린다.** 목에서는 120이 컨설팅, 130이 개발 계약서다. "
+        "방 상세의 `contractId`를 그대로 넣으면 그 방의 갈래에 맞는 계약서가 온다.\n\n"
         "- **200**: 계약서가 있고 내가 당사자일 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때. 없거나 남의 계약이다\n"
@@ -4609,6 +4714,18 @@ def get_contract(
 ) -> ContractResponse | JSONResponse:
     if contractId == NOT_FOUND_CONTRACT_ID:
         return _error_response(404, CONTRACT_NOT_FOUND)
+    if contractId == DEV_CONTRACT_ID:
+        return ContractResponse(**DEV_CONTRACT_EXAMPLE)
+    if contractId == DONE_CONTRACT_ID:
+        return ContractResponse(**DONE_CONTRACT_EXAMPLE)
+    if contractId == DRAFT_DEV_CONTRACT_ID:
+        return ContractResponse(**DRAFT_DEV_CONTRACT_EXAMPLE)
+    if contractId == DRAFT_CLIENT_CONTRACT_ID:
+        return ContractResponse(**DRAFT_CLIENT_CONTRACT_EXAMPLE)
+    if contractId == SIGNED_ONLY_CONTRACT_ID:
+        return ContractResponse(**SIGNED_ONLY_CONTRACT_EXAMPLE)
+    if contractId == DEPOSITED_CONTRACT_ID:
+        return ContractResponse(**DEPOSITED_CONTRACT_EXAMPLE)
     return ContractResponse(**CONSULTING_CONTRACT_EXAMPLE)
 
 
@@ -5105,6 +5222,20 @@ class MilestoneResponse(BaseModel):
         ),
         examples=[400000],
     )
+    location: str | None = Field(
+        description=(
+            "이 작업이 다루는 요구사항의 위치. 진단에서 나온 요구사항이면 채워지고, "
+            "개발자가 직접 만든 작업이면 null이다. ERD issues.location에 대응한다."
+        ),
+        examples=["app/api/admin/* · 4개 라우트"],
+    )
+    workDate: int | None = Field(
+        description=(
+            "이 작업에 잡은 기간(일). 최종 납기일이 어떻게 나왔는지 보여주는 참고값이라 "
+            "**계약 전에만 화면에 보여준다.** 정하지 않았으면 null이다."
+        ),
+        examples=[10],
+    )
     status: Literal[
         "PROPOSED", "REJECTED", "SCHEDULED", "IN_PROGRESS", "SUBMITTED", "CONFIRMED"
     ] = Field(
@@ -5265,6 +5396,14 @@ class WriteMilestoneRequest(BaseModel):
         description="작업 가격. 인계 작업은 0으로 보낸다.",
         examples=[400000],
     )
+    workDate: int | None = Field(
+        default=None,
+        description=(
+            "이 작업에 잡은 기간(일). 최종 납기일이 어떻게 나왔는지 보여주는 참고값이라 "
+            "정하지 않아도 된다."
+        ),
+        examples=[10],
+    )
     qaCriteria: list[str] = Field(
         min_length=1,
         description="이 작업의 확인 문장. 하나 이상이어야 한다.",
@@ -5293,11 +5432,13 @@ class EscrowDepositResponse(BaseModel):
 class DepositRequest(BaseModel):
     """예치 요청."""
 
-    paymentMethodId: int = Field(
+    paymentMethodId: int | None = Field(
         description=(
             "쓸 결제 수단 식별자. 마이페이지에 등록해 둔 실시간 계좌이체 수단이다. "
-            "카드 결제는 쓰지 않는다. 목록은 결제 수단 조회로 받는다."
+            "카드 결제는 쓰지 않는다. 목록은 결제 수단 조회로 받는다. **비우면 등록해 "
+            "두지 않은 계좌로 내는 것이라, 결제창에서 은행을 고르고 바로 이체한다.**"
         ),
+        default=None,
         examples=[9],
     )
     idempotencyKey: str = Field(
@@ -5390,6 +5531,14 @@ DUE_DATE_BEFORE_START_EXAMPLE = {
 AREA5_TAG = "5 개발"
 
 DEV_CONTRACT_ID = 130
+DONE_CONTRACT_ID = 140
+# 아직 아무도 서명하지 않은 계약서. 서명판(5_서명판)이 열리는 시점이 이때뿐이라
+# 두 벌을 둔다 — 개발자 시점(105)과 의뢰인 시점(106)은 방이 달라 계약도 갈린다.
+DRAFT_DEV_CONTRACT_ID = 131
+DRAFT_CLIENT_CONTRACT_ID = 132
+# 착수 전 두 상태. 예치가 확인되기 전(133)과 확인된 뒤(134)는 개발자 화면이 다르다.
+SIGNED_ONLY_CONTRACT_ID = 133
+DEPOSITED_CONTRACT_ID = 134
 MILESTONE_ID = 301
 NOT_FOUND_MILESTONE_ID = 404
 CONFLICT_MILESTONE_ID = 409
@@ -5401,6 +5550,8 @@ MILESTONES = [
     {
         "milestoneId": 301,
         "title": "1차 · 관리자 API에 인증 추가",
+        "location": "app/api/admin/* · 4개 라우트",
+        "workDate": 10,
         "price": 400000,
         "status": "CONFIRMED",
         "rejectMessage": None,
@@ -5427,6 +5578,8 @@ MILESTONES = [
     {
         "milestoneId": 302,
         "title": "2차 · 회원탈퇴 경로 구현",
+        "location": "신규 작성 · 데이터는 30일 보관 후 삭제",
+        "workDate": 6,
         "price": 200000,
         "status": "SUBMITTED",
         "rejectMessage": None,
@@ -5460,6 +5613,8 @@ MILESTONES = [
     {
         "milestoneId": 303,
         "title": "3차 · 결제 간헐 실패 수정",
+        "location": "app/api/checkout/route.ts:47",
+        "workDate": 4,
         "price": 50000,
         "status": "IN_PROGRESS",
         "rejectMessage": None,
@@ -5479,6 +5634,8 @@ MILESTONES = [
     {
         "milestoneId": 304,
         "title": "인계 · 소스 · 계정 · 설명서",
+        "location": None,
+        "workDate": None,
         "price": 0,
         "status": "IN_PROGRESS",
         "rejectMessage": None,
@@ -5492,7 +5649,21 @@ MILESTONES = [
                 "condition": None,
                 "status": "UNRESOLVED",
                 "issueId": None,
-            }
+            },
+            {
+                "qaCriterionId": 208,
+                "testCase": "관리자 계정과 비밀번호를 받았다",
+                "condition": None,
+                "status": "UNRESOLVED",
+                "issueId": None,
+            },
+            {
+                "qaCriterionId": 209,
+                "testCase": "운영 설명서를 받았다",
+                "condition": None,
+                "status": "UNRESOLVED",
+                "issueId": None,
+            },
         ],
     },
 ]
@@ -5542,6 +5713,60 @@ DEV_CONTRACT_EXAMPLE = {
     "updatedAt": "2026-08-23T10:20:00+09:00",
 }
 
+
+# 작업이 모두 통과 확정된 계약. 리뷰 화면(R-REV-02)을 보려면 끝난 거래가 있어야 한다.
+DONE_MILESTONES = [
+    {
+        **milestone,
+        "status": "CONFIRMED",
+        "confirmedAt": "2026-09-04T17:00:00+09:00",
+        "autoPassAt": None,
+        "qaCriteria": [
+            {**qa, "status": "RESOLVED"} for qa in milestone["qaCriteria"]
+        ],
+    }
+    for milestone in MILESTONES
+]
+
+DONE_CONTRACT_EXAMPLE = {
+    **DEV_CONTRACT_EXAMPLE,
+    "contractId": DONE_CONTRACT_ID,
+    "roomId": 104,
+    "development": {
+        **DEV_CONTRACT_EXAMPLE["development"],
+        "status": "COMPLETED",
+        "milestones": DONE_MILESTONES,
+    },
+    "updatedAt": "2026-09-04T17:00:00+09:00",
+}
+
+# 협의 중인 계약서. 개발자가 보냈고 아직 양쪽 다 서명하지 않았다. 여기서만 계약서
+# 화면의 서명 버튼과 수정 버튼이 보인다. 값을 따로 적지 않고 복사해 상태만 바꾼다.
+def _draft_contract(contract_id: int, room_id: int) -> dict:
+    draft = copy.deepcopy(DEV_CONTRACT_EXAMPLE)
+    draft["contractId"] = contract_id
+    draft["roomId"] = room_id
+    draft["status"] = "NEGOTIATING"
+    draft["contractText"] = None
+    draft["updatedAt"] = "2026-08-22T16:10:00+09:00"
+    draft["development"]["status"] = "PRE_SIGNED"
+    for milestone in draft["development"]["milestones"]:
+        milestone["status"] = "PROPOSED"
+        milestone["submittedAt"] = None
+        milestone["confirmedAt"] = None
+        milestone["autoPassAt"] = None
+        for criterion in milestone["qaCriteria"]:
+            criterion["status"] = "UNRESOLVED"
+    for side in ("clientSignature", "developerSignature"):
+        draft[side]["isSigned"] = False
+        draft[side]["signedAt"] = None
+        draft[side]["signatureImageFileId"] = None
+    return draft
+
+
+DRAFT_DEV_CONTRACT_EXAMPLE = _draft_contract(DRAFT_DEV_CONTRACT_ID, 105)
+DRAFT_CLIENT_CONTRACT_EXAMPLE = _draft_contract(DRAFT_CLIENT_CONTRACT_ID, 106)
+
 # 착수 직후의 계약서. DEV_CONTRACT_EXAMPLE을 복사해 상태만 바꾼다 — 값을 따로 적으면
 # 작업 이름·가격·확인 문장을 고칠 때 두 예시가 어긋나므로 반드시 복사로 만든다.
 # DEV_CONTRACT_EXAMPLE은 1차 통과·2차 확인 대기인 진행 중 시점이라 착수 응답으로 쓰면
@@ -5556,6 +5781,28 @@ for _index, _milestone in enumerate(STARTED_CONTRACT_EXAMPLE["development"]["mil
     for _criterion in _milestone["qaCriteria"]:
         _criterion["status"] = "UNRESOLVED"
 del _index, _milestone, _criterion
+
+def _before_start_contract(contract_id: int, room_id: int, status: str) -> dict:
+    before = copy.deepcopy(DEV_CONTRACT_EXAMPLE)
+    before["contractId"] = contract_id
+    before["roomId"] = room_id
+    before["development"]["status"] = status
+    for milestone in before["development"]["milestones"]:
+        milestone["status"] = "SCHEDULED"
+        milestone["submittedAt"] = None
+        milestone["confirmedAt"] = None
+        milestone["autoPassAt"] = None
+        for criterion in milestone["qaCriteria"]:
+            criterion["status"] = "UNRESOLVED"
+    return before
+
+
+SIGNED_ONLY_CONTRACT_EXAMPLE = _before_start_contract(
+    SIGNED_ONLY_CONTRACT_ID, 107, "SIGNED"
+)
+DEPOSITED_CONTRACT_EXAMPLE = _before_start_contract(
+    DEPOSITED_CONTRACT_ID, 108, "DEPOSITED"
+)
 
 DEPOSIT_EXAMPLE = {
     "contractId": DEV_CONTRACT_ID,
@@ -5886,7 +6133,7 @@ def write_development_contract(
         "- **409 / ALREADY_DEPOSITED**: `contractId`가 409일 때\n"
         "- **409 / ACCOUNT_REQUIRED**: `contractId`가 405일 때. 등록해 둔 결제 수단이 "
         "없어 출금할 곳이 없다\n"
-        "- **422 / INVALID_REQUEST**: `paymentMethodId`나 `idempotencyKey`가 없을 때\n"
+        "- **422 / INVALID_REQUEST**: `idempotencyKey`가 없을 때\n"
         "- **500 / INTERNAL_ERROR**: 예치를 걸지 못했을 때"
     ),
 )
@@ -5943,6 +6190,15 @@ def get_deposit(
 ) -> EscrowDepositResponse | JSONResponse:
     if contractId == NOT_FOUND_CONTRACT_ID:
         return _error_response(404, CONTRACT_NOT_FOUND)
+    if contractId == SIGNED_ONLY_CONTRACT_ID:
+        return EscrowDepositResponse(
+            **{
+                **DEPOSIT_EXAMPLE,
+                "contractId": contractId,
+                "status": "PENDING",
+                "depositedAt": None,
+            }
+        )
     return EscrowDepositResponse(**DEPOSIT_EXAMPLE)
 
 
@@ -6103,10 +6359,22 @@ def confirm_milestone(
         return _error_response(404, MILESTONE_NOT_FOUND)
     if milestoneId == CONFLICT_MILESTONE_ID:
         return _error_response(409, MILESTONE_STATE_CONFLICT)
-    # 목 데이터의 작업 301은 확인 문장이 201·202 둘이다. 하나라도 빠지면 규칙 위반이다.
-    if not {201, 202} <= set(request.qaCriterionIds):
+
+    # 그 작업의 확인 문장이 하나라도 빠지면 규칙 위반이다 (R-QA-01).
+    milestone = next(
+        (row for row in MILESTONES if row["milestoneId"] == milestoneId), MILESTONES[0]
+    )
+    needed = {qa["qaCriterionId"] for qa in milestone["qaCriteria"]}
+    if not needed <= set(request.qaCriterionIds):
         return _error_response(400, QA_NOT_ALL_CHECKED)
-    return MilestoneResponse(**MILESTONES[0])
+
+    passed = copy.deepcopy(milestone)
+    passed["status"] = "CONFIRMED"
+    passed["confirmedAt"] = "2026-08-30T10:00:00+09:00"
+    passed["autoPassAt"] = None
+    for criterion in passed["qaCriteria"]:
+        criterion["status"] = "RESOLVED"
+    return MilestoneResponse(**passed)
 
 
 @router.post(
@@ -7809,7 +8077,9 @@ class CreateUploadRequest(BaseModel):
         description="파일 크기(바이트). 완료할 때 실제 크기와 맞는지 본다.",
         examples=[284193],
     )
-    purpose: Literal["PROFILE_IMAGE", "CAREER_EVIDENCE", "PORTFOLIO_IMAGE"] = Field(
+    purpose: Literal[
+        "PROFILE_IMAGE", "CAREER_EVIDENCE", "PORTFOLIO_IMAGE", "SIGNATURE"
+    ] = Field(
         description=(
             "이 파일을 어디에 쓸지. 쓰임에 따라 받는 형식과 크기가 다르고 보관 기간도 "
             "다르다.\n\n"
@@ -8833,17 +9103,30 @@ def get_my_sessions() -> MySessionListResponse:
         "- **422 / INVALID_REQUEST**: `originalName`·`contentType`·`sizeBytes`·"
         "`purpose`가 비었거나 `purpose`가 허용된 값이 아닐 때\n"
         "- **500 / INTERNAL_ERROR**: 주소를 만들지 못했을 때\n\n"
-        "**이 목 서버가 내주는 `uploadUrl`은 실제로 파일을 받지 않는다.** 화면이 3콜 "
-        "구조와 응답 형태를 맞추는 데까지만 쓰고, 실제 올리기는 실서버에서 확인한다."
+        "**실서버의 `uploadUrl`은 저장소가 내주는 주소다.** 이 목 서버는 그 자리에 "
+        "자기 주소를 넣어 주고 받은 본문을 버린다. 화면이 3콜 구조를 그대로 돌려볼 "
+        "수 있게 하려는 것이며, 올린 파일이 남지는 않는다."
     ),
 )
-def create_upload(request: CreateUploadRequest) -> UploadTargetResponse:
+def create_upload(
+    request: CreateUploadRequest, http: Request
+) -> UploadTargetResponse:
+    upload_id = UPLOAD_TARGET_EXAMPLE["uploadId"]
     return UploadTargetResponse(
         **{
             **UPLOAD_TARGET_EXAMPLE,
+            "uploadUrl": str(http.url_for("put_upload_binary", uploadId=upload_id)),
             "headers": {"Content-Type": request.contentType},
         }
     )
+
+
+# 저장소 자리를 대신하는 자리다. 실서버에서는 이 경로가 없고 저장소가 직접 받으므로
+# 명세에 넣지 않는다. 받은 본문은 읽고 버린다.
+@router.put("/uploads/{uploadId}/binary", status_code=204, include_in_schema=False)
+async def put_upload_binary(uploadId: int, http: Request) -> Response:
+    await http.body()
+    return Response(status_code=204)
 
 
 @router.post(

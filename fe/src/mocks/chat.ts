@@ -5,7 +5,8 @@
  * 먼저 만들기 위해 FE 가 들고 있는 값입니다. 여기 있는 값을 근거로 화면 로직을
  * 짜지 마세요 — 방 순서나 갈래 판단은 목 서버의 방 API 가 이미 내려줍니다.
  *
- * chatRefId 는 목 서버의 방 데이터(room-91-chat ~ room-97-chat)와 맞춰 둡니다.
+ * chatRefId 는 목 서버의 방 데이터와 맞춰 둡니다 — 맡긴 의뢰가 room-91-chat ~
+ * room-97-chat, 맡은 의뢰가 room-101-chat ~ room-103-chat 입니다.
  */
 import type { ChatMessage } from "@/types/chat";
 
@@ -57,6 +58,117 @@ const MESSAGES: ChatMessage[] = [
     authorName: "이준",
     body: "그 부분은 코드 보고 말씀드릴게요",
     sentAt: "2026-08-28T14:20:00+09:00",
+  },
+
+  {
+    messageId: "m-104-1",
+    chatRefId: "room-104-chat",
+    sender: "COUNTERPART",
+    authorName: "이준",
+    body: "네 건 다 통과 확인 감사합니다. 정산도 끝났습니다.",
+    sentAt: "2026-09-04T17:05:00+09:00",
+  },
+
+  // 맡은 의뢰 — 내가 개발자로 들어간 방(101~103). 상대는 의뢰인 박준호입니다.
+  {
+    messageId: "m-101-1",
+    chatRefId: "room-101-chat",
+    sender: "COUNTERPART",
+    authorName: "박준호",
+    body: "예약 페이지가 자꾸 먹통이 됩니다. 진단서 보내드렸어요.",
+    sentAt: "2026-08-24T10:10:00+09:00",
+  },
+  {
+    messageId: "m-101-2",
+    chatRefId: "room-101-chat",
+    sender: "ME",
+    authorName: "김미미",
+    body: "확인했습니다. 예약 저장 쪽부터 보면 될 것 같아요.",
+    sentAt: "2026-08-24T10:41:00+09:00",
+  },
+  {
+    messageId: "m-102-1",
+    chatRefId: "room-102-chat",
+    sender: "COUNTERPART",
+    authorName: "박준호",
+    body: "직접 고쳐보고 싶은데 어디부터 봐야 할지 모르겠어요.",
+    sentAt: "2026-08-26T15:30:00+09:00",
+  },
+  {
+    messageId: "m-102-2",
+    chatRefId: "room-102-chat",
+    sender: "ME",
+    authorName: "김미미",
+    body: "30분 세션으로 순서부터 잡아드릴게요.",
+    sentAt: "2026-08-26T16:02:00+09:00",
+  },
+  {
+    messageId: "m-103-1",
+    chatRefId: "room-103-chat",
+    sender: "ME",
+    authorName: "김미미",
+    body: "계약서 보냈습니다. 확인 부탁드려요.",
+    sentAt: "2026-08-28T09:20:00+09:00",
+  },
+  {
+    messageId: "m-103-2",
+    chatRefId: "room-103-chat",
+    sender: "COUNTERPART",
+    authorName: "박준호",
+    body: "네, 내용 보고 서명할게요.",
+    sentAt: "2026-08-29T11:15:00+09:00",
+  },
+
+  // 아직 서명하지 않은 방. 105 는 내가 개발자, 106 은 내가 의뢰인입니다.
+  {
+    messageId: "m-105-1",
+    chatRefId: "room-105-chat",
+    sender: "ME",
+    authorName: "김미미",
+    body: "계약서 보냈습니다. 65만원에 21일로 잡았어요.",
+    sentAt: "2026-08-22T16:10:00+09:00",
+  },
+  {
+    messageId: "m-105-2",
+    chatRefId: "room-105-chat",
+    sender: "COUNTERPART",
+    authorName: "박준호",
+    body: "확인했습니다. 내용 보고 서명하겠습니다.",
+    sentAt: "2026-08-22T16:40:00+09:00",
+  },
+  {
+    messageId: "m-106-1",
+    chatRefId: "room-106-chat",
+    sender: "COUNTERPART",
+    authorName: "이준",
+    body: "계약서 보냈습니다. 확인하시고 서명해 주세요.",
+    sentAt: "2026-08-22T16:10:00+09:00",
+  },
+  {
+    messageId: "m-106-2",
+    chatRefId: "room-106-chat",
+    sender: "ME",
+    authorName: "김미미",
+    body: "네, 읽어보고 오늘 중으로 서명할게요.",
+    sentAt: "2026-08-22T16:35:00+09:00",
+  },
+
+  // 서명은 끝나고 아직 착수하지 않은 방. 107 은 예치 전, 108 은 예치가 확인된 뒤입니다.
+  {
+    messageId: "m-107-1",
+    chatRefId: "room-107-chat",
+    sender: "COUNTERPART",
+    authorName: "박준호",
+    body: "서명했습니다. 예치는 오늘 안에 넣을게요.",
+    sentAt: "2026-08-23T09:10:00+09:00",
+  },
+  {
+    messageId: "m-108-1",
+    chatRefId: "room-108-chat",
+    sender: "COUNTERPART",
+    authorName: "박준호",
+    body: "예치까지 마쳤습니다. 착수해 주세요.",
+    sentAt: "2026-08-23T10:30:00+09:00",
   },
 ];
 

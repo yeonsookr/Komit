@@ -38,6 +38,20 @@ export const BACKEND = {
   NOTIFICATION_SETTING: "/api/settings/notification",
   /** 탈퇴 전 확인(GET)과 탈퇴(POST). 계정을 지우는 것이 아니라 삭제 표시를 켭니다. */
   WITHDRAWAL: "/api/users/me/withdrawal",
+  CONTRACT: (contractId: number) => `/api/contracts/${contractId}`,
+  CONTRACT_SIGNATURES: (contractId: number) => `/api/contracts/${contractId}/signatures`,
+  CONTRACT_DEPOSIT: (contractId: number) => `/api/contracts/${contractId}/deposit`,
+  CONTRACT_START: (contractId: number) => `/api/contracts/${contractId}/start`,
+  CONTRACT_REVIEW: (contractId: number) => `/api/contracts/${contractId}/review`,
+  DEVELOPMENT_CONTRACTS: (roomId: number) => `/api/rooms/${roomId}/development-contracts`,
+  MILESTONE_SUBMISSION: (milestoneId: number) => `/api/milestones/${milestoneId}/submission`,
+  MILESTONE_QA_RESULTS: (milestoneId: number) => `/api/milestones/${milestoneId}/qa-results`,
+  MILESTONE_CONFIRMATION: (milestoneId: number) =>
+    `/api/milestones/${milestoneId}/confirmation`,
+  DELIVERABLE_FILE: (deliverableId: number) => `/api/deliverables/${deliverableId}/file`,
+  PAYMENT_METHODS: "/api/payment-methods",
+  UPLOADS: "/api/uploads",
+  UPLOAD_COMPLETE: (uploadId: number) => `/api/uploads/${uploadId}/complete`,
 } as const;
 
 export const INTERNAL = {
@@ -69,4 +83,14 @@ export const INTERNAL = {
   NOTIFICATION_SETTING: "/api/settings/notification",
   /** 회원 탈퇴. 탈퇴 화면의 「탈퇴하기」가 부릅니다. */
   WITHDRAWAL: "/api/users/me/withdrawal",
+  CONTRACT_SIGNATURES: (contractId: number) => `/api/contracts/${contractId}/signatures`,
+  CONTRACT_DEPOSIT: (contractId: number) => `/api/contracts/${contractId}/deposit`,
+  CONTRACT_START: (contractId: number) => `/api/contracts/${contractId}/start`,
+  CONTRACT_REVIEW: (contractId: number) => `/api/contracts/${contractId}/review`,
+  DEVELOPMENT_CONTRACTS: (roomId: number) => `/api/rooms/${roomId}/development-contracts`,
+  MILESTONE_SUBMISSION: (milestoneId: number) => `/api/milestones/${milestoneId}/submission`,
+  MILESTONE_QA_RESULTS: (milestoneId: number) => `/api/milestones/${milestoneId}/qa-results`,
+  MILESTONE_CONFIRMATION: (milestoneId: number) =>
+    `/api/milestones/${milestoneId}/confirmation`,
+  DELIVERABLE_FILE: (deliverableId: number) => `/api/deliverables/${deliverableId}/file`,
 } as const;
