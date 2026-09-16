@@ -1,15 +1,17 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/layouts";
 import { EmptyState } from "@/components/feedback";
 import { QaCheckPanel, QaSubmitPanel } from "@/components/domains/contract";
 import { RoomHeader } from "@/components/domains/room";
 import { getContract, getMe, getRoom } from "@/lib/api/services";
 import { isReceived } from "@/lib/rooms";
+import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
 import type { Contract } from "@/types/contract";
 
-/** 방·내 정보·계약서를 함께 읽습니다. 없는 방이면 404 화면으로 보냅니다. */
+/** 방·내 정보·계약서를 함께 읽습니다. 없는 방이면 404 화면,
+ * 로그인이 풀렸으면 로그인으로 보냅니다. */
 async function loadCheck(roomId: number) {
   try {
     const [room, me] = await Promise.all([getRoom(roomId), getMe()]);
@@ -18,6 +20,7 @@ async function loadCheck(roomId: number) {
     return { room, me, contract };
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) notFound();
+    if (error instanceof ApiError && error.status === 401) redirect(ROUTES.login);
     throw error;
   }
 }

@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/layouts";
 import { EmptyState } from "@/components/feedback";
 import { DepositForm } from "@/components/domains/contract";
@@ -20,6 +20,7 @@ async function loadDeposit(roomId: number) {
     return { room, me, contract, paymentMethods };
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) notFound();
+    if (error instanceof ApiError && error.status === 401) redirect(ROUTES.login);
     throw error;
   }
 }

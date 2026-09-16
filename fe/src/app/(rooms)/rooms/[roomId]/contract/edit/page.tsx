@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/layouts";
 import { EmptyState } from "@/components/feedback";
 import { ContractEditor } from "@/components/domains/contract";
@@ -7,6 +7,7 @@ import { RoomHeader } from "@/components/domains/room";
 import { getContract, getIssues, getMe, getRoom } from "@/lib/api/services";
 import { isSignedByBoth } from "@/lib/contract";
 import { isReceived } from "@/lib/rooms";
+import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
 import type { Contract } from "@/types/contract";
 
@@ -29,6 +30,7 @@ async function loadEditor(roomId: number) {
     return { room, me, contract, issues };
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) notFound();
+    if (error instanceof ApiError && error.status === 401) redirect(ROUTES.login);
     throw error;
   }
 }
