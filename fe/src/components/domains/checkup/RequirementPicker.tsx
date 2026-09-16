@@ -13,8 +13,7 @@ import { dropSelection, isResolved, SEVERITY_LABEL } from "@/lib/diagnosisReport
 import { ApiError } from "@/types/api";
 import type { BadgeTone } from "@/components/common";
 import type { CodeItem } from "@/types/developer";
-import type { Diagnosis, Issue, IssueSeverity } from "@/types/diagnosis";
-import type { RecommendationBatch } from "@/types/recommendation";
+import type { Diagnosis, Issue, IssueSeverity, WriteRequirement } from "@/types/diagnosis";
 import { AddRequirementForm } from "./AddRequirementForm";
 
 /** 분류별 배지 색. 목에 없는 분류는 회색으로 둡니다. */
@@ -83,17 +82,32 @@ export function RequirementPicker({
     }
   };
 
-  /** 고른 요구사항으로 추천 회차를 만들고 그 화면으로 갑니다. */
+  /**
+   * 고른 요구사항으로 요청서를 맞추고 요청서 화면으로 갑니다.
+   *
+   * 요청서는 통째로 보내 그 내용으로 맞춥니다 — 고르지 않은 줄은 요청서에서
+   * 빠집니다. 개발자를 찾는 것은 요청서를 확인한 다음입니다.
+   */
   const submit = async () => {
     if (selected.length === 0 || submitting) return;
     setSubmitting(true);
 
+    const requirements: WriteRequirement[] = issues
+      .filter((issue) => selected.includes(issue.issueId))
+      .map((issue) => ({
+        issueId: issue.issueId,
+        title: issue.title,
+        detail: issue.detail,
+        categoryCodeId: issue.category.codeId,
+        severity: issue.severity,
+        qaCriteria: issue.qaCriteria
+          .filter((qa) => qa.testCase !== null)
+          .map((qa) => ({ qaCriterionId: qa.qaCriterionId, testCase: qa.testCase as string })),
+      }));
+
     try {
-      const { data } = await clientApi.post<RecommendationBatch>(
-        INTERNAL.RECOMMENDATIONS(diagnosis.project.projectId),
-        { diagnosisId: diagnosis.diagnosisId, issueIds: selected },
-      );
-      router.push(ROUTES.recommendation(data.batchId));
+      await clientApi.put(INTERNAL.REQUIREMENTS(diagnosis.diagnosisId), { requirements });
+      router.push(ROUTES.checkupRequest(diagnosis.diagnosisId));
     } catch (error) {
       showToast({
         tone: "danger",

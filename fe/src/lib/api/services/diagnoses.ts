@@ -12,6 +12,7 @@ import type {
   StartDiagnosisRequest,
   Survey,
   UpdateIssueStatusRequest,
+  WriteRequirementsRequest,
 } from "@/types/diagnosis";
 
 /**
@@ -128,4 +129,23 @@ export async function updateIssueStatus(
 ): Promise<Issue> {
   const { data } = await backendApi().patch<Issue>(BACKEND.ISSUE(issueId), body);
   return data;
+}
+
+/**
+ * 요청서 저장.
+ *
+ * 요청서를 통째로 받아 보낸 내용으로 맞춥니다. 보낸 목록에 없는 기존 요구사항은
+ * 요청서에서 뺀 것으로 보고, 저장된 뒤의 요구사항 전부를 돌려줍니다.
+ *
+ * 이미 계약에 들어간 요구사항을 빼면 409 입니다.
+ */
+export async function writeRequirements(
+  diagnosisId: number,
+  body: WriteRequirementsRequest,
+): Promise<Issue[]> {
+  const { data } = await backendApi().put<IssueListResponse>(
+    BACKEND.REQUIREMENTS(diagnosisId),
+    body,
+  );
+  return data.content;
 }
