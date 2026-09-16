@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   formatDateLabel,
   formatRelativeTime,
+  formatShortDate,
   formatShortDateTime,
   formatTime,
   toDayKey,
@@ -35,6 +36,12 @@ describe('날짜·시각 포맷터', () => {
 
   it('좁은 자리 표기는 앞의 0을 떼고 찍는다', () => {
     expect(formatShortDateTime('2026-08-18T16:40:00+09:00')).toBe('8/18 16:40');
+    expect(formatShortDate('2026-08-17T09:12:00+09:00')).toBe('8/17');
+  });
+
+  it('날짜만 찍을 때도 한국 시각으로 넘어간 날을 쓴다', () => {
+    // 2026-08-17T23:00Z 는 한국에서 다음 날 오전입니다.
+    expect(formatShortDate('2026-08-17T23:00:00Z')).toBe('8/18');
   });
 });
 

@@ -44,6 +44,12 @@ export function toDayKey(isoString: string): string {
   return dayKeyFormat.format(new Date(isoString));
 }
 
+/** "8/17" — 마이페이지의 진단 날짜처럼 시각까지는 필요 없는 자리. */
+export function formatShortDate(isoString: string): string {
+  const [, month, day] = dayKeyFormat.format(new Date(isoString)).split("-");
+  return `${Number(month)}/${Number(day)}`;
+}
+
 /** "8/18 16:40" — 요청서 갱신 시각처럼 좁은 자리에 넣는 표기. */
 export function formatShortDateTime(isoString: string): string {
   const date = new Date(isoString);

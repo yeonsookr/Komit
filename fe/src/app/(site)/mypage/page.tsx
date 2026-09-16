@@ -1,7 +1,13 @@
 import type { Metadata } from "next";
 import { Container } from "@/components/layouts";
 import { PageHeader } from "@/components/common";
-import { AccountSection, SettlementAccountSection } from "@/components/domains/mypage";
+import {
+  AccountSection,
+  DeveloperSection,
+  NotificationSection,
+  ProjectSection,
+  SettlementAccountSection,
+} from "@/components/domains/mypage";
 import { getMyPage } from "@/lib/api/services";
 
 export const metadata: Metadata = {
@@ -29,6 +35,10 @@ export default async function MyPage() {
 
       <AccountSection account={mypage.account} />
       <SettlementAccountSection account={mypage.settlementAccount} />
+      <ProjectSection projects={mypage.projects} />
+      {/* 개발자 프로필이 없으면 이 칸은 아무것도 그리지 않습니다. */}
+      <DeveloperSection developer={mypage.developer} />
+      <NotificationSection setting={mypage.notificationSetting} />
     </Container>
   );
 }
