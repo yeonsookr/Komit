@@ -65,9 +65,16 @@ test.describe('랜딩', () => {
     await expect(page).toHaveURL(/\/developers\/3$/);
   });
 
+  /** GNB 에서 빠진 뒤로 이 링크는 푸터에만 있습니다. */
   test('이용 방법은 진행 순서 섹션의 앵커다', async ({ page }) => {
-    await page.getByRole('navigation', { name: '주요 메뉴' }).getByRole('link', { name: '이용 방법' }).click();
+    await page.getByRole('navigation', { name: '푸터' }).getByRole('link', { name: '이용 방법' }).click();
     await expect(page).toHaveURL(/\/#process$/);
     await expect(page.locator('#process')).toBeInViewport();
+  });
+
+  /** 랜딩은 비로그인으로 그려집니다. 정산은 로그인한 뒤에만 나옵니다. */
+  test('비로그인 GNB 에는 정산이 없다', async ({ page }) => {
+    const nav = page.getByRole('navigation', { name: '주요 메뉴' });
+    await expect(nav.getByRole('link')).toHaveText(['의뢰', '개발자 찾기', '사전점검']);
   });
 });
