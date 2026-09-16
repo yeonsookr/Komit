@@ -11,6 +11,8 @@ fe/src/
 ├─ app/globals.css          ← tokens.css import + @theme(토큰 → Tailwind 유틸리티) + base/components 레이어
 ├─ lib/cn.ts                ← clsx + tailwind-merge
 ├─ lib/routes.ts            ← 화면 경로 상수 ROUTES (컨벤션 8.1). href 에 URL 문자열을 직접 적지 않습니다
+├─ lib/company.ts           ← 사업자 정보 COMPANY. 푸터가 씁니다. 화면마다 따로 적지 않습니다
+├─ lib/policies.ts          ← 약관 문서 목록 POLICY_DOCUMENTS (이름 · 개정일 · 본문 주소)
 ├─ components/
 │  ├─ layouts/  AppShell.tsx     AppShell (GNB + 본문 + 푸터)
 │  │            Header.tsx       Header, PUBLIC_NAV, APP_NAV
@@ -30,14 +32,24 @@ fe/src/
 │  │  │             FeaturedDevelopers.tsx 추천 개발자 카드 3장
 │  │  │             ProcessSteps.tsx       진행 순서 (id="process", ROUTES.howTo 의 앵커)
 │  │  │             CheckupIntro.tsx       사전 점검 소개 (정적 예시 카드)
-│  │  └─ auth/     LoginCard.tsx          로그인 카드 (카카오 버튼 · 약관 안내 · 문서 링크 4개 · 실패 안내)
-│  │                SessionShell.tsx       인증 스토어를 읽어 헤더를 채우는 AppShell — (site) 레이아웃이 씁니다
+│  │  ├─ auth/     LoginCard.tsx          로그인 카드 (카카오 버튼 · 약관 안내 · 문서 링크 4개 · 실패 안내)
+│  │  │             SessionShell.tsx       인증 스토어를 읽어 헤더를 채우는 AppShell — (site) 레이아웃이 씁니다
+│  │  └─ mypage/   AccountSection.tsx     계정 칸 · 계좌 칸(SettlementAccountSection)
+│  │                NameEditRow.tsx        이름 줄 — 그 자리에서 고칩니다(클라이언트)
+│  │                ProjectSection.tsx     등록한 프로젝트 칸
+│  │                DeveloperSection.tsx   개발자 프로필 칸 — 프로필이 없으면 그리지 않습니다
+│  │                NotificationSection.tsx 알림 칸 — 켜고 끄기(클라이언트)
+│  │                PolicySection.tsx      약관 칸 — 문서마다 본문으로 바로 갑니다
+│  │                WithdrawalSection.tsx  탈퇴 칸 — 탈퇴 화면으로 보내기만 합니다
+│  │                WithdrawalBlockers.tsx 탈퇴를 막는 것 목록 (R-ACC-05)
+│  │                WithdrawButton.tsx     탈퇴하기 — 잠금은 화면과 서버 두 겹(클라이언트)
 │  └─ common/   Input.tsx       Field, Input, Textarea, SearchInput
 │               Select.tsx      NativeSelect, Dropdown
 │               Choice.tsx      Checkbox, Radio, ChoiceCard, Switch, RatingScale
 │               Badge.tsx       Badge, CountBadge, Tag, StatusDot
 │               Chip.tsx        Chip, ChipGroup
 │               Card.tsx        Card, CardHeader, CardSection, KeyValueRow, StatCard
+               Section.tsx     SectionCard (제목 + 우측 안내 + 테두리 카드)
 │               Tabs.tsx        SegmentedTabs, NavPill
 │               Avatar.tsx      Avatar, RatingDots
 │               Misc.tsx        Divider, Mono, Money, Eyebrow, PageHeader, Breadcrumb,
@@ -153,7 +165,8 @@ export default function SiteLayout({ children }) {
 | `Chip` | `filter` `toggle` `suggest` / `selected` `onRemove` | 필터 칩, 잘하는 일, 랜딩 예시 문장 |
 | `Card` | `outline` `surface` `soft` `elevated` / `interactive` `selected` | 증상 카드, 요약 카드, 연보라 안내 카드 |
 | `CardHeader` / `CardSection` | | 요구사항 · 3건 · 합계 650,000원 |
-| `KeyValueRow` | `mono` `action` | 계약서 조항, 마이페이지 설정 행 |
+| `KeyValueRow` | `mono` `action` `labelWidth` | 계약서 조항, 마이페이지 설정 행 |
+| `SectionCard` | `note` | 마이페이지 계정·계좌·약관 칸, 탈퇴 화면의 정리해야 할 것 |
 | `StatCard` | `size` `tone` `badge` | 계약이 끝나면 받을 돈 650,000원 |
 | `SegmentedTabs` | `count` `disabled` `fullWidth` | 채팅 6 / 계약서 / 진행 / 확인 3 / 리뷰 · 의뢰인｜개발자 |
 | `NavPill` | `active` | GNB 메뉴 |
@@ -191,6 +204,17 @@ import { Card, CardHeader, Field, Input, KeyValueRow, Money, Badge } from "@/com
 
 <Badge tone="brand">진행 중</Badge>
 <Button variant="dark" size="lg" fullWidth>서명하고 650,000원 예치하기</Button>
+```
+
+설정 화면처럼 「제목 + 줄 목록」이 이어지는 곳은 `SectionCard` 로 감쌉니다.
+제목 오른쪽의 작은 안내는 `note` 입니다.
+
+```tsx
+import { KeyValueRow, SectionCard } from "@/components/common";
+
+<SectionCard title="계좌" note="환불과 대금을 받는 계좌입니다">
+  <KeyValueRow label="등록 계좌" value="신한은행 ···· 4412" action={<Button size="sm">계좌 변경</Button>} />
+</SectionCard>
 ```
 
 ## 6. 아직 남은 것
