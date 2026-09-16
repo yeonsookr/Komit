@@ -66,14 +66,15 @@ test.describe('요구사항 선택', () => {
     await expect(page.getByText('요구사항을 추가했습니다.')).toBeVisible();
   });
 
-  test('요청서를 만들면 추천 화면으로 간다', async ({ page }) => {
+  test('요청서를 만들면 요청서 화면으로 간다', async ({ page }) => {
     await page.goto('/checkup/31/requirements');
 
     await page.getByRole('checkbox', { name: /관리자 API에 인증 추가/ }).check();
     await page.getByRole('button', { name: /요청서 만들기/ }).click();
 
-    await expect(page).toHaveURL(/\/recommendations\/\d+/);
-    await expect(page.getByRole('heading', { name: '누구에게 상담을 요청할까요?' })).toBeVisible();
+    // 개발자 찾기는 요청서를 확인한 다음입니다.
+    await expect(page).toHaveURL('/checkup/31/request');
+    await expect(page.getByRole('heading', { name: '요청서', level: 1 })).toBeVisible();
   });
 
   test('진단서에서 이어진다', async ({ page }) => {

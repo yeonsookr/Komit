@@ -137,3 +137,28 @@ export interface CreateIssueRequest {
 export interface UpdateIssueStatusRequest {
   status: "UNRESOLVED" | "RESOLVED";
 }
+
+/** 요청서에 담는 확인 문장. 새로 적는 줄은 식별자를 null 로 보냅니다. */
+export interface WriteQaCriterion {
+  qaCriterionId: number | null;
+  testCase: string;
+}
+
+/** 요청서에 담는 요구사항 한 줄. */
+export interface WriteRequirement {
+  /** 기존 줄이면 그 식별자, 새로 적는 줄이면 null. */
+  issueId: number | null;
+  title: string;
+  detail?: string | null;
+  categoryCodeId: number;
+  severity: IssueSeverity;
+  qaCriteria: WriteQaCriterion[];
+}
+
+/**
+ * 요청서 저장. **통째로 보내 그 내용으로 맞춥니다.**
+ * 보낸 목록에 없는 기존 요구사항은 요청서에서 뺀 것으로 봅니다.
+ */
+export interface WriteRequirementsRequest {
+  requirements: WriteRequirement[];
+}
