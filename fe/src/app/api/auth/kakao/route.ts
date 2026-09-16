@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { requireServerEnv } from "@/lib/env";
 import { buildKakaoAuthorizeUrl, createOauthState, serializeOauthHandoff } from "@/lib/auth/kakao";
+import { NEXT_PARAM } from "@/lib/auth/params";
 import { safeNext } from "@/lib/auth/safeNext";
 import { setOauthHandoffCookie } from "@/lib/auth/session";
 import { toErrorResponse } from "@/lib/api/route";
@@ -20,7 +21,7 @@ export async function GET(request: NextRequest) {
     const redirectUri = requireServerEnv("KAKAO_REDIRECT_URI");
 
     const state = createOauthState();
-    const next = safeNext(request.nextUrl.searchParams.get("next"));
+    const next = safeNext(request.nextUrl.searchParams.get(NEXT_PARAM));
 
     setOauthHandoffCookie(await cookies(), serializeOauthHandoff({ state, next }));
 

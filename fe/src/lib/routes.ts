@@ -4,19 +4,26 @@
  *
  * API 경로는 `lib/api/endpoints.ts`, 화면 경로는 여기입니다.
  * 목적지가 바뀌면 이 파일만 고칩니다. 아직 화면이 없는 목적지는 주석으로 표시합니다.
+ *
+ * query 이름은 여기서 정하지 않고 그 값을 읽는 모듈에서 가져옵니다 (컨벤션 8.2).
  */
+import { ERROR_PARAM } from "./auth/params";
+import { FIELD_CODE_IDS_PARAM } from "./developerSearch";
+import { STEP_PARAM } from "./survey";
+
 export const ROUTES = {
   home: "/",
   /** 이용 방법 화면은 따로 없습니다. 랜딩의 진행 순서 섹션이 그 역할입니다. */
   howTo: "/#process",
   login: "/login",
   /** 로그인에 실패해 돌아올 때. `code` 는 서버의 실패 코드(KAKAO_AUTH_FAILED 등)입니다. */
-  loginFailed: (code: string) => `/login?error=${encodeURIComponent(code)}`,
+  loginFailed: (code: string) => `/login?${ERROR_PARAM}=${encodeURIComponent(code)}`,
   /** 카카오 인가 시작. Route Handler(`app/api/auth/kakao`)가 카카오로 보냅니다. */
   kakaoStart: "/api/auth/kakao",
 
   developers: "/developers",
-  developersByField: (codeId: number) => `/developers?fieldCodeIds=${codeId}`,
+  developersByField: (codeId: number) =>
+    `/developers?${FIELD_CODE_IDS_PARAM}=${codeId}`,
   developer: (developerId: number) => `/developers/${developerId}`,
 
   /**
@@ -35,7 +42,7 @@ export const ROUTES = {
   checkup: "/checkup",
   /** 설문 2~4단계. 1단계는 진단이 없으므로 `checkup` 입니다. */
   checkupSurvey: (diagnosisId: number, step: number) =>
-    `/checkup/${diagnosisId}?step=${step}`,
+    `/checkup/${diagnosisId}?${STEP_PARAM}=${step}`,
   /** 진단서 — 발견된 문제점. 설문 「제출하기」가 여기로 옵니다. */
   checkupResult: (diagnosisId: number) => `/checkup/${diagnosisId}/result`,
   /** 요구사항 선택. 진단서 「요청서 만들기」가 여기로 옵니다. */

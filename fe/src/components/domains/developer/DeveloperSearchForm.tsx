@@ -11,6 +11,7 @@ import {
   SORT_OPTIONS,
   toQueryString,
 } from "@/lib/developerSearch";
+import { ROUTES } from "@/lib/routes";
 import type { CodeItem, DeveloperSearchParams, DeveloperSort, SearchMode } from "@/types/developer";
 
 /** 랜딩·검색바 아래에 붙는 입력 예시. 누르면 그대로 검색어가 됩니다. */
@@ -46,7 +47,7 @@ export function DeveloperSearchForm({ params, fields }: Readonly<DeveloperSearch
   /** 조건을 바꾸면 늘 첫 장부터 다시 봅니다. */
   const move = (next: DeveloperSearchParams) => {
     const query = toQueryString({ ...params, ...next, page: 1 });
-    router.push(query ? `/developers?${query}` : "/developers");
+    router.push(query ? `${ROUTES.developers}?${query}` : ROUTES.developers);
   };
 
   const submit = (event: React.FormEvent) => {
@@ -206,7 +207,7 @@ export function DeveloperSortSelect({ params }: Readonly<DeveloperSortSelectProp
 
   const change = (sort: DeveloperSort) => {
     const query = toQueryString({ ...params, sort, page: 1 });
-    router.push(query ? `/developers?${query}` : "/developers");
+    router.push(query ? `${ROUTES.developers}?${query}` : ROUTES.developers);
   };
 
   return (
