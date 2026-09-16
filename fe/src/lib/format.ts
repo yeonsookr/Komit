@@ -22,6 +22,11 @@ const dateLabelFormat = new Intl.DateTimeFormat("ko-KR", {
   day: "numeric",
 });
 
+const weekdayFormat = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: TIME_ZONE,
+  weekday: "short",
+});
+
 const dayKeyFormat = new Intl.DateTimeFormat("en-CA", {
   timeZone: TIME_ZONE,
   year: "numeric",
@@ -79,4 +84,26 @@ function dayDistance(from: Date, to: Date): number {
   const fromDay = Date.parse(`${dayKeyFormat.format(from)}T00:00:00Z`);
   const toDay = Date.parse(`${dayKeyFormat.format(to)}T00:00:00Z`);
   return Math.round((toDay - fromDay) / 86_400_000);
+}
+
+/**
+ * "8월 26일 수" — 착수일·납기일처럼 무슨 요일인지가 중요한 자리.
+ * 날짜만 있는 값(`2026-08-26`)을 받습니다.
+ */
+export function formatDayWithWeekday(date: string): string {
+  const at = new Date(`${date}T00:00:00+09:00`);
+  if (Number.isNaN(at.getTime())) return date;
+  return `${dateLabelFormat.format(at)} ${weekdayFormat.format(at)}`;
+}
+
+/** "8월 23일 10:20" — 보낸 시각처럼 문장 안에 넣는 표기. */
+export function formatDateTimeLabel(isoString: string): string {
+  const date = new Date(isoString);
+  return `${dateLabelFormat.format(date)} ${timeFormat.format(date)}`;
+}
+
+/** "8/22" — 개설일처럼 날짜만 짧게 적는 자리. */
+export function formatShortDate(isoString: string): string {
+  const [, month, day] = dayKeyFormat.format(new Date(isoString)).split("-");
+  return `${Number(month)}/${Number(day)}`;
 }

@@ -53,8 +53,25 @@ export const ROUTES = {
    */
   checkupRequest: (diagnosisId: number) => `/checkup/${diagnosisId}/request`,
 
-  /** 방 대화. 상담·컨설팅·개발 방이 같은 주소를 씁니다. */
+  /** 방 대화. 상담·컨설팅·개발 방이 같은 주소를 씁니다. 방의 기본 탭입니다. */
   room: (roomId: number) => `/rooms/${roomId}`,
+  /**
+   * 방 안의 탭. 의뢰인과 개발자가 같은 주소를 쓰고 화면이 역할로 갈립니다
+   * — 방 응답의 `developerId` 와 내 `developerId` 를 견줍니다.
+   */
+  roomContract: (roomId: number) => `/rooms/${roomId}/contract`,
+  /** 개발자가 계약서를 처음 쓰는 화면. */
+  roomContractNew: (roomId: number) => `/rooms/${roomId}/contract/new`,
+  /** 개발자가 계약서를 고치는 화면. 서명 전에만 들어갑니다 (R-CON-02). */
+  roomContractEdit: (roomId: number) => `/rooms/${roomId}/contract/edit`,
+  /** 의뢰인이 서명하고 계약 금액 전액을 맡기는 화면. */
+  roomDeposit: (roomId: number) => `/rooms/${roomId}/deposit`,
+  roomProgress: (roomId: number) => `/rooms/${roomId}/progress`,
+  roomCheck: (roomId: number) => `/rooms/${roomId}/check`,
+  /** 계약이 끝난 뒤에만 들어갑니다 (R-REV-02). */
+  roomReview: (roomId: number) => `/rooms/${roomId}/review`,
+  /** 문제 신고. 의뢰인·개발자 모두 같은 자리에서 넣습니다. (화면 없음 — 영역 6) */
+  roomReport: (roomId: number) => `/rooms/${roomId}/report`,
   /** 개발자 추천 결과. 요구사항을 고르면 만들어지는 회차입니다. */
   recommendation: (batchId: number) => `/recommendations/${batchId}`,
 

@@ -33,6 +33,20 @@ export const BACKEND = {
   ISSUE: (issueId: number) => `/api/issues/${issueId}`,
   REQUIREMENTS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/requirements`,
   RECOMMENDATIONS: (projectId: number) => `/api/projects/${projectId}/recommendations`,
+  CONTRACT: (contractId: number) => `/api/contracts/${contractId}`,
+  CONTRACT_SIGNATURES: (contractId: number) => `/api/contracts/${contractId}/signatures`,
+  CONTRACT_DEPOSIT: (contractId: number) => `/api/contracts/${contractId}/deposit`,
+  CONTRACT_START: (contractId: number) => `/api/contracts/${contractId}/start`,
+  CONTRACT_REVIEW: (contractId: number) => `/api/contracts/${contractId}/review`,
+  DEVELOPMENT_CONTRACTS: (roomId: number) => `/api/rooms/${roomId}/development-contracts`,
+  MILESTONE_SUBMISSION: (milestoneId: number) => `/api/milestones/${milestoneId}/submission`,
+  MILESTONE_QA_RESULTS: (milestoneId: number) => `/api/milestones/${milestoneId}/qa-results`,
+  MILESTONE_CONFIRMATION: (milestoneId: number) =>
+    `/api/milestones/${milestoneId}/confirmation`,
+  DELIVERABLE_FILE: (deliverableId: number) => `/api/deliverables/${deliverableId}/file`,
+  PAYMENT_METHODS: "/api/payment-methods",
+  UPLOADS: "/api/uploads",
+  UPLOAD_COMPLETE: (uploadId: number) => `/api/uploads/${uploadId}/complete`,
 } as const;
 
 export const INTERNAL = {
@@ -60,4 +74,14 @@ export const INTERNAL = {
   REQUIREMENTS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/requirements`,
   RECOMMENDATIONS: (projectId: number) => `/api/projects/${projectId}/recommendations`,
   SCAN_FILE: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/scan-file`,
+  CONTRACT_SIGNATURES: (contractId: number) => `/api/contracts/${contractId}/signatures`,
+  CONTRACT_DEPOSIT: (contractId: number) => `/api/contracts/${contractId}/deposit`,
+  CONTRACT_START: (contractId: number) => `/api/contracts/${contractId}/start`,
+  CONTRACT_REVIEW: (contractId: number) => `/api/contracts/${contractId}/review`,
+  DEVELOPMENT_CONTRACTS: (roomId: number) => `/api/rooms/${roomId}/development-contracts`,
+  MILESTONE_SUBMISSION: (milestoneId: number) => `/api/milestones/${milestoneId}/submission`,
+  MILESTONE_QA_RESULTS: (milestoneId: number) => `/api/milestones/${milestoneId}/qa-results`,
+  MILESTONE_CONFIRMATION: (milestoneId: number) =>
+    `/api/milestones/${milestoneId}/confirmation`,
+  DELIVERABLE_FILE: (deliverableId: number) => `/api/deliverables/${deliverableId}/file`,
 } as const;
