@@ -8,8 +8,8 @@ export async function PUT(request: Request) {
   try {
     await authorized();
     const body = (await request.json()) as WriteDeveloperProfileRequest;
-    const profile = await writeMyDeveloperProfile(body);
-    return NextResponse.json(profile);
+    const { profile, status } = await writeMyDeveloperProfile(body);
+    return NextResponse.json(profile, { status });
   } catch (error) {
     return toErrorResponse(error);
   }

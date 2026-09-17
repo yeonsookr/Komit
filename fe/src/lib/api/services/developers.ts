@@ -41,12 +41,12 @@ export async function getMyDeveloperProfile(): Promise<MyDeveloperProfile> {
 /** 내 개발자 프로필 전체 저장. 처음 저장하면 201, 이후에는 200입니다. */
 export async function writeMyDeveloperProfile(
   body: WriteDeveloperProfileRequest,
-): Promise<MyDeveloperProfile> {
-  const { data } = await backendApi().put<MyDeveloperProfile>(
+): Promise<{ profile: MyDeveloperProfile; status: number }> {
+  const { data, status } = await backendApi().put<MyDeveloperProfile>(
     BACKEND.MY_DEVELOPER_PROFILE,
     body,
   );
-  return data;
+  return { profile: data, status };
 }
 
 /** 내가 받은 리뷰의 답글 쓰기·수정. */
