@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 import { Money } from "@/components/common";
 import { cn } from "@/lib/cn";
 import { ROUTES } from "@/lib/routes";
-import { MONTH_PARAM, formatMonthLabel, shiftMonth } from "@/lib/settlement";
+import { MONTH_PARAM, formatMonthLabel } from "@/lib/settlement";
+import { MonthPicker } from "./MonthPicker";
 
 export interface SettlementSidebarProps {
   /** 보고 있는 달. `YYYY-MM`. */
@@ -42,8 +43,7 @@ export function SettlementSidebar({
   const pathname = usePathname();
 
   /** 달을 바꿔도 보던 화면에 머무릅니다. */
-  const monthHref = (offset: number) =>
-    `${pathname}?${MONTH_PARAM}=${shiftMonth(month, offset)}`;
+  const monthHref = (next: string) => `${pathname}?${MONTH_PARAM}=${next}`;
 
   return (
     <nav aria-label="정산 목록" className="flex flex-col gap-4 py-6">
@@ -52,13 +52,7 @@ export function SettlementSidebar({
       <section aria-labelledby="settlement-monthly" className="flex flex-col gap-2">
         <GroupTitle id="settlement-monthly">월별 집계</GroupTitle>
 
-        <div className="flex items-center justify-between rounded-lg border border-line px-1 py-1">
-          <MonthStep href={monthHref(-1)} label="지난달" glyph="‹" />
-          <span className="font-mono text-[13px] font-semibold text-fg tabular-nums">
-            {formatMonthLabel(month)}
-          </span>
-          <MonthStep href={monthHref(1)} label="다음 달" glyph="›" />
-        </div>
+        <MonthPicker month={month} buildHref={monthHref} />
 
         <SidebarLink
           href={`${ROUTES.settlements}?${MONTH_PARAM}=${month}`}
@@ -100,18 +94,6 @@ function GroupTitle({ id, children }: Readonly<{ id: string; children: React.Rea
   );
 }
 
-/** 달을 옮기는 버튼. `Link` 라 스크립트 없이도 동작하고 주소로 공유됩니다. */
-function MonthStep({ href, label, glyph }: Readonly<{ href: string; label: string; glyph: string }>) {
-  return (
-    <Link
-      href={href}
-      aria-label={label}
-      className="inline-flex size-7 items-center justify-center rounded-md text-fg-subtle transition-colors hover:bg-surface hover:text-fg"
-    >
-      <span aria-hidden>{glyph}</span>
-    </Link>
-  );
-}
 
 interface SidebarLinkProps {
   href: string;

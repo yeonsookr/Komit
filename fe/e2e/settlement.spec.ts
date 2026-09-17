@@ -55,6 +55,28 @@ test.describe('정산', () => {
     await expect(page).toHaveURL(/month=2026-08/);
   });
 
+  test('달을 누르면 연도와 달을 고르는 판이 열린다', async ({ page }) => {
+    await page.goto(`/settlements?month=${MONTH}`);
+
+    const panel = page.getByRole('dialog', { name: '연도와 달 고르기' });
+    await expect(panel).toBeHidden();
+
+    await page.getByRole('button', { name: '2026년 8월' }).click();
+    await expect(panel).toBeVisible();
+    await expect(panel.getByRole('link')).toHaveCount(12);
+    await expect(panel.locator('[aria-current="page"]')).toHaveText('8월');
+
+    // 연도 넘기기는 아직 고른 것이 아니라 주소를 건드리지 않습니다.
+    await panel.getByRole('button', { name: '이전 해' }).click();
+    await expect(panel.getByText('2025년')).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`month=${MONTH}`));
+
+    await panel.getByRole('link', { name: '3월' }).click();
+    await expect(page).toHaveURL(/month=2025-03/);
+    await expect(page.getByText('2025년 3월 합계')).toBeVisible();
+    await expect(panel).toBeHidden();
+  });
+
   test('소득 내역은 받을 돈과 정산 계좌를 보여준다', async ({ page }) => {
     await page.goto(`/settlements/income?month=${MONTH}`);
 
