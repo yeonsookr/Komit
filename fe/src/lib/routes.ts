@@ -51,6 +51,8 @@ export const ROUTES = {
    * 요청서는 따로 저장되는 문서가 아니라 요구사항들을 모아 부르는 이름입니다.
    */
   checkupRequest: (diagnosisId: number) => `/checkup/${diagnosisId}/request`,
+  /** 요청서 수정. 요청서의 「요청서 수정하기」가 여기로 옵니다. */
+  checkupRequestEdit: (diagnosisId: number) => `/checkup/${diagnosisId}/request/edit`,
 
   /** 방 대화. 상담·컨설팅·개발 방이 같은 주소를 씁니다. 방의 기본 탭입니다. */
   room: (roomId: number) => `/rooms/${roomId}`,

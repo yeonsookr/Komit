@@ -151,7 +151,7 @@ export function RequestForm({ diagnosis, issues }: Readonly<RequestFormProps>) {
 
       <div className="mt-10 flex flex-wrap justify-end gap-3">
         <Link
-          href={ROUTES.checkupRequirements(diagnosis.diagnosisId)}
+          href={ROUTES.checkupRequestEdit(diagnosis.diagnosisId)}
           className={buttonClass({ variant: "outline", size: "lg" })}
         >
           요청서 수정하기
