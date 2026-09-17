@@ -47,3 +47,21 @@ npm run dev
 띄운 상태에서 로그인 없이 `/api/admin/users` 로 들어가면 회원 정보가 그대로 나온다. 심어 둔 결함이 실제로 뚫리는 것을 눈으로 볼 수 있다.
 
 **로컬에서만 띄운다.** 밖으로 열지 않는다.
+
+## 검사 돌려 보기
+
+스킬을 먼저 복사한다. 복사본은 커밋되지 않는다.
+
+```bash
+cp -r ai/komit-scan/skills/komit-scan .claude/skills/
+```
+
+그다음 **새 세션에서** 이렇게 요청한다.
+
+```
+ai/komit-scan/fixtures/soap-shop 을 komit-scan 으로 검사해줘
+```
+
+지시문을 쓴 세션에서 돌리면 시험이 되지 않는다. 빠뜨린 부분을 기억으로 메꾸기 때문이다.
+
+결과가 나오면 `EXPECTED.md` 와 맞춰 본다. 지난 회차 결과는 `runs/` 에 있다.

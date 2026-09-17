@@ -38,6 +38,18 @@
 
 Komit에서 검사 파일을 내려받아 프로젝트에 넣고, 안내된 문장을 그대로 입력한다.
 
+### 이 저장소에서 바로 써 보려면
+
+스킬을 이 저장소의 Claude Code 설정 폴더로 복사한다.
+
+```bash
+cp -r ai/komit-scan/skills/komit-scan .claude/skills/
+```
+
+복사본은 `.gitignore` 에 들어 있어 커밋되지 않는다. **원본은 `ai/komit-scan/skills/` 하나뿐이다.** 지시문을 고치면 원본을 고치고 다시 복사한다.
+
+시험용 프로젝트에 돌려 보려면 [`fixtures/README.md`](fixtures/README.md) 를 본다.
+
 ---
 
 ## 결과 파일
