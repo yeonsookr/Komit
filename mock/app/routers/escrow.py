@@ -699,6 +699,14 @@ class OpenAccountAuthRecord(BaseModel):
         description="인증 대상 계좌번호. 요청에서 받은 값을 그대로 돌려준다.",
         examples=[MOCK_ACCOUNT_NO],
     )
+    expiresAt: str = Field(
+        description=(
+            "이 시각이 지나면 인증이 만료된다. 화면의 남은 시간이 이 값에서 나온다. "
+            "ERD account_verifications.expires_at에 대응하며 유효 시간은 R-ACC-02다. "
+            "에스크로가 이 값을 계산해 내려주므로 Komit은 그대로 전달만 한다."
+        ),
+        examples=["2026-09-09T12:10:00+09:00"],
+    )
 
 
 class OpenAccountAuthResponse(BaseModel):
@@ -866,6 +874,7 @@ def _success_header_example(api_name: str) -> dict:
             {
                 "transactionUniqueNo": "1000000001",
                 "accountNo": MOCK_ACCOUNT_NO,
+                "expiresAt": "2026-09-09T12:10:00+09:00",
             },
         ),
         **ACCOUNT_ERRORS,
@@ -875,7 +884,8 @@ def _success_header_example(api_name: str) -> dict:
         "인증할 계좌에 1원을 입금하고 거래내역에 기업명과 네 자리 인증번호를 남긴다. "
         "원화 수시입출금 계좌만 쓸 수 있다.\n\n"
         "기업명은 에스크로가 고객사 설정에서 꺼내 채우므로 요청 본문에 담지 않는다. "
-        "에스크로는 계좌를 저장하지 않고 SSAFY로 중계만 한다.\n\n"
+        "에스크로는 계좌번호 원문을 보관하지 않지만, 인증 세션과 만료 시각은 "
+        "에스크로가 관리해 `expiresAt`로 내려준다.\n\n"
         "- **200 / H0000**: 1원을 보냈을 때\n"
         "- **400 / A1003**: `accountNo`가 `0000000000000000`일 때. 계좌번호가 "
         "유효하지 않다\n"
@@ -913,7 +923,9 @@ async def open_account_auth(
             "H0000", "정상처리 되었습니다.", payload.Header
         ),
         REC=OpenAccountAuthRecord(
-            transactionUniqueNo="1000000001", accountNo=payload.accountNo
+            transactionUniqueNo="1000000001",
+            accountNo=payload.accountNo,
+            expiresAt="2026-09-09T12:10:00+09:00",
         ),
     )
 
