@@ -30,6 +30,19 @@ export interface Survey {
   diagnosisVersion: number;
   /** 문항은 순서대로 옵니다. */
   questions: SurveyQuestion[];
+  /**
+   * 설문을 끝냈는지. 설문4까지 마치고 완료를 부르면 참이 됩니다.
+   * 거짓인 설문은 설문1의 「진행 중인 설문」 목록에 올라갑니다.
+   */
+  isDone: boolean;
+}
+
+/** 끝내지 않은 설문 하나. 설문1 아래 목록에 한 줄로 들어갑니다. */
+export interface UnfinishedSurvey {
+  diagnosisId: number;
+  projectName: string;
+  /** 마지막으로 저장한 시각. 목록은 이 값의 내림차순으로 옵니다. */
+  updatedAt: string;
 }
 
 /** 한 문항에 대한 답. */

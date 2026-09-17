@@ -22,7 +22,7 @@ import { SurveyStep } from "./SurveyStep";
 
 /** 단계별 머리말. 문항 자체는 서버가 주고, 화면은 제목만 갖습니다. */
 const STEP_HEADING: Record<number, { title: string; description?: string }> = {
-  2: { title: "어떤 상태인가요?", description: "해당하는 걸 모두 골라주세요." },
+  2: { title: "지금 상황을 알려주세요" },
   3: {
     title: "검사 파일을 받아 직접 실행해주세요",
     description: "코드는 컴퓨터 밖으로 나가지 않습니다. 만들어진 결과 파일만 올려주시면 됩니다.",
@@ -126,8 +126,14 @@ export function CheckupSurvey({
       );
       setSurvey(data);
 
-      if (step >= TOTAL_STEPS) router.push(ROUTES.checkupResult(diagnosisId));
-      else goTo(step + 1);
+      if (step >= TOTAL_STEPS) {
+        // 답 저장이 완료를 겸하지 않습니다 — 설문4 문항은 검사 결과에서 나오므로
+        // 답이 다 찼는지로 판정하면 설문2까지만 하고도 끝난 것으로 찍힙니다.
+        await clientApi.post(INTERNAL.SURVEY_COMPLETE(diagnosisId));
+        router.push(ROUTES.checkupResult(diagnosisId));
+      } else {
+        goTo(step + 1);
+      }
     } catch (error) {
       showToast({
         tone: "danger",

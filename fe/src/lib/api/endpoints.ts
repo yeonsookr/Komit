@@ -26,6 +26,8 @@ export const BACKEND = {
   DIAGNOSES: "/api/diagnoses",
   SURVEY: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/survey`,
   SURVEY_ANSWERS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/survey/answers`,
+  SURVEY_COMPLETE: (diagnosisId: number) =>
+    `/api/diagnoses/${diagnosisId}/survey/complete`,
   INSPECTIONS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/inspections`,
   SCAN_FILE: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/scan-file`,
   DIAGNOSIS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}`,
@@ -78,6 +80,8 @@ export const INTERNAL = {
     `/api/recommendations/${batchId}/consultation-requests`,
   DIAGNOSES: "/api/diagnoses",
   SURVEY_ANSWERS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/survey/answers`,
+  SURVEY_COMPLETE: (diagnosisId: number) =>
+    `/api/diagnoses/${diagnosisId}/survey/complete`,
   INSPECTIONS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/inspections`,
   ISSUES: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/issues`,
   ISSUE: (issueId: number) => `/api/issues/${issueId}`,

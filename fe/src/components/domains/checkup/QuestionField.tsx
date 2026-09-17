@@ -60,6 +60,8 @@ export function QuestionField({
     <fieldset>
       <legend className={cn("text-sm font-semibold text-fg", hideLegend && "sr-only")}>
         {question.content}
+        {/* 여러 개 고를 수 있다는 것은 보기만 봐서는 모릅니다. */}
+        {isMulti && <span className="font-normal text-fg-subtle"> (모두 골라주세요)</span>}
       </legend>
 
       <div
