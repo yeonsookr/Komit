@@ -2,12 +2,20 @@
 
 Komit이 무엇을 하는지 보여주기 위한 **가상의 의뢰인 프로젝트**다.
 
-바이브코딩으로 쇼핑몰을 만든 사람이 Komit에 찾아왔다고 치고, 그 사람의 코드를 여기 두었다.
+바이브코딩으로 서비스를 만든 사람이 Komit에 찾아왔다고 치고, 그 사람의 코드를 여기 둔다.
 
 ```
 demo/
-└─ soap-shop/    수제 비누 가게. Next.js 로 만든 작은 쇼핑몰
+└─ <프로젝트 이름>/    의뢰인이 만들었다고 치는 앱
 ```
+
+## 지금 있는 것
+
+| 프로젝트 | 무엇 | 스택 | 포트 | 정답표 |
+| --- | --- | --- | --- | --- |
+| [`soap-shop`](soap-shop/) | 수제 비누를 파는 작은 쇼핑몰 | Next.js · 파일 저장 | 3000 | [보기](../ai/komit-scan/fixtures/soap-shop/EXPECTED.md) |
+
+프로젝트를 새로 더하는 법은 [`ai/komit-scan/fixtures/README.md`](../ai/komit-scan/fixtures/README.md) 에 있다. 앱은 여기에 두고, 정답표는 그쪽에 둔다.
 
 ---
 
@@ -27,12 +35,16 @@ demo/
 ## 띄우기
 
 ```bash
-cd demo/soap-shop
+cd demo/<프로젝트 이름>
 npm install
 npm run dev
 ```
 
-`http://localhost:3000` 에서 열린다.
+프로젝트마다 포트가 다르다. 위 표를 본다. `soap-shop` 은 `http://localhost:3000` 이다.
+
+`.claude/launch.json` 에 등록해 두면 Claude Code 에서 바로 띄울 수 있다. 프로젝트를 더하면 거기에도 한 줄 더한다.
+
+### soap-shop 계정
 
 | 계정 | 비밀번호 |
 | --- | --- |
@@ -73,6 +85,6 @@ Komit 화면에서 그 파일을 올리면, 방금 본 그 구멍이 진단서�
 
 ## 심어 둔 결함
 
-목록과 위치는 [`ai/komit-scan/fixtures/EXPECTED.md`](../ai/komit-scan/fixtures/EXPECTED.md) 에 있다.
+프로젝트마다 정답표가 따로 있다. `soap-shop` 은 [여기](../ai/komit-scan/fixtures/soap-shop/EXPECTED.md) 에 있다.
 
 **검사를 돌리는 쪽은 그 파일을 읽지 않는다.** 정답을 보고 답을 쓰면 검사가 제대로 되는지 알 수 없다.
