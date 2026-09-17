@@ -24,6 +24,7 @@ function me(overrides: Partial<Me> = {}): Me {
     userId: 12,
     name: '김미미',
     profileImageFileId: null,
+    profileImageUrl: null,
     hasDevProfile: false,
     developerId: null,
     unreadNotificationCount: 0,

@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { buttonClass } from "@/components/buttons";
-import { Avatar, KeyValueRow, SectionCard } from "@/components/common";
+import { KeyValueRow, SectionCard } from "@/components/common";
 import { ROUTES } from "@/lib/routes";
 import type { MyAccount, SettlementAccount } from "@/types/mypage";
 import { NameEditRow } from "./NameEditRow";
+import { ProfileImageEdit } from "./ProfileImageEdit";
 
 export interface AccountSectionProps {
   account: MyAccount;
@@ -11,25 +12,13 @@ export interface AccountSectionProps {
 
 /**
  * AccountSection — 계정 칸. 프로필 사진 · 이름 · 카카오 계정.
- *
- * 사진 바꾸기는 파일 올리기가 필요해 아직 붙이지 않았습니다. 지금은 어떤 사진을
- * 쓰고 있는지만 알려줍니다.
  */
 export function AccountSection({ account }: Readonly<AccountSectionProps>) {
   return (
     <SectionCard title="계정">
-      <KeyValueRow
-        label="프로필 사진"
-        value={
-          <span className="flex items-center gap-3">
-            <Avatar size="md" name={account.name} src={account.profileImageUrl ?? undefined} />
-            <span className="text-[13px] text-fg-muted">
-              {account.profileImageUrl
-                ? "카카오 프로필 사진을 쓰고 있습니다"
-                : "등록한 사진이 없어 이름 첫 글자를 씁니다"}
-            </span>
-          </span>
-        }
+      <ProfileImageEdit
+        name={account.name}
+        profileImageUrl={account.profileImageUrl}
       />
 
       <NameEditRow name={account.name} />
