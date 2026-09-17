@@ -9595,11 +9595,13 @@ class ReconciliationEscrowResponse(BaseModel):
 
 
 class ReconciliationRunResponse(BaseModel):
-    """대사 실행 한 번."""
+    """대사 한 번. 하루에 한 줄이라 asOf가 곧 그 줄의 식별자다."""
 
-    runId: int = Field(description="대사 실행 식별자.", examples=[512])
     asOf: str = Field(
-        description="이 시점까지 확정된 원장과 잔고를 비교했다.",
+        description=(
+            "이 시점까지 확정된 원장과 잔고를 비교했다. 하루에 한 줄이라 이 값이 겹치지 "
+            "않는다."
+        ),
         examples=["2026-09-02T09:00:00+09:00"],
     )
     ledgerTotal: int = Field(
@@ -9903,7 +9905,6 @@ ADMIN_REPORT_DETAIL_EXAMPLE = {
 
 RECONCILIATION_EXAMPLE = {
     "latest": {
-        "runId": 512,
         "asOf": "2026-09-02T09:00:00+09:00",
         "ledgerTotal": 12447300,
         "bankBalance": 12447300,
@@ -9943,7 +9944,6 @@ RECONCILIATION_EXAMPLE = {
     "escrowTotalCount": 24,
     "history": [
         {
-            "runId": 512,
             "asOf": "2026-09-02T09:00:00+09:00",
             "ledgerTotal": 12447300,
             "bankBalance": 12447300,
@@ -9951,7 +9951,6 @@ RECONCILIATION_EXAMPLE = {
             "result": "MATCHED",
         },
         {
-            "runId": 508,
             "asOf": "2026-09-01T09:00:00+09:00",
             "ledgerTotal": 12183900,
             "bankBalance": 12183900,
@@ -9959,7 +9958,6 @@ RECONCILIATION_EXAMPLE = {
             "result": "MATCHED",
         },
         {
-            "runId": 504,
             "asOf": "2026-08-31T09:00:00+09:00",
             "ledgerTotal": 11806400,
             "bankBalance": 11756400,
@@ -9967,7 +9965,6 @@ RECONCILIATION_EXAMPLE = {
             "result": "BANK_MISMATCH",
         },
         {
-            "runId": 500,
             "asOf": "2026-08-30T09:00:00+09:00",
             "ledgerTotal": 11472150,
             "bankBalance": 11472150,
@@ -9975,7 +9972,6 @@ RECONCILIATION_EXAMPLE = {
             "result": "MATCHED",
         },
         {
-            "runId": 496,
             "asOf": "2026-08-29T09:00:00+09:00",
             "ledgerTotal": 11118600,
             "bankBalance": 11118600,
