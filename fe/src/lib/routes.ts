@@ -103,7 +103,7 @@ export const ROUTES = {
   /** 푸터 "정산 방식" 안내. */
   settlementsGuide: "/settlements/guide",
   notifications: "/notifications",
-  /** 계좌 등록. 마이페이지의 「계좌 변경」이 옵니다. */
+  /** 계좌 등록·변경. 마이페이지 계좌 칸과 예치 화면이 옵니다. */
   accountRegister: "/mypage/account",
   /** 내 개발자 프로필. 푸터 "프로필 등록"도 여기로 옵니다. */
   mypageProfile: "/mypage/profile",
