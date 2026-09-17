@@ -8312,6 +8312,13 @@ class MyPortfolioItemResponse(BaseModel):
         description="배포 사이트나 저장소 주소. 없으면 null이다.",
         examples=["https://hairshop-mimi.com"],
     )
+    thumbnailFileId: int | None = Field(
+        description=(
+            "현재 붙어 있는 썸네일 파일 식별자. 사진이 없으면 null이다. 편집 화면은 "
+            "사진을 바꾸지 않을 때 이 값을 저장 요청에 다시 보낸다."
+        ),
+        examples=[512],
+    )
     thumbnailUrl: str | None = Field(
         description=(
             "화면에 그대로 거는 사진 주소. 계정의 `profileImageUrl`과 같은 방식으로, "
@@ -8321,6 +8328,25 @@ class MyPortfolioItemResponse(BaseModel):
             "오래 쓰지 않는다."
         ),
         examples=["https://cdn.komit.example.com/portfolio/512.png"],
+    )
+
+
+class MyCareerResponse(CareerResponse):
+    """내 프로필 편집 화면이 쓰는 경력 한 줄."""
+
+    evidenceFileId: int | None = Field(
+        description=(
+            "확인 전 증빙 파일 식별자. 편집 화면은 증빙을 바꾸지 않을 때 이 값을 저장 "
+            "요청에 다시 보낸다. 확인을 마치면 원본을 지우므로 null이다."
+        ),
+        examples=[512],
+    )
+    evidenceFileName: str | None = Field(
+        description=(
+            "확인 전 증빙의 원래 파일명. `evidenceFileId`와 함께 값이 있거나 함께 "
+            "null이다. 확인을 마치면 원본을 지우므로 null이다."
+        ),
+        examples=["재직증명서.pdf"],
     )
 
 
@@ -8382,7 +8408,12 @@ class MyDeveloperProfileResponse(BaseModel):
     techCategories: list[CodeResponse] = Field(
         description="다룰 수 있는 기술. 등록 전이면 빈 배열이다.",
     )
-    careers: list[CareerResponse] = Field(description="등록한 경력.")
+    careers: list[MyCareerResponse] = Field(
+        description=(
+            "등록한 경력. 확인 전 증빙은 파일 식별자와 이름을 함께 내려주고, 확인을 "
+            "마쳐 원본을 지운 경력은 두 값이 모두 null이다."
+        ),
+    )
     portfolioItems: list[MyPortfolioItemResponse] = Field(
         description="등록한 작업물. 보낸 순서가 화면에 보이는 순서다.",
     )
@@ -8424,8 +8455,9 @@ class WriteCareerRequest(BaseModel):
     evidenceFileId: int | None = Field(
         default=None,
         description=(
-            "증빙 서류 파일 식별자. 올리기 시작·완료를 먼저 거쳐 그 식별자를 넣는다. "
-            "증빙은 경력 확인에만 쓰고 확인이 끝나면 원본을 지운다."
+            "증빙 서류 파일 식별자. 기존 식별자를 보내면 증빙을 유지하고, 새 식별자를 "
+            "보내면 교체하며, null이면 증빙을 붙이지 않는다. 확인을 마친 경력은 원본이 "
+            "이미 삭제되어 null을 보내도 확인 상태와 확인 시각이 그대로 유지된다."
         ),
         examples=[512],
     )
@@ -8441,7 +8473,8 @@ class WritePortfolioItemRequest(BaseModel):
     )
     title: str = Field(description="작업물 제목.", examples=["미미헤어샵 예약"])
     description: str | None = Field(
-        description="설명.",
+        max_length=500,
+        description="설명. 500자까지 적을 수 있고, 적지 않으면 null이다.",
         examples=["예약이 저장되지 않던 문제를 고쳤습니다."],
     )
     linkUrl: str | None = Field(
@@ -8450,9 +8483,9 @@ class WritePortfolioItemRequest(BaseModel):
     )
     thumbnailFileId: int | None = Field(
         description=(
-            "올려 둔 사진의 파일 식별자. 올리기 완료까지 마친 내 파일이어야 하며, "
-            "사진을 빼려면 null을 보낸다. 응답에는 이 식별자가 아니라 바로 걸 수 있는 "
-            "`thumbnailUrl`이 담긴다."
+            "올려 둔 사진의 파일 식별자. 조회에서 받은 기존 식별자를 보내면 사진을 "
+            "유지하고, 새 식별자를 보내면 교체하며, null을 보내면 사진을 제거한다. "
+            "응답에는 이 식별자와 바로 걸 수 있는 `thumbnailUrl`이 함께 담긴다."
         ),
         examples=[512],
     )
@@ -8940,6 +8973,8 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
             "endDate": "2024-08-31",
             "isVerified": True,
             "verifiedAt": "2026-03-04T10:00:00+09:00",
+            "evidenceFileId": None,
+            "evidenceFileName": None,
         },
         {
             "careerId": 42,
@@ -8949,6 +8984,8 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
             "endDate": "2020-12-31",
             "isVerified": True,
             "verifiedAt": "2026-03-04T10:00:00+09:00",
+            "evidenceFileId": None,
+            "evidenceFileName": None,
         },
         {
             "careerId": 43,
@@ -8958,6 +8995,8 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
             "endDate": None,
             "isVerified": False,
             "verifiedAt": None,
+            "evidenceFileId": 514,
+            "evidenceFileName": "프리랜서_경력증명서.pdf",
         },
     ],
     "portfolioItems": [
@@ -8966,6 +9005,7 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
             "title": "미미헤어샵 예약",
             "description": "예약이 저장되지 않던 문제를 고쳤습니다.",
             "linkUrl": "https://hairshop-mimi.com",
+            "thumbnailFileId": 512,
             "thumbnailUrl": "https://cdn.komit.example.com/portfolio/512.png",
         },
         {
@@ -8973,6 +9013,7 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
             "title": "동네 필라테스 수업",
             "description": "회원가입 없이 수업을 예약할 수 있게 했습니다.",
             "linkUrl": "https://pilates-onnuri.kr",
+            "thumbnailFileId": 513,
             "thumbnailUrl": "https://cdn.komit.example.com/portfolio/513.png",
         },
         {
@@ -8980,6 +9021,7 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
             "title": "사내 재고 관리",
             "description": "엑셀로 관리하던 재고를 DB로 옮겼습니다.",
             "linkUrl": None,
+            "thumbnailFileId": None,
             "thumbnailUrl": None,
         },
     ],
@@ -9469,6 +9511,10 @@ def withdraw() -> WithdrawalResultResponse | JSONResponse:
         "전부와 받은 리뷰를 더한 모양이다.\n\n"
         "줄 단위 가격표는 개발자 상세에서 물려받은 `priceCatalog`다. 같은 데이터를 "
         "이름만 바꿔 두 번 내려보내지 않으려고 모양을 맞췄다.\n\n"
+        "편집한 다른 내용을 저장할 때 기존 첨부가 사라지지 않도록 작업물에는 "
+        "`thumbnailFileId`와 `thumbnailUrl`을 함께 내려준다. 확인 전 경력 증빙에는 "
+        "`evidenceFileId`와 `evidenceFileName`을 함께 내려준다. 확인을 마친 증빙은 원본을 "
+        "삭제하므로 두 값이 모두 null이다.\n\n"
         "평점은 읽기 전용이다. 유료 거래를 마친 의뢰인의 리뷰로만 매겨지므로 저장 "
         "요청으로 바꿀 수 없다.\n\n"
         "**403은 개발자 프로필이 없을 때만 나온다.** 대상을 요청에 담지 않아 남의 "
@@ -9521,6 +9567,12 @@ def get_my_developer_profile() -> MyDeveloperProfileResponse:
         "로그인으로 처리하는 것과 같은 방식이며, 화면이 '만들면 판매자 약관에 동의한 "
         "것으로 간주합니다'라고 안내한다. 동의한 문서는 마이페이지 약관 칸에서 본다.\n\n"
         "새로 추가하는 줄은 식별자를 null로 보내고, 서버가 만들어 응답에 담아 준다.\n\n"
+        "작업물 썸네일은 기존 파일 식별자를 다시 보내면 유지되고, 새 식별자를 보내면 "
+        "교체되며, null을 보내면 제거된다. 확인 전 경력 증빙도 기존 식별자를 다시 "
+        "보내면 유지되고 새 식별자를 보내면 교체된다. 확인을 마친 경력은 증빙 원본이 "
+        "이미 삭제되어 null을 보내도 확인 상태와 확인 시각이 유지된다.\n\n"
+        "작업물 공개 여부와 순서를 따로 저장하는 값은 받지 않는다. 공개 스위치나 순서 "
+        "변경은 이 계약의 범위가 아니다.\n\n"
         "**저장되는 곳은 토큰의 주인의 프로필이다.** 액세스 토큰을 검증해 `sub`를 꺼내 "
         "그 사용자의 개발자 프로필에 저장하며, 대상을 요청에 담지 않는다. 요청에 실린 "
         "`careerId`·`portfolioItemId`·`priceId`가 그 프로필의 것인지도 확인하고, 남의 "
