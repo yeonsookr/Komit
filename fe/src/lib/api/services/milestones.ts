@@ -68,23 +68,22 @@ export async function confirmMilestone(
 }
 
 /**
- * 인계물 올리기.
+ * 인계물 붙이기.
  *
- * 소스·계정·설명서 같은 인계물을 파일로 올립니다. 올린 시각이 인계 시각으로
- * 남고 의뢰인 화면에서 내려받을 수 있게 됩니다. 다시 올리면 새 파일로 바뀝니다.
+ * **파일은 이 요청으로 보내지 않습니다.** 다른 파일과 같이 업로드 3콜을 먼저
+ * 마치고 거기서 받은 `fileId` 만 보냅니다. 소스 파일 묶음은 크기가 커서 코밋
+ * 서버를 지나가지 않게 합니다.
+ *
+ * 붙인 시각이 인계 시각으로 남고 의뢰인 화면에서 내려받을 수 있게 됩니다.
+ * 다시 붙이면 새 파일로 바뀝니다.
  */
-export async function uploadDeliverable(
+export async function attachDeliverable(
   deliverableId: number,
-  file: File,
+  fileId: number,
 ): Promise<Deliverable> {
-  const form = new FormData();
-  form.append("file", file);
-
   const { data } = await backendApi().post<Deliverable>(
     BACKEND.DELIVERABLE_FILE(deliverableId),
-    form,
-    // FormData 는 경계 문자열이 필요하므로 공통 JSON 헤더를 지웁니다.
-    { headers: { "Content-Type": undefined } },
+    { fileId },
   );
   return data;
 }

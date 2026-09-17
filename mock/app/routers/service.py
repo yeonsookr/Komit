@@ -5400,6 +5400,15 @@ class MilestoneResponse(BaseModel):
     )
 
 
+class AttachDeliverableRequest(BaseModel):
+    """인계물에 붙일 파일."""
+
+    fileId: int = Field(
+        description="업로드 3콜을 마친 파일 식별자.",
+        examples=[71],
+    )
+
+
 class DeliverableResponse(BaseModel):
     """인계물 하나. 소스·계정·설명서처럼 마지막에 넘겨받는 것들이다."""
 
@@ -6021,7 +6030,7 @@ FILE_TOO_LARGE_EXAMPLE = {"code": FILE_TOO_LARGE[0], "message": FILE_TOO_LARGE[1
 DELIVERABLE_FILE_ERROR_EXAMPLE = {
     "code": "INVALID_REQUEST",
     "message": "요청 형식이 올바르지 않습니다.",
-    "errors": [{"field": "file", "reason": "필수 항목입니다."}],
+    "errors": [{"field": "fileId", "reason": "필수 항목입니다."}],
 }
 
 # 리뷰는 점수 1~5와 content 1000자가 검증 조건이다. 둘을 함께 어긴 경우를 예시로 든다.
@@ -6620,11 +6629,6 @@ def confirm_milestone(
                 }
             }
         },
-        400: {
-            "model": ErrorResponse,
-            "description": "파일이 허용 용량을 넘음",
-            "content": {"application/json": {"example": FILE_TOO_LARGE_EXAMPLE}},
-        },
         403: {
             "model": ErrorResponse,
             "description": "이 계약의 개발자가 아님",
@@ -6650,21 +6654,25 @@ def confirm_milestone(
         },
         500: AREA1_ERRORS[500],
     },
-    summary="인계물 올리기",
+    summary="인계물 붙이기",
     description=(
         "**화면 — `5_개발자_확인` › 인계 작업의 파일 첨부**\n\n"
-        "소스·계정·설명서 같은 인계물을 파일로 올린다. 올린 시각이 인계 시각으로 남고, "
-        "의뢰인 화면에서는 '받기'로 내려받을 수 있게 된다.\n\n"
-        "이미 올린 인계물에 다시 올리면 새 파일로 바뀌고 `deliveredAt`도 그 시각으로 갱신된다. "
-        "재업로드를 막지 않으므로 409는 없다.\n\n"
-        "- **201**: 올렸을 때\n"
-        "- **400 / FILE_TOO_LARGE**: 허용 용량을 넘겼을 때\n"
+        "**파일은 이 요청으로 보내지 않는다.** 다른 파일과 같이 업로드 3콜(`POST /uploads` → "
+        "저장소로 `PUT` → `POST /uploads/{uploadId}/complete`)을 먼저 마치고, 거기서 받은 "
+        "`fileId`를 이 요청에 담아 인계물에 붙인다. 소스 파일 묶음은 크기가 커서 이 서버를 "
+        "지나가지 않게 한다.\n\n"
+        "붙인 시각이 인계 시각으로 남고, 의뢰인 화면에서는 '받기'로 내려받을 수 있게 된다.\n\n"
+        "이미 붙인 인계물에 다시 붙이면 새 파일로 바뀌고 `deliveredAt`도 그 시각으로 갱신된다. "
+        "재첨부를 막지 않으므로 409는 없다.\n\n"
+        "형식과 크기는 `POST /uploads`에서 `purpose`가 `DELIVERABLE`일 때의 한도로 거른다. "
+        "그래서 이 요청에는 용량 오류가 없다.\n\n"
+        "- **201**: 붙였을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 계약의 개발자가 아닐 때\n"
         "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableId`가 404일 때. 없는 인계물이거나 이 "
         "계약의 당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 준다\n"
-        "- **422 / INVALID_REQUEST**: `file` 파트가 없을 때\n"
-        "- **500 / INTERNAL_ERROR**: 올리지 못했을 때"
+        "- **422 / INVALID_REQUEST**: `fileId`가 없을 때\n"
+        "- **500 / INTERNAL_ERROR**: 붙이지 못했을 때"
     ),
 )
 def upload_deliverable(
@@ -6675,7 +6683,7 @@ def upload_deliverable(
             examples=[401],
         ),
     ],
-    file: Annotated[UploadFile, File(description="인계물 파일.")],
+    request: AttachDeliverableRequest,
 ) -> DeliverableResponse | JSONResponse:
     if deliverableId == NOT_FOUND_DELIVERABLE_ID:
         return _error_response(404, DELIVERABLE_NOT_FOUND)
@@ -8304,7 +8312,11 @@ class CreateUploadRequest(BaseModel):
         examples=[284193],
     )
     purpose: Literal[
-        "PROFILE_IMAGE", "CAREER_EVIDENCE", "PORTFOLIO_IMAGE", "SIGNATURE"
+        "PROFILE_IMAGE",
+        "CAREER_EVIDENCE",
+        "PORTFOLIO_IMAGE",
+        "SIGNATURE",
+        "DELIVERABLE",
     ] = Field(
         description=(
             "이 파일을 어디에 쓸지. 쓰임에 따라 받는 형식과 크기가 다르고 보관 기간도 "
@@ -9305,7 +9317,8 @@ def get_my_sessions() -> MySessionListResponse:
     summary="파일 올리기 시작",
     description=(
         "**화면 — `8_마이페이지` › 계정 › 사진 바꾸기, "
-        "`8_개발자_내프로필` › 증빙 서류 파일 올리기 · 작업물 사진 추가**\n\n"
+        "`8_개발자_내프로필` › 증빙 서류 파일 올리기 · 작업물 사진 추가, "
+        "`5_서명판` › 서명하기, `5_개발자_확인` › 인계 작업의 파일 첨부**\n\n"
         "**파일은 이 서버로 보내지 않는다.** 올릴 파일을 먼저 알리면 파일을 보낼 주소를 "
         "돌려주고, 화면이 그 주소로 파일을 직접 보낸다. 다 보낸 뒤 완료 API를 불러야 "
         "파일이 쓸 수 있는 상태가 된다.\n\n"
