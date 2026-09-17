@@ -6471,24 +6471,28 @@ def save_qa_results(
         return _error_response(404, MILESTONE_NOT_FOUND)
     if milestoneId == CONFLICT_MILESTONE_ID:
         return _error_response(409, MILESTONE_STATE_CONFLICT)
-    # 목 데이터의 작업 301은 확인 문장이 201·202 둘이다. 그 밖의 값은 막는다.
-    known = {201, 202}
+    # 그 작업에 없는 확인 문장은 막는다.
+    target = next(
+        (row for row in MILESTONES if row["milestoneId"] == milestoneId), MILESTONES[1]
+    )
+    known = {qa["qaCriterionId"] for qa in target["qaCriteria"]}
     if not set(request.qaCriterionIds) <= known:
         return _field_error("qaCriterionIds", "이 작업의 확인 문장만 보낼 수 있습니다.")
+
     # 체크는 되돌릴 수 없으므로 이미 통과한 것에 더하기만 한다.
     passed = {
         qa["qaCriterionId"]
-        for qa in MILESTONES[1]["qaCriteria"]
+        for qa in target["qaCriteria"]
         if qa["status"] == "RESOLVED"
     } | set(request.qaCriterionIds)
     milestone = {
-        **MILESTONES[1],
+        **target,
         "qaCriteria": [
             {
                 **qa,
                 "status": "RESOLVED" if qa["qaCriterionId"] in passed else "UNRESOLVED",
             }
-            for qa in MILESTONES[1]["qaCriteria"]
+            for qa in target["qaCriteria"]
         ],
     }
     return MilestoneResponse(**milestone)
