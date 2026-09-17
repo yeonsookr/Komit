@@ -54,4 +54,5 @@ MOCK_IMAGE=<계정>/komit-mock:<tag> docker compose pull && docker compose up -d
 ## 아직 없는 것
 
 - HTTPS — 인증서 발급 방식(Let's Encrypt / SSAFY 제공)이 정해지면 nginx에 443을 추가한다
-- BE·FE 서비스 — 코드가 생기면 compose에 서비스를 추가하고 nginx 경로를 나눈다
+
+BE·FE 서비스와 PostgreSQL·Redis는 compose가 아니라 K3s에서 돕니다. [`k3s/README.md`](k3s/README.md)를 참고한다.
