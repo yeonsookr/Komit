@@ -97,7 +97,7 @@ export function StartWorkPanel({
               className="px-4 py-3.5 sm:px-5"
             />
             <KeyValueRow
-              label="끝나는 날"
+              label="납기일"
               value={
                 development.dueDate === null
                   ? "정하지 않음"

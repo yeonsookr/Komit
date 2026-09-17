@@ -8,7 +8,7 @@ import {
   isSignedByBoth,
   totalWorkDays,
 } from "@/lib/contract";
-import { formatDateTimeLabel } from "@/lib/format";
+import { formatDateTimeLabel, formatDayWithWeekday } from "@/lib/format";
 import { ROUTES } from "@/lib/routes";
 import type { Contract } from "@/types/contract";
 import { MilestoneList } from "./MilestoneList";
@@ -144,6 +144,25 @@ export function ContractDetail({
         <CardHeader title="계약 조건" />
         <Card className="mt-3" padding="none">
           <div className="divide-y divide-line-subtle">
+            {/* 서명하면 이 날짜로 묶입니다. 예치 전에 보이지 않으면 안 됩니다. */}
+            <KeyValueRow
+              label="착수일"
+              value={
+                development.startDate === null
+                  ? "정하지 않음"
+                  : formatDayWithWeekday(development.startDate)
+              }
+              className="px-4 py-3.5 sm:px-5"
+            />
+            <KeyValueRow
+              label="납기일"
+              value={
+                development.dueDate === null
+                  ? "정하지 않음"
+                  : formatDayWithWeekday(development.dueDate)
+              }
+              className="px-4 py-3.5 sm:px-5"
+            />
             <KeyValueRow
               label="하자보수"
               value={`완료 후 ${development.freeRepairDays}일`}
