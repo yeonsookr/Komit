@@ -122,8 +122,9 @@ describe('questionsForStep', () => {
     expect(questionsForStep(questions, 3)).toEqual([]);
   });
 
-  it('설문4는 마지막 문항이다', () => {
+  it('설문4는 고정 문항 뒤에 오는 것을 모두 받는다', () => {
     expect(questionsForStep(questions, 4)).toHaveLength(1);
+    expect(questionsForStep([...questions, single(), single()], 4)).toHaveLength(3);
   });
 
   it('검사 전이라 설문4 문항이 없으면 빈 배열이다', () => {

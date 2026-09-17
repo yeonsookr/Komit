@@ -1,0 +1,11 @@
+{
+  "name": "komit",
+  "owner": { "name": "Komit" },
+  "plugins": [
+    {
+      "name": "komit-scan",
+      "source": "./",
+      "description": "Komit 사전점검. 프로젝트를 검사해 결과 파일을 만든다."
+    }
+  ]
+}
