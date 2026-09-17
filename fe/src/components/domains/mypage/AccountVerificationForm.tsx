@@ -1,17 +1,22 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import * as React from "react";
 import { Button, buttonClass } from "@/components/buttons";
-import { Card, Dropdown, Field, Input, NumberedSteps } from "@/components/common";
+import { Card, Dropdown, Field, Input, NumberedSteps, PageHeader } from "@/components/common";
 import { Callout, useToast } from "@/components/feedback";
 import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
 import { ROUTES } from "@/lib/routes";
-import type { AccountVerification } from "@/types/account";
+import type {
+  AccountVerification,
+  ConfirmAccountVerificationResponse,
+} from "@/types/account";
 import { ApiError } from "@/types/api";
 import type { CodeItem } from "@/types/developer";
 import type { SettlementAccount } from "@/types/mypage";
+import { AccountVerificationCodeInput } from "./AccountVerificationCodeInput";
 
 export interface AccountVerificationFormProps {
   currentAccount: SettlementAccount | null;
@@ -29,12 +34,15 @@ export function AccountVerificationForm({
   currentAccount,
   banks,
 }: Readonly<AccountVerificationFormProps>) {
+  const router = useRouter();
   const showToast = useToast();
   const [bankCodeId, setBankCodeId] = React.useState("");
   const [accountNumber, setAccountNumber] = React.useState("");
   const [accountHolder, setAccountHolder] = React.useState("");
   const [sending, setSending] = React.useState(false);
   const [verification, setVerification] = React.useState<AccountVerification | null>(null);
+  const [authCode, setAuthCode] = React.useState("");
+  const [confirming, setConfirming] = React.useState(false);
 
   const canSubmit =
     bankCodeId !== "" && accountNumber.length > 0 && accountHolder.trim().length > 0;
@@ -67,14 +75,123 @@ export function AccountVerificationForm({
 
   if (verification) {
     return (
-      <Callout tone="success" className="mt-10" title="1원을 보냈습니다">
-        {verification.bankName} {verification.maskedNumber}의 입금 내역을 확인해 주세요.
-      </Callout>
+      <>
+        <PageHeader
+          title="계좌 확인"
+          description="보낸 1원의 입금자명 뒤 네 자리를 적어주세요."
+        />
+
+        <Card variant="surface" padding="sm" className="mt-8">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
+            <span className="text-fg-subtle">확인 중인 계좌</span>
+            <strong className="font-semibold text-fg">
+              {verification.bankName} {verification.maskedNumber} · 예금주{" "}
+              {verification.accountHolder}
+            </strong>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={confirming}
+              onClick={() => {
+                setVerification(null);
+                setAuthCode("");
+              }}
+            >
+              계좌 다시 입력
+            </Button>
+          </div>
+        </Card>
+
+        <section className="mt-10" aria-labelledby="verification-guide-title">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 id="verification-guide-title" className="text-lg font-bold text-fg">
+              어디서 확인하나요
+            </h2>
+            <p className="text-[13px] text-fg-subtle">은행 앱 · 입금 내역</p>
+          </div>
+          <Card className="mt-3">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="font-bold text-fg">Komit + 네 자리 숫자</p>
+                <p className="mt-0.5 text-[13px] text-fg-subtle">오늘 · 입금</p>
+              </div>
+              <strong className="text-info">+1원</strong>
+            </div>
+            <p className="mt-4 border-t border-line-subtle pt-3 text-[13px] text-fg-muted">
+              보낸 사람 이름 뒤에 붙은 숫자 네 자리가 확인 번호입니다.
+            </p>
+          </Card>
+        </section>
+
+        <form
+          className="mt-8"
+          onSubmit={async (event) => {
+            event.preventDefault();
+            if (!/^\d{4}$/.test(authCode) || confirming) return;
+
+            setConfirming(true);
+            try {
+              await clientApi.post<ConfirmAccountVerificationResponse>(
+                INTERNAL.ACCOUNT_VERIFICATION_CONFIRM(verification.verificationId),
+                { authCode },
+              );
+              showToast({ tone: "success", title: "계좌를 등록했습니다." });
+              router.replace(ROUTES.mypage);
+              router.refresh();
+            } catch (error) {
+              showToast({
+                tone: "danger",
+                title: error instanceof ApiError ? error.message : "계좌를 등록하지 못했습니다.",
+              });
+              setConfirming(false);
+            }
+          }}
+        >
+          <section aria-labelledby="verification-code-title">
+            <h2 id="verification-code-title" className="text-lg font-bold text-fg">
+              확인 번호
+            </h2>
+            <Card className="mt-3 py-8">
+              <AccountVerificationCodeInput
+                value={authCode}
+                onChange={setAuthCode}
+                disabled={confirming}
+              />
+              <p className="mt-4 text-center text-[13px] text-fg-subtle">
+                입금자명에서 확인한 숫자 네 자리를 차례로 적어주세요.
+              </p>
+            </Card>
+          </section>
+
+          <div className="mt-8 flex justify-end gap-2">
+            <Link
+              href={ROUTES.mypage}
+              className={buttonClass({ variant: "outline", size: "lg" })}
+            >
+              그만두기
+            </Link>
+            <Button
+              type="submit"
+              size="lg"
+              loading={confirming}
+              disabled={!/^\d{4}$/.test(authCode)}
+            >
+              계좌 등록하기
+            </Button>
+          </div>
+        </form>
+      </>
     );
   }
 
   return (
-    <form onSubmit={submit}>
+    <>
+      <PageHeader
+        title="계좌 등록"
+        description="환불과 대금을 받는 계좌입니다. 1원 인증으로 확인합니다."
+      />
+
+      <form onSubmit={submit}>
       <Card variant="surface" padding="sm" className="mt-8">
         <div className="flex flex-wrap items-center justify-between gap-2 text-[13px]">
           <span className="text-fg-subtle">지금 등록된 계좌</span>
@@ -158,6 +275,7 @@ export function AccountVerificationForm({
           1원 보내기
         </Button>
       </div>
-    </form>
+      </form>
+    </>
   );
 }

@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { AccountVerificationForm } from "@/components/domains/mypage";
-import { PageHeader } from "@/components/common";
 import { Container } from "@/components/layouts";
 import { getCodes, getMyPage } from "@/lib/api/services";
 
@@ -18,11 +17,6 @@ export default async function AccountPage() {
 
   return (
     <Container className="py-8 sm:py-10">
-      <PageHeader
-        title="계좌 등록"
-        description="환불과 대금을 받는 계좌입니다. 1원 인증으로 확인합니다."
-      />
-
       <AccountVerificationForm currentAccount={mypage.settlementAccount} banks={banks} />
     </Container>
   );
