@@ -36,6 +36,8 @@ export const ROUTES = {
   policiesPrivacy: "/policies/privacy",
   policiesElectronicFinance: "/policies/electronic-finance",
   policiesRefundDispute: "/policies/refund-dispute",
+  /** 개발자 판매자 약관. 개발자 프로필을 만들면 동의한 것으로 봅니다. */
+  policiesSellerTerms: "/policies/seller-terms",
 
   /** 사전점검(진단) 시작. 로그인이 필요합니다. */
   checkup: "/checkup",
