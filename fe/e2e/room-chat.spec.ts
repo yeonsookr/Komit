@@ -1,10 +1,15 @@
 import { expect, test } from '@playwright/test';
+import { signIn } from './support/session';
 
 /**
  * 방 대화 화면. 목 서버가 닿아야 합니다(BACKEND_API_BASE_URL).
  * 방 91 은 목의 무료 상담 방으로, 대화 3건과 요청서 요약이 붙어 있습니다.
  */
 test.describe('방 대화', () => {
+  test.beforeEach(async ({ page }) => {
+    await signIn(page);
+  });
+
   test('상담방에 들어가면 대화와 요청서 요약이 보인다', async ({ page }) => {
     await page.goto('/rooms/91');
 

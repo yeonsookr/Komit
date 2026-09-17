@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { signIn } from './support/session';
 
 /**
  * 상담방 갈래 전환. 목 서버가 닿아야 합니다(BACKEND_API_BASE_URL).
@@ -7,6 +8,7 @@ import { expect, test } from '@playwright/test';
  */
 test.describe('상담방 갈래 전환', () => {
   test.beforeEach(async ({ page }) => {
+    await signIn(page);
     await page.setViewportSize({ width: 1440, height: 950 });
   });
 
