@@ -1234,15 +1234,18 @@ class ReleaseEscrowRequest(BaseModel):
     )
     referenceId: str = Field(
         description=(
-            "지급 단위 식별자. 마일스톤이나 세션 식별자를 담으며 같은 값으로 두 번 "
-            "지급되지 않는다. ERD escrow_transactions.external_reference_id에 "
-            "대응한다."
+            "정산 식별자. 계약 최종 정산의 지급과 환불이 같은 `SETTLEMENT:정산ID`를 "
+            "쓰고 거래 유형으로 구분한다. 마일스톤 ID를 담지 않는다. ERD "
+            "escrow_transactions.external_reference_id에 대응한다."
         ),
-        examples=["MILESTONE-1"],
+        examples=["SETTLEMENT:9001"],
         json_schema_extra={"minLength": 1, "maxLength": 100},
     )
     amount: int = Field(
-        description="지급할 금액. 가용 잔액을 넘을 수 없다.",
+        description=(
+            "지급할 금액. 정상 완료는 전액, 중도 종료는 통과한 작업분 합계다. 마일스톤 "
+            "단위로 나눠 지급하지 않는다."
+        ),
         examples=[400000],
         gt=0,
     )
@@ -1325,10 +1328,11 @@ class RefundEscrowRequest(BaseModel):
     referenceId: str | None = Field(
         default=None,
         description=(
-            "참조 식별자. 특약 식별자 등을 담을 수 있다. ERD "
-            "escrow_transactions.external_reference_id에 대응한다."
+            "정산 식별자. 같은 정산의 지급과 같은 `SETTLEMENT:정산ID`를 쓰고 거래 "
+            "유형으로 구분한다. ERD escrow_transactions.external_reference_id에 "
+            "대응한다."
         ),
-        examples=["REFUND-1"],
+        examples=["SETTLEMENT:9001"],
         json_schema_extra={"maxLength": 100},
     )
 
@@ -1521,10 +1525,11 @@ async def create_escrow(
     },
     summary="작업 대금 지급",
     description=(
-        "의뢰인이 작업 완료를 승인한 순간 부른다. 승인된 금액만 작업자 계좌로 보낸다. "
-        "보내기 직전에 예금주와 동결 여부를 다시 확인한다.\n\n"
-        "계약금이 한 번에 들어왔더라도 지급은 승인 단위로 나뉜다. 같은 `referenceId`로 "
-        "다시 부르면 두 번 보내지 않는다.\n\n"
+        "전 작업이 통과 확정된 뒤 계약 대금을 한 번에 지급할 때 부른다. 정상 완료는 "
+        "전액을, 중도 종료는 통과한 작업분 합계를 작업자 계좌로 보낸다. 보내기 직전에 "
+        "예금주와 동결 여부를 다시 확인한다.\n\n"
+        "마일스톤 단위로 나눠 지급하지 않는다. 같은 `referenceId`로 다시 부르면 두 번 "
+        "보내지 않는다.\n\n"
         "- **200 / H0000**: 보냈을 때. 잔액이 모두 빠지면 에스크로가 COMPLETED가 된다\n"
         "- **400 / E5002**: `idempotencyKey`가 없을 때\n"
         "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
@@ -1545,7 +1550,7 @@ async def release_escrow(
                 {
                     "Header": _escrow_header_example("releaseEscrow"),
                     "escrowId": ESCROW_ID,
-                    "referenceId": "MILESTONE-1",
+                    "referenceId": "SETTLEMENT:9001",
                     "amount": 400000,
                     "recipientBankCode": "001",
                     "recipientAccountNo": "0019876543210987",
@@ -1596,7 +1601,7 @@ async def release_escrow(
     },
     summary="잔액 환불",
     description=(
-        "계약이 깨지거나 특약으로 금액이 줄어 의뢰인에게 돌려줄 때 부른다. 절차는 "
+        "중도 종료로 통과분을 지급한 뒤 남은 잔액을 의뢰인에게 돌려줄 때 부른다. 절차는 "
         "지급과 같지만 받을 계좌를 요청할 때마다 받아 예금주를 대조한 뒤 쓴다.\n\n"
         "한 에스크로에서 여러 번 나눠 환불할 수 있다.\n\n"
         "- **200 / H0000**: 돌려줬을 때. 잔액이 남아 있으면 `status`가 ACTIVE, 모두 "
@@ -1623,7 +1628,7 @@ async def refund_escrow(
                     "refundBankCode": "001",
                     "refundAccountNo": MOCK_ACCOUNT_NO,
                     "refundHolderName": "김미미",
-                    "referenceId": "REFUND-1",
+                    "referenceId": "SETTLEMENT:9001",
                 }
             ]
         ),
@@ -2063,14 +2068,14 @@ INQUIRE_ERRORS: dict = dict(ESCROW_ERRORS)
                         "transactionType": "DEPOSIT",
                         "amount": 650000,
                         "status": "COMPLETED",
-                        "referenceId": "CONTRACT-999",
+                        "referenceId": "INITIAL",
                     },
                     {
                         "transactionId": 1002,
                         "transactionType": "RELEASE",
                         "amount": 400000,
                         "status": "COMPLETED",
-                        "referenceId": "MILESTONE-1",
+                        "referenceId": "SETTLEMENT:9001",
                     },
                 ],
             },
@@ -2135,14 +2140,14 @@ async def inquire_escrow(
                     transactionType="DEPOSIT",
                     amount=650000,
                     status="COMPLETED",
-                    referenceId="CONTRACT-999",
+                    referenceId="INITIAL",
                 ),
                 EscrowTransactionItem(
                     transactionId=1002,
                     transactionType="RELEASE",
                     amount=400000,
                     status="COMPLETED",
-                    referenceId="MILESTONE-1",
+                    referenceId="SETTLEMENT:9001",
                 ),
             ],
         ),
