@@ -159,17 +159,24 @@ def issue_list(diagnosis_id: int, example: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+# 고정 문항의 수. 앞의 세 문항은 설문 1·2 에서 받는 것이고, 그 뒤가
+# 검사 결과에서 만든 문항 자리다. 화면도 네 번째 자리부터를 마지막 설문으로 본다.
+_FIXED_QUESTION_COUNT = 3
+
+
 def survey_questions(diagnosis_id: int, example: dict[str, Any]) -> dict[str, Any]:
-    """마지막 설문. 올린 결과에 문항이 있으면 뒤에 이어 붙인다.
+    """마지막 설문. 올린 결과에 문항이 있으면 그것으로 바꾼다.
 
     고정 문항은 Komit 이 정하고, 만든 문항은 검사 결과에서 온다. (R-SCAN-14)
+    네 번째 자리부터를 만든 문항으로 갈아 끼운다. 이어 붙이면 예시로 들어 있던
+    문항과 겹쳐 같은 것을 두 번 묻게 된다.
     """
     kept = _store.get(diagnosis_id)
     if kept is None or not kept["questions"]:
         return example
 
     merged = dict(example)
-    questions = list(example.get("questions") or [])
+    questions = list(example.get("questions") or [])[:_FIXED_QUESTION_COUNT]
 
     for order, raw in enumerate(kept["questions"][:5]):
         answer_type = raw.get("answerType") or "TEXT"

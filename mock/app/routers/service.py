@@ -1923,7 +1923,9 @@ def get_survey(
 ) -> SurveyResponse | JSONResponse:
     if diagnosisId == NOT_FOUND_DIAGNOSIS_ID:
         return _error_response(404, DIAGNOSIS_NOT_FOUND)
-    return SurveyResponse(**SURVEY_EXAMPLE)
+    return SurveyResponse(
+        **scan_result.survey_questions(diagnosisId, SURVEY_EXAMPLE)
+    )
 
 
 @router.patch(
