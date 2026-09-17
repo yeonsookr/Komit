@@ -8,11 +8,15 @@ from datetime import datetime, timedelta
 import re
 from typing import Annotated, List, Literal
 
-from fastapi import APIRouter, Body, Request
+from fastapi import APIRouter, Body, Request, Response
 from fastapi.encoders import jsonable_encoder
+from fastapi.exception_handlers import (
+    http_exception_handler as fastapi_http_exception_handler,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 # 태그는 라우터가 아니라 엔드포인트마다 단다. 라우터에 달면 FastAPI가 엔드포인트
 # 태그와 합쳐버려서, 영역별 API가 기준 API 태그에도 함께 나온다.
@@ -373,6 +377,28 @@ async def validation_exception_handler(
     )
 
 
+async def http_exception_handler(
+    request: Request, exc: StarletteHTTPException
+) -> Response:
+    """본문을 읽다 난 400을 SSAFY 금융망 공통 실패 응답으로 바꾼다.
+
+    FastAPI는 본문이 UTF-8로 읽히지 않으면 `RequestValidationError`가 아니라
+    `HTTPException(400)`을 던진다. 그래서 `validation_exception_handler`를 거치지
+    않고 Starlette 기본 응답(`{"detail": ...}`)이 나간다. 같은 '본문을 못 읽겠다'인데
+    바이트 인코딩 하나로 응답 형식이 갈리므로 여기서 `Q1001`로 맞춘다.
+
+    404·405처럼 경로 단계에서 나는 것은 돌려줄 응답코드가 정해져 있지 않다. 임의로
+    만들지 않고 기본 처리에 맡긴다.
+    """
+    if exc.status_code == 400:
+        return _error_response(
+            400,
+            "Q1001",
+            "요청 본문의 형식이 잘못되었습니다. JSON 형식 또는 데이터 타입을 확인해 주세요.",
+        )
+    return await fastapi_http_exception_handler(request, exc)
+
+
 @router.post(
     "/default",
     response_model=DefaultResponse,
@@ -566,6 +592,16 @@ class EscrowErrorResponse(BaseModel):
     )
 
 
+def _echo(value: str, shape: str, fallback: str) -> str:
+    """응답 Header에 되비출 값을 고른다.
+
+    Header 형식 오류(H1001~H1010)를 돌려줄 때는 요청 값 자체가 응답 Header 규격에
+    어긋나 있다. 그대로 되비추면 응답을 만들다가 터지므로, 규격에 맞을 때만
+    되비추고 어긋나면 명세 예시값으로 대신한다.
+    """
+    return value if re.fullmatch(shape, value) else fallback
+
+
 def _escrow_response_header(
     response_code: str,
     response_message: str,
@@ -575,13 +611,18 @@ def _escrow_response_header(
     return CommonResponseHeader(
         responseCode=response_code,
         responseMessage=response_message,
-        apiName=header.apiName,
-        transmissionDate=header.transmissionDate,
-        transmissionTime=header.transmissionTime,
-        institutionCode=header.institutionCode,
-        fintechAppNo=header.fintechAppNo,
-        apiServiceCode=header.apiServiceCode,
-        institutionTransactionUniqueNo=header.institutionTransactionUniqueNo,
+        apiName=header.apiName[:30],
+        transmissionDate=_echo(header.transmissionDate, r"\d{8}", "20260909"),
+        transmissionTime=_echo(header.transmissionTime, r"\d{6}", "120000"),
+        # 기관코드와 핀테크 앱 일련번호는 명세상 고정값이라 요청이 무엇이든 고정값을 낸다.
+        institutionCode="00100",
+        fintechAppNo="001",
+        apiServiceCode=header.apiServiceCode[:30],
+        institutionTransactionUniqueNo=_echo(
+            header.institutionTransactionUniqueNo,
+            r"\d{20}",
+            "20260909120000000001",
+        ),
     )
 
 
@@ -691,7 +732,7 @@ class OpenAccountAuthRequest(BaseModel):
             "0000000000000000은 계좌번호 오류 재현용 예약값이다."
         ),
         examples=[MOCK_ACCOUNT_NO],
-        json_schema_extra={"pattern": ACCOUNT_NO_PATTERN},
+        pattern=ACCOUNT_NO_PATTERN,
     )
 
 
@@ -736,17 +777,17 @@ class InquireTransactionHistoryListRequest(BaseModel):
             "필드다."
         ),
         examples=[MOCK_ACCOUNT_NO],
-        json_schema_extra={"pattern": ACCOUNT_NO_PATTERN},
+        pattern=ACCOUNT_NO_PATTERN,
     )
     startDate: str = Field(
         description="조회 시작일(YYYYMMDD).",
         examples=["20260909"],
-        json_schema_extra={"pattern": r"^\d{8}$"},
+        pattern=r"^\d{8}$",
     )
     endDate: str = Field(
         description="조회 종료일(YYYYMMDD).",
         examples=["20260909"],
-        json_schema_extra={"pattern": r"^\d{8}$"},
+        pattern=r"^\d{8}$",
     )
     transactionType: Literal["M", "D", "A"] = Field(
         description="거래 구분. M은 입금, D는 출금, A는 전체다.",
@@ -806,7 +847,7 @@ class CheckAuthCodeRequest(BaseModel):
     accountNo: str = Field(
         description="인증 대상 계좌번호 16자리.",
         examples=[MOCK_ACCOUNT_NO],
-        json_schema_extra={"pattern": ACCOUNT_NO_PATTERN},
+        pattern=ACCOUNT_NO_PATTERN,
     )
     authCode: str = Field(
         description=(
@@ -814,7 +855,7 @@ class CheckAuthCodeRequest(BaseModel):
             "문자열로 다룬다. 9999는 인증번호 불일치 재현용 예약값이다."
         ),
         examples=["1234", MISMATCH_AUTH_CODE],
-        json_schema_extra={"pattern": r"^\d{4}$"},
+        pattern=r"^\d{4}$",
     )
 
 
@@ -1158,14 +1199,14 @@ class WithdrawalAccount(BaseModel):
             "경계에서만 쓰이고 원문으로 저장되지 않는다."
         ),
         examples=["001"],
-        json_schema_extra={"pattern": BANK_CODE_PATTERN},
+        pattern=BANK_CODE_PATTERN,
     )
     withdrawalAccountNo: str = Field(
         description=(
             "의뢰인이 인증해 둔 출금 계좌번호 16자리. 원문으로 저장하지 않는다."
         ),
         examples=[MOCK_ACCOUNT_NO],
-        json_schema_extra={"pattern": ACCOUNT_NO_PATTERN},
+        pattern=ACCOUNT_NO_PATTERN,
     )
 
 
@@ -1182,7 +1223,8 @@ class CreateEscrowRequest(WithdrawalAccount):
             "escrows.external_contract_id에 대응한다."
         ),
         examples=["CONTRACT-999"],
-        json_schema_extra={"minLength": 1, "maxLength": 100},
+        min_length=1,
+        max_length=100,
     )
     contractType: str = Field(
         description=(
@@ -1190,7 +1232,7 @@ class CreateEscrowRequest(WithdrawalAccount):
             "escrows.contract_type에 대응한다."
         ),
         examples=["DEVELOPMENT"],
-        json_schema_extra={"maxLength": 30},
+        max_length=30,
     )
     depositorName: str = Field(
         description=(
@@ -1198,7 +1240,8 @@ class CreateEscrowRequest(WithdrawalAccount):
             "저장하지 않는다."
         ),
         examples=["김미미"],
-        json_schema_extra={"minLength": 1, "maxLength": 20},
+        min_length=1,
+        max_length=20,
     )
     amount: int = Field(
         description=(
@@ -1264,7 +1307,8 @@ class ReleaseEscrowRequest(BaseModel):
             "escrow_transactions.external_reference_id에 대응한다."
         ),
         examples=["SETTLEMENT:9001"],
-        json_schema_extra={"minLength": 1, "maxLength": 100},
+        min_length=1,
+        max_length=100,
     )
     amount: int = Field(
         description=(
@@ -1277,12 +1321,12 @@ class ReleaseEscrowRequest(BaseModel):
     recipientBankCode: str = Field(
         description="수취 은행코드 세 자리. 원문으로 저장하지 않는다.",
         examples=["001"],
-        json_schema_extra={"pattern": BANK_CODE_PATTERN},
+        pattern=BANK_CODE_PATTERN,
     )
     recipientAccountNo: str = Field(
         description="작업자의 수취 계좌번호 16자리. 원문으로 저장하지 않는다.",
         examples=["0019876543210987"],
-        json_schema_extra={"pattern": ACCOUNT_NO_PATTERN},
+        pattern=ACCOUNT_NO_PATTERN,
     )
     recipientName: str = Field(
         description=(
@@ -1290,7 +1334,8 @@ class ReleaseEscrowRequest(BaseModel):
             "않는다."
         ),
         examples=["이준"],
-        json_schema_extra={"minLength": 1, "maxLength": 20},
+        min_length=1,
+        max_length=20,
     )
 
 
@@ -1333,14 +1378,14 @@ class RefundEscrowRequest(BaseModel):
     refundBankCode: str = Field(
         description="환불 받을 은행코드 세 자리. 원문으로 저장하지 않는다.",
         examples=["001"],
-        json_schema_extra={"pattern": BANK_CODE_PATTERN},
+        pattern=BANK_CODE_PATTERN,
     )
     refundAccountNo: str = Field(
         description=(
             "환불 받을 계좌번호 16자리. 요청할 때마다 받으며 보관해 두지 않는다."
         ),
         examples=[MOCK_ACCOUNT_NO],
-        json_schema_extra={"pattern": ACCOUNT_NO_PATTERN},
+        pattern=ACCOUNT_NO_PATTERN,
     )
     refundHolderName: str = Field(
         description=(
@@ -1348,7 +1393,8 @@ class RefundEscrowRequest(BaseModel):
             "예금주와 대조한다."
         ),
         examples=["김미미"],
-        json_schema_extra={"minLength": 1, "maxLength": 20},
+        min_length=1,
+        max_length=20,
     )
     referenceId: str | None = Field(
         default=None,
@@ -1358,7 +1404,7 @@ class RefundEscrowRequest(BaseModel):
             "대응한다."
         ),
         examples=["SETTLEMENT:9001"],
-        json_schema_extra={"maxLength": 100},
+        max_length=100,
     )
 
 
@@ -1772,7 +1818,8 @@ class HoldEscrowRequest(BaseModel):
             "escrows.external_report_id에 대응한다."
         ),
         examples=["REPORT-7"],
-        json_schema_extra={"minLength": 1, "maxLength": 100},
+        min_length=1,
+        max_length=100,
     )
 
 
@@ -1808,7 +1855,8 @@ class UnholdEscrowRequest(BaseModel):
             "escrows.external_report_id에 대응하고 released_at을 채운다."
         ),
         examples=["REPORT-7"],
-        json_schema_extra={"minLength": 1, "maxLength": 100},
+        min_length=1,
+        max_length=100,
     )
 
 

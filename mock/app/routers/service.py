@@ -27,9 +27,13 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.encoders import jsonable_encoder
+from fastapi.exception_handlers import (
+    http_exception_handler as fastapi_http_exception_handler,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import scan_result
 
@@ -226,6 +230,32 @@ async def validation_exception_handler(
         ],
     )
     return JSONResponse(status_code=422, content=jsonable_encoder(body))
+
+
+async def http_exception_handler(
+    request: Request, exc: StarletteHTTPException
+) -> Response:
+    """본문을 읽다 난 400을 이 앱의 실패 응답 형식으로 바꾼다.
+
+    FastAPI는 본문이 UTF-8로 읽히지 않으면 `RequestValidationError`가 아니라
+    `HTTPException(400)`을 던진다. 그래서 `validation_exception_handler`를 거치지
+    않고 Starlette 기본 응답(`{"detail": ...}`)이 나간다. 같은 '본문을 못 읽겠다'인데
+    바이트 인코딩 하나로 응답 형식이 갈리므로, 깨진 JSON과 같은 422로 맞춘다.
+
+    404·405처럼 경로 단계에서 나는 것은 돌려줄 `code`가 정해져 있지 않다. 임의로
+    만들지 않고 기본 처리에 맡긴다.
+    """
+    if exc.status_code == 400:
+        code, message = INVALID_REQUEST
+        body = ValidationErrorResponse(
+            code=code,
+            message=message,
+            errors=[
+                FieldError(field="body", reason=_REASONS["json_invalid"]),
+            ],
+        )
+        return JSONResponse(status_code=422, content=jsonable_encoder(body))
+    return await fastapi_http_exception_handler(request, exc)
 
 
 # --------------------------------------------------------------------------- #
@@ -7506,12 +7536,15 @@ class RequestAccountVerificationRequest(BaseModel):
     )
     accountNumber: str = Field(
         description=(
-            "계좌번호. 하이픈 없는 숫자만 받는다. 확인이 끝날 때까지만 두고 그 뒤에는 "
+            "계좌번호. 하이픈 없는 숫자 16자리다. 확인이 끝날 때까지만 두고 그 뒤에는 "
             "가린 번호만 남는다."
         ),
-        examples=["11012345678842"],
+        pattern=r"^\d{16}$",
+        examples=["0011012345678842"],
     )
-    accountHolder: str = Field(description="예금주.", examples=["이준"])
+    accountHolder: str = Field(
+        description="예금주.", min_length=1, examples=["이준"]
+    )
 
 
 class AccountVerificationResponse(BaseModel):
@@ -7542,6 +7575,7 @@ class ConfirmAccountVerificationRequest(BaseModel):
 
     authCode: str = Field(
         description="입금자명 뒤에 붙은 숫자 네 자리.",
+        pattern=r"^\d{4}$",
         examples=["1234"],
     )
 
@@ -7591,7 +7625,7 @@ REVIEW_NOT_FOUND_EXAMPLE = {
 }
 
 # 목에서 실패 응답을 보고 싶을 때 쓰는 값.
-REJECTED_ACCOUNT_NUMBER = "00000000000000"
+REJECTED_ACCOUNT_NUMBER = "0000000000000000"
 VALID_AUTH_CODE = "1234"
 NOT_FOUND_VERIFICATION_ID = 404
 NOT_FOUND_NOTIFICATION_ID = 404
@@ -7730,7 +7764,7 @@ def get_payment_methods() -> PaymentMethodListResponse:
         "숫자가 아닌 글자가 섞였을 때\n"
         "- **500 / INTERNAL_ERROR**: 확인 건을 열지 못했을 때\n"
         "- **503 / ESCROW_UNAVAILABLE**: 에스크로 서버에 연결하지 못했을 때\n\n"
-        "`accountNumber`가 `00000000000000`이면 400 `ACCOUNT_REJECTED`를 준다."
+        "`accountNumber`가 `0000000000000000`이면 400 `ACCOUNT_REJECTED`를 준다."
     ),
 )
 def request_account_verification(
