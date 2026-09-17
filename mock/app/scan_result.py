@@ -101,6 +101,11 @@ def remember(diagnosis_id: int, data: dict[str, Any]) -> None:
             }
         )
 
+    # 의뢰인이 적은 증상과 이어지는 것을 앞에 둔다. 진단서가 그것을 맨 위에
+    # 따로 보여주는데(R-SCAN-08), 목록이 길면 뒤쪽이 한 쪽에 실리지 않아
+    # 화면에서 사라지기 때문이다.
+    issues.sort(key=lambda row: not row["isInput"])
+
     _store[diagnosis_id] = {
         "issues": issues,
         "readinessScore": readiness_score(data["issues"]),
