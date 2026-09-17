@@ -4,6 +4,7 @@ import {
   getMyPage,
   updateMyName,
   updateNotificationSetting,
+  updateMyProfileImage,
   withdraw,
 } from './mypage';
 
@@ -11,9 +12,14 @@ import {
  * 서버 전용 모듈이라 `server-only` 와 axios 인스턴스, 토큰 헤더를 가짜로 바꿔 둡니다.
  * 여기서 보는 것은 어느 주소를 어떤 방법으로 부르고 무엇을 돌려주는지입니다.
  */
-const { get, patch, post } = vi.hoisted(() => ({ get: vi.fn(), patch: vi.fn(), post: vi.fn() }));
+const { get, patch, post, put } = vi.hoisted(() => ({
+  get: vi.fn(),
+  patch: vi.fn(),
+  post: vi.fn(),
+  put: vi.fn(),
+}));
 vi.mock('server-only', () => ({}));
-vi.mock('../server', () => ({ backendApi: () => ({ get, patch, post }) }));
+vi.mock('../server', () => ({ backendApi: () => ({ get, patch, post, put }) }));
 vi.mock('@/lib/auth/session', () => ({
   bearerHeaders: async () => ({ headers: { Authorization: 'Bearer t' } }),
 }));
@@ -24,6 +30,7 @@ beforeEach(() => {
   get.mockReset();
   patch.mockReset();
   post.mockReset();
+  put.mockReset();
 });
 
 describe('getMyPage', () => {
@@ -44,6 +51,20 @@ describe('updateMyName', () => {
 
     await expect(updateMyName({ name: '김미미' })).resolves.toEqual(account);
     expect(patch).toHaveBeenCalledWith('/api/users/me', { name: '김미미' }, AUTH);
+  });
+});
+
+describe('updateMyProfileImage', () => {
+  it('올린 파일을 프로필 사진으로 붙이고 바뀐 계정 칸을 돌려준다', async () => {
+    const account = {
+      name: '김미미',
+      email: 'mimi@kakao.com',
+      profileImageUrl: 'https://cdn.komit.example.com/profiles/512.png',
+    };
+    put.mockResolvedValueOnce({ data: account });
+
+    await expect(updateMyProfileImage({ fileId: 512 })).resolves.toEqual(account);
+    expect(put).toHaveBeenCalledWith('/api/users/me/profile-image', { fileId: 512 }, AUTH);
   });
 });
 

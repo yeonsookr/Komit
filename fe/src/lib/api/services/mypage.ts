@@ -8,6 +8,7 @@ import type {
   MyPage,
   UpdateMyNameBody,
   UpdateNotificationSettingBody,
+  UpdateProfileImageBody,
   WithdrawalCheck,
   WithdrawalResult,
 } from "@/types/mypage";
@@ -33,6 +34,18 @@ export async function getMyPage(): Promise<MyPage> {
 export async function updateMyName(body: UpdateMyNameBody): Promise<MyAccount> {
   const { data } = await backendApi().patch<MyAccount>(
     BACKEND.ME,
+    body,
+    await bearerHeaders(),
+  );
+  return data;
+}
+
+/** 올리기를 마친 사진을 내 계정에 붙입니다. */
+export async function updateMyProfileImage(
+  body: UpdateProfileImageBody,
+): Promise<MyAccount> {
+  const { data } = await backendApi().put<MyAccount>(
+    BACKEND.PROFILE_IMAGE,
     body,
     await bearerHeaders(),
   );

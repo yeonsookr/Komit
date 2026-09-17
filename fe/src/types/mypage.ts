@@ -68,6 +68,11 @@ export interface UpdateMyNameBody {
   name: string;
 }
 
+/** 올리기를 마친 파일을 내 프로필 사진으로 겁니다. */
+export interface UpdateProfileImageBody {
+  fileId: number;
+}
+
 /** 알림 켜고 끄기. */
 export interface UpdateNotificationSettingBody {
   notificationEnabled: boolean;
