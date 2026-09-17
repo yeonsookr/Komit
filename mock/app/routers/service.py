@@ -7799,6 +7799,17 @@ class NotificationResponse(BaseModel):
         ),
         examples=[130],
     )
+    roomId: int | None = Field(
+        description=(
+            "**방**의 식별자다. 바로 위 `targetId`는 계약·공지·이슈의 식별자이므로 "
+            "서로 다른 값이다.\n\n"
+            "화면이 계약을 방 안에서 열기 때문에 함께 내려준다. `targetType`이 "
+            "`CONTRACT`일 때 그 계약이 달린 방이며(`contracts.room_id`), 그 밖에는 "
+            "null이다. 공지는 갈 방이 없고, 이슈는 프로젝트에 방이 여럿이라 하나로 "
+            "좁혀지지 않는다."
+        ),
+        examples=[93],
+    )
     isRead: bool = Field(description="읽었는지.", examples=[False])
     createdAt: str = Field(
         description="알림이 생긴 시각.",
@@ -7849,8 +7860,19 @@ class WithdrawalBlockerResponse(BaseModel):
         examples=[None],
     )
     targetId: int | None = Field(
-        description="'이동'을 눌렀을 때 갈 계약의 식별자. 갈 곳이 없으면 null이다.",
+        description="'이동'을 눌렀을 때 갈 **계약**의 식별자. 갈 곳이 없으면 null이다.",
         examples=[130],
+    )
+    roomId: int | None = Field(
+        description=(
+            "**방**의 식별자다. 바로 위 `targetId`는 계약의 식별자이므로 서로 다른 "
+            "값이다.\n\n"
+            "화면이 계약을 방 안에서 열기 때문에 함께 내려준다. `targetId`가 가리키는 "
+            "계약이 달린 방이며(`contracts.room_id`), `targetId`가 null이면 함께 "
+            "null이다. 세 갈래 모두 정리하려면 결국 그 계약을 끝내야 하므로 DEPOSIT과 "
+            "INCOME도 같은 방을 가리킨다."
+        ),
+        examples=[93],
     )
 
 
@@ -8140,7 +8162,17 @@ class MySessionResponse(BaseModel):
     """내 일정에 한 줄로 나가는 컨설팅 세션."""
 
     sessionId: int = Field(description="컨설팅 세션 식별자.", examples=[55])
-    contractId: int = Field(description="이 세션이 달린 계약 식별자.", examples=[120])
+    contractId: int = Field(description="이 세션이 달린 **계약**의 식별자.", examples=[120])
+    roomId: int = Field(
+        description=(
+            "**방**의 식별자다. 바로 위 `contractId`는 계약의 식별자이므로 서로 다른 "
+            "값이다.\n\n"
+            "화면이 세션 방과 대화를 방 안에서 열기 때문에 함께 내려준다. "
+            "`contractId`가 가리키는 계약이 달린 방이다(`contracts.room_id`). "
+            "세션은 반드시 계약에 달리고 계약은 반드시 방에 달리므로 null이 없다."
+        ),
+        examples=[92],
+    )
     clientName: str = Field(
         description="의뢰인 이름. 사용자 정보에서 가져오는 값이다.",
         examples=["김미미"],
@@ -8399,6 +8431,7 @@ NOTIFICATION_LIST_EXAMPLE = {
             ),
             "targetType": "ANNOUNCEMENT",
             "targetId": 7,
+            "roomId": None,
             "isRead": False,
             "createdAt": "2026-08-28T10:00:00+09:00",
         },
@@ -8409,6 +8442,7 @@ NOTIFICATION_LIST_EXAMPLE = {
             "content": "수제 비누 가게 · 회원탈퇴 경로 구현 · 확인 문장 세 줄",
             "targetType": "CONTRACT",
             "targetId": 130,
+            "roomId": 93,
             "isRead": False,
             "createdAt": "2026-08-30T14:30:00+09:00",
         },
@@ -8419,6 +8453,7 @@ NOTIFICATION_LIST_EXAMPLE = {
             "content": "수제 비누 가게 · 650,000원",
             "targetType": "CONTRACT",
             "targetId": 131,
+            "roomId": 105,
             "isRead": False,
             "createdAt": "2026-08-30T11:02:00+09:00",
         },
@@ -8429,6 +8464,7 @@ NOTIFICATION_LIST_EXAMPLE = {
             "content": "이준 개발자 · 30분 화상",
             "targetType": "CONTRACT",
             "targetId": 120,
+            "roomId": 92,
             "isRead": True,
             "createdAt": "2026-08-29T13:30:00+09:00",
         },
@@ -8439,6 +8475,7 @@ NOTIFICATION_LIST_EXAMPLE = {
             "content": "수제 비누 가게 · 이준 개발자",
             "targetType": "CONTRACT",
             "targetId": 130,
+            "roomId": 93,
             "isRead": True,
             "createdAt": "2026-08-19T09:00:00+09:00",
         },
@@ -8458,12 +8495,14 @@ WITHDRAWAL_CHECK_EXAMPLE = {
             "title": "수제 비누 가게 · 진행 중인 의뢰",
             "amount": None,
             "targetId": 130,
+            "roomId": 93,
         },
         {
             "type": "DEPOSIT",
             "title": "예치금 650,000원",
             "amount": 650000,
             "targetId": 130,
+            "roomId": 93,
         },
     ],
 }
@@ -8581,6 +8620,7 @@ MY_SESSION_LIST_EXAMPLE = {
         {
             "sessionId": 56,
             "contractId": 121,
+            "roomId": 95,
             "clientName": "김미미",
             "scheduledAt": "2026-08-22T15:00:00+09:00",
             "durationMinutes": 30,
@@ -8593,6 +8633,7 @@ MY_SESSION_LIST_EXAMPLE = {
         {
             "sessionId": 55,
             "contractId": 120,
+            "roomId": 92,
             "clientName": "김미미",
             "scheduledAt": "2026-08-15T14:00:00+09:00",
             "durationMinutes": 30,
