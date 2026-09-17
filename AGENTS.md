@@ -104,9 +104,11 @@ private static final int AUTO_PASS_DAYS = 3;
 | `mock/` | 목 서버 | Python | `mock/AGENTS.md` |
 | `deploy/` | `infra` — 배포, CI/CD | docker-compose | — |
 | `docs/` | `common` — 공용 문서 | — | — |
+| `demo/` | 데모용 예시 프로젝트 | Next.js | — |
 | `고은찬/` `박다빈/` 등 | 개인 작업 공간 | — | — |
 
 - 파트 코드(`fe`, `be-api`, `be-escrow`, `ai`, `infra`, `common`)와 담당 영역은 `docs/git_guide.md`의 파트 표를 따릅니다.
 - `service/`와 `escrow/`는 서로 다른 Gradle 프로젝트입니다. 자금 처리는 `escrow/`에만 둡니다. (`R-PAY-05`)
 - 디렉터리에 `AGENTS.md`가 있으면 그 파트 작업에서는 이 문서보다 우선합니다.
+- `demo/` 는 데모용 예시 프로젝트입니다. 일부러 결함을 심어 둔 코드이므로 배포하지 않습니다. 띄우는 법은 `demo/RUNBOOK.md` 에 있습니다.
 - 개인 폴더는 각자의 작업 공간입니다. 공용 문서를 여기에 복사해 두지 마세요. 사본이 원본보다 오래되면 잘못된 기준으로 개발하게 됩니다.

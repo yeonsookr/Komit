@@ -1,0 +1,4 @@
+[
+  { "id": "u1", "email": "mimi@example.com", "password": "098f6bcd4621d373cade4e832627b4f6", "phone": "010-1234-5678", "name": "김미미", "role": "user" },
+  { "id": "u2", "email": "admin@example.com", "password": "827ccb0eea8a706c4c34a16891f84e7b", "phone": "010-0000-0000", "name": "운영자", "role": "admin" }
+]
