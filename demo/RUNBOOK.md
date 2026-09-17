@@ -158,11 +158,14 @@ komit-scan 으로 이 프로젝트를 검사해줘
 
 > 제 컴퓨터에서만 돌았습니다. 이 파일 하나만 올립니다.
 
-**검사를 돌릴 시간이 없으면** 미리 만들어 둔 것을 쓴다.
+**검사를 돌릴 시간이 없으면** 미리 만들어 둔 것을 쓴다. 같은 파일이 두 곳에 있다.
 
 ```
-ai/komit-scan/fixtures/soap-shop/runs/004.md
+demo/soap-shop/komit-result.md                 검사를 돌리면 여기 생긴다
+ai/komit-scan/fixtures/soap-shop/runs/004.md   보관본
 ```
+
+검사를 다시 돌리면 앞의 것이 새 결과로 덮인다. 검사기는 이 파일을 읽지 않으므로, 남아 있어도 다음 검사에 영향을 주지 않는다.
 
 ### ⑤ 올리기
 
@@ -220,7 +223,7 @@ STEP 3 의 `③ 만들어진 결과 파일 올리기` 에서 그 파일을 고�
 결과 파일이 올라가지 않았다. 목 서버를 다시 띄우면 담아 둔 것이 사라지므로 다시 올린다.
 
 ```bash
-curl -X POST -F "file=@ai/komit-scan/fixtures/soap-shop/runs/004.md" \
+curl -X POST -F "file=@demo/soap-shop/komit-result.md" \
   http://127.0.0.1:8080/service/api/diagnoses/31/inspections
 ```
 
