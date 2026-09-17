@@ -38,11 +38,11 @@ export default async function MyPage() {
       <AccountSection account={mypage.account} />
       <SettlementAccountSection account={mypage.settlementAccount} />
       <ProjectSection projects={mypage.projects} />
-      {/* 개발자 프로필이 없으면 이 칸은 아무것도 그리지 않습니다. */}
+      {/* 프로필이 없으면 만들러 가는 줄 하나만 그립니다. */}
       <DeveloperSection developer={mypage.developer} />
       <NotificationSection setting={mypage.notificationSetting} />
       {/* 약관은 서버가 주는 값이 아니라 화면이 가진 정적 목록입니다. */}
-      <PolicySection />
+      <PolicySection isDeveloper={mypage.developer !== null} />
       <WithdrawalSection />
     </Container>
   );
