@@ -16,6 +16,7 @@ spring:
 
 app:
   instance-role: ${APP_INSTANCE_ROLE:WRITER}
+  public-base-url: ${APP_PUBLIC_BASE_URL:http://localhost:8080}
 
 logging:
   level:

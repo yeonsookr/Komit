@@ -47,6 +47,9 @@ spec:
           envFrom:
             - configMapRef:
                 name: spring-common
+            # APP_PUBLIC_BASE_URL. 운영은 deploy.sh가 GitLab 변수로, 로컬은 local/apps가 만듭니다.
+            - configMapRef:
+                name: escrow-config
           env:
             # 일반 트랜잭션은 Primary(-rw), readOnly 트랜잭션은 Standby(-ro)로 접속합니다.
             - name: DB_URL

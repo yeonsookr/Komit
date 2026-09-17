@@ -9,6 +9,9 @@ FE_IMAGE=${FE_IMAGE:-}
 : "${SERVICE_DB_PASSWORD:?SERVICE_DB_PASSWORD is required}"
 : "${ESCROW_DB_PASSWORD:?ESCROW_DB_PASSWORD is required}"
 : "${SERVICE_REDIS_PASSWORD:?SERVICE_REDIS_PASSWORD is required}"
+# 각 백엔드가 밖에서 보이는 주소입니다. nginx 경로 접두사까지 포함합니다. (예: https://komit.site/service)
+: "${SERVICE_PUBLIC_BASE_URL:?SERVICE_PUBLIC_BASE_URL is required}"
+: "${ESCROW_PUBLIC_BASE_URL:?ESCROW_PUBLIC_BASE_URL is required}"
 # fe 서버가 백엔드를 호출할 주소입니다. 이미지 빌드와 같은 GitLab CI/CD 변수 값을 실행 환경에도 넣습니다.
 : "${BACKEND_API_BASE_URL:?BACKEND_API_BASE_URL is required}"
 : "${AI_API_BASE_URL:?AI_API_BASE_URL is required}"
@@ -129,6 +132,11 @@ EOF
   fi
   config_literal KAKAO_CLIENT_ID "$KAKAO_CLIENT_ID"
   config_literal KAKAO_REDIRECT_URI "$KAKAO_REDIRECT_URI"
+  # 백엔드가 자기 공개 주소를 알도록 넣습니다. 값이 바뀌면 해당 Pod만 새 값으로 다시 뜹니다.
+  printf '  - name: service-config\n    namespace: komit\n    literals:\n'
+  config_literal APP_PUBLIC_BASE_URL "$SERVICE_PUBLIC_BASE_URL"
+  printf '  - name: escrow-config\n    namespace: komit\n    literals:\n'
+  config_literal APP_PUBLIC_BASE_URL "$ESCROW_PUBLIC_BASE_URL"
 } >> "$WORK_DIR/apps/kustomization.yaml"
 kubectl apply -k "$WORK_DIR/apps"
 kubectl -n komit rollout status deployment/service --timeout=300s

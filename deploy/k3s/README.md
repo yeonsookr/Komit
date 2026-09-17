@@ -249,6 +249,13 @@ sudo -n true && echo OK
 
 DB 비밀번호는 한 번 정하면 바꾸지 않습니다. DB 계정은 첫 배포 때 만들어지므로, 나중에 변수 값만 바꾸면 Spring과 DB의 비밀번호가 어긋날 수 있습니다. Redis 비밀번호는 배포마다 Secret과 redis.conf에 함께 반영되지만, 바꾸면 Redis Pod가 재시작됩니다.
 
+비밀이 아닌 주소 변수도 함께 등록합니다. 백엔드가 자기 공개 주소를 알아야 리다이렉트와 절대 URL을 `komit.site/service/...`로 만들 수 있습니다.
+
+| Key | Value | Visibility |
+|---|---|---|
+| `SERVICE_PUBLIC_BASE_URL` | `https://komit.site/service` | Visible |
+| `ESCROW_PUBLIC_BASE_URL` | `https://komit.site/escrow` | Visible |
+
 `SSH_ADDRESS`, `SSH_PRIVATE_KEY`, `DOCKER_REGISTRY*`는 mock 배포에서 이미 쓰고 있어 추가하지 않습니다.
 
 **A-2. develop에 병합**
@@ -356,12 +363,14 @@ fe image is required because deployment/fe does not exist yet
    export SERVICE_DB_PASSWORD ESCROW_DB_PASSWORD SERVICE_REDIS_PASSWORD
    export FE_IMAGE=docker.io/<계정>/komit-fe:<태그>
    # GitLab CI/CD 변수에 등록된 값과 같게 넣습니다.
+   export SERVICE_PUBLIC_BASE_URL=https://komit.site/service
+   export ESCROW_PUBLIC_BASE_URL=https://komit.site/escrow
    export BACKEND_API_BASE_URL=<GitLab 변수 값>
    export AI_API_BASE_URL=<GitLab 변수 값>
    export KAKAO_CLIENT_ID=<GitLab 변수 값>
    export KAKAO_REDIRECT_URI=<GitLab 변수 값>
 
-   sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,SERVICE_REDIS_PASSWORD,FE_IMAGE,BACKEND_API_BASE_URL,AI_API_BASE_URL,KAKAO_CLIENT_ID,KAKAO_REDIRECT_URI \
+   sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,SERVICE_REDIS_PASSWORD,FE_IMAGE,SERVICE_PUBLIC_BASE_URL,ESCROW_PUBLIC_BASE_URL,BACKEND_API_BASE_URL,AI_API_BASE_URL,KAKAO_CLIENT_ID,KAKAO_REDIRECT_URI \
      sh ~/komit-k3s/k3s/deploy.sh
    ```
 
@@ -404,12 +413,14 @@ export ESCROW_IMAGE=docker.io/<계정>/komit-escrow:<태그>
 export FE_IMAGE=docker.io/<계정>/komit-fe:<태그>
 
 # GitLab CI/CD 변수에 등록된 값과 같게 넣습니다.
+export SERVICE_PUBLIC_BASE_URL=https://komit.site/service
+export ESCROW_PUBLIC_BASE_URL=https://komit.site/escrow
 export BACKEND_API_BASE_URL=<GitLab 변수 값>
 export AI_API_BASE_URL=<GitLab 변수 값>
 export KAKAO_CLIENT_ID=<GitLab 변수 값>
 export KAKAO_REDIRECT_URI=<GitLab 변수 값>
 
-sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,SERVICE_REDIS_PASSWORD,SERVICE_IMAGE,ESCROW_IMAGE,FE_IMAGE,BACKEND_API_BASE_URL,AI_API_BASE_URL,KAKAO_CLIENT_ID,KAKAO_REDIRECT_URI \
+sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,SERVICE_REDIS_PASSWORD,SERVICE_IMAGE,ESCROW_IMAGE,FE_IMAGE,SERVICE_PUBLIC_BASE_URL,ESCROW_PUBLIC_BASE_URL,BACKEND_API_BASE_URL,AI_API_BASE_URL,KAKAO_CLIENT_ID,KAKAO_REDIRECT_URI \
   sh ~/komit-k3s-manual/deploy.sh
 ```
 
@@ -439,6 +450,8 @@ rm -rf ~/komit-k3s-manual
 | 앱 로그에 `NOAUTH` 또는 `WRONGPASS` | Spring과 Redis 비밀번호가 다름 | `service-redis-auth` Secret과 `SERVICE_REDIS_PASSWORD` 값 확인 |
 | `curl`이 **502** | 30080에 받는 쪽이 없음 | `sudo kubectl -n komit get pods`로 service Pod가 Ready인지 확인 |
 | `curl`이 **504** (약 60초 뒤) | nginx 컨테이너가 30080에 닿지 못함 | A-0의 `nodeport-addresses` 확인 |
+| 리다이렉트 `Location`이 `https://komit.site/login`처럼 `/service` 접두사를 잃음 | nginx의 `X-Forwarded-Prefix`가 빠졌거나 Spring이 헤더를 반영하지 않음 | 서버 nginx `location /service/`에 `proxy_set_header X-Forwarded-Prefix /service;`가 있는지 확인. Spring은 prod에서 `server.forward-headers-strategy=framework`로 반영합니다 |
+| 앱 로그: `Binding to target ... app.public-base-url` 또는 `APP_PUBLIC_BASE_URL` 관련 기동 실패 | 공개 주소 변수 미등록 | GitLab 변수 `SERVICE_PUBLIC_BASE_URL`, `ESCROW_PUBLIC_BASE_URL` 확인 |
 
 ## CI/CD
 
@@ -459,6 +472,7 @@ fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
 | `SSH_ADDRESS`, `SSH_PRIVATE_KEY` | 목 배포와 공용 | 서버 접속 |
 | `SERVICE_DB_PASSWORD`, `ESCROW_DB_PASSWORD` | Masked, Protected | DB 계정 Secret |
 | `SERVICE_REDIS_PASSWORD` | Masked, Protected | Redis·Sentinel 비밀번호 Secret(`service-redis-auth`) |
+| `SERVICE_PUBLIC_BASE_URL`, `ESCROW_PUBLIC_BASE_URL` | Visible | 각 백엔드의 공개 주소(`https://komit.site/service`, `https://komit.site/escrow`). `service-config`, `escrow-config` ConfigMap의 `APP_PUBLIC_BASE_URL`이 됩니다 |
 | `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` | FE 이미지 빌드와 공용 | fe 실행 환경(`fe-config`). `ESCROW_API_BASE_URL`은 등록되어 있을 때만 넣습니다 |
 | `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI` | Masked | 카카오 로그인. fe 실행 환경(`fe-config`). Redirect URI 는 카카오 콘솔에 등록한 배포 주소(`https://komit.site/api/auth/kakao/callback`)와 글자까지 같아야 합니다 |
 
@@ -474,6 +488,8 @@ fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
 export SERVICE_DB_PASSWORD=<password>
 export ESCROW_DB_PASSWORD=<password>
 export SERVICE_REDIS_PASSWORD=<password>
+export SERVICE_PUBLIC_BASE_URL=https://komit.site/service
+export ESCROW_PUBLIC_BASE_URL=https://komit.site/escrow
 export BACKEND_API_BASE_URL=<fe가 호출할 백엔드 주소>
 export AI_API_BASE_URL=<fe가 호출할 AI 주소>
 export KAKAO_CLIENT_ID=<카카오 REST API 키>
@@ -492,6 +508,7 @@ chmod +x deploy/k3s/deploy.sh
 |---|---|---|
 | `SERVICE_DB_PASSWORD`, `ESCROW_DB_PASSWORD` | 예 | DB 소유자 계정 비밀번호. `service-db-app`, `escrow-db-app` Secret이 되어 CloudNativePG initdb와 Spring이 함께 읽습니다. |
 | `SERVICE_REDIS_PASSWORD` | 예 | Redis `requirepass`·`masterauth`와 Sentinel 접속 비밀번호. `service-redis-auth` Secret이 되어 오퍼레이터와 Spring이 함께 읽습니다. |
+| `SERVICE_PUBLIC_BASE_URL`, `ESCROW_PUBLIC_BASE_URL` | 예 | 각 백엔드가 밖에서 보이는 주소(nginx 경로 접두사 포함). Spring의 `app.public-base-url`이 되고, 없으면 앱이 기동하지 않습니다. 값이 바뀌면 해당 Pod만 다시 뜹니다. |
 | `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` | 예 | fe 서버가 백엔드·AI를 호출할 주소. GitLab CI/CD 변수와 같은 값을 넣습니다. 값이 바뀌면 fe Pod가 새 값으로 다시 뜹니다. |
 | `ESCROW_API_BASE_URL` | 아니요 | 값이 있을 때만 fe 실행 환경에 넣습니다. |
 | `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI` | 예 | 카카오 로그인 REST API 키와 콜백 주소. fe 의 `/api/auth/kakao` 가 실행 시점에 읽습니다. 없으면 로그인만 500 으로 실패하고 다른 화면은 영향이 없습니다. |
