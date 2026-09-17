@@ -13,6 +13,7 @@ import {
   StickyBar,
 } from "@/components/common";
 import { Callout, useToast } from "@/components/feedback";
+import { DeliverableFiles } from "./DeliverableFiles";
 import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
 import {
@@ -168,55 +169,29 @@ export function QaSubmitPanel({
                     </span>
                   </div>
 
-                  <ul className="mt-2 flex flex-col gap-1 px-4 sm:px-5">
-                    {milestone.qaCriteria.map((qa, index) => {
-                      // 인계 작업의 문장은 넘겨줄 것 하나씩과 짝입니다. 그 줄에서 바로 올립니다.
-                      const deliverable = isHandover(milestone)
-                        ? development.deliverables[index]
-                        : undefined;
+                  {/* 넘겨줄 파일. 확인 문장과 짝이 아니라 따로 셉니다. */}
+                  {isHandover(milestone) && (
+                    <DeliverableFiles
+                      deliverables={development.deliverables}
+                      received
+                      busy={busy !== null}
+                      onPick={(deliverable, file) => void upload(deliverable, file)}
+                    />
+                  )}
 
-                      return (
-                        <li
-                          key={qa.qaCriterionId}
-                          className="flex items-center gap-3 text-[13px] leading-6"
-                        >
-                          <span
-                            className={
-                              qa.status === "RESOLVED"
-                                ? "min-w-0 flex-1 text-fg-subtle line-through"
-                                : "min-w-0 flex-1 text-fg-muted"
-                            }
-                          >
-                            {qa.testCase}
-                          </span>
-                          {deliverable && (
-                            <>
-                              {deliverable.deliveredAt && (
-                                <span className="shrink-0 font-mono text-fg-subtle tabular-nums">
-                                  {formatShortDateTime(deliverable.deliveredAt)}{" "}
-                                  올림
-                                </span>
-                              )}
-                              <label className="shrink-0 cursor-pointer font-semibold text-primary hover:underline">
-                                {deliverable.fileId === null
-                                  ? "파일 첨부"
-                                  : "다시 올리기"}
-                                <input
-                                  type="file"
-                                  className="sr-only"
-                                  disabled={busy !== null}
-                                  onChange={(event) => {
-                                    const file = event.target.files?.[0];
-                                    if (file) void upload(deliverable, file);
-                                    event.target.value = "";
-                                  }}
-                                />
-                              </label>
-                            </>
-                          )}
-                        </li>
-                      );
-                    })}
+                  <ul className="mt-2 flex flex-col gap-1 px-4 sm:px-5">
+                    {milestone.qaCriteria.map((qa) => (
+                      <li
+                        key={qa.qaCriterionId}
+                        className={
+                          qa.status === "RESOLVED"
+                            ? "text-[13px] leading-6 text-fg-subtle line-through"
+                            : "text-[13px] leading-6 text-fg-muted"
+                        }
+                      >
+                        {qa.testCase}
+                      </li>
+                    ))}
                   </ul>
 
                   <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line-subtle px-4 py-3 sm:px-5">

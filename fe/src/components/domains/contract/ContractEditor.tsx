@@ -398,24 +398,31 @@ export function ContractEditor({
         <CardHeader title="계약 조건" />
         <Card className="mt-3">
           <div className="flex flex-col gap-5">
-            <Field label="착수일">
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(event) => setStartDate(event.target.value)}
-              />
-            </Field>
-            <Field
-              label="끝나는 날"
-              helper="작업마다 따로 납기를 두지 않습니다."
-            >
-              <Input
-                type="date"
-                value={dueDate}
-                onChange={(event) => setDueDate(event.target.value)}
-              />
-            </Field>
-            <Field label="하자보수">
+            {/* 두 날짜는 한 줄에 둡니다. 떨어뜨려 놓으면 사이 기간이 안 보입니다. */}
+            <div className="flex flex-col gap-5 sm:flex-row sm:flex-wrap sm:items-start sm:gap-x-6">
+              <Field layout="horizontal" label="착수일">
+                <Input
+                  type="date"
+                  className="w-40"
+                  value={startDate}
+                  onChange={(event) => setStartDate(event.target.value)}
+                />
+              </Field>
+              {/* 작업 기간의 합. 납기일이 어떻게 나왔는지 알려 주는 참고값입니다. */}
+              <Field
+                layout="horizontal"
+                label="납기일"
+                helper={days > 0 ? `작업 기간 합계 ${days}일` : undefined}
+              >
+                <Input
+                  type="date"
+                  className="w-40"
+                  value={dueDate}
+                  onChange={(event) => setDueDate(event.target.value)}
+                />
+              </Field>
+            </div>
+            <Field layout="horizontal" label="하자보수">
               <Input
                 mono
                 suffix="일"
@@ -428,6 +435,7 @@ export function ContractEditor({
               />
             </Field>
             <Field
+              layout="horizontal"
               label="인계물"
               helper="넘겨받을 것을 한 줄에 하나씩 적습니다."
             >

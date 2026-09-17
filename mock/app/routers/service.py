@@ -5372,15 +5372,15 @@ def apply_summary_changes(
 # 그것을 확인하고 일을 시작한다고 알리는 것이다. 착수 전까지는 개발자가 계약을
 # 물릴 수 있다.
 #
-# 화면: 5_개발자_계약서작성 · 5_의뢰인_계약서상세 · 5_의뢰인_계약서수정제안 ·
-#       5_개발자_계약서검토 · 5_의뢰인_계약예치 · 5_개발자_착수전 ·
+# 화면: 5_개발자_계약서작성 · 5_개발자_계약서수정 · 5_의뢰인_계약서상세 ·
+#       5_개발자_계약서검토 · 5_서명판 · 5_의뢰인_계약예치 ·
+#       5_개발자_착수전 · 5_개발자_착수전_예치대기 ·
 #       5_의뢰인_진행 · 5_의뢰인_확인 · 5_개발자_확인 · 5_의뢰인_리뷰작성
 #
 # 함께 쓰는 API (다른 영역에 있다):
 #   GET   /api/users/me                      전 영역 헤더
 #   GET   /api/rooms · /api/rooms/{roomId}   방 사이드바와 머리
 #   GET   /api/contracts/{contractId}        계약서 조회 (contractType으로 갈린다)
-#   PATCH /api/contracts/{contractId}        수정 제안
 #   POST  /api/contracts/{contractId}/signatures · /messages   서명과 전달 메시지
 #
 # 돈의 원장은 Escrow 서버가 가진다. 여기서는 예치를 걸고 상태를 확인만 한다.
@@ -5455,6 +5455,15 @@ class MilestoneResponse(BaseModel):
     )
     qaCriteria: list[QaCriterionResponse] = Field(
         description="이 작업의 확인 문장. 전부 체크되어야 통과시킬 수 있다.",
+    )
+
+
+class AttachDeliverableRequest(BaseModel):
+    """인계물에 붙일 파일."""
+
+    fileId: int = Field(
+        description="업로드 3콜을 마친 파일 식별자.",
+        examples=[71],
     )
 
 
@@ -5570,7 +5579,11 @@ class RejectedIssueRequest(BaseModel):
 
 
 class WriteMilestoneRequest(BaseModel):
-    """계약서에 담을 작업 하나."""
+    """계약서에 담을 작업 하나.
+
+    작업은 이슈 하나에 붙는다. 그 이슈는 서버가 이 작업을 저장하면서 함께 만들어
+    붙이므로 여기서 식별자를 보내지 않는다.
+    """
 
     title: str = Field(
         description="작업 이름.",
@@ -5644,6 +5657,20 @@ class SubmitMilestoneRequest(BaseModel):
     )
 
 
+class SaveQaResultsRequest(BaseModel):
+    """확인 결과 저장. 다 체크하지 않아도 보낼 수 있다."""
+
+    qaCriterionIds: list[int] = Field(
+        min_length=1,
+        description=(
+            "이번에 체크한 확인 문장 식별자. 이미 통과한 것에 더하기만 한다. "
+            "**체크는 되돌릴 수 없으므로** 빼고 보내도 풀리지 않는다. 이미 통과한 "
+            "값을 다시 보내도 결과가 같다."
+        ),
+        examples=[[201]],
+    )
+
+
 class ConfirmMilestoneRequest(BaseModel):
     """작업 통과 처리."""
 
@@ -5668,7 +5695,7 @@ class WriteReviewRequest(BaseModel):
     content: str | None = Field(
         default=None,
         max_length=1000,
-        description="리뷰 내용. 1000자까지 받는다. 점수만 주고 넘어가도 된다.",
+        description="리뷰 내용. 1,000자까지 받는다(R-REV-04). 점수만 주고 넘어가도 된다.",
         examples=["말이 잘 통했습니다."],
     )
 
@@ -6061,7 +6088,7 @@ FILE_TOO_LARGE_EXAMPLE = {"code": FILE_TOO_LARGE[0], "message": FILE_TOO_LARGE[1
 DELIVERABLE_FILE_ERROR_EXAMPLE = {
     "code": "INVALID_REQUEST",
     "message": "요청 형식이 올바르지 않습니다.",
-    "errors": [{"field": "file", "reason": "필수 항목입니다."}],
+    "errors": [{"field": "fileId", "reason": "필수 항목입니다."}],
 }
 
 # 리뷰는 점수 1~5와 content 1000자가 검증 조건이다. 둘을 함께 어긴 경우를 예시로 든다.
@@ -6450,6 +6477,98 @@ def submit_milestone(
     return MilestoneResponse(**MILESTONES[1])
 
 
+@router.put(
+    "/milestones/{milestoneId}/qa-results",
+    response_model=MilestoneResponse,
+    tags=[AREA5_TAG],
+    responses={
+        200: {"content": {"application/json": {"example": MILESTONES[1]}}},
+        403: {
+            "model": ErrorResponse,
+            "description": "이 계약의 의뢰인이 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "지금 상태에서는 처리할 수 없음",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": MILESTONE_STATE_CONFLICT[0],
+                        "message": MILESTONE_STATE_CONFLICT[1],
+                    }
+                }
+            },
+        },
+        **MILESTONE_ERRORS,
+    },
+    summary="확인 결과 저장",
+    description=(
+        "**화면 — `5_의뢰인_확인` › 확인된 기능 제출**\n\n"
+        "의뢰인이 확인 문장을 직접 해보고 그 결과를 저장한다. **다 체크하지 않아도 "
+        "보낼 수 있다.** 3줄 중 2줄만 됐다면 그대로 보내고, 개발자는 무엇이 남았는지 "
+        "`5_개발자_확인`에서 본다. 고쳐서 다시 확인 요청을 보내는 흐름이다.\n\n"
+        "**작업 상태는 바뀌지 않는다.** 이 API는 완료 처리가 아니다. 확인 문장을 모두 "
+        "통과한 작업만 완료가 되며(R-QA-01) 그건 작업 통과시키기가 맡는다. 화면은 "
+        "전부 체크됐을 때 이 API 대신 통과시키기를 부른다.\n\n"
+        "**체크는 되돌릴 수 없다.** 이번에 체크한 것을 보내면 이미 통과한 것에 더한다. "
+        "빼고 보내도 풀리지 않고, 이미 통과한 값을 다시 보내도 결과가 같다.\n\n"
+        "- **200**: 저장했을 때. 저장된 뒤의 작업 전체를 준다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **403 / FORBIDDEN**: 이 계약의 의뢰인이 아닐 때. 확인은 의뢰인만 한다\n"
+        "- **404 / MILESTONE_NOT_FOUND**: `milestoneId`가 404일 때. 없는 작업이거나 이 "
+        "계약의 당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 "
+        "준다\n"
+        "- **409 / MILESTONE_STATE_CONFLICT**: `milestoneId`가 409일 때. 이미 통과된 "
+        "작업이라 결과를 바꿀 수 없다(R-QA-03)\n"
+        "- **422 / INVALID_REQUEST**: `qaCriterionIds`가 비었거나 이 작업의 확인 "
+        "문장이 아닌 값이 섞였을 때\n"
+        "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
+    ),
+)
+def save_qa_results(
+    milestoneId: Annotated[
+        int,
+        Path(
+            description=(
+                "작업 식별자. 404는 없음, 409는 상태 충돌 재현용 예약값이다."
+            ),
+            examples=[MILESTONE_ID],
+        ),
+    ],
+    request: SaveQaResultsRequest,
+) -> MilestoneResponse | JSONResponse:
+    if milestoneId == NOT_FOUND_MILESTONE_ID:
+        return _error_response(404, MILESTONE_NOT_FOUND)
+    if milestoneId == CONFLICT_MILESTONE_ID:
+        return _error_response(409, MILESTONE_STATE_CONFLICT)
+    # 그 작업에 없는 확인 문장은 막는다.
+    target = next(
+        (row for row in MILESTONES if row["milestoneId"] == milestoneId), MILESTONES[1]
+    )
+    known = {qa["qaCriterionId"] for qa in target["qaCriteria"]}
+    if not set(request.qaCriterionIds) <= known:
+        return _field_error("qaCriterionIds", "이 작업의 확인 문장만 보낼 수 있습니다.")
+
+    # 체크는 되돌릴 수 없으므로 이미 통과한 것에 더하기만 한다.
+    passed = {
+        qa["qaCriterionId"]
+        for qa in target["qaCriteria"]
+        if qa["status"] == "RESOLVED"
+    } | set(request.qaCriterionIds)
+    milestone = {
+        **target,
+        "qaCriteria": [
+            {
+                **qa,
+                "status": "RESOLVED" if qa["qaCriterionId"] in passed else "UNRESOLVED",
+            }
+            for qa in target["qaCriteria"]
+        ],
+    }
+    return MilestoneResponse(**milestone)
+
+
 @router.post(
     "/milestones/{milestoneId}/confirmation",
     response_model=MilestoneResponse,
@@ -6500,6 +6619,9 @@ def submit_milestone(
         "**화면 — `5_의뢰인_확인` › 확인된 기능 제출**\n\n"
         "의뢰인이 확인 문장을 모두 체크하고 작업을 통과시킨다. **통과시키면 되돌릴 수 "
         "없다.** 확인 문장이 하나라도 남아 있으면 통과시킬 수 없다.\n\n"
+        "**같은 버튼이 두 API로 갈린다.** 다 체크하지 않은 채로 누르면 확인 결과 저장이 "
+        "개발자에게 거기까지의 결과를 알리고, 다 체크하고 누르면 이 API가 완료로 "
+        "확정한다(R-QA-01·R-QA-03).\n\n"
         "대금은 여기서 나가지 않는다. 모든 작업이 통과된 뒤 한 번에 지급된다.\n\n"
         "- **201**: 통과시켰을 때. 상태가 CONFIRMED가 되고 `confirmedAt`이 채워진다\n"
         "- **400 / QA_NOT_ALL_CHECKED**: `qaCriterionIds`에 이 작업의 확인 문장이 모두 들어 있지 "
@@ -6565,11 +6687,6 @@ def confirm_milestone(
                 }
             }
         },
-        400: {
-            "model": ErrorResponse,
-            "description": "파일이 허용 용량을 넘음",
-            "content": {"application/json": {"example": FILE_TOO_LARGE_EXAMPLE}},
-        },
         403: {
             "model": ErrorResponse,
             "description": "이 계약의 개발자가 아님",
@@ -6595,21 +6712,25 @@ def confirm_milestone(
         },
         500: AREA1_ERRORS[500],
     },
-    summary="인계물 올리기",
+    summary="인계물 붙이기",
     description=(
         "**화면 — `5_개발자_확인` › 인계 작업의 파일 첨부**\n\n"
-        "소스·계정·설명서 같은 인계물을 파일로 올린다. 올린 시각이 인계 시각으로 남고, "
-        "의뢰인 화면에서는 '받기'로 내려받을 수 있게 된다.\n\n"
-        "이미 올린 인계물에 다시 올리면 새 파일로 바뀌고 `deliveredAt`도 그 시각으로 갱신된다. "
-        "재업로드를 막지 않으므로 409는 없다.\n\n"
-        "- **201**: 올렸을 때\n"
-        "- **400 / FILE_TOO_LARGE**: 허용 용량을 넘겼을 때\n"
+        "**파일은 이 요청으로 보내지 않는다.** 다른 파일과 같이 업로드 3콜(`POST /uploads` → "
+        "저장소로 `PUT` → `POST /uploads/{uploadId}/complete`)을 먼저 마치고, 거기서 받은 "
+        "`fileId`를 이 요청에 담아 인계물에 붙인다. 소스 파일 묶음은 크기가 커서 이 서버를 "
+        "지나가지 않게 한다.\n\n"
+        "붙인 시각이 인계 시각으로 남고, 의뢰인 화면에서는 '받기'로 내려받을 수 있게 된다.\n\n"
+        "이미 붙인 인계물에 다시 붙이면 새 파일로 바뀌고 `deliveredAt`도 그 시각으로 갱신된다. "
+        "재첨부를 막지 않으므로 409는 없다.\n\n"
+        "형식과 크기는 `POST /uploads`에서 `purpose`가 `DELIVERABLE`일 때의 한도로 거른다. "
+        "그래서 이 요청에는 용량 오류가 없다.\n\n"
+        "- **201**: 붙였을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 계약의 개발자가 아닐 때\n"
         "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableId`가 404일 때. 없는 인계물이거나 이 "
         "계약의 당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 준다\n"
-        "- **422 / INVALID_REQUEST**: `file` 파트가 없을 때\n"
-        "- **500 / INTERNAL_ERROR**: 올리지 못했을 때"
+        "- **422 / INVALID_REQUEST**: `fileId`가 없을 때\n"
+        "- **500 / INTERNAL_ERROR**: 붙이지 못했을 때"
     ),
 )
 def upload_deliverable(
@@ -6620,7 +6741,7 @@ def upload_deliverable(
             examples=[401],
         ),
     ],
-    file: Annotated[UploadFile, File(description="인계물 파일.")],
+    request: AttachDeliverableRequest,
 ) -> DeliverableResponse | JSONResponse:
     if deliverableId == NOT_FOUND_DELIVERABLE_ID:
         return _error_response(404, DELIVERABLE_NOT_FOUND)
@@ -8285,7 +8406,11 @@ class CreateUploadRequest(BaseModel):
         examples=[284193],
     )
     purpose: Literal[
-        "PROFILE_IMAGE", "CAREER_EVIDENCE", "PORTFOLIO_IMAGE", "SIGNATURE"
+        "PROFILE_IMAGE",
+        "CAREER_EVIDENCE",
+        "PORTFOLIO_IMAGE",
+        "SIGNATURE",
+        "DELIVERABLE",
     ] = Field(
         description=(
             "이 파일을 어디에 쓸지. 쓰임에 따라 받는 형식과 크기가 다르고 보관 기간도 "
@@ -9315,7 +9440,8 @@ def get_my_sessions() -> MySessionListResponse:
     summary="파일 올리기 시작",
     description=(
         "**화면 — `8_마이페이지` › 계정 › 사진 바꾸기, "
-        "`8_개발자_내프로필` › 증빙 서류 파일 올리기 · 작업물 사진 추가**\n\n"
+        "`8_개발자_내프로필` › 증빙 서류 파일 올리기 · 작업물 사진 추가, "
+        "`5_서명판` › 서명하기, `5_개발자_확인` › 인계 작업의 파일 첨부**\n\n"
         "**파일은 이 서버로 보내지 않는다.** 올릴 파일을 먼저 알리면 파일을 보낼 주소를 "
         "돌려주고, 화면이 그 주소로 파일을 직접 보낸다. 다 보낸 뒤 완료 API를 불러야 "
         "파일이 쓸 수 있는 상태가 된다.\n\n"
