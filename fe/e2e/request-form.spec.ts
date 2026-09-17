@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { signIn } from './support/session';
 
 /**
  * 요청서. 목 서버가 닿아야 합니다(BACKEND_API_BASE_URL).
@@ -7,6 +8,7 @@ import { expect, test } from '@playwright/test';
  */
 test.describe('요청서', () => {
   test.beforeEach(async ({ page }) => {
+    await signIn(page);
     await page.setViewportSize({ width: 1280, height: 1000 });
   });
 
