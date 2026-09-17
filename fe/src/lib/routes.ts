@@ -105,7 +105,7 @@ export const ROUTES = {
   notifications: "/notifications",
   /** 계좌 등록·변경. 마이페이지 계좌 칸과 예치 화면이 옵니다. */
   accountRegister: "/mypage/account",
-  /** 내 개발자 프로필. 푸터 "프로필 등록"도 여기로 옵니다. */
+  /** 내 개발자 프로필. 만들기와 편집이 같은 화면을 씁니다. */
   mypageProfile: "/mypage/profile",
   /** 내 일정. 마이페이지의 「일정 관리」가 옵니다. */
   mypageSchedule: "/mypage/schedule",
