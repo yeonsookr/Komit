@@ -37,6 +37,7 @@ export const BACKEND = {
   REQUIREMENTS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/requirements`,
   RECOMMENDATIONS: (projectId: number) => `/api/projects/${projectId}/recommendations`,
   MYPAGE: "/api/mypage",
+  MY_SESSIONS: "/api/users/me/sessions",
   ACCOUNT_VERIFICATIONS: "/api/accounts/verifications",
   ACCOUNT_VERIFICATION_CONFIRM: (verificationId: number) =>
     `/api/accounts/verifications/${verificationId}/confirm`,
