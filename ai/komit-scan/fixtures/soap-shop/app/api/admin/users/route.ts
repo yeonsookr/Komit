@@ -1,12 +1,12 @@
-import { supabase } from '@/lib/supabase'
+import { read, write } from '@/lib/db'
 
 export async function GET() {
-  const { data } = await supabase.from('users').select('*')
-  return Response.json(data)
+  return Response.json(read('users'))
 }
 
 export async function DELETE(req: Request) {
   const { userId } = await req.json()
-  await supabase.from('users').delete().eq('id', userId)
+  const users = read('users').filter((u: any) => u.id !== userId)
+  write('users', users)
   return Response.json({ ok: true })
 }

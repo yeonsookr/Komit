@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "soap-shop",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "ai/komit-scan/fixtures/soap-shop"],
+      "port": 3000
+    }
+  ]
+}

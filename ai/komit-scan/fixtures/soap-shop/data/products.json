@@ -1,0 +1,6 @@
+[
+  { "id": "p1", "name": "라벤더 비누", "price": 8000, "stock": 12, "image": "/lavender.jpg", "desc": "라벤더 오일을 넣어 만든 비누입니다." },
+  { "id": "p2", "name": "올리브 비누", "price": 7500, "stock": 8, "image": "/olive.jpg", "desc": "올리브유로 만든 순한 비누입니다." },
+  { "id": "p3", "name": "숯 비누", "price": 9000, "stock": 5, "image": "/charcoal.jpg", "desc": "대나무 숯을 넣어 만들었습니다." },
+  { "id": "p4", "name": "우유 비누", "price": 8500, "stock": 20, "image": "/milk.jpg", "desc": "우유 성분이 들어간 비누입니다." }
+]

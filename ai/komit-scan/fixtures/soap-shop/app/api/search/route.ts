@@ -1,11 +1,10 @@
-import { supabase } from '@/lib/supabase'
+import { read } from '@/lib/db'
 
 export async function GET(req: Request) {
-  const q = new URL(req.url).searchParams.get('q')
+  const q = new URL(req.url).searchParams.get('q') || ''
 
-  const { data } = await supabase.rpc('run_sql', {
-    query: `SELECT * FROM products WHERE name LIKE '%${q}%'`,
-  })
+  const products = read('products')
+  const matcher = new Function('p', `return /${q}/i.test(p.name) || /${q}/i.test(p.desc)`)
 
-  return Response.json(data)
+  return Response.json(products.filter((p: any) => matcher(p)))
 }

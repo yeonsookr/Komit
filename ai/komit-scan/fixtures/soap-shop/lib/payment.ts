@@ -1,8 +1,4 @@
-export async function pay(amount: number, orderId: string) {
-  const res = await fetch('https://pg.example.com/v1/payments', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ amount, orderId }),
-  })
-  return res.json()
+export async function requestPayment(amount: number, orderId: string) {
+  await new Promise((r) => setTimeout(r, 120))
+  return { approved: true, amount, orderId, receiptId: `rc_${orderId}` }
 }
