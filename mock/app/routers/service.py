@@ -1122,6 +1122,31 @@ class TechCategoryResponse(BaseModel):
     )
 
 
+class UnfinishedSurveyResponse(BaseModel):
+    """설문을 끝내지 않은 진단 하나. `2_설문1` 아래 「진행 중인 설문」에 쓴다."""
+
+    diagnosisId: int = Field(description="진단 식별자.", examples=[31])
+    projectName: str = Field(
+        description="프로젝트 이름. 목록에서 이것으로 알아본다.",
+        examples=["미미헤어샵 예약"],
+    )
+    updatedAt: str = Field(
+        description=(
+            "마지막으로 저장한 시각. 답을 저장할 때마다 갱신된다. 목록은 이 값의 "
+            "내림차순으로 온다."
+        ),
+        examples=["2026-09-16T17:40:00+09:00"],
+    )
+
+
+class UnfinishedSurveyListResponse(BaseModel):
+    """끝내지 않은 설문 목록."""
+
+    content: list[UnfinishedSurveyResponse] = Field(
+        description="끝내지 않은 설문. 없으면 빈 배열이다."
+    )
+
+
 class DiagnosisProjectResponse(BaseModel):
     """진단이 걸린 프로젝트."""
 
@@ -1223,6 +1248,13 @@ class SurveyResponse(BaseModel):
     )
     questions: list[SurveyQuestionResponse] = Field(
         description="설문 문항. 화면에 보여줄 순서대로 내려간다.",
+    )
+    isDone: bool = Field(
+        description=(
+            "이 설문을 끝냈는지. 설문4까지 마치고 완료를 부르면 참이 된다. 거짓인 "
+            "설문은 `2_설문1` 의 「진행 중인 설문」 목록에 올라간다."
+        ),
+        examples=[False],
     )
 
 
@@ -1503,6 +1535,12 @@ SCAN_FILE_INVALID_EXAMPLE = {
 # 실패 사례를 재현하는 진단 식별자. 속성을 늘리지 않고 경로 값으로만 고른다.
 DIAGNOSIS_ID = 31
 NOT_FOUND_DIAGNOSIS_ID = 404
+# 설문을 아직 끝낼 수 없는 진단 재현용 예약값.
+NOT_COMPLETABLE_DIAGNOSIS_ID = 409
+SURVEY_NOT_COMPLETABLE = (
+    "SURVEY_NOT_COMPLETABLE",
+    "아직 끝내지 않은 문항이 있습니다.",
+)
 RUNNING_DIAGNOSIS_ID = 409
 PENDING_DIAGNOSIS_ID = 202
 
@@ -1535,9 +1573,30 @@ DIAGNOSIS_EXAMPLE = {
     "resolvedSinceLastVersionCount": 3,
 }
 
+UNFINISHED_SURVEY_LIST_EXAMPLE = {
+    "content": [
+        {
+            "diagnosisId": 31,
+            "projectName": "미미헤어샵 예약",
+            "updatedAt": "2026-09-16T17:40:00+09:00",
+        },
+        {
+            "diagnosisId": 28,
+            "projectName": "사내 재고 관리",
+            "updatedAt": "2026-08-20T11:05:00+09:00",
+        },
+        {
+            "diagnosisId": 24,
+            "projectName": "동네 모임 커뮤니티",
+            "updatedAt": "2026-08-14T09:30:00+09:00",
+        },
+    ]
+}
+
 SURVEY_EXAMPLE = {
     "surveyId": 19,
     "diagnosisVersion": 2,
+    "isDone": False,
     "questions": [
         {
             "questionId": 51,
@@ -1722,6 +1781,37 @@ AREA2_TAG = "2 사전점검"
 # --------------------------------------------------------------------------- #
 
 
+@router.get(
+    "/diagnoses",
+    response_model=UnfinishedSurveyListResponse,
+    tags=[AREA2_TAG],
+    responses={
+        200: {
+            "content": {
+                "application/json": {"example": UNFINISHED_SURVEY_LIST_EXAMPLE}
+            }
+        },
+        **AREA1_UNAUTHORIZED,
+        **AREA1_ERRORS,
+    },
+    summary="끝내지 않은 설문 목록",
+    description=(
+        "**화면 — `2_설문1` › 진행 중인 설문**\n\n"
+        "설문을 끝내지 않고 나간 진단을 돌려준다. 다시 들어온 사람이 처음부터 다시 "
+        "하지 않고 이어서 하게 하려는 것이다.\n\n"
+        "**끝냈는지는 설문의 완료 여부로 본다.** 설문4까지 마치고 완료를 부르면 그 "
+        "설문은 여기서 빠진다. 검사를 돌렸는지와는 무관하다 — 설문3까지 하고 나간 "
+        "사람도 남는다.\n\n"
+        "내 프로젝트의 것만 내려간다. 마지막으로 저장한 시각의 내림차순이다.\n\n"
+        "- **200**: 목록을 내줬을 때. 없으면 `content`가 빈 배열이다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **500 / INTERNAL_ERROR**: 목록을 읽지 못했을 때"
+    ),
+)
+def list_unfinished_surveys() -> UnfinishedSurveyListResponse:
+    return UnfinishedSurveyListResponse(**UNFINISHED_SURVEY_LIST_EXAMPLE)
+
+
 @router.post(
     "/diagnoses",
     response_model=DiagnosisResponse,
@@ -1833,6 +1923,69 @@ def save_survey_answers(
     if diagnosisId == NOT_FOUND_DIAGNOSIS_ID:
         return _error_response(404, DIAGNOSIS_NOT_FOUND)
     return SurveyResponse(**SURVEY_EXAMPLE)
+
+
+@router.post(
+    "/diagnoses/{diagnosisId}/survey/complete",
+    response_model=SurveyResponse,
+    tags=[AREA2_TAG],
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {**SURVEY_EXAMPLE, "isDone": True}
+                }
+            }
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "아직 끝낼 수 없거나 이미 끝냄",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": "SURVEY_NOT_COMPLETABLE",
+                        "message": "아직 끝내지 않은 문항이 있습니다.",
+                    }
+                }
+            },
+        },
+        **DIAGNOSIS_ERRORS,
+    },
+    summary="설문 완료",
+    description=(
+        "**화면 — `2_설문4` › 진단서 보기**\n\n"
+        "설문을 끝냈다고 알린다. 이 호출을 받아야 설문이 완료로 바뀌고 `2_설문1` 의 "
+        "「진행 중인 설문」 목록에서 빠진다.\n\n"
+        "**답 저장이 완료를 겸하지 않는다.** 설문4 문항은 검사 결과에서 나오므로 검사 "
+        "전에는 존재하지 않는다. 답이 다 찼는지로 판정하면 설문2까지만 하고도 완료로 "
+        "찍히기 때문에, 끝났다는 것은 화면이 따로 알린다.\n\n"
+        "완료 조건은 서버가 확인한다 — 검사가 끝나 설문4 문항이 생겼고 모든 문항에 답이 "
+        "있어야 한다. 이미 끝낸 설문을 다시 불러도 409다.\n\n"
+        "- **200**: 완료로 바뀌었을 때. `isDone`이 참인 설문지를 돌려준다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **404 / DIAGNOSIS_NOT_FOUND**: `diagnosisId`가 404일 때\n"
+        "- **409 / SURVEY_NOT_COMPLETABLE**: `diagnosisId`가 409일 때. 답하지 않은 "
+        "문항이 남았거나 이미 끝낸 설문이다\n"
+        "- **500 / INTERNAL_ERROR**: 완료 처리를 하지 못했을 때"
+    ),
+)
+def complete_survey(
+    diagnosisId: Annotated[
+        int,
+        Path(
+            description=(
+                "진단 식별자. 404는 진단 없음, 409는 아직 끝낼 수 없음 재현용 "
+                "예약값이다."
+            ),
+            examples=[DIAGNOSIS_ID],
+        ),
+    ],
+) -> SurveyResponse | JSONResponse:
+    if diagnosisId == NOT_FOUND_DIAGNOSIS_ID:
+        return _error_response(404, DIAGNOSIS_NOT_FOUND)
+    if diagnosisId == NOT_COMPLETABLE_DIAGNOSIS_ID:
+        return _error_response(409, SURVEY_NOT_COMPLETABLE)
+    return SurveyResponse(**{**SURVEY_EXAMPLE, "isDone": True})
 
 
 # --------------------------------------------------------------------------- #
