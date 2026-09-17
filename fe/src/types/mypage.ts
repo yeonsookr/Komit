@@ -87,6 +87,11 @@ export interface WithdrawalBlocker {
   amount: number | null;
   /** 「이동」이 갈 계약. 갈 곳이 없으면 null 입니다. */
   targetId: number | null;
+  /**
+   * 그 계약이 달린 방. 계약서는 방 안의 탭이라 화면 주소가 방 기준입니다.
+   * `targetId` 가 null 이면 함께 null 입니다.
+   */
+  roomId: number | null;
 }
 
 /** 지금 탈퇴할 수 있는지. `blockers` 가 비어야 `canWithdraw` 가 참입니다. */
