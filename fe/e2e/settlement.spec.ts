@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test';
+import { signIn } from './support/session';
 
 /**
  * 정산. 목 서버가 닿아야 합니다(BACKEND_API_BASE_URL).
  *
- * 로그인이 필요한 화면이라 세션 쿠키를 심고 시작합니다. 목은 토큰을 검사하지 않아
- * 값은 아무거나 됩니다 — 목에 검사가 들어가면 이 픽스처도 함께 고쳐야 합니다.
+ * 로그인이 필요한 화면이라 세션을 심고 시작합니다(`support/session`).
  *
  * 목의 2026년 8월은 소비 670,000원(환불 30,000원 포함) · 소득 650,000원 ·
  * 예치금 650,000원이고, '수제 비누 가게' 계약에 확인 대기 2건이 남아 있습니다.
@@ -12,17 +12,16 @@ import { expect, test } from '@playwright/test';
 const MONTH = '2026-08';
 
 test.describe('정산', () => {
-  test.beforeEach(async ({ context, page }) => {
-    await context.addCookies([
-      { name: 'komit_access_token', value: 'e2e-token', url: 'http://localhost:3000' },
-    ]);
+  test.beforeEach(async ({ page }) => {
+    await signIn(page);
     await page.setViewportSize({ width: 1440, height: 1000 });
   });
 
+  /** 막는 것은 `src/proxy.ts` 입니다. 로그인 뒤 돌아오도록 `next` 를 싣습니다. */
   test('로그인하지 않으면 로그인 화면으로 보낸다', async ({ context, page }) => {
     await context.clearCookies();
     await page.goto('/settlements');
-    await expect(page).toHaveURL(/\/login$/);
+    await expect(page).toHaveURL(/\/login\?next=%2Fsettlements$/);
   });
 
   test('왼쪽 목록은 소비와 소득을 함께 보여준다', async ({ page }) => {
