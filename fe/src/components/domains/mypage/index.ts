@@ -1,4 +1,5 @@
 export * from "./AccountSection";
+export * from "./AccountVerificationForm";
 export * from "./DeveloperSection";
 export * from "./NameEditRow";
 export * from "./NotificationSection";
