@@ -1095,7 +1095,7 @@ async def check_auth_code(
 # 에스크로 자금 — 예치 · 추가예치 · 지급 · 환불 · 취소
 #
 # 여기서부터는 패스스루가 아니라 에스크로 고유 기능이다. 결과가 내부 원장에 남고
-# 응답 필드는 escrows / escrow_transactions / escrow_holds 컬럼에 근거한다.
+# 응답 필드는 escrows / escrow_transactions 컬럼에 근거한다.
 # 계좌번호와 예금주명은 ERD에 원문으로 저장되지 않으며 요청 경계에서만 오간다.
 # --------------------------------------------------------------------------- #
 
@@ -1695,8 +1695,8 @@ async def cancel_escrow(
 # --------------------------------------------------------------------------- #
 # 동결 — 신고가 접수되면 걸고 끝나면 푼다
 #
-# 금융망은 관여하지 않고 에스크로 안의 상태만 바뀐다. 동결 여부는 해제일시가 비어 있는
-# 신고별 동결 행이 하나라도 있는지로 가른다(ERD escrow_holds.released_at).
+# 금융망은 관여하지 않고 에스크로 안의 상태만 바뀐다. 동결은 에스크로당 하나이며
+# escrows.hold_status(NONE / HELD / RELEASED)로 가른다. 활성 신고는 최대 1개다.
 # escrows.status는 동결로 바뀌지 않는다.
 # --------------------------------------------------------------------------- #
 
@@ -1713,8 +1713,8 @@ class HoldEscrowRequest(BaseModel):
     )
     reportId: str = Field(
         description=(
-            "고객사의 신고 식별자. 신고 하나에 동결 한 행이 걸린다. ERD "
-            "escrow_holds.external_report_id에 대응한다."
+            "고객사의 신고 식별자. 에스크로당 활성 신고는 최대 1개다. ERD "
+            "escrows.external_report_id에 대응한다."
         ),
         examples=["REPORT-7"],
         json_schema_extra={"minLength": 1, "maxLength": 100},
@@ -1723,15 +1723,11 @@ class HoldEscrowRequest(BaseModel):
 
 class HoldRecord(BaseModel):
     escrowId: int = Field(description="대상 에스크로.", examples=[ESCROW_ID])
-    activeHolds: int = Field(
-        description=(
-            "아직 풀리지 않은 동결 수. ERD escrow_holds에서 released_at이 비어 있는 "
-            "행을 센 값이다."
-        ),
-        examples=[1],
-    )
     isHeld: bool = Field(
-        description="잠겨 있는지. activeHolds가 0보다 크면 참이다.",
+        description=(
+            "잠겨 있는지. ERD escrows.hold_status가 HELD이면 참이다. "
+            "잠긴 동안은 지급과 일반 환불이 막힌다."
+        ),
         examples=[True],
     )
 
@@ -1753,8 +1749,8 @@ class UnholdEscrowRequest(BaseModel):
     )
     reportId: str = Field(
         description=(
-            "풀 신고의 식별자. 그 신고로 걸린 동결 행의 해제일시만 채운다. ERD "
-            "escrow_holds.external_report_id에 대응한다."
+            "풀 신고의 식별자. 그 신고로 걸린 동결을 해제한다. ERD "
+            "escrows.external_report_id에 대응하고 released_at을 채운다."
         ),
         examples=["REPORT-7"],
         json_schema_extra={"minLength": 1, "maxLength": 100},
@@ -1776,7 +1772,6 @@ class UnholdEscrowResponse(BaseModel):
             "holdEscrow",
             {
                 "escrowId": ESCROW_ID,
-                "activeHolds": 1,
                 "isHeld": True,
             },
         ),
@@ -1786,7 +1781,7 @@ class UnholdEscrowResponse(BaseModel):
     description=(
         "고객사에 신고가 접수되면 자동으로 건다. 관리자가 버튼을 눌러 거는 것이 "
         "아니다.\n\n"
-        "동결 중에는 지급도 환불도 거절된다. 신고 하나에 동결 한 행이 걸리며, 같은 "
+        "동결 중에는 지급도 환불도 거절된다. 에스크로당 활성 동결은 하나이며, 같은 "
         "신고로 다시 불러도 이미 걸려 있으므로 성공으로 처리한다.\n\n"
         "- **200 / H0000**: 걸었을 때. 이미 걸려 있어도 같은 응답을 준다\n"
         "- **400 / E5002**: `idempotencyKey`가 없을 때\n"
@@ -1825,7 +1820,7 @@ async def hold_escrow(
         Header=_escrow_response_header(
             "H0000", "정상처리 되었습니다.", payload.Header
         ),
-        REC=HoldRecord(escrowId=payload.escrowId, activeHolds=1, isHeld=True),
+        REC=HoldRecord(escrowId=payload.escrowId, isHeld=True),
     )
 
 
@@ -1839,7 +1834,6 @@ async def hold_escrow(
             "unholdEscrow",
             {
                 "escrowId": ESCROW_ID,
-                "activeHolds": 0,
                 "isHeld": False,
             },
         ),
@@ -1847,11 +1841,11 @@ async def hold_escrow(
     },
     summary="신고 종료로 동결 해제",
     description=(
-        "신고가 끝나면 그 신고로 걸린 동결만 푼다. 다른 신고의 동결이 남아 있으면 "
-        "여전히 잠긴 상태다.\n\n"
+        "신고가 끝나면 걸려 있던 동결을 푼다. 에스크로당 활성 동결은 하나이므로 "
+        "풀면 바로 잠금이 해제된다.\n\n"
         "늦게 도착한 동결·해제가 뒤바뀌지 않도록 걸린 시각과 풀린 시각으로 순서를 "
         "가린다.\n\n"
-        "- **200 / H0000**: 풀었을 때. `activeHolds`가 0이면 다시 지급과 환불을 할 수 "
+        "- **200 / H0000**: 풀었을 때. `isHeld`가 거짓이면 다시 지급과 환불을 할 수 "
         "있다\n"
         "- **400 / E5002**: `idempotencyKey`가 없을 때\n"
         "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
@@ -1889,7 +1883,7 @@ async def unhold_escrow(
         Header=_escrow_response_header(
             "H0000", "정상처리 되었습니다.", payload.Header
         ),
-        REC=HoldRecord(escrowId=payload.escrowId, activeHolds=0, isHeld=False),
+        REC=HoldRecord(escrowId=payload.escrowId, isHeld=False),
     )
 
 
@@ -1908,7 +1902,7 @@ class EscrowTransactionItem(BaseModel):
         description="거래 식별자. ERD escrow_transactions.id에 대응한다.",
         examples=[1001],
     )
-    type: str = Field(
+    transactionType: str = Field(
         description=(
             "거래 종류. DEPOSIT은 예치, RELEASE는 지급, REFUND는 환불이다. ERD "
             "escrow_transactions.transaction_type에 대응한다."
@@ -1958,8 +1952,10 @@ class InquireEscrowRecord(BaseModel):
         description="가용 잔액. 예치액에서 지급액과 환불액을 뺀 값이다.",
         examples=[250000],
     )
-    isHeld: bool = Field(description="동결 여부.", examples=[False])
-    activeHolds: int = Field(description="풀리지 않은 동결 수.", examples=[0])
+    isHeld: bool = Field(
+        description="동결 여부. ERD escrows.hold_status가 HELD이면 참이다.",
+        examples=[False],
+    )
     transactions: List[EscrowTransactionItem] = Field(
         description="원장 항목. 없으면 빈 배열이다."
     )
@@ -2028,18 +2024,17 @@ INQUIRE_ERRORS: dict = dict(ESCROW_ERRORS)
                 "refundedAmount": 0,
                 "balance": 250000,
                 "isHeld": False,
-                "activeHolds": 0,
                 "transactions": [
                     {
                         "transactionId": 1001,
-                        "type": "DEPOSIT",
+                        "transactionType": "DEPOSIT",
                         "amount": 650000,
                         "status": "COMPLETED",
                         "referenceId": "CONTRACT-999",
                     },
                     {
                         "transactionId": 1002,
-                        "type": "RELEASE",
+                        "transactionType": "RELEASE",
                         "amount": 400000,
                         "status": "COMPLETED",
                         "referenceId": "MILESTONE-1",
@@ -2101,18 +2096,17 @@ async def inquire_escrow(
             refundedAmount=0,
             balance=250000,
             isHeld=False,
-            activeHolds=0,
             transactions=[
                 EscrowTransactionItem(
                     transactionId=1001,
-                    type="DEPOSIT",
+                    transactionType="DEPOSIT",
                     amount=650000,
                     status="COMPLETED",
                     referenceId="CONTRACT-999",
                 ),
                 EscrowTransactionItem(
                     transactionId=1002,
-                    type="RELEASE",
+                    transactionType="RELEASE",
                     amount=400000,
                     status="COMPLETED",
                     referenceId="MILESTONE-1",
