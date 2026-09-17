@@ -1,15 +1,21 @@
 import Link from "next/link";
 import { Badge, Card, StatusDot } from "@/components/common";
 import { EmptyState } from "@/components/feedback";
-import { buttonClass } from "@/components/buttons";
+import { Button, buttonClass } from "@/components/buttons";
 import { formatRelativeTime } from "@/lib/format";
-import { notificationHref, type NotificationFilter } from "@/lib/notifications";
-import type { NotificationList } from "@/types/notification";
+import {
+  notificationHref,
+  notificationTargetHref,
+  type NotificationFilter,
+} from "@/lib/notifications";
+import type { Notification, NotificationList } from "@/types/notification";
 
 export interface NotificationFeedProps {
   notifications: NotificationList;
   filter: NotificationFilter;
   now: string;
+  confirmingId?: number | null;
+  onConfirm?: (notification: Notification) => void;
 }
 
 /** 공지는 본문을 펼쳐 보이고, 나머지는 읽음 상태가 드러나는 목록으로 나눕니다. */
@@ -17,6 +23,8 @@ export function NotificationFeed({
   notifications,
   filter,
   now,
+  confirmingId,
+  onConfirm,
 }: Readonly<NotificationFeedProps>) {
   const announcements = notifications.content.filter((item) => item.type === "공지");
   const items = notifications.content.filter((item) => item.type !== "공지");
@@ -84,6 +92,16 @@ export function NotificationFeed({
                     </div>
                     <p className="mt-1 text-[13px] leading-5 text-fg-muted">{item.content}</p>
                   </div>
+                  {notificationTargetHref(item) && onConfirm && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      loading={confirmingId === item.notificationId}
+                      onClick={() => onConfirm(item)}
+                    >
+                      확인하기
+                    </Button>
+                  )}
                 </li>
               ))}
             </ul>

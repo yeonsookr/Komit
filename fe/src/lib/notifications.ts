@@ -1,4 +1,5 @@
 import { ROUTES } from "./routes";
+import type { Notification } from "@/types/notification";
 
 /** 알림 화면이 주소로 주고받는 query 이름입니다. */
 export const UNREAD_ONLY_PARAM = "unreadOnly";
@@ -30,4 +31,14 @@ export function notificationHref(filter: NotificationFilter, page = 1): string {
   if (page > 1) query.set(NOTIFICATION_PAGE_PARAM, String(page));
   const suffix = query.toString();
   return suffix ? `${ROUTES.notifications}?${suffix}` : ROUTES.notifications;
+}
+
+/** 현재 화면이 실제로 열 수 있는 알림 목적지만 주소로 바꿉니다. */
+export function notificationTargetHref(
+  notification: Pick<Notification, "targetType" | "roomId">,
+): string | null {
+  if (notification.targetType === "CONTRACT" && notification.roomId !== null) {
+    return ROUTES.roomContract(notification.roomId);
+  }
+  return null;
 }
