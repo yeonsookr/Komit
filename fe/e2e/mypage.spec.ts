@@ -41,8 +41,11 @@ test.describe('마이페이지', () => {
       '/mypage/profile',
     );
 
-    // 프로필이 없으면 일정도 없습니다.
-    await expect(page.getByRole('link', { name: '일정 관리' })).toHaveCount(0);
+    // 의뢰인 일정도 있으므로 개발자 프로필이 없어도 일정으로 갈 수 있습니다.
+    await expect(page.getByRole('link', { name: '일정 관리' })).toHaveAttribute(
+      'href',
+      '/mypage/schedule',
+    );
     await expect(page.getByRole('link', { name: '프로필 편집' })).toHaveCount(0);
   });
 
