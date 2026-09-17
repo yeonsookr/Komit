@@ -51,6 +51,12 @@ export function formatDateLabel(isoString: string): string {
   return dateLabelFormat.format(new Date(isoString));
 }
 
+/** "8월 22일 토" — 예약처럼 날짜와 요일을 함께 보여주는 표기. */
+export function formatDateWithWeekday(isoString: string): string {
+  const date = new Date(isoString);
+  return `${dateLabelFormat.format(date)} ${weekdayFormat.format(date)}`;
+}
+
 /** "2026년 3월 1일" — 약관 개정일처럼 연도까지 밝혀야 하는 자리. */
 export function formatFullDate(isoString: string): string {
   return fullDateFormat.format(new Date(isoString));

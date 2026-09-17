@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   formatDateLabel,
+  formatDateWithWeekday,
   formatRelativeTime,
   formatFullDate,
   formatShortDate,
@@ -19,6 +20,10 @@ describe('날짜·시각 포맷터', () => {
 
   it('날짜 구분 라벨을 만든다', () => {
     expect(formatDateLabel(SENT_AT)).toBe('8월 20일');
+  });
+
+  it('예약 날짜는 요일을 함께 표시한다', () => {
+    expect(formatDateWithWeekday('2026-08-22T15:00:00+09:00')).toBe('8월 22일 토');
   });
 
   it('같은 날 메시지는 같은 키를 갖는다', () => {
