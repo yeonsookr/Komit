@@ -6,6 +6,7 @@ import { Button } from "@/components/buttons";
 import { Chip, SearchInput } from "@/components/common";
 import { KEYWORD_PARAM } from "@/lib/developerSearch";
 import { ROUTES } from "@/lib/routes";
+import { RotatingWord } from "./RotatingWord";
 
 /** 검색바 아래 입력 예시. 누르면 입력칸에 그대로 채워집니다. */
 const SYMPTOM_EXAMPLES = [
@@ -13,6 +14,9 @@ const SYMPTOM_EXAMPLES = [
   "갑자기 API 비용이 40만원 나갔어요",
   "주소 연결하는 방법을 모르겠어요",
 ];
+
+/** 제목에서 돌아가며 바뀌는 낱말. 첫 낱말이 서버에서 그려집니다. */
+const IDEA_WORDS = ["반짝이는", "번뜩이는", "혜성같은"] as const;
 
 export interface LandingHeroProps {
   /** 이번 주에 열린 상담 수. 지표를 읽지 못했으면 null 이고 그 줄은 비웁니다. */
@@ -34,8 +38,16 @@ export function LandingHero({ weeklyInquiryRoomCount }: Readonly<LandingHeroProp
 
   return (
     <section className="flex flex-col items-center py-16 text-center sm:py-24">
+      {/*
+        좁은 화면에서는 쉼표에서 줄이 바뀝니다. 두 마디를 각각 inline-block 으로 묶으면
+        줄바꿈이 마디 사이에서 먼저 일어납니다. `whitespace-nowrap` 이 아니라서 마디
+        하나가 화면보다 넓으면 그 안에서 다시 접히고, 가로 스크롤은 생기지 않습니다.
+      */}
       <h1 className="text-3xl font-bold tracking-tight text-fg sm:text-4xl">
-        당신의 ( ) 아이디어, Komit과 함께 완성해보세요.
+        <span className="inline-block">
+          당신의 <RotatingWord words={IDEA_WORDS} /> 아이디어,
+        </span>{" "}
+        <span className="inline-block">Komit과 함께 완성해보세요.</span>
       </h1>
 
       <Form

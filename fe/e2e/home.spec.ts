@@ -13,8 +13,9 @@ test.describe('랜딩', () => {
 
   test('히어로 · 추천 개발자 · 진행 순서가 보인다', async ({ page }) => {
     await expect(page).toHaveTitle('Komit');
+    // 「당신의」 뒤의 낱말은 2.2초마다 바뀝니다. 무엇이 들어 있든 문장은 같습니다.
     await expect(
-      page.getByRole('heading', { name: '당신의 ( ) 아이디어, Komit과 함께 완성해보세요.' }),
+      page.getByRole('heading', { name: /^당신의 .+ 아이디어, Komit과 함께 완성해보세요\.$/ }),
     ).toBeVisible();
     await expect(page.getByText('이번 주 상담')).toContainText('412');
 
