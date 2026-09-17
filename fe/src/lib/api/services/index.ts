@@ -5,6 +5,7 @@ export * from "./developers";
 export * from "./landing";
 export * from "./milestones";
 export * from "./mypage";
+export * from "./notifications";
 export * from "./diagnoses";
 export * from "./recommendations";
 export * from "./rooms";
