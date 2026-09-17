@@ -63,6 +63,16 @@ spec:
                 secretKeyRef:
                   name: service-db-app
                   key: password
+            # Redis는 Sentinel에 현재 Primary 주소를 물어 접속합니다. Sentinel과 Redis 비밀번호는 같은 Secret입니다.
+            - name: REDIS_SENTINEL_NODES
+              value: service-redis-sentinel:26379
+            - name: REDIS_SENTINEL_MASTER
+              value: mymaster
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: service-redis-auth
+                  key: password
             - name: POD_NAME
               valueFrom:
                 fieldRef:

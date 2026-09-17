@@ -1,10 +1,12 @@
 # K3s 배포
 
-`service`, `escrow`, `fe`를 각각 2개의 Pod로 실행하고, 두 서버의 DB를 CloudNativePG 클러스터로 분리합니다. `fe`(Next.js 서버)는 클러스터 안에서 Service 이름으로 스프링을 호출합니다. Spring이 트랜잭션 성격에 따라 쓰기는 Primary로, `readOnly` 조회는 Standby로 보냅니다.
+`service`, `escrow`, `fe`를 각각 2개의 Pod로 실행하고, 두 서버의 DB를 CloudNativePG 클러스터로 분리합니다. `fe`(Next.js 서버)는 클러스터 안에서 Service 이름으로 스프링을 호출합니다. Spring이 트랜잭션 성격에 따라 쓰기는 Primary로, `readOnly` 조회는 Standby로 보냅니다. `service`는 refresh token 저장과 캐시에 Redis를 쓰고, Redis는 Sentinel이 감시하는 Primary 1 + Replica 2로 둡니다.
 
 ```text
 service Pod ×2 ─┬─ 일반 트랜잭션   → service-db-rw ─ Primary
-                └─ readOnly 트랜잭션 → service-db-ro ─ Standby ×2
+                ├─ readOnly 트랜잭션 → service-db-ro ─ Standby ×2
+                └─ Redis ─ service-redis-sentinel:26379 ─(현재 Primary 주소)→ service-redis Primary
+                                                                              └─ Replica ×2
 
 escrow Pod ×2 ──┬─ 일반 트랜잭션   → escrow-db-rw ── Primary
                 └─ readOnly 트랜잭션 → escrow-db-ro ── Standby ×2
@@ -12,13 +14,21 @@ escrow Pod ×2 ──┬─ 일반 트랜잭션   → escrow-db-rw ── Primar
 
 | 디렉터리 | 내용 |
 |---|---|
-| `platform/` | CloudNativePG 오퍼레이터 (K3s HelmChart) |
-| `database/` | `service-db`, `escrow-db` Cluster |
-| `base/` | `service`, `escrow` 애플리케이션 |
+| `platform/` | CloudNativePG 오퍼레이터, redis-operator (K3s HelmChart) |
+| `database/` | `service-db`, `escrow-db` Cluster, `service-redis` RedisReplication + RedisSentinel |
+| `base/` | `service`, `escrow`, `fe` 애플리케이션 |
 | `prod/` | 운영 overlay. `service`(30080), `escrow`(30081), `fe`(30082)를 nginx용 NodePort로 엽니다 |
 | `local/` | 로컬 실습용 Secret, NodePort, 이미지 태그 |
 
-CloudNativePG Cluster는 오퍼레이터의 CRD가 설치된 뒤에만 만들 수 있습니다. 그래서 오퍼레이터 → DB → 애플리케이션 순서로 나눠 적용합니다.
+CloudNativePG Cluster와 Redis 리소스는 각 오퍼레이터의 CRD가 설치된 뒤에만 만들 수 있습니다. 그래서 오퍼레이터 → DB·Redis → 애플리케이션 순서로 나눠 적용합니다.
+
+### Redis 구성
+
+- Redis 3노드(`service-redis-0~2`)와 Sentinel 3개(`service-redis-sentinel-0~2`)를 [OT-CONTAINER-KIT redis-operator](https://github.com/OT-CONTAINER-KIT/redis-operator)가 관리합니다. Primary가 죽으면 Sentinel 2개 이상(quorum)이 동의해 Replica 하나를 승격하고, 오퍼레이터가 Pod의 `redis-role` 라벨을 다시 맞춥니다.
+- Spring은 `service-redis-sentinel:26379`에 현재 Primary 주소를 물어 붙습니다. 오퍼레이터가 만드는 `service-redis-master` Service는 확인용으로만 씁니다. Redis 복제는 비동기라 failover 순간의 마지막 쓰기는 유실될 수 있습니다.
+- 스토리지(PVC 1Gi)를 지정해 오퍼레이터가 RDB + AOF 영속화를 켭니다. `database/service-redis.yaml`의 ConfigMap이 `maxmemory-policy noeviction`을 더해 refresh token이 메모리 부족으로 지워지지 않게 합니다. 캐시 키는 반드시 TTL을 달아야 합니다.
+- Redis·Sentinel 비밀번호는 `service-redis-auth` Secret 하나를 함께 씁니다. 운영은 `deploy.sh`가 `SERVICE_REDIS_PASSWORD`로 만들고, 로컬은 `local/database/secrets.yaml`에 고정 값이 있습니다.
+- 지금 K3s는 노드 한 대이므로 Sentinel은 Redis Pod 장애만 막고 노드 장애는 막지 못합니다. PostgreSQL 3인스턴스와 같은 한계입니다.
 
 ## Windows에서 한 번에 실행
 
@@ -31,20 +41,28 @@ docker compose -f .\deploy\k3s\docker-compose.yml logs -f deployer
 
 Compose가 다음 작업을 순서대로 수행합니다.
 
-1. `service`, `escrow` Docker 이미지 빌드
+1. `service`, `escrow`, `fe` Docker 이미지 빌드
 2. 이미지를 K3s가 시작할 때 가져갈 tar 파일로 저장
 3. privileged Linux 컨테이너에서 단일 노드 K3s 실행
-4. CloudNativePG 오퍼레이터 설치
-5. `service-db`, `escrow-db`(각 Primary 1 + Standby 2) 배포
-6. `service`, `escrow`를 각각 2개 Pod로 배포
+4. CloudNativePG 오퍼레이터, redis-operator 설치
+5. `service-db`, `escrow-db`(각 Primary 1 + Standby 2), `service-redis`(Primary 1 + Replica 2, Sentinel 3) 배포
+6. `service`, `escrow`, `fe`를 각각 2개 Pod로 배포
 
 상태와 접속을 확인합니다.
 
 ```powershell
 docker exec komit-k3s-k3s-1 /bin/kubectl -n komit get cluster
-docker exec komit-k3s-k3s-1 /bin/kubectl -n komit get pods -o wide -L role
+docker exec komit-k3s-k3s-1 /bin/kubectl -n komit get redisreplication,redissentinel
+docker exec komit-k3s-k3s-1 /bin/kubectl -n komit get pods -o wide -L role,redis-role
 curl.exe http://localhost:8080/actuator/health
 curl.exe http://localhost:8081/actuator/health
+```
+
+Redis failover를 눈으로 확인하려면 Primary Pod를 지우고 다른 Pod가 `redis-role=master`가 되는지 봅니다.
+
+```powershell
+docker exec komit-k3s-k3s-1 /bin/kubectl -n komit delete pod -l redis-role=master,app=service-redis
+docker exec komit-k3s-k3s-1 /bin/kubectl -n komit get pods -L redis-role -l app=service-redis -w
 ```
 
 중지와 재시작 시 데이터는 유지됩니다.
@@ -209,26 +227,27 @@ sudo -n true && echo OK
 
 `OK`가 나오지 않으면 CI가 `deploy.sh`를 실행할 수 없습니다. `sudo -n -l`로 허용 범위를 확인합니다. docker 명령에만 허용되어 있다면 서버 관리자에게 권한 추가를 요청합니다.
 
-**A-1. GitLab에 DB 비밀번호 등록**
+**A-1. GitLab에 DB·Redis 비밀번호 등록**
 
-이 비밀번호로 첫 배포 때 DB 계정이 만들어집니다.
+이 비밀번호로 첫 배포 때 DB 계정과 Redis 비밀번호가 만들어집니다.
 
 1. 비밀번호를 만듭니다. 영문·숫자만 쓰면 GitLab Masked 조건에 걸리지 않습니다.
    ```bash
    openssl rand -hex 24
    ```
-   두 번 실행해 service용, escrow용을 따로 만듭니다.
+   세 번 실행해 service DB용, escrow DB용, service Redis용을 따로 만듭니다.
 2. GitLab 프로젝트 → **Settings → CI/CD → Variables → Add variable**
-3. 아래 두 개를 등록합니다.
+3. 아래 세 개를 등록합니다.
 
    | Key | Value | Visibility | Protect variable |
    |---|---|---|---|
-   | `SERVICE_DB_PASSWORD` | service용 비밀번호 | **Masked** | 체크 |
-   | `ESCROW_DB_PASSWORD` | escrow용 비밀번호 | **Masked** | 체크 |
+   | `SERVICE_DB_PASSWORD` | service DB용 비밀번호 | **Masked** | 체크 |
+   | `ESCROW_DB_PASSWORD` | escrow DB용 비밀번호 | **Masked** | 체크 |
+   | `SERVICE_REDIS_PASSWORD` | service Redis용 비밀번호 | **Masked** | 체크 |
 
 4. **Settings → Repository → Protected branches**에 `develop`이 있는지 확인합니다. Protected 변수는 보호 브랜치 파이프라인에서만 읽힙니다. `develop`이 없으면 변수가 빈 값으로 들어가 배포 잡이 실패합니다.
 
-비밀번호는 한 번 정하면 바꾸지 않습니다. DB 계정은 첫 배포 때 만들어지므로, 나중에 변수 값만 바꾸면 Spring과 DB의 비밀번호가 어긋날 수 있습니다.
+DB 비밀번호는 한 번 정하면 바꾸지 않습니다. DB 계정은 첫 배포 때 만들어지므로, 나중에 변수 값만 바꾸면 Spring과 DB의 비밀번호가 어긋날 수 있습니다. Redis 비밀번호는 배포마다 Secret과 redis.conf에 함께 반영되지만, 바꾸면 Redis Pod가 재시작됩니다.
 
 `SSH_ADDRESS`, `SSH_PRIVATE_KEY`, `DOCKER_REGISTRY*`는 mock 배포에서 이미 쓰고 있어 추가하지 않습니다.
 
@@ -260,9 +279,13 @@ service image: docker.io/<계정>/komit-service:<커밋>      ← 둘 다 "(유�
 escrow image:  docker.io/<계정>/komit-escrow:<커밋>
 helmchart.helm.cattle.io/cnpg created                      ← 1. 오퍼레이터 설치
 deployment.apps/cnpg-cloudnative-pg condition met
-cluster.postgresql.cnpg.io/service-db created              ← 2. DB 생성
+helmchart.helm.cattle.io/redis-operator created            ← 1-1. Redis 오퍼레이터 설치
+deployment.apps/redis-operator condition met
+cluster.postgresql.cnpg.io/service-db created              ← 2. DB·Redis 생성
 cluster.postgresql.cnpg.io/service-db condition met           (여기서 몇 분 멈춰 있어도 정상)
 cluster.postgresql.cnpg.io/escrow-db condition met
+statefulset rolling update complete 3 pods ...service-redis
+statefulset rolling update complete 3 pods ...service-redis-sentinel
 deployment.apps/service created                            ← 3. 앱 배포
 deployment "service" successfully rolled out
 deployment "escrow" successfully rolled out
@@ -283,10 +306,11 @@ service-db   8m    3           3       Cluster in healthy state   service-db-1
 ```
 
 ```bash
-sudo kubectl -n komit get pods -L role
+sudo kubectl -n komit get redisreplication,redissentinel
+sudo kubectl -n komit get pods -L role,redis-role
 ```
 
-`service-…` 2개, `escrow-…` 2개, `service-db-1~3`, `escrow-db-1~3`이 모두 `Running`, `READY 1/1`이면 정상입니다.
+`service-…` 2개, `escrow-…` 2개, `service-db-1~3`, `escrow-db-1~3`, `service-redis-0~2`, `service-redis-sentinel-0~2`가 모두 `Running`, `READY 1/1`이고 `service-redis-…` 중 하나가 `redis-role=master`이면 정상입니다.
 
 **A-5. 외부 접속 확인**
 
@@ -328,13 +352,16 @@ fe image is required because deployment/fe does not exist yet
    ```bash
    read -rsp "SERVICE_DB_PASSWORD: " SERVICE_DB_PASSWORD; echo
    read -rsp "ESCROW_DB_PASSWORD: " ESCROW_DB_PASSWORD; echo
-   export SERVICE_DB_PASSWORD ESCROW_DB_PASSWORD
+   read -rsp "SERVICE_REDIS_PASSWORD: " SERVICE_REDIS_PASSWORD; echo
+   export SERVICE_DB_PASSWORD ESCROW_DB_PASSWORD SERVICE_REDIS_PASSWORD
    export FE_IMAGE=docker.io/<계정>/komit-fe:<태그>
    # GitLab CI/CD 변수에 등록된 값과 같게 넣습니다.
    export BACKEND_API_BASE_URL=<GitLab 변수 값>
    export AI_API_BASE_URL=<GitLab 변수 값>
+   export KAKAO_CLIENT_ID=<GitLab 변수 값>
+   export KAKAO_REDIRECT_URI=<GitLab 변수 값>
 
-   sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,FE_IMAGE,BACKEND_API_BASE_URL,AI_API_BASE_URL \
+   sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,SERVICE_REDIS_PASSWORD,FE_IMAGE,BACKEND_API_BASE_URL,AI_API_BASE_URL,KAKAO_CLIENT_ID,KAKAO_REDIRECT_URI \
      sh ~/komit-k3s/k3s/deploy.sh
    ```
 
@@ -369,7 +396,8 @@ scp -r deploy/k3s <계정>@komit.site:~/komit-k3s-manual
 ```bash
 read -rsp "SERVICE_DB_PASSWORD: " SERVICE_DB_PASSWORD; echo
 read -rsp "ESCROW_DB_PASSWORD: " ESCROW_DB_PASSWORD; echo
-export SERVICE_DB_PASSWORD ESCROW_DB_PASSWORD
+read -rsp "SERVICE_REDIS_PASSWORD: " SERVICE_REDIS_PASSWORD; echo
+export SERVICE_DB_PASSWORD ESCROW_DB_PASSWORD SERVICE_REDIS_PASSWORD
 
 export SERVICE_IMAGE=docker.io/<계정>/komit-service:<태그>
 export ESCROW_IMAGE=docker.io/<계정>/komit-escrow:<태그>
@@ -378,8 +406,10 @@ export FE_IMAGE=docker.io/<계정>/komit-fe:<태그>
 # GitLab CI/CD 변수에 등록된 값과 같게 넣습니다.
 export BACKEND_API_BASE_URL=<GitLab 변수 값>
 export AI_API_BASE_URL=<GitLab 변수 값>
+export KAKAO_CLIENT_ID=<GitLab 변수 값>
+export KAKAO_REDIRECT_URI=<GitLab 변수 값>
 
-sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,SERVICE_IMAGE,ESCROW_IMAGE,FE_IMAGE,BACKEND_API_BASE_URL,AI_API_BASE_URL \
+sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,SERVICE_REDIS_PASSWORD,SERVICE_IMAGE,ESCROW_IMAGE,FE_IMAGE,BACKEND_API_BASE_URL,AI_API_BASE_URL,KAKAO_CLIENT_ID,KAKAO_REDIRECT_URI \
   sh ~/komit-k3s-manual/deploy.sh
 ```
 
@@ -404,6 +434,9 @@ rm -rf ~/komit-k3s-manual
 | `cluster ... condition met`에서 10분 넘게 멈춤 | DB Pod가 못 뜸 | `sudo kubectl -n komit get pods`로 DB Pod 상태 확인. `Pending`이면 메모리 부족, `ImagePullBackOff`이면 서버의 인터넷(ghcr.io) 접속 확인 |
 | `komit-service` Pod가 `ImagePullBackOff` | Docker Hub 저장소가 private | 3단계 Docker Hub 인증 |
 | 앱 Pod가 `CrashLoopBackOff` | 앱 기동 실패 | `sudo kubectl -n komit logs deploy/service`. `password authentication failed`이면 비밀번호가 DB와 다름 |
+| `statefulset rolling update complete`가 `service-redis`에서 멈춤 | Redis Pod가 못 뜸 | `sudo kubectl -n komit describe pod service-redis-0`. PVC가 `Pending`이면 스토리지, init 컨테이너 실패면 `service-redis-config` ConfigMap 문법 확인 |
+| `service-redis-sentinel` Pod가 `CrashLoopBackOff` | Sentinel이 Primary를 못 찾음 | `sudo kubectl -n komit get redisreplication service-redis`의 `MASTER` 열이 비어 있으면 `sudo kubectl -n ot-operators logs deploy/redis-operator` 확인 |
+| 앱 로그에 `NOAUTH` 또는 `WRONGPASS` | Spring과 Redis 비밀번호가 다름 | `service-redis-auth` Secret과 `SERVICE_REDIS_PASSWORD` 값 확인 |
 | `curl`이 **502** | 30080에 받는 쪽이 없음 | `sudo kubectl -n komit get pods`로 service Pod가 Ready인지 확인 |
 | `curl`이 **504** (약 60초 뒤) | nginx 컨테이너가 30080에 닿지 못함 | A-0의 `nodeport-addresses` 확인 |
 
@@ -425,6 +458,7 @@ fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
 |---|---|---|
 | `SSH_ADDRESS`, `SSH_PRIVATE_KEY` | 목 배포와 공용 | 서버 접속 |
 | `SERVICE_DB_PASSWORD`, `ESCROW_DB_PASSWORD` | Masked, Protected | DB 계정 Secret |
+| `SERVICE_REDIS_PASSWORD` | Masked, Protected | Redis·Sentinel 비밀번호 Secret(`service-redis-auth`) |
 | `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` | FE 이미지 빌드와 공용 | fe 실행 환경(`fe-config`). `ESCROW_API_BASE_URL`은 등록되어 있을 때만 넣습니다 |
 | `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI` | Masked | 카카오 로그인. fe 실행 환경(`fe-config`). Redirect URI 는 카카오 콘솔에 등록한 배포 주소(`https://komit.site/api/auth/kakao/callback`)와 글자까지 같아야 합니다 |
 
@@ -439,8 +473,11 @@ fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
 ```bash
 export SERVICE_DB_PASSWORD=<password>
 export ESCROW_DB_PASSWORD=<password>
+export SERVICE_REDIS_PASSWORD=<password>
 export BACKEND_API_BASE_URL=<fe가 호출할 백엔드 주소>
 export AI_API_BASE_URL=<fe가 호출할 AI 주소>
+export KAKAO_CLIENT_ID=<카카오 REST API 키>
+export KAKAO_REDIRECT_URI=<카카오 콜백 주소>
 
 # 이번에 바뀐 모듈만 넘깁니다. 클러스터에 아직 없는 모듈은 반드시 넘깁니다.
 export SERVICE_IMAGE=docker.io/<account>/komit-service:<commit-sha>
@@ -454,18 +491,20 @@ chmod +x deploy/k3s/deploy.sh
 | 환경변수 | 필수 | 설명 |
 |---|---|---|
 | `SERVICE_DB_PASSWORD`, `ESCROW_DB_PASSWORD` | 예 | DB 소유자 계정 비밀번호. `service-db-app`, `escrow-db-app` Secret이 되어 CloudNativePG initdb와 Spring이 함께 읽습니다. |
+| `SERVICE_REDIS_PASSWORD` | 예 | Redis `requirepass`·`masterauth`와 Sentinel 접속 비밀번호. `service-redis-auth` Secret이 되어 오퍼레이터와 Spring이 함께 읽습니다. |
 | `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` | 예 | fe 서버가 백엔드·AI를 호출할 주소. GitLab CI/CD 변수와 같은 값을 넣습니다. 값이 바뀌면 fe Pod가 새 값으로 다시 뜹니다. |
 | `ESCROW_API_BASE_URL` | 아니요 | 값이 있을 때만 fe 실행 환경에 넣습니다. |
 | `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI` | 예 | 카카오 로그인 REST API 키와 콜백 주소. fe 의 `/api/auth/kakao` 가 실행 시점에 읽습니다. 없으면 로그인만 500 으로 실패하고 다른 화면은 영향이 없습니다. |
 | `SERVICE_IMAGE`, `ESCROW_IMAGE`, `FE_IMAGE` | 아니요 | 비어 있으면 클러스터에서 돌고 있는 이미지를 유지합니다. 바뀌지 않은 모듈은 재시작하지 않습니다. 클러스터에 아직 없는 모듈은 필수입니다. |
 
-스크립트는 배포할 이미지 태그를 임시 디렉터리의 Kustomize overlay에 고정해 적용하고, 각 단계의 준비 완료를 기다린 뒤 다음 단계로 넘어갑니다. DB 주소는 클러스터 내부 DNS 이름으로 고정되어 있어 주입하지 않습니다.
+스크립트는 배포할 이미지 태그를 임시 디렉터리의 Kustomize overlay에 고정해 적용하고, 각 단계의 준비 완료를 기다린 뒤 다음 단계로 넘어갑니다. DB·Redis 주소는 클러스터 내부 DNS 이름으로 고정되어 있어 주입하지 않습니다.
 
 ## 확인
 
 ```bash
 kubectl -n komit get cluster
-kubectl -n komit get pods -o wide -L role
+kubectl -n komit get redisreplication,redissentinel
+kubectl -n komit get pods -o wide -L role,redis-role
 
 kubectl -n komit port-forward service/service 8080:8080
 curl http://localhost:8080/actuator/health

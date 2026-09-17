@@ -219,8 +219,21 @@ fe-build:
     APP_INSTANCE_ROLE: WRITER
 
 # 서비스 서버 테스트 + JaCoCo 커버리지
+# service의 Redis 통합 테스트는 Testcontainers로 격리된 Redis를 띄우므로 Docker 데몬(dind)이 필요합니다.
+# services는 상속 시 병합되지 않고 덮어써 PostgreSQL도 함께 다시 적습니다.
+# --tls=false: TLS 없이 TCP로 열 때 데몬이 기동을 의도적으로 지연하는 것을 막습니다. (Testcontainers GitLab CI 문서)
 service-test:
   extends: .gradle-test
+  services:
+    - name: postgres:16-alpine
+      alias: postgres
+    - name: docker:29.6.2-dind
+      alias: docker
+      command: ["--tls=false"]
+  variables:
+    DOCKER_HOST: tcp://docker:2375
+    DOCKER_TLS_CERTDIR: ""
+    DOCKER_DRIVER: overlay2
   needs:
     - job: service-build
       artifacts: true
@@ -701,7 +714,7 @@ mock-docker-deploy:
 
 # SSH로 배포 서버에 접속 후 K3s에 service·escrow·fe 배포
 # 이번 파이프라인에서 빌드된 이미지만 교체하고, 빌드되지 않은 모듈은 서버에서 돌고 있는 이미지를 유지합니다.
-# DB 비밀번호는 SERVICE_DB_PASSWORD, ESCROW_DB_PASSWORD CI/CD 변수(Masked, Protected)로 주입합니다.
+# DB 비밀번호는 SERVICE_DB_PASSWORD, ESCROW_DB_PASSWORD, Redis 비밀번호는 SERVICE_REDIS_PASSWORD CI/CD 변수(Masked, Protected)로 주입합니다.
 k3s-deploy:
   stage: deploy
   image: alpine:3.22
@@ -728,7 +741,7 @@ k3s-deploy:
   before_script:
     - apk add --no-cache openssh-client tar
     - |
-      for NAME in SSH_ADDRESS SSH_PRIVATE_KEY SERVICE_DB_PASSWORD ESCROW_DB_PASSWORD BACKEND_API_BASE_URL AI_API_BASE_URL KAKAO_CLIENT_ID KAKAO_REDIRECT_URI; do
+      for NAME in SSH_ADDRESS SSH_PRIVATE_KEY SERVICE_DB_PASSWORD ESCROW_DB_PASSWORD SERVICE_REDIS_PASSWORD BACKEND_API_BASE_URL AI_API_BASE_URL KAKAO_CLIENT_ID KAKAO_REDIRECT_URI; do
         eval "VALUE=\${$NAME:-}"
         test -n "$VALUE" || {
           echo "$NAME CI/CD variable is required"
@@ -763,6 +776,7 @@ k3s-deploy:
         echo 'set -eu'
         echo "export SERVICE_DB_PASSWORD=\"\$(printf %s '$(b64 "$SERVICE_DB_PASSWORD")' | base64 -d)\""
         echo "export ESCROW_DB_PASSWORD=\"\$(printf %s '$(b64 "$ESCROW_DB_PASSWORD")' | base64 -d)\""
+        echo "export SERVICE_REDIS_PASSWORD=\"\$(printf %s '$(b64 "$SERVICE_REDIS_PASSWORD")' | base64 -d)\""
         echo "export SERVICE_IMAGE='${SERVICE_IMAGE:-}'"
         echo "export ESCROW_IMAGE='${ESCROW_IMAGE:-}'"
         echo "export FE_IMAGE='${FE_IMAGE:-}'"

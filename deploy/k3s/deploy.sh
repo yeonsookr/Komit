@@ -8,6 +8,7 @@ ESCROW_IMAGE=${ESCROW_IMAGE:-}
 FE_IMAGE=${FE_IMAGE:-}
 : "${SERVICE_DB_PASSWORD:?SERVICE_DB_PASSWORD is required}"
 : "${ESCROW_DB_PASSWORD:?ESCROW_DB_PASSWORD is required}"
+: "${SERVICE_REDIS_PASSWORD:?SERVICE_REDIS_PASSWORD is required}"
 # fe 서버가 백엔드를 호출할 주소입니다. 이미지 빌드와 같은 GitLab CI/CD 변수 값을 실행 환경에도 넣습니다.
 : "${BACKEND_API_BASE_URL:?BACKEND_API_BASE_URL is required}"
 : "${AI_API_BASE_URL:?AI_API_BASE_URL is required}"
@@ -49,6 +50,18 @@ apply_basic_auth_secret() {
     --dry-run=client -o yaml | kubectl apply -f -
 }
 
+apply_password_secret() {
+  kubectl -n komit create secret generic "$1" \
+    --from-literal=password="$2" \
+    --dry-run=client -o yaml | kubectl apply -f -
+}
+
+# 오퍼레이터가 만드는 StatefulSet은 CR을 적용한 직후에는 아직 없을 수 있어 생길 때까지 기다린 뒤 rollout을 봅니다.
+wait_statefulset() {
+  until kubectl -n komit get statefulset "$1" >/dev/null 2>&1; do sleep 3; done
+  kubectl -n komit rollout status statefulset/"$1" --timeout=300s
+}
+
 kubectl apply -f "$SCRIPT_DIR/base/namespace.yaml"
 
 SERVICE_IMAGE=$(resolve_image "$SERVICE_IMAGE" service)
@@ -65,11 +78,22 @@ kubectl wait --for=condition=Established crd/clusters.postgresql.cnpg.io --timeo
 until [ -n "$(kubectl -n cnpg-system get deployment -l app.kubernetes.io/name=cloudnative-pg -o name 2>/dev/null)" ]; do sleep 3; done
 kubectl -n cnpg-system wait --for=condition=Available deployment -l app.kubernetes.io/name=cloudnative-pg --timeout=300s
 
-# 2. DB 계정 Secret, service-db, escrow-db
+# 1-1. Redis 오퍼레이터
+kubectl apply -f "$SCRIPT_DIR/platform/redis-operator.yaml"
+until kubectl get crd redisreplications.redis.redis.opstreelabs.in redissentinels.redis.redis.opstreelabs.in >/dev/null 2>&1; do sleep 3; done
+kubectl wait --for=condition=Established crd/redisreplications.redis.redis.opstreelabs.in crd/redissentinels.redis.redis.opstreelabs.in --timeout=300s
+until kubectl -n ot-operators get deployment redis-operator >/dev/null 2>&1; do sleep 3; done
+kubectl -n ot-operators wait --for=condition=Available deployment/redis-operator --timeout=300s
+
+# 2. DB·Redis 계정 Secret, service-db, escrow-db, service-redis
 apply_basic_auth_secret service-db-app service "$SERVICE_DB_PASSWORD"
 apply_basic_auth_secret escrow-db-app escrow "$ESCROW_DB_PASSWORD"
+apply_password_secret service-redis-auth "$SERVICE_REDIS_PASSWORD"
 kubectl apply -k "$SCRIPT_DIR/database"
 kubectl -n komit wait --for=condition=Ready cluster/service-db cluster/escrow-db --timeout=600s
+# Redis 노드가 모두 뜬 뒤 Sentinel이 Primary를 찾아 기동합니다.
+wait_statefulset service-redis
+wait_statefulset service-redis-sentinel
 
 # 3. 애플리케이션: 배포할 이미지를 Kustomize overlay에 고정해 한 번의 apply로 반영합니다.
 # Kustomize는 절대 경로 base를 받지 않으므로 임시 디렉터리에 base와 prod를 복사해 overlay를 만듭니다.

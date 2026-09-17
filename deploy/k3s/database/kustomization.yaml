@@ -3,3 +3,4 @@ kind: Kustomization
 resources:
   - service-db.yaml
   - escrow-db.yaml
+  - service-redis.yaml

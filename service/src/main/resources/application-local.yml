@@ -3,6 +3,12 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/service}
     username: ${DB_USERNAME:service}
     password: ${DB_PASSWORD:service}
+  data:
+    redis:
+      # 로컬은 단일 Redis에 바로 붙습니다. 운영의 Sentinel 접속은 application-prod.yml 에 있습니다.
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
   jpa:
     properties:
       hibernate:

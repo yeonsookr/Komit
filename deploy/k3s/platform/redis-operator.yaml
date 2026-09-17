@@ -1,0 +1,17 @@
+# K3s 내장 helm-controller로 OT-CONTAINER-KIT redis-operator를 설치합니다.
+# RedisReplication·RedisSentinel 리소스보다 먼저 적용하고, CRD와 오퍼레이터가 준비된 뒤에 database를 적용해야 합니다.
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: redis-operator
+  namespace: kube-system
+spec:
+  repo: https://ot-container-kit.github.io/helm-charts
+  chart: redis-operator
+  # 오퍼레이터 0.26.0
+  version: 0.26.1
+  targetNamespace: ot-operators
+  createNamespace: true
+  set:
+    # redis.conf 생성을 init 컨테이너에서 하도록 합니다. 오퍼레이터 설치 문서가 권하는 값입니다.
+    featureGates.GenerateConfigInInitContainer: "true"
