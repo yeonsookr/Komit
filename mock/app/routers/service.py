@@ -5314,15 +5314,15 @@ def apply_summary_changes(
 # 그것을 확인하고 일을 시작한다고 알리는 것이다. 착수 전까지는 개발자가 계약을
 # 물릴 수 있다.
 #
-# 화면: 5_개발자_계약서작성 · 5_의뢰인_계약서상세 · 5_의뢰인_계약서수정제안 ·
-#       5_개발자_계약서검토 · 5_의뢰인_계약예치 · 5_개발자_착수전 ·
+# 화면: 5_개발자_계약서작성 · 5_개발자_계약서수정 · 5_의뢰인_계약서상세 ·
+#       5_개발자_계약서검토 · 5_서명판 · 5_의뢰인_계약예치 ·
+#       5_개발자_착수전 · 5_개발자_착수전_예치대기 ·
 #       5_의뢰인_진행 · 5_의뢰인_확인 · 5_개발자_확인 · 5_의뢰인_리뷰작성
 #
 # 함께 쓰는 API (다른 영역에 있다):
 #   GET   /api/users/me                      전 영역 헤더
 #   GET   /api/rooms · /api/rooms/{roomId}   방 사이드바와 머리
 #   GET   /api/contracts/{contractId}        계약서 조회 (contractType으로 갈린다)
-#   PATCH /api/contracts/{contractId}        수정 제안
 #   POST  /api/contracts/{contractId}/signatures · /messages   서명과 전달 메시지
 #
 # 돈의 원장은 Escrow 서버가 가진다. 여기서는 예치를 걸고 상태를 확인만 한다.
@@ -5512,7 +5512,11 @@ class RejectedIssueRequest(BaseModel):
 
 
 class WriteMilestoneRequest(BaseModel):
-    """계약서에 담을 작업 하나."""
+    """계약서에 담을 작업 하나.
+
+    작업은 이슈 하나에 붙는다. 그 이슈는 서버가 이 작업을 저장하면서 함께 만들어
+    붙이므로 여기서 식별자를 보내지 않는다.
+    """
 
     title: str = Field(
         description="작업 이름.",
