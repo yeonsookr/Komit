@@ -653,10 +653,19 @@ class MeResponse(BaseModel):
     name: str = Field(description="화면에 표시하는 이름.", examples=["김미미"])
     profileImageFileId: int | None = Field(
         description=(
-            "직접 올린 프로필 사진의 파일 식별자. 올린 사진이 없으면 null이고, "
-            "그때 화면은 이름 첫 글자를 동그라미에 넣어 보여준다."
+            "직접 올린 프로필 사진의 파일 식별자. 올린 사진이 없으면 null이다."
         ),
-        examples=[None],
+        examples=[512],
+    )
+    profileImageUrl: str | None = Field(
+        description=(
+            "헤더 아바타에 그대로 거는 프로필 사진 주소. 직접 올린 사진이 있으면 "
+            "그 사진의 주소이고, 없으면 카카오 사진 주소다. 둘 다 없으면 null이며 "
+            "이때 화면은 이름 첫 글자를 동그라미에 넣어 보여준다.\n\n"
+            "직접 올린 사진의 주소는 한동안만 쓸 수 있는 임시 주소다. 만료되면 다시 "
+            "받아야 하므로 저장해 두고 오래 쓰지 않는다."
+        ),
+        examples=["https://cdn.komit.example.com/profiles/512.png"],
     )
     hasDevProfile: bool = Field(
         description=(
@@ -811,7 +820,8 @@ TOKEN_EXAMPLE = {
 ME_EXAMPLE = {
     "userId": 12,
     "name": "김미미",
-    "profileImageFileId": None,
+    "profileImageFileId": 512,
+    "profileImageUrl": "https://cdn.komit.example.com/profiles/512.png",
     "hasDevProfile": True,
     "developerId": 9,
     "unreadNotificationCount": 3,
@@ -1080,6 +1090,9 @@ def logout() -> Response:
     description=(
         "**화면 — 전 영역 헤더 › 아바타 · 알림 배지**\n\n"
         "모든 화면의 헤더를 채우는 내 정보다. 아바타와 알림 배지를 한 번에 받는다.\n\n"
+        "`profileImageUrl`은 직접 올린 사진, 카카오 사진 순서로 고른 주소다. 둘 다 "
+        "없으면 null이며 화면은 이름 첫 글자를 보여준다. 직접 올린 사진의 주소는 "
+        "임시 주소이므로 화면을 다시 열 때 이 API에서 새로 받는다.\n\n"
         "`hasDevProfile`과 `developerId`는 헤더가 쓰지 않는다. 헤더에 의뢰인·개발자를 "
         "가르는 전환은 없다. 두 값은 마이페이지가 「프로필 생성」과 「프로필 편집」을 "
         "가를 때, 그리고 방 목록이 '받은 의뢰'를 가릴 때 쓴다.\n\n"
