@@ -31,6 +31,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
+from .. import scan_result
+
 # 태그는 라우터가 아니라 엔드포인트마다 단다. 라우터에 달면 FastAPI가 엔드포인트 태그와
 # 합쳐버려서, 영역별 API가 기준 API 태그에도 함께 나온다.
 router = APIRouter(prefix="/api")
@@ -1521,7 +1523,43 @@ SCAN_FILE_INVALID = (
     "검사 결과 파일을 읽지 못했습니다. 받은 파일 그대로 올려주세요.",
 )
 SCAN_FILE_NAME = "komit-scan.md"
-SCAN_FILE_BODY = "# Komit 검사 파일".encode()
+# 내려주는 검사 파일. 실제 서버는 진단마다 설문 답을 채워 내려주지만,
+# 목에서는 고정 문구로 둔다. 검사 기준 본문은 ai/komit-scan/skills 에 있다.
+SCAN_FILE_BODY = """# Komit 검사 파일
+
+이 파일을 쓰시는 AI 코딩 도구에 읽히면 프로젝트를 검사해 결과 파일을 만듭니다.
+소스 코드는 컴퓨터 밖으로 나가지 않습니다.
+
+## 진단 정보
+
+- 진단 번호: 31
+- 검사 지시문 판: 0.1.0
+- 프로젝트: 수제 비누 가게
+
+## 의뢰인이 적은 증상
+
+"결제 버튼을 누르면 가끔 아무 반응이 없어요"
+
+## 어떻게 쓰나요
+
+Claude Code 를 쓰신다면 아래 한 줄이면 됩니다.
+
+    /komit-scan
+
+그 밖의 도구라면 이 파일을 프로젝트에 넣고 이렇게 말해 주세요.
+
+    komit-scan.md 를 읽고 이 프로젝트를 검사해줘
+
+## 검사가 끝나면
+
+`komit-result.json` 이 만들어집니다. 그 파일만 Komit 에 올려 주세요.
+파일을 열어 무엇이 담겼는지 먼저 보셔도 됩니다.
+
+## 무엇을 검사하나요
+
+준법 · 보안 · 결제 · 데이터 · 비용 · 인계 · AI 잔재 · 기타 여덟 가지를 봅니다.
+검사 기준 전문은 누구나 열어 볼 수 있게 공개되어 있습니다.
+""".encode()
 SCAN_FILE_INVALID_EXAMPLE = {
     "code": SCAN_FILE_INVALID[0],
     "message": SCAN_FILE_INVALID[1],
@@ -2057,8 +2095,17 @@ def upload_scan_result(
         return _error_response(404, DIAGNOSIS_NOT_FOUND)
     if diagnosisId == RUNNING_DIAGNOSIS_ID:
         return _error_response(409, INSPECTION_ALREADY_RUNNING)
-    if not (file.filename or "").endswith(".md"):
+
+    name = file.filename or ""
+    if not (name.endswith(".md") or name.endswith(".json")):
         return _error_response(400, SCAN_FILE_INVALID)
+
+    # 읽을 수 있는 결과 파일이면 담아 두고, 이후 진단서와 결함 목록에 쓴다.
+    # 읽을 수 없으면 예전대로 고정 예시가 나간다.
+    parsed = scan_result.parse(file.file.read())
+    if parsed is not None:
+        scan_result.remember(diagnosisId, parsed)
+
     return InspectionResponse(**INSPECTION_RUNNING_EXAMPLE)
 
 
@@ -2100,7 +2147,7 @@ def get_diagnosis(
 ) -> DiagnosisResponse | JSONResponse:
     if diagnosisId == NOT_FOUND_DIAGNOSIS_ID:
         return _error_response(404, DIAGNOSIS_NOT_FOUND)
-    return DiagnosisResponse(**DIAGNOSIS_EXAMPLE)
+    return DiagnosisResponse(**scan_result.diagnosis(diagnosisId, DIAGNOSIS_EXAMPLE))
 
 
 @router.get(
@@ -2159,7 +2206,8 @@ def get_issues(
     if diagnosisId == NOT_FOUND_DIAGNOSIS_ID:
         return _error_response(404, DIAGNOSIS_NOT_FOUND)
 
-    rows = ISSUES
+    kept = scan_result.stored(diagnosisId)
+    rows = kept["issues"] if kept else ISSUES
     if status is not None:
         rows = [row for row in rows if row["status"] == status]
     if isInput is not None:
