@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { clearExampleRequest } from './support/request';
 
 /**
  * 요구사항 선택. 목 서버가 닿아야 합니다(BACKEND_API_BASE_URL).
@@ -6,7 +7,10 @@ import { expect, test } from '@playwright/test';
  * 추천 회차가 열립니다. 404 는 없는 진단 재현용 예약값입니다.
  */
 test.describe('요구사항 선택', () => {
+  test.describe.configure({ mode: 'serial' });
+
   test.beforeEach(async ({ page }) => {
+    await clearExampleRequest(page, 31);
     await page.setViewportSize({ width: 1200, height: 1000 });
   });
 

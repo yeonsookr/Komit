@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   countByCategory,
   dropSelection,
+  groupByCategory,
   hasScore,
+  isInRequest,
   isResolved,
   selectableIssues,
   splitByInput,
@@ -68,6 +70,35 @@ describe('countByCategory', () => {
   });
 });
 
+describe('groupByCategory', () => {
+  it('여덟 분류를 정해진 순서로 묶고 하나도 버리지 않는다', () => {
+    const issues = [
+      issue({ issueId: 1, category: { codeId: 74, codeName: '기타' } }),
+      issue({ issueId: 2, category: { codeId: 78, codeName: 'AI 잔재' } }),
+      issue({ issueId: 3, category: { codeId: 77, codeName: '인계' } }),
+      issue({ issueId: 4, category: { codeId: 76, codeName: '비용' } }),
+      issue({ issueId: 5, category: { codeId: 72, codeName: '위법' } }),
+      issue({ issueId: 6, category: { codeId: 75, codeName: '데이터' } }),
+      issue({ issueId: 7, category: { codeId: 73, codeName: '결제' } }),
+      issue({ issueId: 8, category: { codeId: 71, codeName: '보안' } }),
+    ];
+
+    const groups = groupByCategory(issues);
+
+    expect(groups.map((group) => group.codeName)).toEqual([
+      '보안',
+      '결제',
+      '데이터',
+      '위법',
+      '비용',
+      '인계',
+      'AI 잔재',
+      '기타',
+    ]);
+    expect(groups.flatMap((group) => group.issues)).toHaveLength(issues.length);
+  });
+});
+
 describe('hasScore', () => {
   it('검사 전에는 점수가 없다', () => {
     expect(hasScore(null)).toBe(false);
@@ -114,5 +145,14 @@ describe('isResolved', () => {
   it('해결 여부를 가른다', () => {
     expect(isResolved(issue({ status: 'RESOLVED' }))).toBe(true);
     expect(isResolved(issue({ status: 'UNRESOLVED' }))).toBe(false);
+  });
+});
+
+describe('isInRequest', () => {
+  it('선택하거나 계약한 이슈만 요청서에 포함한다', () => {
+    expect(isInRequest(issue({ status: 'SUGGESTED' }))).toBe(true);
+    expect(isInRequest(issue({ status: 'CONTRACTED' }))).toBe(true);
+    expect(isInRequest(issue({ status: 'UNRESOLVED' }))).toBe(false);
+    expect(isInRequest(issue({ status: 'RESOLVED' }))).toBe(false);
   });
 });
