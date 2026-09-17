@@ -1103,6 +1103,9 @@ ESCROW_ID = 42
 NOT_FOUND_ESCROW_ID = 404
 HELD_ESCROW_ID = 409
 DEPOSIT_PENDING_ESCROW_ID = 202
+# createEscrow에서 이 contractId로 부르면 입금이 아직 확인되지 않은 DEPOSIT_PENDING을
+# 돌려준다. 별도 속성을 늘리지 않고 실제 필드(contractId) 값으로 분기한다.
+PENDING_CONTRACT_ID = "CONTRACT-PENDING"
 
 BANK_CODE_PATTERN = r"^\d{3}$"
 
@@ -1195,13 +1198,16 @@ class EscrowAmountRecord(BaseModel):
         examples=["ACTIVE"],
     )
     depositedAmount: int = Field(
-        description="예치가 끝난 총액. ERD escrows.deposited_amount에 대응한다.",
+        description=(
+            "예치가 끝난 총액. 저장 컬럼이 아니라 ERD escrow_transactions의 완료된 "
+            "DEPOSIT 금액 합계로 계산한다."
+        ),
         examples=[650000],
     )
     balance: int = Field(
         description=(
-            "가용 잔액. 예치액에서 지급액과 환불액을 뺀 값이며 ERD의 deposited_amount, "
-            "released_amount, refunded_amount로 계산한다."
+            "가용 잔액. ERD escrow_transactions에서 완료된 DEPOSIT 합계에서 RELEASE와 "
+            "REFUND 합계를 뺀 값이며, 저장 컬럼이 아니라 계산값이다."
         ),
         examples=[650000],
     )
@@ -1431,7 +1437,7 @@ def _escrow_state_error(
         "만들지 않는다.\n\n"
         "- **200 / H0000**: 예치까지 끝났을 때 `status`가 ACTIVE다. 입금이 아직 "
         "확인되지 않았으면 DEPOSIT_PENDING이며, 고객사는 ACTIVE를 확인한 뒤 계약을 "
-        "진행한다\n"
+        "진행한다. `contractId`가 `CONTRACT-PENDING`이면 DEPOSIT_PENDING을 재현한다\n"
         "- **400 / H1009**: `userKey`가 없거나 `invalid-user-key`일 때\n"
         "- **400 / E5002**: `idempotencyKey`가 없을 때\n"
         "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
@@ -1466,6 +1472,21 @@ async def create_escrow(
     )
     if error:
         return _escrow_error(*error, payload.Header)
+
+    # 입금이 아직 확인되지 않은 경우. 예치액은 0이고 고객사는 ACTIVE를 조회로 기다린다.
+    if payload.contractId == PENDING_CONTRACT_ID:
+        return CreateEscrowResponse(
+            Header=_escrow_response_header(
+                "H0000", "정상처리 되었습니다.", payload.Header
+            ),
+            REC=EscrowAmountRecord(
+                escrowId=DEPOSIT_PENDING_ESCROW_ID,
+                status="DEPOSIT_PENDING",
+                depositedAmount=0,
+                balance=0,
+                transactionId=1001,
+            ),
+        )
 
     return CreateEscrowResponse(
         Header=_escrow_response_header(
@@ -1945,11 +1966,23 @@ class InquireEscrowRecord(BaseModel):
         examples=["CONTRACT-999"],
     )
     status: str = Field(description="에스크로 상태.", examples=["ACTIVE"])
-    depositedAmount: int = Field(description="예치된 총액.", examples=[650000])
-    releasedAmount: int = Field(description="지급된 총액.", examples=[400000])
-    refundedAmount: int = Field(description="환불된 총액.", examples=[0])
+    depositedAmount: int = Field(
+        description="예치된 총액. ERD escrow_transactions의 완료된 DEPOSIT 합계다.",
+        examples=[650000],
+    )
+    releasedAmount: int = Field(
+        description="지급된 총액. ERD escrow_transactions의 완료된 RELEASE 합계다.",
+        examples=[400000],
+    )
+    refundedAmount: int = Field(
+        description="환불된 총액. ERD escrow_transactions의 완료된 REFUND 합계다.",
+        examples=[0],
+    )
     balance: int = Field(
-        description="가용 잔액. 예치액에서 지급액과 환불액을 뺀 값이다.",
+        description=(
+            "가용 잔액. ERD escrow_transactions에서 DEPOSIT 합계에서 RELEASE와 REFUND "
+            "합계를 뺀 계산값이다."
+        ),
         examples=[250000],
     )
     isHeld: bool = Field(
