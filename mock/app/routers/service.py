@@ -7637,7 +7637,7 @@ def get_income() -> IncomeResponse:
 #
 # 화면: 8_마이페이지 · 8_마이페이지_등록전 · 8_계좌등록 · 8_계좌인증
 #       8_펼침_은행선택 · 8_아바타메뉴 · 8_회원탈퇴 · 8_알림 · 8_약관
-#       8_개발자_내프로필 · 8_개발자_내일정
+#       8_개발자_내프로필 · 8_내일정
 #
 # 8_약관과 8_아바타메뉴에는 API 가 없다. 약관 문서와 개정일, 사업자 정보는 서버가
 # 들고 있지 않고 화면이 가진 정적 문서이며, 아바타 메뉴는 이미 받은 값으로 그리는
@@ -7682,8 +7682,9 @@ def get_income() -> IncomeResponse:
 # 자리가 없어 나올 수가 없기 때문이다. 토큰을 고쳐 남의 sub 를 넣는 경우도 서명이
 # 깨져 401 에서 끝난다.
 #
-# 403 은 두 뜻으로 쓴다. FORBIDDEN 은 남의 자원, NO_DEVELOPER_PROFILE 은 개발자로
-# 전환하지 않은 것이다. 화면 분기는 상태코드가 아니라 code 로 가른다.
+# 403 은 두 뜻으로 쓴다. FORBIDDEN 은 남의 자원, NO_DEVELOPER_PROFILE 은 개발자
+# 프로필이 반드시 필요한 API 에서 프로필이 없는 것이다. 화면 분기는 상태코드가
+# 아니라 code 로 가른다.
 #
 # 함께 쓰는 API (다른 영역에 있다):
 #   GET /api/users/me                 전 영역 헤더
@@ -8553,12 +8554,25 @@ class MySessionResponse(BaseModel):
         ),
         examples=[92],
     )
-    clientName: str = Field(
-        description="의뢰인 이름. 사용자 정보에서 가져오는 값이다.",
-        examples=["김미미"],
+    role: Literal["CLIENT", "DEVELOPER"] = Field(
+        description=(
+            "이 계약에서 내가 맡은 쪽. CLIENT는 의뢰인, DEVELOPER는 개발자다. "
+            "한 사용자가 계약마다 다른 역할로 참여할 수 있으므로 세션마다 내려준다."
+        ),
+        examples=["CLIENT"],
+    )
+    counterpartName: str = Field(
+        description=(
+            "이 세션에서 상대방의 이름. 내가 의뢰인이면 개발자 이름이고, 내가 "
+            "개발자면 의뢰인 이름이다."
+        ),
+        examples=["이준"],
     )
     scheduledAt: str = Field(
-        description="예약한 일시. 세션이 아니라 그 세션에 잡힌 예약이 가진 값이다.",
+        description=(
+            "확정된 예약의 일시. 세션이 아니라 그 세션에 잡힌 CONFIRMED 예약이 "
+            "가진 값이다."
+        ),
         examples=["2026-08-22T15:00:00+09:00"],
     )
     durationMinutes: int = Field(description="세션 시간(분).", examples=[30])
@@ -9003,9 +9017,10 @@ MY_SESSION_LIST_EXAMPLE = {
     "upcoming": [
         {
             "sessionId": 56,
-            "contractId": 121,
-            "roomId": 95,
-            "clientName": "김미미",
+            "contractId": 120,
+            "roomId": 92,
+            "role": "CLIENT",
+            "counterpartName": "이준",
             "scheduledAt": "2026-08-22T15:00:00+09:00",
             "durationMinutes": 30,
             "price": 50000,
@@ -9018,7 +9033,8 @@ MY_SESSION_LIST_EXAMPLE = {
             "sessionId": 55,
             "contractId": 120,
             "roomId": 92,
-            "clientName": "김미미",
+            "role": "CLIENT",
+            "counterpartName": "이준",
             "scheduledAt": "2026-08-15T14:00:00+09:00",
             "durationMinutes": 30,
             "price": 50000,
@@ -9079,9 +9095,9 @@ UPLOAD_TARGET_EXAMPLE = {
         "`settlementAccount`가 null이면 화면이 그 칸을 등록 안내로 바꾼다. 같은 "
         "API이며 화면만 갈린다.\n\n"
         "`developer`는 개발자 프로필이 없는 사람에게 null로 나간다. 이때 화면은 개발자 "
-        "프로필 칸을 감추지 않고 「프로필」 한 줄만 남겨 「프로필 생성」을 보여준다. "
-        "「일정」 줄은 프로필이 있어야 의미가 있어 빠진다. 두 버튼 모두 같은 화면"
-        "(`8_개발자_내프로필`)으로 가며, 거기서 저장하면 프로필이 만들어진다.\n\n"
+        "프로필 칸을 감추지 않고 「프로필 생성」을 보여준다. 일정은 의뢰인으로 참여한 "
+        "컨설팅도 포함하므로 개발자 프로필 여부와 관계없이 내 일정 화면으로 갈 수 있다. "
+        "일정 자체는 `GET /api/users/me/sessions`에서 조회한다.\n\n"
         "약관 칸은 이 응답에 없다. 약관 문서와 개정일은 서버가 들고 있지 않고 화면이 "
         "가진 정적 문서이며, 동의 여부도 이 응답에 담지 않는다.\n\n"
         "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
@@ -9594,24 +9610,26 @@ def write_review_reply(
         200: {
             "content": {"application/json": {"example": MY_SESSION_LIST_EXAMPLE}}
         },
-        **AREA8_NO_DEVELOPER_PROFILE,
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
     summary="내 일정 조회",
     description=(
-        "**화면 — `8_개발자_내일정`**\n\n"
-        "잡힌 컨설팅 세션과 지난 세션을 나눠 내려준다. 한 세션에 예약은 하나뿐이고 "
+        "**화면 — `8_내일정`**\n\n"
+        "의뢰인이나 개발자로 참여한 컨설팅 세션을 잡힌 세션과 지난 세션으로 나눠 "
+        "내려준다. 한 사용자가 두 역할로 모두 활동할 수 있으므로 각 세션의 `role`로 "
+        "그 계약에서 맡은 쪽을 구분하고, `counterpartName`에는 반대쪽 이름을 담는다.\n\n"
+        "한 세션에 예약 제안이 여러 번 생길 수 있지만 일정에는 확정된 예약만 쓴다. "
         "양쪽이 서명한 뒤에는 시각을 바꾸지 않으므로, 여기 `scheduledAt`이 곧 확정된 "
         "시각이다.\n\n"
         "화면의 '시작 N분 전'은 `scheduledAt`에서, '언제까지 질문 받습니다'는 "
         "`followUpUntil`에서 만든다.\n\n"
         "개발 계약에는 예약이 없으므로 이 목록에 나오지 않는다.\n\n"
-        "**403은 개발자 프로필이 없을 때만 나온다.** 대상을 요청에 담지 않아 남의 "
-        "것을 가리킬 자리가 없고, 토큰을 고치면 서명이 깨져 401이 된다.\n\n"
-        "- **200**: 항상. 잡힌 세션이 없으면 빈 배열이다\n"
+        "개발자 프로필이 없어도 의뢰인으로 참여한 일정을 조회할 수 있다. 개발자 "
+        "프로필이 반드시 필요한 `GET /api/users/me/developer-profile`과 달리 이 API에는 "
+        "`NO_DEVELOPER_PROFILE` 응답이 없다.\n\n"
+        "- **200**: 항상. 역할별로 참여한 세션이 없으면 빈 배열이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / NO_DEVELOPER_PROFILE**: 개발자 프로필이 없을 때\n"
         "- **500 / INTERNAL_ERROR**: 일정을 만들지 못했을 때"
     ),
 )
@@ -11269,8 +11287,8 @@ SERVICE_TAGS = [
     {
         "name": "8 계정 · 공통",
         "description": (
-            "마이페이지에서 계정·계좌·알림을 관리하고, 개발자는 자기 프로필과 일정을 "
-            "본다. 의뢰 흐름 밖 화면이다.\n\n"
+            "마이페이지에서 계정·계좌·알림을 관리하고, 자기 개발자 프로필과 의뢰인·"
+            "개발자로 참여한 일정을 본다. 의뢰 흐름 밖 화면이다.\n\n"
             "### 화면과 API\n\n"
             "| 화면 | API |\n"
             "| --- | --- |\n"
@@ -11289,7 +11307,7 @@ SERVICE_TAGS = [
             "`GET /api/users/me/developer-profile` · "
             "`PUT /api/users/me/developer-profile` · "
             "`PUT /api/reviews/{reviewId}/reply` |\n"
-            "| `8_개발자_내일정` | `GET /api/users/me/sessions` |\n"
+            "| `8_내일정` | `GET /api/users/me/sessions` |\n"
             "| `8_마이페이지` · `8_개발자_내프로필` › 파일 올리기 | "
             "`POST /api/uploads` · `POST /api/uploads/{uploadId}/complete` |\n"
             "| `8_펼침_은행선택` | `GET /api/codes/{groupKey}` — 영역 3 |\n"
@@ -11324,8 +11342,9 @@ SERVICE_TAGS = [
             "401에서 끝난다. 403이 실려 있는 API는 요청에 남의 식별자를 적을 수 있는 "
             "쪽이다.\n\n"
             "**403은 두 뜻으로 쓴다.** `FORBIDDEN`은 남의 자원을 건드렸다는 뜻이고, "
-            "`NO_DEVELOPER_PROFILE`은 개발자 프로필이 없다는 뜻이다. 화면 분기는 "
-            "상태코드가 아니라 `code`로 가른다.\n\n"
+            "`NO_DEVELOPER_PROFILE`은 개발자 프로필이 반드시 필요한 API에서 프로필이 "
+            "없다는 뜻이다. 내 일정은 의뢰인 일정도 포함하므로 이 오류를 쓰지 않는다. "
+            "화면 분기는 상태코드가 아니라 `code`로 가른다.\n\n"
             "---\n\n"
             "### 파일\n\n"
             "**파일은 이 서버를 거치지 않는다.** 올릴 파일을 알리면 보낼 주소를 받고, "
