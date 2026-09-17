@@ -111,5 +111,4 @@ export const ROUTES = {
   mypageProfile: "/mypage/profile",
   /** 내 일정. 마이페이지의 「일정 관리」가 옵니다. */
   mypageSchedule: "/mypage/schedule",
-  mypageSettings: "/mypage/settings",
 } as const;

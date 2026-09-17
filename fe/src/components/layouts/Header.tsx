@@ -74,7 +74,6 @@ const DEFAULT_MENU_ITEMS: HeaderNavItem[] = [
   { label: "마이페이지", href: ROUTES.mypage },
   { label: "내 프로필", href: ROUTES.mypageProfile },
   { label: "내 일정", href: ROUTES.mypageSchedule },
-  { label: "설정", href: ROUTES.mypageSettings },
 ];
 
 /** /requests 와 /requests/123 은 같은 메뉴로 봅니다. */
