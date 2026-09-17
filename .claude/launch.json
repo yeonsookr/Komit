@@ -4,7 +4,7 @@
     {
       "name": "soap-shop",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev", "--prefix", "ai/komit-scan/fixtures/soap-shop"],
+      "runtimeArgs": ["run", "dev", "--prefix", "demo/soap-shop"],
       "port": 3000
     }
   ]

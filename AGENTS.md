@@ -104,6 +104,7 @@ private static final int AUTO_PASS_DAYS = 3;
 | `mock/` | 목 서버 | Python | `mock/AGENTS.md` |
 | `deploy/` | `infra` — 배포, CI/CD | docker-compose | — |
 | `docs/` | `common` — 공용 문서 | — | — |
+| `demo/` | 데모용 예시 프로젝트 | Next.js | — |
 | `고은찬/` `박다빈/` 등 | 개인 작업 공간 | — | — |
 
 - 파트 코드(`fe`, `be-api`, `be-escrow`, `ai`, `infra`, `common`)와 담당 영역은 `docs/git_guide.md`의 파트 표를 따릅니다.

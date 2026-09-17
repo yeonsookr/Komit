@@ -91,7 +91,7 @@ komit-scan/
 │  ├─ SKILL.md              절차
 │  └─ references/           분류별 상세
 ├─ schema/                  결과 파일 형식
-└─ fixtures/                검사 품질을 재기 위한 시험용 코드
+└─ fixtures/                검사 품질을 재는 정답표와 회차 결과
 ```
 
-`fixtures/` 는 **일부러 결함을 심어 둔 시험용 코드다.** 배포하거나 복사하지 않는다. [`fixtures/README.md`](fixtures/README.md) 를 본다.
+검사 대상은 저장소 루트의 `demo/soap-shop` 이다. **일부러 결함을 심어 둔 코드이므로** 배포하거나 복사하지 않는다. [`fixtures/README.md`](fixtures/README.md) 를 본다.
