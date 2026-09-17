@@ -455,6 +455,7 @@ async def get_default(
 # --------------------------------------------------------------------------- #
 
 INVALID_CLIENT_API_KEY = "invalid-client-api-key"
+SERVER_ERROR_CLIENT_API_KEY = "server-error-client-api-key"
 CONFLICT_IDEMPOTENCY_KEY = "conflict-idempotency-key"
 
 
@@ -522,9 +523,14 @@ class EscrowRequestHeader(BaseModel):
         description=(
             "고객사에 발급된 키. 이 키로 어느 서비스의 요청인지 가른다. ERD의 "
             "client_api_keys에 대응하는 요청 필드이며, 에스크로가 SSAFY를 부를 때 쓰는 "
-            "apiKey와는 다른 값이다. invalid-client-api-key는 실패 재현용 예약값이다."
+            "apiKey와는 다른 값이다. invalid-client-api-key는 E5001, "
+            "server-error-client-api-key는 Q1000 실패 재현용 예약값이다."
         ),
-        examples=["mock-client-api-key", INVALID_CLIENT_API_KEY],
+        examples=[
+            "mock-client-api-key",
+            INVALID_CLIENT_API_KEY,
+            SERVER_ERROR_CLIENT_API_KEY,
+        ],
         json_schema_extra={"minLength": 1, "maxLength": 255},
     )
     idempotencyKey: str | None = Field(
@@ -637,6 +643,10 @@ def _validate_escrow_header(
         not (header.userKey or "").strip() or header.userKey == "invalid-user-key"
     ):
         return 400, "H1009", "USER KEY가 유효하지 않습니다."
+    # 분류되지 않은 서버 오류. 업무 API는 userKey를 늘 받지 않으므로 기준 API의
+    # server-error-user-key 대신 모든 업무 API가 함께 받는 clientApiKey로 고른다.
+    if header.clientApiKey == SERVER_ERROR_CLIENT_API_KEY:
+        return 500, "Q1000", "그 이외에 에러 메시지"
     return None
 
 
@@ -892,7 +902,8 @@ def _success_header_example(api_name: str) -> dict:
         "- **400 / H1009**: `userKey`가 없거나 `invalid-user-key`일 때\n"
         "- **400 / E5001**: `clientApiKey`가 없거나 `invalid-client-api-key`일 때\n"
         "- **400 / Q1001**: 필수 속성이 없거나 형식이 맞지 않을 때\n"
-        "- **500 / Q1000**: 처리하지 못했을 때"
+        "- **500 / Q1000**: `clientApiKey`가 `server-error-client-api-key`일 때. "
+        "분류되지 않은 서버 오류다"
     ),
 )
 async def open_account_auth(
@@ -977,7 +988,8 @@ async def open_account_auth(
         "- **400 / H1009**: `userKey`가 없거나 `invalid-user-key`일 때\n"
         "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
         "- **400 / Q1001**: 필수 속성이 없거나 형식이 맞지 않을 때\n"
-        "- **500 / Q1000**: 처리하지 못했을 때"
+        "- **500 / Q1000**: `clientApiKey`가 `server-error-client-api-key`일 때. "
+        "분류되지 않은 서버 오류다"
     ),
 )
 async def inquire_transaction_history_list(
@@ -1060,7 +1072,8 @@ async def inquire_transaction_history_list(
         "- **400 / H1009**: `userKey`가 없거나 `invalid-user-key`일 때\n"
         "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
         "- **400 / Q1001**: `authCode`가 네 자리 숫자가 아닐 때\n"
-        "- **500 / Q1000**: 처리하지 못했을 때"
+        "- **500 / Q1000**: `clientApiKey`가 `server-error-client-api-key`일 때. "
+        "분류되지 않은 서버 오류다"
     ),
 )
 async def check_auth_code(
@@ -1460,7 +1473,8 @@ def _escrow_state_error(
         "- **400 / E5003**: `idempotencyKey`가 `conflict-idempotency-key`일 때. 같은 "
         "멱등키로 본문이 다른 요청이 이미 접수되었다\n"
         "- **400 / Q1001**: 필수 속성이 없거나 형식이 맞지 않을 때\n"
-        "- **500 / Q1000**: 처리하지 못했을 때\n\n"
+        "- **500 / Q1000**: `clientApiKey`가 `server-error-client-api-key`일 때. "
+        "분류되지 않은 서버 오류다\n\n"
         "잔액 부족이나 이체한도 초과는 다시 보내도 결과가 같으므로 재시도하지 않는다. "
         "응답을 받지 못했으면 같은 멱등키로 다시 부르거나 조회로 결과를 확인한다."
     ),
@@ -1549,7 +1563,8 @@ async def create_escrow(
         "- **400 / E5005**: `escrowId`가 409일 때. 동결 중에는 지급하지 않는다\n"
         "- **400 / E5003**: `idempotencyKey`가 `conflict-idempotency-key`일 때\n"
         "- **400 / Q1001**: 필수 속성이 없거나 형식이 맞지 않을 때\n"
-        "- **500 / Q1000**: 처리하지 못했을 때\n\n"
+        "- **500 / Q1000**: `clientApiKey`가 `server-error-client-api-key`일 때. "
+        "분류되지 않은 서버 오류다\n\n"
         "예금주가 다르면 보내지 않고 거절한다. 응답을 받지 못했을 때는 다시 보내지 "
         "말고 조회로 결과를 먼저 확인한다."
     ),
@@ -1624,7 +1639,8 @@ async def release_escrow(
         "- **400 / E5005**: `escrowId`가 409일 때. 동결 중에는 환불하지 않는다\n"
         "- **400 / E5003**: `idempotencyKey`가 `conflict-idempotency-key`일 때\n"
         "- **400 / Q1001**: 필수 속성이 없거나 형식이 맞지 않을 때\n"
-        "- **500 / Q1000**: 처리하지 못했을 때\n\n"
+        "- **500 / Q1000**: `clientApiKey`가 `server-error-client-api-key`일 때. "
+        "분류되지 않은 서버 오류다\n\n"
         "전액이 이미 지급된 뒤에는 환불할 수 없다."
     ),
 )
@@ -1687,10 +1703,11 @@ async def refund_escrow(
         "- **400 / E5002**: `idempotencyKey`가 없을 때\n"
         "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
         "- **400 / E5004**: `escrowId`가 404일 때\n"
-        "- **400 / E5005**: `escrowId`가 409일 때. 이미 예치가 끝나 취소할 수 없다\n"
+        "- **400 / E5006**: `escrowId`가 409일 때. 이미 예치가 끝나 취소할 수 없다\n"
         "- **400 / E5003**: `idempotencyKey`가 `conflict-idempotency-key`일 때\n"
         "- **400 / Q1001**: 필수 속성이 없거나 형식이 맞지 않을 때\n"
-        "- **500 / Q1000**: 처리하지 못했을 때\n\n"
+        "- **500 / Q1000**: `clientApiKey`가 `server-error-client-api-key`일 때. "
+        "분류되지 않은 서버 오류다\n\n"
         "입금이 없었다는 것이 확인된 뒤에만 취소를 확정한다. 모호하면 취소 완료를 "
         "돌려주지 않는다."
     ),
@@ -1827,7 +1844,8 @@ class UnholdEscrowResponse(BaseModel):
         "- **400 / E5004**: `escrowId`가 404일 때\n"
         "- **400 / E5003**: `idempotencyKey`가 `conflict-idempotency-key`일 때\n"
         "- **400 / Q1001**: 필수 속성이 없거나 형식이 맞지 않을 때\n"
-        "- **500 / Q1000**: 처리하지 못했을 때"
+        "- **500 / Q1000**: `clientApiKey`가 `server-error-client-api-key`일 때. "
+        "분류되지 않은 서버 오류다"
     ),
 )
 async def hold_escrow(
@@ -1890,7 +1908,8 @@ async def hold_escrow(
         "- **400 / E5004**: `escrowId`가 404일 때\n"
         "- **400 / E5003**: `idempotencyKey`가 `conflict-idempotency-key`일 때\n"
         "- **400 / Q1001**: 필수 속성이 없거나 형식이 맞지 않을 때\n"
-        "- **500 / Q1000**: 처리하지 못했을 때"
+        "- **500 / Q1000**: `clientApiKey`가 `server-error-client-api-key`일 때. "
+        "분류되지 않은 서버 오류다"
     ),
 )
 async def unhold_escrow(
@@ -2105,7 +2124,8 @@ INQUIRE_ERRORS: dict = dict(ESCROW_ERRORS)
         "- **400 / E5004**: `escrowId`가 404이거나 다른 서비스의 에스크로일 때. 남의 "
         "에스크로는 있고 없고를 구분해 알려주지 않는다\n"
         "- **400 / Q1001**: 필수 속성이 없거나 형식이 맞지 않을 때\n"
-        "- **500 / Q1000**: 처리하지 못했을 때"
+        "- **500 / Q1000**: `clientApiKey`가 `server-error-client-api-key`일 때. "
+        "분류되지 않은 서버 오류다"
     ),
 )
 async def inquire_escrow(
@@ -2199,7 +2219,8 @@ async def inquire_escrow(
         "`list`가 빈 배열이다\n"
         "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
         "- **400 / Q1001**: 속성 형식이 맞지 않을 때\n"
-        "- **500 / Q1000**: 처리하지 못했을 때"
+        "- **500 / Q1000**: `clientApiKey`가 `server-error-client-api-key`일 때. "
+        "분류되지 않은 서버 오류다"
     ),
 )
 async def inquire_escrow_list(
@@ -2420,12 +2441,14 @@ def _reconciliation_day(offset: int) -> ReconciliationHistoryItem:
         "다른 서비스의 에스크로는 합계에 섞이지 않는다. 읽기만 하므로 "
         "`idempotencyKey`를 쓰지 않는다.\n\n"
         "대사 기준 시각은 응답 Header의 `transmissionDate`와 `transmissionTime`이다.\n\n"
-        "**대사 이력은 이 API가 다루지 않는다.** 지금 시점의 결과만 돌려준다.\n\n"
+        "**지금 결과와 함께 `days`만큼의 하루치 이력을 돌려준다.** `history`는 최근 것이 "
+        "먼저이고 첫 항목이 지금 결과와 같다. `days`를 비우면 7일이다.\n\n"
         "- **200 / H0000**: 대사했을 때. 보관 중인 에스크로가 하나도 없으면 금액이 "
         "모두 0이고 `result`는 MATCHED다\n"
         "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
         "- **400 / Q1001**: 필수 속성이 없거나 형식이 맞지 않을 때\n"
-        "- **500 / Q1000**: 처리하지 못했을 때"
+        "- **500 / Q1000**: `clientApiKey`가 `server-error-client-api-key`일 때. "
+        "분류되지 않은 서버 오류다"
     ),
 )
 async def inquire_reconciliation(
