@@ -7,5 +7,6 @@ export * from "./mypage";
 export * from "./diagnoses";
 export * from "./recommendations";
 export * from "./rooms";
+export * from "./settlements";
 export * from "./uploads";
 export * from "./users";
