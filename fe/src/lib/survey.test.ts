@@ -106,8 +106,16 @@ describe('parseStep', () => {
 describe('questionsForStep', () => {
   const questions: SurveyQuestion[] = [single(), multi(), text('결제가 안 돼요'), single()];
 
-  it('설문2는 두 문항을 함께 받는다', () => {
-    expect(questionsForStep(questions, 2).map((q) => q.answerType)).toEqual(['MULTI', 'TEXT']);
+  it('설문1은 진단을 열기 전이라 문항이 없다', () => {
+    expect(questionsForStep(questions, 1)).toEqual([]);
+  });
+
+  it('설문2는 세 문항을 함께 받는다', () => {
+    expect(questionsForStep(questions, 2).map((q) => q.answerType)).toEqual([
+      'SINGLE',
+      'MULTI',
+      'TEXT',
+    ]);
   });
 
   it('설문3은 검사 파일 단계라 문항이 없다', () => {
