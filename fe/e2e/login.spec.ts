@@ -26,14 +26,15 @@ test.describe('로그인', () => {
     await expect(page).toHaveTitle('로그인 | Komit');
     await expect(page.getByRole('heading', { name: '시작하기' })).toBeVisible();
     await expect(page.getByRole('link', { name: '카카오로 시작하기' })).toBeVisible();
-    await expect(page.getByText('통신판매중개자')).toBeVisible();
+    // 같은 고지가 푸터에도 있어 카드 안으로 좁힙니다.
+    await expect(page.getByRole('main').getByText('통신판매중개자')).toBeVisible();
   });
 
-  test('GNB 와 푸터를 두지 않는다', async ({ page }) => {
+  test('GNB 는 두지 않고 푸터는 둔다', async ({ page }) => {
     await page.goto('/login');
 
     await expect(page.getByRole('navigation', { name: '주요 메뉴' })).toHaveCount(0);
-    await expect(page.getByRole('navigation', { name: '푸터' })).toHaveCount(0);
+    await expect(page.getByRole('navigation', { name: '푸터' })).toBeVisible();
   });
 
   test('약관 링크 넷이 각 문서로 간다', async ({ page }) => {
@@ -46,8 +47,9 @@ test.describe('로그인', () => {
       ['환불과 분쟁 처리', '/policies/refund-dispute'],
     ];
 
+    // 푸터에도 이용약관·개인정보 링크가 있어 카드 안으로 좁힙니다.
     for (const [label, href] of expected) {
-      await expect(page.getByRole('link', { name: label })).toHaveAttribute('href', href);
+      await expect(page.getByRole('main').getByRole('link', { name: label })).toHaveAttribute('href', href);
     }
   });
 

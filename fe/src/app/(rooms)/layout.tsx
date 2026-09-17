@@ -50,8 +50,7 @@ async function loadSession(): Promise<[RoomSummary[], Me]> {
 /**
  * 의뢰 화면 레이아웃 — GNB + 좌측 스레드 목록(320px) + 본문.
  *
- * (site) 그룹과 골격이 달라 따로 둡니다. 방 화면은 대화에 집중하는 화면이라
- * 푸터를 감춥니다.
+ * (site) 그룹과 골격이 달라 따로 둡니다.
  *
  * 목록은 여기서 한 번만 읽습니다. 방을 옮겨도 이 레이아웃은 다시 그려지지 않아
  * 사이드바가 깜빡이지 않습니다.
@@ -61,7 +60,7 @@ export default async function RoomsLayout({ children }: { children: React.ReactN
   const previews = await buildPreviews(rooms);
 
   return (
-    <AppShell hideFooter user={{ name: me.name, unreadCount: me.unreadNotificationCount }}>
+    <AppShell user={{ name: me.name, unreadCount: me.unreadNotificationCount }}>
       <div className="flex min-h-[calc(100dvh-var(--k-gnb-height))] flex-col lg:flex-row">
         <aside className="shrink-0 border-b border-line px-4 lg:w-sidebar lg:border-r lg:border-b-0 lg:px-5">
           <RoomSidebar rooms={rooms} me={me} previews={previews} />
