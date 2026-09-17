@@ -129,6 +129,27 @@ test.describe('회원 탈퇴', () => {
   });
 
   /**
+   * 응답은 계약 식별자와 방 식별자를 함께 주는데 화면 주소는 방 기준입니다.
+   * 계약 번호(130)로 주소를 만들면 없는 화면으로 가므로 방 번호(93)인지 봅니다.
+   *
+   * 두 줄이 같은 계약을 가리켜 목적지도 같습니다 — 예치금을 정리하려면 결국
+   * 그 계약을 끝내야 하기 때문입니다.
+   */
+  test('이동을 누르면 그 계약의 계약서 화면으로 간다', async ({ page }) => {
+    const moves = page.getByRole('link', { name: '이동' });
+    await expect(moves).toHaveCount(2);
+
+    for (const index of [0, 1]) {
+      await expect(moves.nth(index)).toHaveAttribute('href', '/rooms/93/contract');
+    }
+
+    await moves.first().click();
+
+    await expect(page).toHaveURL(/\/rooms\/93\/contract$/);
+    await expect(page).toHaveTitle(/계약서/);
+  });
+
+  /**
    * 막는 것이 없는 갈래도 줄을 남깁니다. 무엇을 확인했는지 알 수 있어야 하기 때문에
    * 「없음」도 정보입니다 — 줄을 지우는 변경이 들어오면 여기서 걸립니다.
    */
