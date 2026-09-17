@@ -1578,6 +1578,9 @@ SCAN_FILE_INVALID_EXAMPLE = {
 
 # 실패 사례를 재현하는 진단 식별자. 속성을 늘리지 않고 경로 값으로만 고른다.
 DIAGNOSIS_ID = 31
+# 막 시작해 아직 아무것도 답하지 않은 진단. 31은 이어서 하는 쪽이라 답이 차 있어,
+# 새로 시작한 화면까지 그것을 주면 남의 답이 체크된 채로 뜬다.
+NEW_DIAGNOSIS_ID = 33
 NOT_FOUND_DIAGNOSIS_ID = 404
 # 설문을 아직 끝낼 수 없는 진단 재현용 예약값.
 NOT_COMPLETABLE_DIAGNOSIS_ID = 409
@@ -1615,6 +1618,19 @@ DIAGNOSIS_EXAMPLE = {
     "unresolvedIssueCount": 9,
     "totalIssueCount": 11,
     "resolvedSinceLastVersionCount": 3,
+}
+
+# 막 시작한 진단. 검사를 돌린 적이 없어 점수와 검사 시각이 비어 있다.
+NEW_DIAGNOSIS_EXAMPLE = {
+    **DIAGNOSIS_EXAMPLE,
+    "diagnosisId": NEW_DIAGNOSIS_ID,
+    "version": 1,
+    "userInput": None,
+    "readinessScore": None,
+    "scannedAt": None,
+    "unresolvedIssueCount": 0,
+    "totalIssueCount": 0,
+    "resolvedSinceLastVersionCount": 0,
 }
 
 UNFINISHED_SURVEY_LIST_EXAMPLE = {
@@ -1710,6 +1726,58 @@ INSPECTION_DONE_EXAMPLE = {
     "scannedAt": SCANNED_AT,
 }
 
+def _unanswered(example: dict) -> dict:
+    """아무것도 고르지 않은 설문. 보기는 그대로 두고 선택만 지운다."""
+    return {
+        **example,
+        "isDone": False,
+        "questions": [
+            {
+                **question,
+                "options": [
+                    {**option, "isSelected": False} for option in question["options"]
+                ],
+            }
+            for question in example["questions"]
+        ],
+    }
+
+
+NEW_SURVEY_EXAMPLE = _unanswered(SURVEY_EXAMPLE)
+
+
+def _survey_example(diagnosis_id: int) -> dict:
+    """그 진단의 설문지. 조회·저장·완료가 같은 것을 봐야 한다."""
+    example = NEW_SURVEY_EXAMPLE if diagnosis_id == NEW_DIAGNOSIS_ID else SURVEY_EXAMPLE
+    return scan_result.survey_questions(diagnosis_id, example)
+
+
+def _with_answers(example: dict, answers: list) -> dict:
+    """보낸 답을 설문지에 얹는다.
+
+    실서버는 저장한 뒤 저장된 상태를 돌려준다. 목이 원본을 그대로 돌려주면
+    화면이 그것으로 갈아 끼우면서 방금 고른 답이 눈앞에서 지워진다.
+    """
+    picked = {answer.questionId: answer for answer in answers}
+    questions = []
+    for question in example["questions"]:
+        answer = picked.get(question["questionId"])
+        if answer is None:
+            questions.append(question)
+            continue
+        chosen = set(answer.selectedOptionIds)
+        questions.append(
+            {
+                **question,
+                "options": [
+                    {**option, "isSelected": option["optionId"] in chosen}
+                    for option in question["options"]
+                ],
+            }
+        )
+    return {**example, "questions": questions}
+
+
 ISSUES = [
     {
         "issueId": 311,
@@ -1786,6 +1854,71 @@ ISSUES = [
         "originIssueId": 205,
         "qaCriteria": [],
     },
+    {
+        "issueId": 315,
+        "title": "주문 취소가 기록되지 않습니다",
+        "detail": "취소해도 예전 값이 그대로 남아 매출이 어긋납니다",
+        "location": "app/api/orders/cancel.ts:31",
+        "isInput": False,
+        "category": {"codeId": 75, "codeName": "데이터"},
+        "status": "UNRESOLVED",
+        "severity": "HIGH",
+        "fixedVersion": None,
+        "originIssueId": None,
+        "qaCriteria": [],
+    },
+    {
+        "issueId": 316,
+        "title": "이미지를 원본 그대로 내려줍니다",
+        "detail": "사람이 늘면 전송 요금이 그만큼 늡니다",
+        "location": "app/components/Photo.tsx:12",
+        "isInput": False,
+        "category": {"codeId": 76, "codeName": "비용"},
+        "status": "UNRESOLVED",
+        "severity": "MEDIUM",
+        "fixedVersion": None,
+        "originIssueId": None,
+        "qaCriteria": [],
+    },
+    {
+        "issueId": 317,
+        "title": "실행 방법 문서가 기본 문구 그대로입니다",
+        "detail": "받는 사람이 혼자 띄울 수 없습니다",
+        "location": "README.md:1",
+        "isInput": False,
+        "category": {"codeId": 77, "codeName": "인계"},
+        "status": "UNRESOLVED",
+        "severity": "MEDIUM",
+        "fixedVersion": None,
+        "originIssueId": None,
+        "qaCriteria": [],
+    },
+    {
+        "issueId": 318,
+        "title": "예시 계정과 임시 주석이 남아 있습니다",
+        "detail": "AI가 만든 자리 채움 코드가 그대로 돌고 있습니다",
+        "location": "lib/seed/sample.ts:8",
+        "isInput": False,
+        "category": {"codeId": 78, "codeName": "AI 잔재"},
+        "status": "UNRESOLVED",
+        "severity": "LOW",
+        "fixedVersion": None,
+        "originIssueId": None,
+        "qaCriteria": [],
+    },
+    {
+        "issueId": 319,
+        "title": "쓰지 않는 설정 파일이 남아 있습니다",
+        "detail": "어느 것이 진짜 설정인지 알기 어렵습니다",
+        "location": None,
+        "isInput": False,
+        "category": {"codeId": 74, "codeName": "기타"},
+        "status": "UNRESOLVED",
+        "severity": "LOW",
+        "fixedVersion": None,
+        "originIssueId": None,
+        "qaCriteria": [],
+    },
 ]
 
 ISSUE_LIST_EXAMPLE = {
@@ -1795,6 +1928,31 @@ ISSUE_LIST_EXAMPLE = {
     "totalElements": 11,
     "totalPages": 1,
 }
+
+# 진단별 요청서. PUT /requirements가 고른 이슈를 저장하면 GET /issues에서도
+# SUGGESTED 상태로 보이게 해 다음 화면이 요청서 범위를 다시 알아낼 수 있다.
+# 목 서버 프로세스가 내려가면 사라지는 데모용 상태다.
+_SAVED_REQUIREMENTS: dict[int, list[dict]] = {}
+
+
+def _base_issue_rows(diagnosis_id: int) -> list[dict]:
+    """검사 결과 또는 고정 예시에서 진단의 전체 이슈를 읽는다."""
+    kept = scan_result.stored(diagnosis_id)
+    return kept["issues"] if kept else ISSUES
+
+
+def _issue_rows(diagnosis_id: int) -> list[dict]:
+    """전체 이슈에 저장된 요청서 상태와 편집 내용을 겹쳐 돌려준다."""
+    rows = copy.deepcopy(_base_issue_rows(diagnosis_id))
+    saved = _SAVED_REQUIREMENTS.get(diagnosis_id)
+    if saved is None:
+        return rows
+
+    saved_by_id = {row["issueId"]: row for row in saved}
+    merged = [saved_by_id.get(row["issueId"], row) for row in rows]
+    known_ids = {row["issueId"] for row in rows}
+    merged.extend(row for row in saved if row["issueId"] not in known_ids)
+    return merged
 
 DIAGNOSIS_NOT_FOUND_EXAMPLE = {
     "code": "DIAGNOSIS_NOT_FOUND",
@@ -1862,7 +2020,7 @@ def list_unfinished_surveys() -> UnfinishedSurveyListResponse:
     status_code=201,
     tags=[AREA2_TAG],
     responses={
-        201: {"content": {"application/json": {"example": DIAGNOSIS_EXAMPLE}}},
+        201: {"content": {"application/json": {"example": NEW_DIAGNOSIS_EXAMPLE}}},
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -1891,7 +2049,7 @@ def start_diagnosis(request: StartDiagnosisRequest) -> DiagnosisResponse | JSONR
         )
         return JSONResponse(status_code=422, content=jsonable_encoder(body))
 
-    return DiagnosisResponse(**DIAGNOSIS_EXAMPLE)
+    return DiagnosisResponse(**NEW_DIAGNOSIS_EXAMPLE)
 
 
 @router.get(
@@ -1929,9 +2087,7 @@ def get_survey(
 ) -> SurveyResponse | JSONResponse:
     if diagnosisId == NOT_FOUND_DIAGNOSIS_ID:
         return _error_response(404, DIAGNOSIS_NOT_FOUND)
-    return SurveyResponse(
-        **scan_result.survey_questions(diagnosisId, SURVEY_EXAMPLE)
-    )
+    return SurveyResponse(**_survey_example(diagnosisId))
 
 
 @router.patch(
@@ -1968,7 +2124,9 @@ def save_survey_answers(
 ) -> SurveyResponse | JSONResponse:
     if diagnosisId == NOT_FOUND_DIAGNOSIS_ID:
         return _error_response(404, DIAGNOSIS_NOT_FOUND)
-    return SurveyResponse(**SURVEY_EXAMPLE)
+    return SurveyResponse(
+        **_with_answers(_survey_example(diagnosisId), request.answers)
+    )
 
 
 @router.post(
@@ -2031,7 +2189,7 @@ def complete_survey(
         return _error_response(404, DIAGNOSIS_NOT_FOUND)
     if diagnosisId == NOT_COMPLETABLE_DIAGNOSIS_ID:
         return _error_response(409, SURVEY_NOT_COMPLETABLE)
-    return SurveyResponse(**{**SURVEY_EXAMPLE, "isDone": True})
+    return SurveyResponse(**{**_survey_example(diagnosisId), "isDone": True})
 
 
 # --------------------------------------------------------------------------- #
@@ -2157,7 +2315,13 @@ def get_diagnosis(
 ) -> DiagnosisResponse | JSONResponse:
     if diagnosisId == NOT_FOUND_DIAGNOSIS_ID:
         return _error_response(404, DIAGNOSIS_NOT_FOUND)
-    return DiagnosisResponse(**scan_result.diagnosis(diagnosisId, DIAGNOSIS_EXAMPLE))
+    example = (
+        NEW_DIAGNOSIS_EXAMPLE
+        if diagnosisId == NEW_DIAGNOSIS_ID
+        else DIAGNOSIS_EXAMPLE
+    )
+    example = {**example, "diagnosisId": diagnosisId}
+    return DiagnosisResponse(**scan_result.diagnosis(diagnosisId, example))
 
 
 @router.get(
@@ -2216,8 +2380,7 @@ def get_issues(
     if diagnosisId == NOT_FOUND_DIAGNOSIS_ID:
         return _error_response(404, DIAGNOSIS_NOT_FOUND)
 
-    kept = scan_result.stored(diagnosisId)
-    rows = kept["issues"] if kept else ISSUES
+    rows = _issue_rows(diagnosisId)
     if status is not None:
         rows = [row for row in rows if row["status"] == status]
     if isInput is not None:
@@ -2335,37 +2498,54 @@ def write_requirements(
     if diagnosisId == NOT_FOUND_DIAGNOSIS_ID:
         return _error_response(404, DIAGNOSIS_NOT_FOUND)
 
-    saved = [
-        {
-            "issueId": item.issueId or 399,
-            "title": item.title,
-            "detail": item.detail,
-            "location": None,
-            "isInput": False,
-            "category": jsonable_encoder(_issue_category(item.categoryCodeId)),
-            "status": "UNRESOLVED",
-            "severity": item.severity,
-            "fixedVersion": None,
-            "originIssueId": None,
-            "qaCriteria": [
-                {
-                    "qaCriterionId": qa.qaCriterionId or 299,
-                    "testCase": qa.testCase,
-                    "condition": None,
-                    "status": "UNRESOLVED",
-                    "issueId": item.issueId or 399,
-                }
-                for qa in item.qaCriteria
-            ],
-        }
-        for item in request.requirements
-    ]
+    source_by_id = {row["issueId"]: row for row in _issue_rows(diagnosisId)}
+    next_issue_id = max(source_by_id, default=399) + 1
+    saved = []
+
+    for item in request.requirements:
+        issue_id = item.issueId
+        if issue_id is None:
+            issue_id = next_issue_id
+            next_issue_id += 1
+
+        source = source_by_id.get(issue_id)
+        status = (
+            "CONTRACTED"
+            if source is not None and source["status"] == "CONTRACTED"
+            else "SUGGESTED"
+        )
+        saved.append(
+            {
+                "issueId": issue_id,
+                "title": item.title,
+                "detail": item.detail,
+                "location": source["location"] if source else None,
+                "isInput": source["isInput"] if source else False,
+                "category": jsonable_encoder(_issue_category(item.categoryCodeId)),
+                "status": status,
+                "severity": item.severity,
+                "fixedVersion": source["fixedVersion"] if source else None,
+                "originIssueId": source["originIssueId"] if source else None,
+                "qaCriteria": [
+                    {
+                        "qaCriterionId": qa.qaCriterionId or 290000 + order,
+                        "testCase": qa.testCase,
+                        "condition": None,
+                        "status": "UNRESOLVED",
+                        "issueId": issue_id,
+                    }
+                    for order, qa in enumerate(item.qaCriteria)
+                ],
+            }
+        )
+
+    _SAVED_REQUIREMENTS[diagnosisId] = saved
     return IssueListResponse(
-        **{
-            **ISSUE_LIST_EXAMPLE,
-            "content": saved,
-            "totalElements": len(saved),
-        }
+        content=saved,
+        page=1,
+        size=max(len(saved), 1),
+        totalElements=len(saved),
+        totalPages=1,
     )
 
 
@@ -3054,6 +3234,10 @@ ISSUE_CATEGORY_CODES = [
     {"codeId": 71, "codeName": "보안"},
     {"codeId": 72, "codeName": "위법"},
     {"codeId": 73, "codeName": "결제"},
+    {"codeId": 75, "codeName": "데이터"},
+    {"codeId": 76, "codeName": "비용"},
+    {"codeId": 77, "codeName": "인계"},
+    {"codeId": 78, "codeName": "AI 잔재"},
     {"codeId": 74, "codeName": "기타"},
 ]
 

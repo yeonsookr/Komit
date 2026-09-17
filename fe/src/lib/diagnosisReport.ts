@@ -38,16 +38,21 @@ export function versionLabel(version: number): string {
   return `${version}차 진단`;
 }
 
-/** 위험도 표기. */
+/** 위험도 표기. 의뢰인이 읽는 말로 적습니다. */
 export const SEVERITY_LABEL: Record<IssueSeverity, string> = {
-  HIGH: "높음",
-  MEDIUM: "보통",
-  LOW: "낮음",
+  HIGH: "위험",
+  MEDIUM: "주의",
+  LOW: "참고",
 };
 
 /** 해결된 요구사항인지. 해결된 것은 고를 수 없고 취소선으로 남깁니다. */
 export function isResolved(issue: Issue): boolean {
   return issue.status === "RESOLVED";
+}
+
+/** 요청서에 실제로 담긴 요구사항인지. 고르기 전 미해결 이슈는 포함하지 않습니다. */
+export function isInRequest(issue: Issue): boolean {
+  return issue.status === "SUGGESTED" || issue.status === "CONTRACTED";
 }
 
 /**
@@ -61,4 +66,52 @@ export function selectableIssues(issues: Issue[]): Issue[] {
 /** 해결 처리를 하면 고른 목록에서도 빼야 합니다. */
 export function dropSelection(selected: number[], issueId: number): number[] {
   return selected.filter((id) => id !== issueId);
+}
+
+/**
+ * 갈래를 보여주는 순서. 급한 것부터 둡니다.
+ * 「기타」는 나머지를 받는 자리라 언제나 맨 끝입니다.
+ */
+export const CATEGORY_ORDER = [71, 73, 75, 72, 76, 77, 78, 74];
+
+/** 갈래가 무슨 뜻인지. 의뢰인이 읽는 말로 한 줄씩 적습니다. */
+export const CATEGORY_DESCRIPTION: Record<number, string> = {
+  71: "정보가 새거나 아무나 들어올 수 있습니다",
+  72: "법에서 갖추라고 한 것이 빠졌습니다",
+  73: "돈이 잘못 빠져나갈 수 있습니다",
+  74: "앞의 갈래에 들지 않습니다",
+  75: "정보가 사라지거나 어긋날 수 있습니다",
+  76: "생각보다 요금이 많이 나올 수 있습니다",
+  77: "실행 방법·설정이 정리돼 있지 않습니다",
+  78: "AI가 만든 예시·임시 코드가 남아 있습니다",
+};
+
+/** 갈래 하나와 거기 묶인 결함. */
+export interface IssueGroup {
+  codeId: number;
+  codeName: string;
+  issues: Issue[];
+}
+
+/**
+ * 결함을 갈래로 묶습니다.
+ *
+ * `CATEGORY_ORDER` 순서로 내놓고, 목록에 없는 번호는 그 뒤에 나온 순서대로
+ * 붙입니다. 비어 있는 갈래는 내놓지 않습니다.
+ */
+export function groupByCategory(issues: Issue[]): IssueGroup[] {
+  const groups = new Map<number, IssueGroup>();
+
+  for (const issue of issues) {
+    const { codeId, codeName } = issue.category;
+    const group = groups.get(codeId) ?? { codeId, codeName, issues: [] };
+    group.issues.push(issue);
+    groups.set(codeId, group);
+  }
+
+  const rank = (codeId: number) => {
+    const at = CATEGORY_ORDER.indexOf(codeId);
+    return at === -1 ? CATEGORY_ORDER.length : at;
+  };
+  return [...groups.values()].sort((a, b) => rank(a.codeId) - rank(b.codeId));
 }

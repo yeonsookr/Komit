@@ -30,10 +30,10 @@ _CATEGORY = {
     "COMPLIANCE": (72, "위법"),
     "SECURITY": (71, "보안"),
     "PAYMENT": (73, "결제"),
-    "DATA": (73, "결제"),
-    "COST": (74, "기타"),
-    "HANDOVER": (74, "기타"),
-    "AI_RESIDUE": (74, "기타"),
+    "DATA": (75, "데이터"),
+    "COST": (76, "비용"),
+    "HANDOVER": (77, "인계"),
+    "AI_RESIDUE": (78, "AI 잔재"),
     "ETC": (74, "기타"),
 }
 

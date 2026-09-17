@@ -2,6 +2,7 @@ import "server-only";
 
 import { backendApi } from "../server";
 import { BACKEND } from "../endpoints";
+import { authorized } from "@/lib/auth/session";
 import type {
   CreateIssueRequest,
   Diagnosis,
@@ -28,7 +29,10 @@ interface UnfinishedSurveyListResponse {
  * 그려지고, 마지막으로 저장한 시각의 내림차순입니다.
  */
 export async function getUnfinishedSurveys(): Promise<UnfinishedSurvey[]> {
-  const { data } = await backendApi().get<UnfinishedSurveyListResponse>(BACKEND.DIAGNOSES);
+  const { data } = await backendApi().get<UnfinishedSurveyListResponse>(
+    BACKEND.DIAGNOSES,
+    await authorized(),
+  );
   return data.content;
 }
 
@@ -140,7 +144,11 @@ export async function getDiagnosis(diagnosisId: number): Promise<Diagnosis> {
 
 /** 검사에서 나온 결함 목록. 진단서와 요구사항 선택이 함께 씁니다. */
 export async function getIssues(diagnosisId: number): Promise<Issue[]> {
-  const { data } = await backendApi().get<IssueListResponse>(BACKEND.ISSUES(diagnosisId));
+  const { data } = await backendApi().get<IssueListResponse>(BACKEND.ISSUES(diagnosisId), {
+    // 진단서와 요청서는 일부 페이지만 보여주면 분류와 요구사항이 조용히 사라집니다.
+    // 목·실서버 계약이 허용하는 최대 크기로 한 회차의 결함을 모두 받습니다.
+    params: { page: 1, size: 100 },
+  });
   return data.content;
 }
 

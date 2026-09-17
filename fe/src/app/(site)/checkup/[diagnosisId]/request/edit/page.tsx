@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Container } from "@/components/layouts";
 import { RequestFormEditor } from "@/components/domains/checkup";
 import { getCodes, getDiagnosis, getIssues } from "@/lib/api/services";
-import { isResolved } from "@/lib/diagnosisReport";
+import { isInRequest } from "@/lib/diagnosisReport";
 import { ApiError } from "@/types/api";
 
 export const metadata: Metadata = {
@@ -39,10 +39,10 @@ export default async function RequestFormEditPage({
 
     return (
       <Container className="py-10 sm:py-14">
-        {/* 직접 해결한 요구사항은 요청서에 없으므로 수정 대상도 아닙니다. */}
+        {/* 요청서에 고른 요구사항만 수정 대상입니다. */}
         <RequestFormEditor
           diagnosis={diagnosis}
-          issues={issues.filter((issue) => !isResolved(issue))}
+          issues={issues.filter(isInRequest)}
           categories={categories}
         />
       </Container>
