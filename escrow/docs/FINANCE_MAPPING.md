@@ -108,7 +108,49 @@
 
 ---
 
-## 6. 미결 (확정 필요)
+## 6. Komit ↔ Escrow 번역 매핑
+
+계층이 다르므로 필드명·타입·상태 어휘가 다르다. be-api가 escrow 클라이언트를 짤 때 아래 대응을 구현한다.
+
+**계층 규약**: FE → Komit 은 간소화 형식, Komit → Escrow 는 SSAFY 금융망 형식(`Header`/`REC`)을 쓴다.
+FE는 SSAFY 형식을 몰라도 된다.
+
+### 식별자
+
+| Komit (FE 대면) | Escrow | 비고 |
+| --- | --- | --- |
+| `contractId` (int, 예 130) | `external_contract_id` (str) | Komit 정수를 문자열로 변환해 넘긴다 |
+| — | `escrowId` (int) | escrow가 발급. Komit은 계약↔escrow 매핑을 보관 |
+
+### 예치 상태
+
+Komit `EscrowDepositResponse.status`는 escrow의 상태를 번역한 값이다.
+
+| Komit status | 파생 출처 (escrow) |
+| --- | --- |
+| `PENDING` | `escrows.status` = DEPOSIT_PENDING |
+| `DEPOSITED` | `escrows.status` = ACTIVE |
+| `FAILED` | 예치 `escrow_transactions.status` = FAILED 또는 createEscrow 에러 응답. `escrows.status`에는 FAILED가 없다 |
+
+### 정산 뷰
+
+| Komit (`ContractDepositResponse`) | Escrow (`inquireEscrow`) |
+| --- | --- |
+| `depositedAmount` | `depositedAmount` |
+| `releasedAmount` | `releasedAmount` |
+| `remainingAmount` | `balance` |
+
+### 계좌 1원 인증
+
+| Komit (`AccountVerificationResponse`) | Escrow (`openAccountAuth` / `checkAuthCode`) |
+| --- | --- |
+| `verificationId` (int) | 상관키는 `accountNo`. Komit이 자체 세션 ID를 발급하고 `accountNo`(가린 값)와 함께 보관 |
+| `expiresAt` | `openAccountAuth` 응답의 `expiresAt` (escrow가 `account_verifications.expires_at`로 계산). Komit은 전달만 한다 |
+| (검증 요청) | `checkAuthCode` req: `accountNo`, `authCode`(4자리). `authText`는 escrow가 주입 |
+
+---
+
+## 7. 미결 (확정 필요)
 
 키 발급·실호출 뒤 확인하거나 팀이 정할 항목.
 
