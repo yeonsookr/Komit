@@ -1,5 +1,6 @@
 export * from "./ContractDetail";
 export * from "./ContractEditor";
+export * from "./DeliverableFiles";
 export * from "./DepositForm";
 export * from "./MilestoneList";
 export * from "./ProgressPanel";
