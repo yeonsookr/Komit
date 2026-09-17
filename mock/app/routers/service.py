@@ -3108,18 +3108,6 @@ ROOMS = [
         "openedAt": "2026-08-24T10:10:00+09:00",
     },
     {
-        "roomId": 102,
-        "recommendationItemId": None,
-        "type": "CONSULTING",
-        "status": "OPEN",
-        "projectId": 21,
-        "projectName": "미미헤어샵 예약",
-        "developerId": 9,
-        "counterpartName": "박준호",
-        "chatRefId": "room-102-chat",
-        "openedAt": "2026-08-26T15:30:00+09:00",
-    },
-    {
         "roomId": 103,
         "recommendationItemId": None,
         "type": "DEVELOPMENT",
@@ -3153,18 +3141,6 @@ ROOMS = [
         "developerId": 3,
         "counterpartName": "이준",
         "chatRefId": "room-106-chat",
-        "openedAt": "2026-08-22T16:10:00+09:00",
-    },
-    {
-        "roomId": 107,
-        "recommendationItemId": None,
-        "type": "DEVELOPMENT",
-        "status": "OPEN",
-        "projectId": 21,
-        "projectName": "미미헤어샵 예약",
-        "developerId": 9,
-        "counterpartName": "박준호",
-        "chatRefId": "room-107-chat",
         "openedAt": "2026-08-22T16:10:00+09:00",
     },
     {
@@ -3284,8 +3260,7 @@ def _room_detail(room: dict) -> dict:
         104: DONE_CONTRACT_ID,
         105: DRAFT_DEV_CONTRACT_ID,
         106: DRAFT_CLIENT_CONTRACT_ID,
-        107: SIGNED_ONLY_CONTRACT_ID,
-        108: DEPOSITED_CONTRACT_ID,
+        108: BEFORE_START_CONTRACT_ID,
     }
     return {
         **room,
@@ -4010,7 +3985,7 @@ def get_room(
         int,
         Path(
             description=(
-                "방 식별자. 맡긴 의뢰는 91·92·93, 맡은 의뢰는 101·102·103이다. "
+                "방 식별자. 맡긴 의뢰는 91·92·93·104·106, 맡은 의뢰는 101·103·105·108이다. "
                 "상담 요청으로 열리는 94~97도 있다. 그 밖의 값은 모두 없는 방이며 "
                 "404는 없음 재현용 예약값이다."
             ),
@@ -4722,10 +4697,8 @@ def get_contract(
         return ContractResponse(**DRAFT_DEV_CONTRACT_EXAMPLE)
     if contractId == DRAFT_CLIENT_CONTRACT_ID:
         return ContractResponse(**DRAFT_CLIENT_CONTRACT_EXAMPLE)
-    if contractId == SIGNED_ONLY_CONTRACT_ID:
-        return ContractResponse(**SIGNED_ONLY_CONTRACT_EXAMPLE)
-    if contractId == DEPOSITED_CONTRACT_ID:
-        return ContractResponse(**DEPOSITED_CONTRACT_EXAMPLE)
+    if contractId == BEFORE_START_CONTRACT_ID:
+        return ContractResponse(**BEFORE_START_CONTRACT_EXAMPLE)
     return ContractResponse(**CONSULTING_CONTRACT_EXAMPLE)
 
 
@@ -5536,9 +5509,8 @@ DONE_CONTRACT_ID = 140
 # 두 벌을 둔다 — 개발자 시점(105)과 의뢰인 시점(106)은 방이 달라 계약도 갈린다.
 DRAFT_DEV_CONTRACT_ID = 131
 DRAFT_CLIENT_CONTRACT_ID = 132
-# 착수 전 두 상태. 예치가 확인되기 전(133)과 확인된 뒤(134)는 개발자 화면이 다르다.
-SIGNED_ONLY_CONTRACT_ID = 133
-DEPOSITED_CONTRACT_ID = 134
+# 예치까지 끝나고 아직 착수하지 않은 계약. 개발자의 착수 화면이 이때만 나온다.
+BEFORE_START_CONTRACT_ID = 134
 MILESTONE_ID = 301
 NOT_FOUND_MILESTONE_ID = 404
 CONFLICT_MILESTONE_ID = 409
@@ -5797,11 +5769,8 @@ def _before_start_contract(contract_id: int, room_id: int, status: str) -> dict:
     return before
 
 
-SIGNED_ONLY_CONTRACT_EXAMPLE = _before_start_contract(
-    SIGNED_ONLY_CONTRACT_ID, 107, "SIGNED"
-)
-DEPOSITED_CONTRACT_EXAMPLE = _before_start_contract(
-    DEPOSITED_CONTRACT_ID, 108, "DEPOSITED"
+BEFORE_START_CONTRACT_EXAMPLE = _before_start_contract(
+    BEFORE_START_CONTRACT_ID, 108, "DEPOSITED"
 )
 
 DEPOSIT_EXAMPLE = {
@@ -6190,15 +6159,6 @@ def get_deposit(
 ) -> EscrowDepositResponse | JSONResponse:
     if contractId == NOT_FOUND_CONTRACT_ID:
         return _error_response(404, CONTRACT_NOT_FOUND)
-    if contractId == SIGNED_ONLY_CONTRACT_ID:
-        return EscrowDepositResponse(
-            **{
-                **DEPOSIT_EXAMPLE,
-                "contractId": contractId,
-                "status": "PENDING",
-                "depositedAt": None,
-            }
-        )
     return EscrowDepositResponse(**DEPOSIT_EXAMPLE)
 
 
