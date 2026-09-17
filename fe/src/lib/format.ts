@@ -22,6 +22,18 @@ const dateLabelFormat = new Intl.DateTimeFormat("ko-KR", {
   day: "numeric",
 });
 
+const fullDateFormat = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: TIME_ZONE,
+  year: "numeric",
+  month: "long",
+  day: "numeric",
+});
+
+const weekdayFormat = new Intl.DateTimeFormat("ko-KR", {
+  timeZone: TIME_ZONE,
+  weekday: "short",
+});
+
 const dayKeyFormat = new Intl.DateTimeFormat("en-CA", {
   timeZone: TIME_ZONE,
   year: "numeric",
@@ -39,9 +51,20 @@ export function formatDateLabel(isoString: string): string {
   return dateLabelFormat.format(new Date(isoString));
 }
 
+/** "2026년 3월 1일" — 약관 개정일처럼 연도까지 밝혀야 하는 자리. */
+export function formatFullDate(isoString: string): string {
+  return fullDateFormat.format(new Date(isoString));
+}
+
 /** "2026-08-20" — 같은 날 메시지를 묶을 때 쓰는 키. 화면에 찍지 않습니다. */
 export function toDayKey(isoString: string): string {
   return dayKeyFormat.format(new Date(isoString));
+}
+
+/** "8/17" — 마이페이지의 진단 날짜, 방 개설일처럼 시각까지는 필요 없는 자리. */
+export function formatShortDate(isoString: string): string {
+  const [, month, day] = dayKeyFormat.format(new Date(isoString)).split("-");
+  return `${Number(month)}/${Number(day)}`;
 }
 
 /** "8/18 16:40" — 요청서 갱신 시각처럼 좁은 자리에 넣는 표기. */
@@ -79,4 +102,20 @@ function dayDistance(from: Date, to: Date): number {
   const fromDay = Date.parse(`${dayKeyFormat.format(from)}T00:00:00Z`);
   const toDay = Date.parse(`${dayKeyFormat.format(to)}T00:00:00Z`);
   return Math.round((toDay - fromDay) / 86_400_000);
+}
+
+/**
+ * "8월 26일 수" — 착수일·납기일처럼 무슨 요일인지가 중요한 자리.
+ * 날짜만 있는 값(`2026-08-26`)을 받습니다.
+ */
+export function formatDayWithWeekday(date: string): string {
+  const at = new Date(`${date}T00:00:00+09:00`);
+  if (Number.isNaN(at.getTime())) return date;
+  return `${dateLabelFormat.format(at)} ${weekdayFormat.format(at)}`;
+}
+
+/** "8월 23일 10:20" — 보낸 시각처럼 문장 안에 넣는 표기. */
+export function formatDateTimeLabel(isoString: string): string {
+  const date = new Date(isoString);
+  return `${dateLabelFormat.format(date)} ${timeFormat.format(date)}`;
 }

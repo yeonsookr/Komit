@@ -3,6 +3,24 @@ spring:
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+  data:
+    redis:
+      # Sentinel에 현재 Primary 주소를 물어 접속합니다. failover 후에도 Lettuce가 새 Primary로 다시 붙습니다.
+      sentinel:
+        master: ${REDIS_SENTINEL_MASTER}
+        nodes: ${REDIS_SENTINEL_NODES}
+        password: ${REDIS_PASSWORD}
+      password: ${REDIS_PASSWORD}
+
+app:
+  datasource:
+    read-url: ${DB_READ_URL}
+
+server:
+  # nginx가 /service/ 접두사를 떼고 X-Forwarded-Prefix·Proto·Host로 알려 줍니다.
+  # 이 값을 반영해야 리다이렉트와 생성 URL이 https://komit.site/service/... 로 나옵니다.
+  # 헤더는 nginx가 덮어써서 보내므로 클라이언트가 위조한 값은 들어오지 않습니다.
+  forward-headers-strategy: framework
 
 springdoc:
   swagger-ui:

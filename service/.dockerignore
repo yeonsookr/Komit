@@ -1,0 +1,5 @@
+# 빌드 컨텍스트에서 뺄 것. 없으면 build/ 와 .gradle/ 을 통째로 전송합니다.
+.gradle
+build
+.idea
+*.iml

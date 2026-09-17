@@ -805,8 +805,8 @@ ME_EXAMPLE = {
     "userId": 12,
     "name": "김미미",
     "profileImageFileId": None,
-    "hasDevProfile": False,
-    "developerId": None,
+    "hasDevProfile": True,
+    "developerId": 9,
     "unreadNotificationCount": 3,
 }
 
@@ -1122,6 +1122,31 @@ class TechCategoryResponse(BaseModel):
     )
 
 
+class UnfinishedSurveyResponse(BaseModel):
+    """설문을 끝내지 않은 진단 하나. `2_설문1` 아래 「진행 중인 설문」에 쓴다."""
+
+    diagnosisId: int = Field(description="진단 식별자.", examples=[31])
+    projectName: str = Field(
+        description="프로젝트 이름. 목록에서 이것으로 알아본다.",
+        examples=["미미헤어샵 예약"],
+    )
+    updatedAt: str = Field(
+        description=(
+            "마지막으로 저장한 시각. 답을 저장할 때마다 갱신된다. 목록은 이 값의 "
+            "내림차순으로 온다."
+        ),
+        examples=["2026-09-16T17:40:00+09:00"],
+    )
+
+
+class UnfinishedSurveyListResponse(BaseModel):
+    """끝내지 않은 설문 목록."""
+
+    content: list[UnfinishedSurveyResponse] = Field(
+        description="끝내지 않은 설문. 없으면 빈 배열이다."
+    )
+
+
 class DiagnosisProjectResponse(BaseModel):
     """진단이 걸린 프로젝트."""
 
@@ -1223,6 +1248,13 @@ class SurveyResponse(BaseModel):
     )
     questions: list[SurveyQuestionResponse] = Field(
         description="설문 문항. 화면에 보여줄 순서대로 내려간다.",
+    )
+    isDone: bool = Field(
+        description=(
+            "이 설문을 끝냈는지. 설문4까지 마치고 완료를 부르면 참이 된다. 거짓인 "
+            "설문은 `2_설문1` 의 「진행 중인 설문」 목록에 올라간다."
+        ),
+        examples=[False],
     )
 
 
@@ -1503,6 +1535,12 @@ SCAN_FILE_INVALID_EXAMPLE = {
 # 실패 사례를 재현하는 진단 식별자. 속성을 늘리지 않고 경로 값으로만 고른다.
 DIAGNOSIS_ID = 31
 NOT_FOUND_DIAGNOSIS_ID = 404
+# 설문을 아직 끝낼 수 없는 진단 재현용 예약값.
+NOT_COMPLETABLE_DIAGNOSIS_ID = 409
+SURVEY_NOT_COMPLETABLE = (
+    "SURVEY_NOT_COMPLETABLE",
+    "아직 끝내지 않은 문항이 있습니다.",
+)
 RUNNING_DIAGNOSIS_ID = 409
 PENDING_DIAGNOSIS_ID = 202
 
@@ -1535,9 +1573,30 @@ DIAGNOSIS_EXAMPLE = {
     "resolvedSinceLastVersionCount": 3,
 }
 
+UNFINISHED_SURVEY_LIST_EXAMPLE = {
+    "content": [
+        {
+            "diagnosisId": 31,
+            "projectName": "미미헤어샵 예약",
+            "updatedAt": "2026-09-16T17:40:00+09:00",
+        },
+        {
+            "diagnosisId": 28,
+            "projectName": "사내 재고 관리",
+            "updatedAt": "2026-08-20T11:05:00+09:00",
+        },
+        {
+            "diagnosisId": 24,
+            "projectName": "동네 모임 커뮤니티",
+            "updatedAt": "2026-08-14T09:30:00+09:00",
+        },
+    ]
+}
+
 SURVEY_EXAMPLE = {
     "surveyId": 19,
     "diagnosisVersion": 2,
+    "isDone": False,
     "questions": [
         {
             "questionId": 51,
@@ -1722,6 +1781,37 @@ AREA2_TAG = "2 사전점검"
 # --------------------------------------------------------------------------- #
 
 
+@router.get(
+    "/diagnoses",
+    response_model=UnfinishedSurveyListResponse,
+    tags=[AREA2_TAG],
+    responses={
+        200: {
+            "content": {
+                "application/json": {"example": UNFINISHED_SURVEY_LIST_EXAMPLE}
+            }
+        },
+        **AREA1_UNAUTHORIZED,
+        **AREA1_ERRORS,
+    },
+    summary="끝내지 않은 설문 목록",
+    description=(
+        "**화면 — `2_설문1` › 진행 중인 설문**\n\n"
+        "설문을 끝내지 않고 나간 진단을 돌려준다. 다시 들어온 사람이 처음부터 다시 "
+        "하지 않고 이어서 하게 하려는 것이다.\n\n"
+        "**끝냈는지는 설문의 완료 여부로 본다.** 설문4까지 마치고 완료를 부르면 그 "
+        "설문은 여기서 빠진다. 검사를 돌렸는지와는 무관하다 — 설문3까지 하고 나간 "
+        "사람도 남는다.\n\n"
+        "내 프로젝트의 것만 내려간다. 마지막으로 저장한 시각의 내림차순이다.\n\n"
+        "- **200**: 목록을 내줬을 때. 없으면 `content`가 빈 배열이다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **500 / INTERNAL_ERROR**: 목록을 읽지 못했을 때"
+    ),
+)
+def list_unfinished_surveys() -> UnfinishedSurveyListResponse:
+    return UnfinishedSurveyListResponse(**UNFINISHED_SURVEY_LIST_EXAMPLE)
+
+
 @router.post(
     "/diagnoses",
     response_model=DiagnosisResponse,
@@ -1833,6 +1923,69 @@ def save_survey_answers(
     if diagnosisId == NOT_FOUND_DIAGNOSIS_ID:
         return _error_response(404, DIAGNOSIS_NOT_FOUND)
     return SurveyResponse(**SURVEY_EXAMPLE)
+
+
+@router.post(
+    "/diagnoses/{diagnosisId}/survey/complete",
+    response_model=SurveyResponse,
+    tags=[AREA2_TAG],
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {**SURVEY_EXAMPLE, "isDone": True}
+                }
+            }
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "아직 끝낼 수 없거나 이미 끝냄",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": "SURVEY_NOT_COMPLETABLE",
+                        "message": "아직 끝내지 않은 문항이 있습니다.",
+                    }
+                }
+            },
+        },
+        **DIAGNOSIS_ERRORS,
+    },
+    summary="설문 완료",
+    description=(
+        "**화면 — `2_설문4` › 진단서 보기**\n\n"
+        "설문을 끝냈다고 알린다. 이 호출을 받아야 설문이 완료로 바뀌고 `2_설문1` 의 "
+        "「진행 중인 설문」 목록에서 빠진다.\n\n"
+        "**답 저장이 완료를 겸하지 않는다.** 설문4 문항은 검사 결과에서 나오므로 검사 "
+        "전에는 존재하지 않는다. 답이 다 찼는지로 판정하면 설문2까지만 하고도 완료로 "
+        "찍히기 때문에, 끝났다는 것은 화면이 따로 알린다.\n\n"
+        "완료 조건은 서버가 확인한다 — 검사가 끝나 설문4 문항이 생겼고 모든 문항에 답이 "
+        "있어야 한다. 이미 끝낸 설문을 다시 불러도 409다.\n\n"
+        "- **200**: 완료로 바뀌었을 때. `isDone`이 참인 설문지를 돌려준다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **404 / DIAGNOSIS_NOT_FOUND**: `diagnosisId`가 404일 때\n"
+        "- **409 / SURVEY_NOT_COMPLETABLE**: `diagnosisId`가 409일 때. 답하지 않은 "
+        "문항이 남았거나 이미 끝낸 설문이다\n"
+        "- **500 / INTERNAL_ERROR**: 완료 처리를 하지 못했을 때"
+    ),
+)
+def complete_survey(
+    diagnosisId: Annotated[
+        int,
+        Path(
+            description=(
+                "진단 식별자. 404는 진단 없음, 409는 아직 끝낼 수 없음 재현용 "
+                "예약값이다."
+            ),
+            examples=[DIAGNOSIS_ID],
+        ),
+    ],
+) -> SurveyResponse | JSONResponse:
+    if diagnosisId == NOT_FOUND_DIAGNOSIS_ID:
+        return _error_response(404, DIAGNOSIS_NOT_FOUND)
+    if diagnosisId == NOT_COMPLETABLE_DIAGNOSIS_ID:
+        return _error_response(409, SURVEY_NOT_COMPLETABLE)
+    return SurveyResponse(**{**SURVEY_EXAMPLE, "isDone": True})
 
 
 # --------------------------------------------------------------------------- #
@@ -3095,6 +3248,78 @@ ROOMS = [
         "chatRefId": "room-93-chat",
         "openedAt": "2026-08-25T14:05:00+09:00",
     },
+    {
+        "roomId": 101,
+        "recommendationItemId": None,
+        "type": "INQUIRY",
+        "status": "OPEN",
+        "projectId": 21,
+        "projectName": "미미헤어샵 예약",
+        "developerId": 9,
+        "counterpartName": "박준호",
+        "chatRefId": "room-101-chat",
+        "openedAt": "2026-08-24T10:10:00+09:00",
+    },
+    {
+        "roomId": 103,
+        "recommendationItemId": None,
+        "type": "DEVELOPMENT",
+        "status": "OPEN",
+        "projectId": 21,
+        "projectName": "미미헤어샵 예약",
+        "developerId": 9,
+        "counterpartName": "박준호",
+        "chatRefId": "room-103-chat",
+        "openedAt": "2026-08-28T09:20:00+09:00",
+    },
+    {
+        "roomId": 105,
+        "recommendationItemId": None,
+        "type": "DEVELOPMENT",
+        "status": "OPEN",
+        "projectId": 21,
+        "projectName": "미미헤어샵 예약",
+        "developerId": 9,
+        "counterpartName": "박준호",
+        "chatRefId": "room-105-chat",
+        "openedAt": "2026-08-22T16:10:00+09:00",
+    },
+    {
+        "roomId": 106,
+        "recommendationItemId": None,
+        "type": "DEVELOPMENT",
+        "status": "OPEN",
+        "projectId": 8,
+        "projectName": "수제 비누 가게",
+        "developerId": 3,
+        "counterpartName": "이준",
+        "chatRefId": "room-106-chat",
+        "openedAt": "2026-08-22T16:10:00+09:00",
+    },
+    {
+        "roomId": 108,
+        "recommendationItemId": None,
+        "type": "DEVELOPMENT",
+        "status": "OPEN",
+        "projectId": 21,
+        "projectName": "미미헤어샵 예약",
+        "developerId": 9,
+        "counterpartName": "박준호",
+        "chatRefId": "room-108-chat",
+        "openedAt": "2026-08-22T16:10:00+09:00",
+    },
+    {
+        "roomId": 104,
+        "recommendationItemId": None,
+        "type": "DEVELOPMENT",
+        "status": "CLOSED",
+        "projectId": 8,
+        "projectName": "수제 비누 가게",
+        "developerId": 3,
+        "counterpartName": "이준",
+        "chatRefId": "room-104-chat",
+        "openedAt": "2026-08-10T09:00:00+09:00",
+    },
 ]
 
 # 상담 요청으로 열리는 방. 같은 개발자에게 다시 요청해도 같은 방을 돌려주도록 고정해 둔다.
@@ -3184,6 +3409,11 @@ def _room_detail(room: dict) -> dict:
     contract_ids = {
         CONSULTING_CONTRACT_EXAMPLE["roomId"]: CONTRACT_ID,
         DEV_CONTRACT_EXAMPLE["roomId"]: DEV_CONTRACT_ID,
+        103: DEV_CONTRACT_ID,
+        104: DONE_CONTRACT_ID,
+        105: DRAFT_DEV_CONTRACT_ID,
+        106: DRAFT_CLIENT_CONTRACT_ID,
+        108: BEFORE_START_CONTRACT_ID,
     }
     return {
         **room,
@@ -3908,8 +4138,9 @@ def get_room(
         int,
         Path(
             description=(
-                "방 식별자. 방 목록의 91·92·93과 상담 요청으로 열리는 94~97이 있다. "
-                "그 밖의 값은 모두 없는 방이며 404는 없음 재현용 예약값이다."
+                "방 식별자. 맡긴 의뢰는 91·92·93·104·106, 맡은 의뢰는 101·103·105·108이다. "
+                "상담 요청으로 열리는 94~97도 있다. 그 밖의 값은 모두 없는 방이며 "
+                "404는 없음 재현용 예약값이다."
             ),
             examples=[91],
         ),
@@ -4592,6 +4823,8 @@ def write_consulting_contract(
         "자기 서명 여부를 보고 '서명하고 결제' 또는 '서명하고 계약하기'를 보여준다.\n\n"
         "체결 전에는 `contractText`가 null이다. 체결되는 순간 그때의 문구가 담기고 이후 "
         "바뀌지 않는다.\n\n"
+        "**갈래는 `contractId`로 갈린다.** 목에서는 120이 컨설팅, 130이 개발 계약서다. "
+        "방 상세의 `contractId`를 그대로 넣으면 그 방의 갈래에 맞는 계약서가 온다.\n\n"
         "- **200**: 계약서가 있고 내가 당사자일 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때. 없거나 남의 계약이다\n"
@@ -4609,6 +4842,16 @@ def get_contract(
 ) -> ContractResponse | JSONResponse:
     if contractId == NOT_FOUND_CONTRACT_ID:
         return _error_response(404, CONTRACT_NOT_FOUND)
+    if contractId == DEV_CONTRACT_ID:
+        return ContractResponse(**DEV_CONTRACT_EXAMPLE)
+    if contractId == DONE_CONTRACT_ID:
+        return ContractResponse(**DONE_CONTRACT_EXAMPLE)
+    if contractId == DRAFT_DEV_CONTRACT_ID:
+        return ContractResponse(**DRAFT_DEV_CONTRACT_EXAMPLE)
+    if contractId == DRAFT_CLIENT_CONTRACT_ID:
+        return ContractResponse(**DRAFT_CLIENT_CONTRACT_EXAMPLE)
+    if contractId == BEFORE_START_CONTRACT_ID:
+        return ContractResponse(**BEFORE_START_CONTRACT_EXAMPLE)
     return ContractResponse(**CONSULTING_CONTRACT_EXAMPLE)
 
 
@@ -5105,6 +5348,20 @@ class MilestoneResponse(BaseModel):
         ),
         examples=[400000],
     )
+    location: str | None = Field(
+        description=(
+            "이 작업이 다루는 요구사항의 위치. 진단에서 나온 요구사항이면 채워지고, "
+            "개발자가 직접 만든 작업이면 null이다. ERD issues.location에 대응한다."
+        ),
+        examples=["app/api/admin/* · 4개 라우트"],
+    )
+    workDate: int | None = Field(
+        description=(
+            "이 작업에 잡은 기간(일). 최종 납기일이 어떻게 나왔는지 보여주는 참고값이라 "
+            "**계약 전에만 화면에 보여준다.** 정하지 않았으면 null이다."
+        ),
+        examples=[10],
+    )
     status: Literal[
         "PROPOSED", "REJECTED", "SCHEDULED", "IN_PROGRESS", "SUBMITTED", "CONFIRMED"
     ] = Field(
@@ -5265,6 +5522,14 @@ class WriteMilestoneRequest(BaseModel):
         description="작업 가격. 인계 작업은 0으로 보낸다.",
         examples=[400000],
     )
+    workDate: int | None = Field(
+        default=None,
+        description=(
+            "이 작업에 잡은 기간(일). 최종 납기일이 어떻게 나왔는지 보여주는 참고값이라 "
+            "정하지 않아도 된다."
+        ),
+        examples=[10],
+    )
     qaCriteria: list[str] = Field(
         min_length=1,
         description="이 작업의 확인 문장. 하나 이상이어야 한다.",
@@ -5293,8 +5558,13 @@ class EscrowDepositResponse(BaseModel):
 class DepositRequest(BaseModel):
     """예치 요청."""
 
-    paymentMethodId: int = Field(
-        description="쓸 결제 수단 식별자. 마이페이지에 등록해 둔 카드다.",
+    paymentMethodId: int | None = Field(
+        description=(
+            "쓸 결제 수단 식별자. 마이페이지에 등록해 둔 실시간 계좌이체 수단이다. "
+            "카드 결제는 쓰지 않는다. 목록은 결제 수단 조회로 받는다. **비우면 등록해 "
+            "두지 않은 계좌로 내는 것이라, 결제창에서 은행을 고르고 바로 이체한다.**"
+        ),
+        default=None,
         examples=[9],
     )
     idempotencyKey: str = Field(
@@ -5352,6 +5622,7 @@ class WriteReviewRequest(BaseModel):
 MILESTONE_NOT_FOUND = ("MILESTONE_NOT_FOUND", "작업을 찾을 수 없습니다.")
 DEPOSIT_REQUIRED = ("DEPOSIT_REQUIRED", "예치가 끝나야 착수할 수 있습니다.")
 ALREADY_DEPOSITED = ("ALREADY_DEPOSITED", "이미 예치가 끝났습니다.")
+ACCOUNT_REQUIRED = ("ACCOUNT_REQUIRED", "예치에 쓸 결제 수단을 먼저 등록해 주세요.")
 QA_NOT_ALL_CHECKED = (
     "QA_NOT_ALL_CHECKED",
     "확인 문장을 모두 체크해야 통과시킬 수 있습니다.",
@@ -5386,16 +5657,26 @@ DUE_DATE_BEFORE_START_EXAMPLE = {
 AREA5_TAG = "5 개발"
 
 DEV_CONTRACT_ID = 130
+DONE_CONTRACT_ID = 140
+# 아직 아무도 서명하지 않은 계약서. 서명판(5_서명판)이 열리는 시점이 이때뿐이라
+# 두 벌을 둔다 — 개발자 시점(105)과 의뢰인 시점(106)은 방이 달라 계약도 갈린다.
+DRAFT_DEV_CONTRACT_ID = 131
+DRAFT_CLIENT_CONTRACT_ID = 132
+# 예치까지 끝나고 아직 착수하지 않은 계약. 개발자의 착수 화면이 이때만 나온다.
+BEFORE_START_CONTRACT_ID = 134
 MILESTONE_ID = 301
 NOT_FOUND_MILESTONE_ID = 404
 CONFLICT_MILESTONE_ID = 409
 NOT_DEPOSITED_CONTRACT_ID = 402
 DEPOSITED_CONTRACT_ID = 409
+NO_ACCOUNT_CONTRACT_ID = 405
 
 MILESTONES = [
     {
         "milestoneId": 301,
         "title": "1차 · 관리자 API에 인증 추가",
+        "location": "app/api/admin/* · 4개 라우트",
+        "workDate": 10,
         "price": 400000,
         "status": "CONFIRMED",
         "rejectMessage": None,
@@ -5422,6 +5703,8 @@ MILESTONES = [
     {
         "milestoneId": 302,
         "title": "2차 · 회원탈퇴 경로 구현",
+        "location": "신규 작성 · 데이터는 30일 보관 후 삭제",
+        "workDate": 6,
         "price": 200000,
         "status": "SUBMITTED",
         "rejectMessage": None,
@@ -5455,6 +5738,8 @@ MILESTONES = [
     {
         "milestoneId": 303,
         "title": "3차 · 결제 간헐 실패 수정",
+        "location": "app/api/checkout/route.ts:47",
+        "workDate": 4,
         "price": 50000,
         "status": "IN_PROGRESS",
         "rejectMessage": None,
@@ -5474,6 +5759,8 @@ MILESTONES = [
     {
         "milestoneId": 304,
         "title": "인계 · 소스 · 계정 · 설명서",
+        "location": None,
+        "workDate": None,
         "price": 0,
         "status": "IN_PROGRESS",
         "rejectMessage": None,
@@ -5487,7 +5774,21 @@ MILESTONES = [
                 "condition": None,
                 "status": "UNRESOLVED",
                 "issueId": None,
-            }
+            },
+            {
+                "qaCriterionId": 208,
+                "testCase": "관리자 계정과 비밀번호를 받았다",
+                "condition": None,
+                "status": "UNRESOLVED",
+                "issueId": None,
+            },
+            {
+                "qaCriterionId": 209,
+                "testCase": "운영 설명서를 받았다",
+                "condition": None,
+                "status": "UNRESOLVED",
+                "issueId": None,
+            },
         ],
     },
 ]
@@ -5537,6 +5838,60 @@ DEV_CONTRACT_EXAMPLE = {
     "updatedAt": "2026-08-23T10:20:00+09:00",
 }
 
+
+# 작업이 모두 통과 확정된 계약. 리뷰 화면(R-REV-02)을 보려면 끝난 거래가 있어야 한다.
+DONE_MILESTONES = [
+    {
+        **milestone,
+        "status": "CONFIRMED",
+        "confirmedAt": "2026-09-04T17:00:00+09:00",
+        "autoPassAt": None,
+        "qaCriteria": [
+            {**qa, "status": "RESOLVED"} for qa in milestone["qaCriteria"]
+        ],
+    }
+    for milestone in MILESTONES
+]
+
+DONE_CONTRACT_EXAMPLE = {
+    **DEV_CONTRACT_EXAMPLE,
+    "contractId": DONE_CONTRACT_ID,
+    "roomId": 104,
+    "development": {
+        **DEV_CONTRACT_EXAMPLE["development"],
+        "status": "COMPLETED",
+        "milestones": DONE_MILESTONES,
+    },
+    "updatedAt": "2026-09-04T17:00:00+09:00",
+}
+
+# 협의 중인 계약서. 개발자가 보냈고 아직 양쪽 다 서명하지 않았다. 여기서만 계약서
+# 화면의 서명 버튼과 수정 버튼이 보인다. 값을 따로 적지 않고 복사해 상태만 바꾼다.
+def _draft_contract(contract_id: int, room_id: int) -> dict:
+    draft = copy.deepcopy(DEV_CONTRACT_EXAMPLE)
+    draft["contractId"] = contract_id
+    draft["roomId"] = room_id
+    draft["status"] = "NEGOTIATING"
+    draft["contractText"] = None
+    draft["updatedAt"] = "2026-08-22T16:10:00+09:00"
+    draft["development"]["status"] = "PRE_SIGNED"
+    for milestone in draft["development"]["milestones"]:
+        milestone["status"] = "PROPOSED"
+        milestone["submittedAt"] = None
+        milestone["confirmedAt"] = None
+        milestone["autoPassAt"] = None
+        for criterion in milestone["qaCriteria"]:
+            criterion["status"] = "UNRESOLVED"
+    for side in ("clientSignature", "developerSignature"):
+        draft[side]["isSigned"] = False
+        draft[side]["signedAt"] = None
+        draft[side]["signatureImageFileId"] = None
+    return draft
+
+
+DRAFT_DEV_CONTRACT_EXAMPLE = _draft_contract(DRAFT_DEV_CONTRACT_ID, 105)
+DRAFT_CLIENT_CONTRACT_EXAMPLE = _draft_contract(DRAFT_CLIENT_CONTRACT_ID, 106)
+
 # 착수 직후의 계약서. DEV_CONTRACT_EXAMPLE을 복사해 상태만 바꾼다 — 값을 따로 적으면
 # 작업 이름·가격·확인 문장을 고칠 때 두 예시가 어긋나므로 반드시 복사로 만든다.
 # DEV_CONTRACT_EXAMPLE은 1차 통과·2차 확인 대기인 진행 중 시점이라 착수 응답으로 쓰면
@@ -5551,6 +5906,25 @@ for _index, _milestone in enumerate(STARTED_CONTRACT_EXAMPLE["development"]["mil
     for _criterion in _milestone["qaCriteria"]:
         _criterion["status"] = "UNRESOLVED"
 del _index, _milestone, _criterion
+
+def _before_start_contract(contract_id: int, room_id: int, status: str) -> dict:
+    before = copy.deepcopy(DEV_CONTRACT_EXAMPLE)
+    before["contractId"] = contract_id
+    before["roomId"] = room_id
+    before["development"]["status"] = status
+    for milestone in before["development"]["milestones"]:
+        milestone["status"] = "SCHEDULED"
+        milestone["submittedAt"] = None
+        milestone["confirmedAt"] = None
+        milestone["autoPassAt"] = None
+        for criterion in milestone["qaCriteria"]:
+            criterion["status"] = "UNRESOLVED"
+    return before
+
+
+BEFORE_START_CONTRACT_EXAMPLE = _before_start_contract(
+    BEFORE_START_CONTRACT_ID, 108, "DEPOSITED"
+)
 
 DEPOSIT_EXAMPLE = {
     "contractId": DEV_CONTRACT_ID,
@@ -5834,12 +6208,24 @@ def write_development_contract(
         201: {"content": {"application/json": {"example": DEPOSIT_EXAMPLE}}},
         409: {
             "model": ErrorResponse,
-            "description": "이미 예치됨",
+            "description": "이미 예치됐거나 등록한 결제 수단이 없음",
             "content": {
                 "application/json": {
-                    "example": {
-                        "code": "ALREADY_DEPOSITED",
-                        "message": "이미 예치가 끝났습니다.",
+                    "examples": {
+                        "ALREADY_DEPOSITED": {
+                            "summary": "이미 예치됨",
+                            "value": {
+                                "code": ALREADY_DEPOSITED[0],
+                                "message": ALREADY_DEPOSITED[1],
+                            },
+                        },
+                        "ACCOUNT_REQUIRED": {
+                            "summary": "등록한 결제 수단 없음",
+                            "value": {
+                                "code": ACCOUNT_REQUIRED[0],
+                                "message": ACCOUNT_REQUIRED[1],
+                            },
+                        },
                     }
                 }
             },
@@ -5859,15 +6245,17 @@ def write_development_contract(
         "**돈의 원장은 이 서버가 갖지 않는다.** 결제와 보관은 Escrow 서버가 맡고, 여기서는 "
         "예치를 걸고 그 결과를 확인만 한다. 같은 `idempotencyKey`로 다시 보내면 결제가 "
         "두 번 나가지 않는다.\n\n"
-        "`paymentMethodId`는 마이페이지에 등록해 둔 카드다. 실시간 계좌이체를 고르면 "
-        "결제창에서 은행 앱으로 바로 내므로 미리 등록해 둘 것이 없다.\n\n"
+        "**돈은 의뢰인이 등록해 둔 계좌에서 빠진다.** 카드 결제는 쓰지 않는다. 등록해 "
+        "둔 수단이 하나도 없으면 409로 막고, 화면은 결제 수단 등록으로 보낸다.\n\n"
         "- **201**: 예치를 걸었을 때. 결제가 바로 확인되면 `DEPOSITED`, 결과를 기다리는 "
         "중이면 `PENDING`이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 계약의 의뢰인이 아닐 때. 예치는 의뢰인만 한다\n"
         "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때\n"
         "- **409 / ALREADY_DEPOSITED**: `contractId`가 409일 때\n"
-        "- **422 / INVALID_REQUEST**: `paymentMethodId`나 `idempotencyKey`가 없을 때\n"
+        "- **409 / ACCOUNT_REQUIRED**: `contractId`가 405일 때. 등록해 둔 결제 수단이 "
+        "없어 출금할 곳이 없다\n"
+        "- **422 / INVALID_REQUEST**: `idempotencyKey`가 없을 때\n"
         "- **500 / INTERNAL_ERROR**: 예치를 걸지 못했을 때"
     ),
 )
@@ -5876,7 +6264,8 @@ def deposit_contract(
         int,
         Path(
             description=(
-                "계약 식별자. 404는 없음, 409는 이미 예치됨 재현용 예약값이다."
+                "계약 식별자. 404는 없음, 409는 이미 예치됨, 405는 계좌 없음 "
+                "재현용 예약값이다."
             ),
             examples=[DEV_CONTRACT_ID],
         ),
@@ -5887,6 +6276,8 @@ def deposit_contract(
         return _error_response(404, CONTRACT_NOT_FOUND)
     if contractId == DEPOSITED_CONTRACT_ID:
         return _error_response(409, ALREADY_DEPOSITED)
+    if contractId == NO_ACCOUNT_CONTRACT_ID:
+        return _error_response(409, ACCOUNT_REQUIRED)
     return EscrowDepositResponse(**DEPOSIT_EXAMPLE)
 
 
@@ -6081,10 +6472,22 @@ def confirm_milestone(
         return _error_response(404, MILESTONE_NOT_FOUND)
     if milestoneId == CONFLICT_MILESTONE_ID:
         return _error_response(409, MILESTONE_STATE_CONFLICT)
-    # 목 데이터의 작업 301은 확인 문장이 201·202 둘이다. 하나라도 빠지면 규칙 위반이다.
-    if not {201, 202} <= set(request.qaCriterionIds):
+
+    # 그 작업의 확인 문장이 하나라도 빠지면 규칙 위반이다 (R-QA-01).
+    milestone = next(
+        (row for row in MILESTONES if row["milestoneId"] == milestoneId), MILESTONES[0]
+    )
+    needed = {qa["qaCriterionId"] for qa in milestone["qaCriteria"]}
+    if not needed <= set(request.qaCriterionIds):
         return _error_response(400, QA_NOT_ALL_CHECKED)
-    return MilestoneResponse(**MILESTONES[0])
+
+    passed = copy.deepcopy(milestone)
+    passed["status"] = "CONFIRMED"
+    passed["confirmedAt"] = "2026-08-30T10:00:00+09:00"
+    passed["autoPassAt"] = None
+    for criterion in passed["qaCriteria"]:
+        criterion["status"] = "RESOLVED"
+    return MilestoneResponse(**passed)
 
 
 @router.post(
@@ -7032,6 +7435,70 @@ VERIFICATION_EXAMPLE = {
 }
 
 
+class PaymentMethodResponse(BaseModel):
+    """예치에 쓸 결제 수단 한 건."""
+
+    paymentMethodId: int = Field(description="결제 수단 식별자.", examples=[9])
+    methodType: Literal["CARD", "REALTIME_TRANSFER"] = Field(
+        description=(
+            "수단 종류. 지금 서비스는 실시간 계좌이체만 쓰므로 REALTIME_TRANSFER만 "
+            "내려간다. CARD는 ERD 코드에 있어 자리만 남겨 둔다."
+        ),
+        examples=["REALTIME_TRANSFER"],
+    )
+    maskedNumber: str | None = Field(
+        description="가린 계좌번호. 화면에 그대로 보여준다.",
+        examples=["우리은행 ···· 4412"],
+    )
+    isDefault: bool = Field(
+        description="기본 수단인지. 예치 화면이 처음에 고르는 것이다.",
+        examples=[True],
+    )
+
+
+class PaymentMethodListResponse(BaseModel):
+    """등록해 둔 결제 수단 전부. 수가 적어 content만 담는다."""
+
+    content: list[PaymentMethodResponse] = Field(
+        description="등록한 수단. 하나도 없으면 빈 배열이다.",
+    )
+
+
+PAYMENT_METHODS = [
+    {
+        "paymentMethodId": 9,
+        "methodType": "REALTIME_TRANSFER",
+        "maskedNumber": "우리은행 ···· 4412",
+        "isDefault": True,
+    }
+]
+
+
+@router.get(
+    "/payment-methods",
+    response_model=PaymentMethodListResponse,
+    tags=[AREA8_TAG],
+    responses={
+        200: {"content": {"application/json": {"example": {"content": PAYMENT_METHODS}}}},
+        **AREA1_UNAUTHORIZED,
+        **AREA1_ERRORS,
+    },
+    summary="결제 수단 조회",
+    description=(
+        "**화면 — `5_의뢰인_계약예치` › 결제 수단**\n\n"
+        "예치에 쓸 수 있는 수단을 내려준다. **카드 결제는 쓰지 않으므로 실시간 계좌이체 "
+        "수단만 담긴다.** 예치 API가 받는 `paymentMethodId`가 여기서 나온다.\n\n"
+        "**빈 배열이면 아직 등록한 것이 없다는 뜻이다.** 그대로 예치를 걸면 409로 막히므로 "
+        "화면은 먼저 등록으로 보낸다.\n\n"
+        "- **200**: 읽었을 때. 등록한 것이 없으면 `content`가 빈 배열이다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **500 / INTERNAL_ERROR**: 목록을 읽지 못했을 때"
+    ),
+)
+def get_payment_methods() -> PaymentMethodListResponse:
+    return PaymentMethodListResponse(content=PAYMENT_METHODS)
+
+
 @router.post(
     "/accounts/verifications",
     response_model=AccountVerificationResponse,
@@ -7723,7 +8190,9 @@ class CreateUploadRequest(BaseModel):
         description="파일 크기(바이트). 완료할 때 실제 크기와 맞는지 본다.",
         examples=[284193],
     )
-    purpose: Literal["PROFILE_IMAGE", "CAREER_EVIDENCE", "PORTFOLIO_IMAGE"] = Field(
+    purpose: Literal[
+        "PROFILE_IMAGE", "CAREER_EVIDENCE", "PORTFOLIO_IMAGE", "SIGNATURE"
+    ] = Field(
         description=(
             "이 파일을 어디에 쓸지. 쓰임에 따라 받는 형식과 크기가 다르고 보관 기간도 "
             "다르다.\n\n"
@@ -8747,17 +9216,30 @@ def get_my_sessions() -> MySessionListResponse:
         "- **422 / INVALID_REQUEST**: `originalName`·`contentType`·`sizeBytes`·"
         "`purpose`가 비었거나 `purpose`가 허용된 값이 아닐 때\n"
         "- **500 / INTERNAL_ERROR**: 주소를 만들지 못했을 때\n\n"
-        "**이 목 서버가 내주는 `uploadUrl`은 실제로 파일을 받지 않는다.** 화면이 3콜 "
-        "구조와 응답 형태를 맞추는 데까지만 쓰고, 실제 올리기는 실서버에서 확인한다."
+        "**실서버의 `uploadUrl`은 저장소가 내주는 주소다.** 이 목 서버는 그 자리에 "
+        "자기 주소를 넣어 주고 받은 본문을 버린다. 화면이 3콜 구조를 그대로 돌려볼 "
+        "수 있게 하려는 것이며, 올린 파일이 남지는 않는다."
     ),
 )
-def create_upload(request: CreateUploadRequest) -> UploadTargetResponse:
+def create_upload(
+    request: CreateUploadRequest, http: Request
+) -> UploadTargetResponse:
+    upload_id = UPLOAD_TARGET_EXAMPLE["uploadId"]
     return UploadTargetResponse(
         **{
             **UPLOAD_TARGET_EXAMPLE,
+            "uploadUrl": str(http.url_for("put_upload_binary", uploadId=upload_id)),
             "headers": {"Content-Type": request.contentType},
         }
     )
+
+
+# 저장소 자리를 대신하는 자리다. 실서버에서는 이 경로가 없고 저장소가 직접 받으므로
+# 명세에 넣지 않는다. 받은 본문은 읽고 버린다.
+@router.put("/uploads/{uploadId}/binary", status_code=204, include_in_schema=False)
+async def put_upload_binary(uploadId: int, http: Request) -> Response:
+    await http.body()
+    return Response(status_code=204)
 
 
 @router.post(

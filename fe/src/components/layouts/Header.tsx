@@ -7,6 +7,7 @@ import { cn } from "@/lib/cn";
 import { Avatar, CountBadge, NavPill } from "@/components/common";
 import { MenuDivider, MenuItem, Popover } from "@/components/feedback";
 import { Container, type ContainerWidth } from "./Container";
+import { ROUTES } from "@/lib/routes";
 
 /**
  * Header — 56px 높이의 GNB.
@@ -31,6 +32,11 @@ export interface HeaderUser {
 export interface HeaderProps {
   nav?: HeaderNavItem[];
   user?: HeaderUser;
+  /**
+   * 로그인 여부를 아직 모르는 동안 true. 로그인 링크도 아바타도 그리지 않아
+   * 로그인한 사용자에게 '로그인' 이 잠깐 비치지 않게 합니다. 메뉴는 비로그인 것을 씁니다.
+   */
+  pending?: boolean;
   loginHref?: string;
   notificationsHref?: string;
   menuItems?: HeaderNavItem[];
@@ -39,27 +45,36 @@ export interface HeaderProps {
   className?: string;
 }
 
-/** 비로그인 화면(랜딩)의 메뉴 */
-export const PUBLIC_NAV: HeaderNavItem[] = [
-  { label: "이용 방법", href: "/how-to" },
-  { label: "의뢰", href: "/requests" },
-  { label: "개발자 찾기", href: "/developers" },
-  { label: "사전점검", href: "/checkup" },
+/**
+ * 로그인 여부와 상관없이 늘 보이는 메뉴.
+ *
+ * 두 목록에 같은 항목을 따로 적지 않고 이 배열을 공유합니다. 로그인 여부는
+ * 마운트 뒤에야 정해지므로(`pending`), 겹치는 항목이 어긋나 있으면 상태가
+ * 확정되는 순간 메뉴가 통째로 다시 배치됩니다. 차이를 정산 하나로 좁혀 둡니다.
+ */
+const BASE_NAV: HeaderNavItem[] = [
+  { label: "의뢰", href: ROUTES.requests },
+  { label: "개발자 찾기", href: ROUTES.developers },
+  { label: "사전점검", href: ROUTES.checkup },
 ];
 
-/** 로그인 화면의 메뉴 */
+/** 비로그인 메뉴. 로그인 여부를 아직 모르는 동안에도 이 목록을 씁니다. */
+export const PUBLIC_NAV: HeaderNavItem[] = BASE_NAV;
+
+/**
+ * 로그인 메뉴 — 비로그인 메뉴 + 정산.
+ * 정산은 내 거래가 있어야 의미가 있어 로그인한 뒤에만 보입니다.
+ */
 export const APP_NAV: HeaderNavItem[] = [
-  { label: "의뢰", href: "/requests" },
-  { label: "개발자 찾기", href: "/developers" },
-  { label: "사전점검", href: "/checkup" },
-  { label: "정산", href: "/settlements" },
+  ...BASE_NAV,
+  { label: "정산", href: ROUTES.settlements },
 ];
 
 const DEFAULT_MENU_ITEMS: HeaderNavItem[] = [
-  { label: "마이페이지", href: "/mypage" },
-  { label: "내 프로필", href: "/mypage/profile" },
-  { label: "내 일정", href: "/mypage/schedule" },
-  { label: "설정", href: "/mypage/settings" },
+  { label: "마이페이지", href: ROUTES.mypage },
+  { label: "내 프로필", href: ROUTES.mypageProfile },
+  { label: "내 일정", href: ROUTES.mypageSchedule },
+  { label: "설정", href: ROUTES.mypageSettings },
 ];
 
 /** /requests 와 /requests/123 은 같은 메뉴로 봅니다. */
@@ -71,8 +86,9 @@ function isActive(pathname: string | null, href: string) {
 export function Header({
   nav,
   user,
-  loginHref = "/login",
-  notificationsHref = "/notifications",
+  pending = false,
+  loginHref = ROUTES.login,
+  notificationsHref = ROUTES.notifications,
   menuItems = DEFAULT_MENU_ITEMS,
   onLogout,
   width = "full",
@@ -100,7 +116,7 @@ export function Header({
   return (
     <header className={cn("sticky top-0 z-30 border-b border-line bg-bg", className)}>
       <Container width={width} className="flex h-gnb items-center gap-2 sm:gap-4 sm:px-8">
-        <Link href="/" className="mr-1 shrink-0 text-lg font-bold text-fg">
+        <Link href={ROUTES.home} className="mr-1 shrink-0 text-lg font-bold text-fg">
           Komit
         </Link>
 
@@ -114,7 +130,8 @@ export function Header({
         </nav>
 
         <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-3">
-          {user ? (
+          {pending && <span aria-hidden className="size-9" />}
+          {!pending && user && (
             <>
               <Link
                 href={notificationsHref}
@@ -168,7 +185,8 @@ export function Header({
                 </Popover>
               </div>
             </>
-          ) : (
+          )}
+          {!pending && !user && (
             <Link
               href={loginHref}
               className="hidden shrink-0 rounded-md px-2 py-1 text-sm font-medium whitespace-nowrap text-fg-secondary transition-colors hover:text-fg md:inline-flex"
@@ -215,7 +233,7 @@ export function Header({
                 ))}
               </nav>
 
-              {!user && (
+              {!pending && !user && (
                 <>
                   <MenuDivider />
                   <NavPill

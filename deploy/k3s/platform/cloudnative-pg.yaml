@@ -1,0 +1,14 @@
+# K3s 내장 helm-controller로 CloudNativePG 오퍼레이터를 설치합니다.
+# Cluster 리소스보다 먼저 적용하고, CRD와 오퍼레이터가 준비된 뒤에 database를 적용해야 합니다.
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: cnpg
+  namespace: kube-system
+spec:
+  repo: https://cloudnative-pg.github.io/charts
+  chart: cloudnative-pg
+  # 오퍼레이터 1.30.0
+  version: 0.29.0
+  targetNamespace: cnpg-system
+  createNamespace: true

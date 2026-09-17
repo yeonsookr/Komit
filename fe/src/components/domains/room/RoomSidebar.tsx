@@ -47,10 +47,20 @@ export function RoomSidebar({ rooms, me, previews }: Readonly<RoomSidebarProps>)
   // 지금 보고 있는 방. 이 레이아웃 기준의 세그먼트는 "rooms" 라서 경로에서 직접 읽습니다.
   const pathname = usePathname();
   const activeRoomId = Number(/^\/rooms\/(\d+)/.exec(pathname)?.[1]);
+  /** 목록 화면(`/rooms`)에서는 고른 방이 없습니다. */
+  const hasActiveRoom = Number.isFinite(activeRoomId);
 
-  // 내가 개발자로 들어간 방이 하나라도 있으면 기본 탭을 그쪽으로 엽니다.
-  const hasReceived = rooms.some((room) => isReceived(room, me));
-  const [side, setSide] = React.useState<RequestSide>(hasReceived ? "RECEIVED" : "SENT");
+  /**
+   * 처음에는 '맡긴 의뢰'를 엽니다. 개발자로도 등록한 사람이라도 이 화면에 들어오는
+   * 경로는 대개 내가 맡긴 의뢰 쪽입니다.
+   *
+   * 다만 이미 어떤 방을 보고 있다면 그 방이 있는 쪽을 엽니다 — 새로고침이나 링크로
+   * 바로 들어왔을 때 지금 보는 방이 목록에 없으면 안 됩니다.
+   */
+  const activeRoom = rooms.find((room) => room.roomId === activeRoomId);
+  const [side, setSide] = React.useState<RequestSide>(
+    activeRoom !== undefined && isReceived(activeRoom, me) ? "RECEIVED" : "SENT",
+  );
 
   const groups = React.useMemo(
     () => groupByProject(filterBySide(rooms, me, side)),
@@ -58,17 +68,20 @@ export function RoomSidebar({ rooms, me, previews }: Readonly<RoomSidebarProps>)
   );
 
   /**
-   * 좁은 화면에서는 목록을 접습니다. 펼쳐 두면 대화가 목록 아래로 밀려
-   * 방에 들어온 사람이 정작 대화를 보지 못합니다. lg 이상에서는 늘 펼칩니다.
+   * 좁은 화면에서 목록을 펼칠지.
+   *
+   * 방에 들어와 있으면 접습니다 — 펼쳐 두면 대화가 목록 아래로 밀려 정작 대화를
+   * 보지 못합니다. 반대로 목록 화면(`/rooms`)에서는 펼칩니다. 거기서 접으면
+   * 고를 것이 보이지 않아 빈 화면이 됩니다. lg 이상에서는 이 값과 무관하게 늘 펼칩니다.
    */
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = React.useState(!hasActiveRoom);
   const roomCount = React.useMemo(
     () => filterBySide(rooms, me, side).length,
     [rooms, me, side],
   );
 
-  // 방을 고르면 접습니다(좁은 화면에서 목록이 대화를 가리지 않게).
-  React.useEffect(() => setOpen(false), [pathname]);
+  // 방을 고르면 접고, 목록으로 돌아오면 다시 펼칩니다.
+  React.useEffect(() => setOpen(!hasActiveRoom), [pathname, hasActiveRoom]);
 
   return (
     <nav aria-label="의뢰 목록" className="flex h-full flex-col py-4 lg:py-6">

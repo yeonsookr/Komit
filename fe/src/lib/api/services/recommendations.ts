@@ -4,13 +4,14 @@ import { backendApi } from "../server";
 import { BACKEND } from "../endpoints";
 import type {
   CreateConsultationRequestBody,
+  CreateRecommendationRequest,
   RecommendationBatch,
 } from "@/types/recommendation";
 import type { RoomSummary } from "@/types/room";
 
 /** 추천 회차 결과. 없거나 남의 추천이면 404(RECOMMENDATION_NOT_FOUND). */
 export async function getRecommendationBatch(batchId: number): Promise<RecommendationBatch> {
-  const { data } = await backendApi.get<RecommendationBatch>(BACKEND.RECOMMENDATION(batchId));
+  const { data } = await backendApi().get<RecommendationBatch>(BACKEND.RECOMMENDATION(batchId));
   return data;
 }
 
@@ -27,9 +28,26 @@ export async function createConsultationRequests(
   batchId: number,
   body: CreateConsultationRequestBody,
 ): Promise<RoomSummary[]> {
-  const { data } = await backendApi.post<{ content: RoomSummary[] }>(
+  const { data } = await backendApi().post<{ content: RoomSummary[] }>(
     BACKEND.CONSULTATION_REQUESTS(batchId),
     body,
   );
   return data.content;
+}
+
+/**
+ * 개발자 추천 받기.
+ *
+ * 고른 요구사항을 근거로 맞는 개발자를 찾아 추천 회차를 만듭니다.
+ * 같은 프로젝트에서 다시 찾으면 회차 번호가 1 오릅니다.
+ */
+export async function createRecommendation(
+  projectId: number,
+  body: CreateRecommendationRequest,
+): Promise<RecommendationBatch> {
+  const { data } = await backendApi().post<RecommendationBatch>(
+    BACKEND.RECOMMENDATIONS(projectId),
+    body,
+  );
+  return data;
 }

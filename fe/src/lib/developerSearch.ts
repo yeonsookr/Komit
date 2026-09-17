@@ -8,6 +8,23 @@
  */
 import type { DeveloperSearchParams, DeveloperSort, SearchMode } from "@/types/developer";
 
+/**
+ * 검색어를 주소에 싣는 query 이름.
+ *
+ * 개발자 찾기로 보내는 쪽(랜딩 검색바 등)이 이 상수를 가져다 씁니다. 양쪽이 글자를
+ * 따로 적으면 한쪽만 바뀌어도 타입 검사가 잡지 못하고 검색어가 조용히 버려집니다.
+ * 값은 목 명세의 `GET /api/developers` 파라미터 이름과 같습니다.
+ */
+export const KEYWORD_PARAM = "keyword";
+
+/**
+ * 분야 코드를 주소에 싣는 query 이름. 여러 개면 같은 이름을 거듭 붙입니다.
+ *
+ * 랜딩의 증상 카드처럼 분야를 정해 개발자 찾기를 여는 쪽이 가져다 씁니다.
+ * 값은 목 명세의 `GET /api/developers` 파라미터 이름과 같습니다.
+ */
+export const FIELD_CODE_IDS_PARAM = "fieldCodeIds";
+
 export const SEARCH_MODES: SearchMode[] = ["problem", "name"];
 
 export const SEARCH_MODE_LABEL: Record<SearchMode, string> = {
@@ -36,14 +53,14 @@ export function parseSearchParams(
   Pick<DeveloperSearchParams, "keyword" | "fieldCodeIds"> {
   const searchMode = first(input.searchMode);
   const sort = first(input.sort);
-  const keyword = first(input.keyword)?.trim();
+  const keyword = first(input[KEYWORD_PARAM])?.trim();
 
   return {
     searchMode: isSearchMode(searchMode) ? searchMode : DEFAULT_SEARCH_MODE,
     sort: isSort(sort) ? sort : DEFAULT_SORT,
     ...(keyword ? { keyword } : {}),
-    ...(parseFieldCodeIds(input.fieldCodeIds).length > 0
-      ? { fieldCodeIds: parseFieldCodeIds(input.fieldCodeIds) }
+    ...(parseFieldCodeIds(input[FIELD_CODE_IDS_PARAM]).length > 0
+      ? { fieldCodeIds: parseFieldCodeIds(input[FIELD_CODE_IDS_PARAM]) }
       : {}),
     page: parsePage(first(input.page)),
     size: DEFAULT_SIZE,
@@ -60,9 +77,9 @@ export function toQueryString(params: DeveloperSearchParams): string {
   if (params.searchMode && params.searchMode !== DEFAULT_SEARCH_MODE) {
     query.set("searchMode", params.searchMode);
   }
-  if (params.keyword?.trim()) query.set("keyword", params.keyword.trim());
+  if (params.keyword?.trim()) query.set(KEYWORD_PARAM, params.keyword.trim());
   for (const codeId of params.fieldCodeIds ?? []) {
-    query.append("fieldCodeIds", String(codeId));
+    query.append(FIELD_CODE_IDS_PARAM, String(codeId));
   }
   if (params.sort && params.sort !== DEFAULT_SORT) query.set("sort", params.sort);
   if (params.page && params.page > 1) query.set("page", String(params.page));

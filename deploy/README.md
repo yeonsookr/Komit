@@ -3,6 +3,8 @@
 배포 서버(EC2) 설정. **이미지는 CI가 굽고 Docker Hub에 올린 것을 서버가 받아 쓴다.**
 서버에는 소스를 두지 않는다.
 
+K3s에서 `service`와 `escrow`를 여러 Pod로 운영하는 구성은 [`k3s/README.md`](k3s/README.md)를 참고한다. 기존 `docker-compose.yml`은 목 서버용 단일 EC2 배포 참고본으로 유지한다.
+
 ```
 개발자 → GitLab(develop) → CI: docker build/push → Docker Hub
                                                       ↓
@@ -52,4 +54,5 @@ MOCK_IMAGE=<계정>/komit-mock:<tag> docker compose pull && docker compose up -d
 ## 아직 없는 것
 
 - HTTPS — 인증서 발급 방식(Let's Encrypt / SSAFY 제공)이 정해지면 nginx에 443을 추가한다
-- BE·FE 서비스 — 코드가 생기면 compose에 서비스를 추가하고 nginx 경로를 나눈다
+
+BE·FE 서비스와 PostgreSQL·Redis는 compose가 아니라 K3s에서 돕니다. [`k3s/README.md`](k3s/README.md)를 참고한다.

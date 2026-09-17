@@ -1,0 +1,116 @@
+# service 서버의 Redis. refresh token 저장과 캐시에 씁니다.
+# Primary 1 + Replica 2를 Sentinel 3개가 감시하고, Primary가 죽으면 Sentinel이 Replica 하나를 승격합니다.
+# Spring은 Sentinel(service-redis-sentinel:26379)에 현재 Primary 주소를 물어 접속합니다.
+#
+# 오퍼레이터가 만들어 주는 이름:
+#   StatefulSet  service-redis, service-redis-sentinel
+#   Service      service-redis-master(현재 Primary), service-redis-replica, service-redis-sentinel(26379)
+#   Secret       service-redis-auth 는 deploy.sh(운영) 또는 local/database/secrets.yaml(로컬)이 만듭니다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: service-redis-config
+  namespace: komit
+  labels:
+    app.kubernetes.io/part-of: komit
+data:
+  # 오퍼레이터가 생성한 redis.conf 끝에 이어 붙입니다. 파일 이름은 오퍼레이터가 읽는 고정 값입니다.
+  redis-additional.conf: |
+    # refresh token은 캐시가 아니므로 메모리가 차도 지우지 않습니다. 대신 쓰기가 에러로 거절됩니다.
+    # 캐시 키는 모두 TTL을 달아 만료로만 정리합니다.
+    maxmemory-policy noeviction
+    # 컨테이너 메모리 제한(256Mi)보다 낮게 잡아 OOM으로 죽는 대신 noeviction 에러가 먼저 나게 합니다.
+    maxmemory 192mb
+---
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisReplication
+metadata:
+  name: service-redis
+  namespace: komit
+  labels:
+    app.kubernetes.io/part-of: komit
+spec:
+  # Primary 1 + Replica 2
+  clusterSize: 3
+  kubernetesConfig:
+    image: quay.io/opstree/redis:v8.10.1
+    imagePullPolicy: IfNotPresent
+    # requirepass, masterauth 에 쓰입니다.
+    redisSecret:
+      name: service-redis-auth
+      key: password
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 256Mi
+  # storage 를 지정하면 오퍼레이터가 RDB(save) + AOF(appendonly yes) 영속화를 켭니다.
+  storage:
+    volumeClaimTemplate:
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi
+  redisConfig:
+    additionalRedisConfig: service-redis-config
+  podSecurityContext:
+    runAsUser: 1000
+    fsGroup: 1000
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+  pdb:
+    enabled: true
+    minAvailable: 1
+---
+apiVersion: redis.redis.opstreelabs.in/v1beta2
+kind: RedisSentinel
+metadata:
+  name: service-redis
+  namespace: komit
+  labels:
+    app.kubernetes.io/part-of: komit
+spec:
+  # Sentinel 3개, quorum 2 (CRD 기본값)
+  clusterSize: 3
+  kubernetesConfig:
+    image: quay.io/opstree/redis-sentinel:v8.10.1
+    imagePullPolicy: IfNotPresent
+    # Sentinel 자체(26379)에 접속할 때의 비밀번호입니다. Redis 접속 비밀번호는 아래 redisReplicationPassword 입니다.
+    redisSecret:
+      name: service-redis-auth
+      key: password
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+  redisSentinelConfig:
+    redisReplicationName: service-redis
+    # CRD 기본값은 myMaster 이지만 replication 컨트롤러는 "mymaster"를 대소문자 그대로 비교합니다. 명시해서 맞춥니다.
+    masterGroupName: mymaster
+    # Sentinel이 Redis 노드에 접속할 때의 비밀번호입니다.
+    redisReplicationPassword:
+      secretKeyRef:
+        name: service-redis-auth
+        key: password
+  podSecurityContext:
+    runAsUser: 1000
+    fsGroup: 1000
+    runAsNonRoot: true
+    seccompProfile:
+      type: RuntimeDefault
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+  pdb:
+    enabled: true
+    minAvailable: 2

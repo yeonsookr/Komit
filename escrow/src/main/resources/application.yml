@@ -22,6 +22,8 @@ server:
 app:
   # WRITER | READER. 배포 환경 값으로만 주입하며 프로필과 섞지 않습니다.
   instance-role: ${APP_INSTANCE_ROLE}
+  # 이 서버가 밖에서 보이는 주소. nginx 뒤에서는 경로 접두사까지 포함합니다. (예: https://komit.site/escrow)
+  public-base-url: ${APP_PUBLIC_BASE_URL}
 
 management:
   endpoints:

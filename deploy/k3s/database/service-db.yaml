@@ -1,0 +1,42 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: service-db
+  namespace: komit
+  labels:
+    app.kubernetes.io/part-of: komit
+spec:
+  # Primary 1 + Standby 2
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:16.15-minimal-trixie
+  primaryUpdateStrategy: unsupervised
+  # 앱 커넥션 풀이 Primary 연결을 유지하므로, 기본값(180초)이면 세션 종료를 기다리느라 장애 전환이 3분 늦어집니다.
+  smartShutdownTimeout: 15
+
+  postgresql:
+    parameters:
+      max_connections: "200"
+      # Standby가 반영까지 마친 뒤 커밋을 확정합니다. readOnly 트랜잭션이 Standby에서 읽어도 커밋된 쓰기를 봅니다.
+      synchronous_commit: remote_apply
+    synchronous:
+      method: any
+      number: 2
+      # Standby가 모두 내려가도 Primary 쓰기는 멈추지 않습니다.
+      dataDurability: preferred
+
+  bootstrap:
+    initdb:
+      database: service
+      owner: service
+      secret:
+        name: service-db-app
+
+  storage:
+    size: 1Gi
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi

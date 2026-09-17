@@ -10,25 +10,46 @@ fe/src/
 ├─ styles/tokens.css        ← 디자인 토큰(CSS 변수). 색·폰트·라운드·그림자·레이아웃 폭
 ├─ app/globals.css          ← tokens.css import + @theme(토큰 → Tailwind 유틸리티) + base/components 레이어
 ├─ lib/cn.ts                ← clsx + tailwind-merge
+├─ lib/routes.ts            ← 화면 경로 상수 ROUTES (컨벤션 8.1). href 에 URL 문자열을 직접 적지 않습니다
+├─ lib/company.ts           ← 사업자 정보 COMPANY. 푸터가 씁니다. 화면마다 따로 적지 않습니다
+├─ lib/policies.ts          ← 약관 문서 목록 POLICY_DOCUMENTS (이름 · 개정일 · 본문 주소)
 ├─ components/
 │  ├─ layouts/  AppShell.tsx     AppShell (GNB + 본문 + 푸터)
 │  │            Header.tsx       Header, PUBLIC_NAV, APP_NAV
 │  │            Footer.tsx       Footer
 │  │            Container.tsx    Container (본문 폭 720 / 840 / 960)
 │  ├─ buttons/  Button.tsx      Button, IconButton
+│  │            buttonStyles.ts buttonClass — 링크(<Link>)에 버튼 모양을 입힐 때. 서버 컴포넌트에서도 호출 가능
 │  ├─ feedback/ Callout.tsx     Callout, HelpRow, EmptyState
 │  │            Modal.tsx       Modal(+Header/Body/Footer), Popover, MenuItem, MenuDivider
 │  │            Toast.tsx       ToastProvider, useToast
 │  ├─ domains/
-│  │  └─ chat/     ChatRoom.tsx     ChatRoom, ChatNotice, ChatSessionBanner
-│  │                ChatMessage.tsx  ChatMessage, ChatDateDivider
-│  │                ChatComposer.tsx ChatComposer
+│  │  ├─ chat/     ChatRoom.tsx     ChatRoom, ChatNotice, ChatSessionBanner
+│  │  │             ChatMessage.tsx  ChatMessage, ChatDateDivider
+│  │  │             ChatComposer.tsx ChatComposer
+│  │  ├─ landing/  LandingHero.tsx        히어로 (검색 폼 · 예시 칩 · 이번 주 상담 N건) — 유일한 클라이언트 컴포넌트
+│  │  │             SymptomGrid.tsx        증상별로 찾기 (증상 → 분야 코드 대응 상수 포함)
+│  │  │             FeaturedDevelopers.tsx 추천 개발자 카드 3장
+│  │  │             ProcessSteps.tsx       진행 순서 (id="process", ROUTES.howTo 의 앵커)
+│  │  │             CheckupIntro.tsx       사전 점검 소개 (정적 예시 카드)
+│  │  ├─ auth/     LoginCard.tsx          로그인 카드 (카카오 버튼 · 약관 안내 · 문서 링크 4개 · 실패 안내)
+│  │  │             SessionShell.tsx       인증 스토어를 읽어 헤더를 채우는 AppShell — (site) 레이아웃이 씁니다
+│  │  └─ mypage/   AccountSection.tsx     계정 칸 · 계좌 칸(SettlementAccountSection)
+│  │                NameEditRow.tsx        이름 줄 — 그 자리에서 고칩니다(클라이언트)
+│  │                ProjectSection.tsx     등록한 프로젝트 칸
+│  │                DeveloperSection.tsx   개발자 프로필 칸 — 프로필이 없으면 그리지 않습니다
+│  │                NotificationSection.tsx 알림 칸 — 켜고 끄기(클라이언트)
+│  │                PolicySection.tsx      약관 칸 — 문서마다 본문으로 바로 갑니다
+│  │                WithdrawalSection.tsx  탈퇴 칸 — 탈퇴 화면으로 보내기만 합니다
+│  │                WithdrawalBlockers.tsx 탈퇴를 막는 것 목록 (R-ACC-05)
+│  │                WithdrawButton.tsx     탈퇴하기 — 잠금은 화면과 서버 두 겹(클라이언트)
 │  └─ common/   Input.tsx       Field, Input, Textarea, SearchInput
 │               Select.tsx      NativeSelect, Dropdown
 │               Choice.tsx      Checkbox, Radio, ChoiceCard, Switch, RatingScale
 │               Badge.tsx       Badge, CountBadge, Tag, StatusDot
 │               Chip.tsx        Chip, ChipGroup
 │               Card.tsx        Card, CardHeader, CardSection, KeyValueRow, StatCard
+               Section.tsx     SectionCard (제목 + 우측 안내 + 테두리 카드)
 │               Tabs.tsx        SegmentedTabs, NavPill
 │               Avatar.tsx      Avatar, RatingDots
 │               Misc.tsx        Divider, Mono, Money, Eyebrow, PageHeader, Breadcrumb,
@@ -65,6 +86,9 @@ export default function SiteLayout({ children }) {
 - **본문 폭은 레이아웃이 정하지 않습니다.** 화면마다 다르기 때문에(일반 720 · 관리자 840)
   각 페이지가 `<Container width="content | wide | landing">` 로 감쌉니다.
 - `AppShell` 옵션: `user`(로그인 헤더로 전환) · `nav`(메뉴 교체) · `hideFooter` · `headerWidth` · `footerWidth`.
+
+`src/app/(auth)/layout.tsx` 는 GNB·푸터가 없는 화면의 골격입니다. 연회색 배경 위에 내용을 가운데 놓기만
+하고 카드는 각 페이지가 그립니다. 로그인(`1_로그인`)과 운영 콘솔 로그인(`9_로그인`)이 같은 골격입니다.
 - 세션(화상) 화면이나 운영 콘솔처럼 골격이 다른 화면은 이 그룹 밖에 두고 별도 레이아웃을 만듭니다.
 
 ### Header
@@ -76,8 +100,13 @@ export default function SiteLayout({ children }) {
 
 높이는 56px(`h-gnb`) 고정이고, 현재 경로를 `usePathname` 으로 읽어 `NavPill` 활성 상태를 정합니다.
 **md 미만에서는 메뉴가 햄버거 패널로 접힙니다.** 알림·아바타는 자주 쓰는 동작이라 접지 않습니다.
-`user` 를 넘기지 않으면 비로그인 헤더입니다. 인증이 붙으면 `(site)/layout.tsx` 에서 세션을 읽어
-`<AppShell user={{ name, unreadCount }}>` 로 넘기고 로그아웃 핸들러를 연결합니다.
+`user` 를 넘기지 않으면 비로그인 헤더입니다. `pending` 이 true 면 로그인 여부를 아직 모르는 상태라
+로그인 링크도 아바타도 그리지 않습니다(로그인한 사용자에게 '로그인' 이 잠깐 비치지 않게).
+
+`(site)/layout.tsx` 는 `AppShell` 대신 `SessionShell`(domains/auth) 을 씁니다. 인증 스토어(`stores/auth`)의
+상태를 읽어 `user`·`pending`·`onLogout` 을 채우고 본문은 서버 컴포넌트 그대로 지나갑니다. 레이아웃에서
+쿠키를 읽으면 랜딩까지 동적 렌더링이 되기 때문에 헤더만 클라이언트에서 채웁니다(컨벤션 7장).
+방 레이아웃처럼 이미 서버에서 `getMe()` 를 읽는 화면은 그 값을 `<AppShell user>` 로 그대로 넘깁니다.
 
 ### 좁은 화면 대응
 
@@ -118,7 +147,8 @@ export default function SiteLayout({ children }) {
 
 | 컴포넌트 | variant / 옵션 | 화면 예 |
 |---|---|---|
-| `Button` | `primary` `dark` `outline` `ghost` `danger` / `sm~xl` / `fullWidth` `loading` | 문제 진단하기 · 보내기 · 취소 · + 항목 추가 |
+| `Button` | `primary` `dark` `outline` `ghost` `danger` `kakao` / `sm~xl` / `fullWidth` `loading` | 문제 진단하기 · 보내기 · 취소 · + 항목 추가 |
+| `buttonClass` | Button 과 같은 옵션 | 이동만 하는 요소에 버튼 모양 (`<Link className={buttonClass(...)}>`) |
 | `IconButton` | 정사각 | 행 삭제 ✕, 월 이동 ‹ › |
 | `Field` | `layout="vertical" \| "horizontal"`, `helper` `error` | 설문 라벨(세로) · 계좌/계약서 폼(가로) |
 | `Input` | `leftIcon` `suffix` `mono` `underline` `invalid` | 검색, 금액 400,000 원, 기간 10 일 |
@@ -135,7 +165,8 @@ export default function SiteLayout({ children }) {
 | `Chip` | `filter` `toggle` `suggest` / `selected` `onRemove` | 필터 칩, 잘하는 일, 랜딩 예시 문장 |
 | `Card` | `outline` `surface` `soft` `elevated` / `interactive` `selected` | 증상 카드, 요약 카드, 연보라 안내 카드 |
 | `CardHeader` / `CardSection` | | 요구사항 · 3건 · 합계 650,000원 |
-| `KeyValueRow` | `mono` `action` | 계약서 조항, 마이페이지 설정 행 |
+| `KeyValueRow` | `mono` `action` `labelWidth` | 계약서 조항, 마이페이지 설정 행 |
+| `SectionCard` | `note` | 마이페이지 계정·계좌·약관 칸, 탈퇴 화면의 정리해야 할 것 |
 | `StatCard` | `size` `tone` `badge` | 계약이 끝나면 받을 돈 650,000원 |
 | `SegmentedTabs` | `count` `disabled` `fullWidth` | 채팅 6 / 계약서 / 진행 / 확인 3 / 리뷰 · 의뢰인｜개발자 |
 | `NavPill` | `active` | GNB 메뉴 |
@@ -175,6 +206,17 @@ import { Card, CardHeader, Field, Input, KeyValueRow, Money, Badge } from "@/com
 <Button variant="dark" size="lg" fullWidth>서명하고 650,000원 예치하기</Button>
 ```
 
+설정 화면처럼 「제목 + 줄 목록」이 이어지는 곳은 `SectionCard` 로 감쌉니다.
+제목 오른쪽의 작은 안내는 `note` 입니다.
+
+```tsx
+import { KeyValueRow, SectionCard } from "@/components/common";
+
+<SectionCard title="계좌" note="환불과 대금을 받는 계좌입니다">
+  <KeyValueRow label="등록 계좌" value="신한은행 ···· 4412" action={<Button size="sm">계좌 변경</Button>} />
+</SectionCard>
+```
+
 ## 6. 아직 남은 것
 
 - **다크 모드**: 토큰은 현재 라이트 전용입니다. `tokens.css` 아래쪽에 다크 블록 자리를 주석으로 잡아 두었고,
@@ -184,7 +226,8 @@ import { Card, CardHeader, Field, Input, KeyValueRow, Money, Badge } from "@/com
   두었습니다. Pretendard woff2 를 확보하면 `app/layout.tsx` 에서 `next/font/local` 로 교체합니다.
 - **사이드바 레이아웃**: 의뢰·정산 화면의 좌측 스레드 목록(320px)은 아직 없습니다. 도메인 레이아웃이라
   `components/domains/` 또는 해당 route group 의 layout 으로 만듭니다.
-- **푸터·헤더 링크 경로**: `/how-to`, `/requests`, `/checkup` 등은 임시로 정한 값입니다. 라우팅이
-  확정되면 `Header.tsx`·`Footer.tsx` 의 상수를 함께 고칩니다.
+- **푸터·헤더 링크 경로**: 목적지는 `src/lib/routes.ts` 의 `ROUTES` 에서 관리합니다(컨벤션 8.1).
+  `/requests`, `/checkup`, `/settlements`, `/mypage/*` 는 아직 화면이 없는 임시 값이라 화면이 생기면
+  `ROUTES` 의 값만 고칩니다. `Header.tsx`·`Footer.tsx` 의 메뉴 상수는 URL 을 직접 적지 않습니다.
 - **도메인 복합 컴포넌트**: 채팅 말풍선/입력바, 좌측 스레드 목록, 테이블(정산/관리자), OTP 4칸 입력,
   서명판 캔버스, 캘린더, 세션 컨트롤 바는 위 기본 요소를 조합해 `components/domains/` 아래에 만듭니다.

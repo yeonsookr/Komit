@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 
 /**
- * 개발자 찾기. 목 서버(:8080)가 떠 있어야 합니다.
+ * 개발자 찾기. 목 서버가 닿아야 합니다(BACKEND_API_BASE_URL).
  * 목에는 한서(버그 잡기) · 이준(DB 연결) · 정하(인터넷에 올리기) 3명이 있습니다.
  */
 test.describe('개발자 찾기', () => {

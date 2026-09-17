@@ -1,0 +1,9 @@
+# 빌드 컨텍스트에서 뺄 것. node_modules를 빼지 않으면 수백 MB를 전송합니다.
+node_modules
+.next
+coverage
+test-results
+playwright-report
+e2e
+.env*
+*.tsbuildinfo

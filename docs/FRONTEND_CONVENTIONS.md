@@ -56,6 +56,7 @@ API 명세의 단 하나의 진실은 `mock` 서버입니다. 프런트엔드는
 | 프레임워크 | Next.js App Router |
 | 언어 | TypeScript |
 | HTTP 클라이언트 | axios |
+| 클라이언트 전역 상태 | Zustand |
 | 애니메이션 | Motion(구 Framer Motion) |
 | 단위·로직 테스트 | Vitest |
 | E2E 테스트 | Playwright |
@@ -135,6 +136,47 @@ Next.js를 사용하는 목적 중 하나는 검색엔진 최적화입니다. �
 - 정적 페이지 라우트와 `app/api`의 Route Handler는 같은 트리 안에 공존합니다. 경로가 겹치지 않도록 API는 `/api` 아래에만 둡니다.
 - 로딩과 에러 상태는 `loading.tsx`, `error.tsx`로 처리하고 페이지 내부에 즉석 처리 코드를 흩뿌리지 않습니다.
 
+### 8.1 화면 경로 상수
+
+화면 경로는 `src/lib/routes.ts`의 `ROUTES` 상수 한 곳에서 관리합니다. API 경로를 `endpoints.ts`에 모으는 것과 같은 원칙입니다. 컴포넌트, 레이아웃, Header·Footer의 메뉴 상수는 URL 문자열을 직접 적지 않고 `ROUTES`를 참조합니다.
+
+```ts
+// src/lib/routes.ts
+export const ROUTES = {
+  home: "/",
+  login: "/login",
+  developers: "/developers",
+  developer: (developerId: number) => `/developers/${developerId}`,
+  policiesTerms: "/policies#terms",
+} as const;
+
+// 사용
+<Link href={ROUTES.developer(developer.developerId)}>{developer.name}</Link>
+```
+
+- 고정 경로는 문자열, 파라미터가 있는 경로는 함수로 둡니다. 함수의 인자 타입은 목 명세의 식별자 타입과 맞춥니다.
+- 같은 목적지가 여러 화면에 등장하면(약관, 개발자 프로필 등) 반드시 같은 `ROUTES` 항목을 씁니다. 파일마다 따로 적어 두면 한쪽만 고쳐져 어긋납니다.
+- 아직 화면이 없는 목적지도 `ROUTES`에 먼저 등록하고 주석으로 상태를 적습니다. 화면이 생기면 값만 바꿉니다.
+- 검색 조건처럼 query가 동적으로 조합되는 경로는 `ROUTES`의 기본 경로에 query 문자열을 붙입니다. 기본 경로 자체를 다시 적지 않습니다.
+- 외부 사이트 링크(포트폴리오 URL 등 서버가 내려주는 값)는 `ROUTES` 대상이 아닙니다.
+
+### 8.2 화면 사이로 넘기는 query 이름
+
+`?keyword=`, `?step=`처럼 화면과 화면 사이로 값을 넘길 때 쓰는 query 이름은, **그 값을 읽는 모듈이 상수로 내보내고 보내는 쪽이 가져다 씁니다.**
+
+```ts
+// lib/developerSearch.ts — 읽는 쪽이 이름을 정해 내보냅니다
+export const KEYWORD_PARAM = "keyword";
+
+// 보내는 쪽은 가져다 씁니다
+<SearchInput name={KEYWORD_PARAM} />
+```
+
+양쪽에 글자를 따로 적으면 한쪽만 바뀌어도 타입 검사와 빌드가 모두 통과합니다. 값은 조용히 버려지고 화면은 아무 일 없다는 듯 동작합니다. 상수로 묶으면 이름을 바꿀 자리가 하나뿐이고, 상수를 지우거나 이름을 바꾸면 쓰는 쪽에서 타입 오류가 납니다.
+
+- 한 파일 안에서만 쓰는 이름은 해당하지 않습니다. 밖으로 나가는 값에만 적용합니다.
+- 이름은 목 명세의 파라미터 이름과 맞춥니다. 중간에서 이름을 바꾸지 않습니다.
+
 ## 9. 서버 컴포넌트와 클라이언트 컴포넌트
 
 - 기본은 서버 컴포넌트입니다. `'use client'`는 필요한 컴포넌트에만 붙입니다.
@@ -144,6 +186,24 @@ Next.js를 사용하는 목적 중 하나는 검색엔진 최적화입니다. �
 - 서버 컴포넌트에서 클라이언트 컴포넌트로 함수나 클래스 인스턴스를 전달하지 않습니다. 직렬화 가능한 값만 전달합니다.
 - 서버 전용 모듈(환경 변수 사용, 서버 axios 인스턴스)을 클라이언트 컴포넌트에서 import하지 않습니다.
 - 클라이언트 상태는 필요한 범위에서만 사용합니다. 서버에서 이미 확정된 데이터를 전역 상태로 복제하지 않습니다.
+
+### 9.1 클라이언트 전역 상태: Zustand
+
+화면 여러 곳이 함께 보는 클라이언트 상태(로그인 상태 등)는 Zustand로 관리합니다. 한 컴포넌트 안에서 끝나는 상태는 `useState`로 충분하며 스토어로 올리지 않습니다.
+
+```text
+src/stores/<domain>/
+├── <domain>Store.ts        # createStore 팩토리, 상태·액션 타입
+├── <Domain>StoreProvider.tsx  # 'use client'. 스토어 생성 + Context + use<Domain>Store 훅
+└── index.ts
+```
+
+- **스토어를 모듈 전역 변수로 만들지 않습니다.** `create()`로 만든 전역 훅 대신 `createStore()` 팩토리를 두고 Provider가 `useState(createXxxStore)`로 마운트마다 하나씩 만듭니다. Next 서버는 요청을 동시에 처리하므로 전역 스토어는 요청 사이에 상태가 섞일 수 있습니다(Zustand 공식 Next.js 가이드).
+- **서버 컴포넌트는 스토어를 읽지도 쓰지도 않습니다.** 서버에서 확정된 데이터는 props로 내립니다.
+- 서버 렌더와 첫 클라이언트 렌더는 같은 초기 상태여야 합니다. 브라우저에서만 아는 값(쿠키로 정해지는 로그인 여부 등)은 "아직 모름" 상태로 시작해 마운트 뒤에 채웁니다. 그래야 hydration이 어긋나지 않습니다.
+- 컴포넌트는 `useXxxStore((s) => s.field)`처럼 필요한 조각만 고릅니다. 스토어 전체를 구독하면 무엇이 바뀌어도 다시 그려집니다.
+- 서버를 부르는 액션은 스토어 안에 두되 요청 자체는 `lib/api/services/`의 함수를 부릅니다. 스토어가 axios를 직접 알지 않게 합니다.
+- 토큰·비밀값을 스토어에 넣지 않습니다. 인증 토큰은 httpOnly 쿠키에만 있고 Next 서버가 다룹니다(5·6장). 스토어는 로그인 여부와 내 정보만 가집니다.
 
 ## 10. 컴포넌트 구조
 
@@ -162,6 +222,7 @@ src/
 │   └── common/               # 둘 이상의 도메인이 실제로 쓰는 범용 요소
 ├── hooks/
 ├── lib/                      # api, utils, 설정
+├── stores/                   # Zustand 스토어와 Provider (9.1)
 ├── styles/
 └── types/
 ```
@@ -286,6 +347,8 @@ PR 설명에는 다음을 포함합니다.
 - [ ] 호출하는 method, 경로, 필드, 상태 코드가 목 Swagger 계약과 일치하는가?
 - [ ] 목 명세에 없는 필드를 화면에서 임의로 만들거나 채우지 않았는가?
 - [ ] API 경로가 상수로 관리되고 문자열이 흩어져 있지 않은가?
+- [ ] 화면 경로가 `lib/routes.ts`의 `ROUTES`로 관리되고 `href`에 URL 문자열을 직접 적지 않았는가?
+- [ ] 화면 사이로 넘기는 query 이름이 상수로 공유되고 양쪽에 따로 적혀 있지 않은가?
 - [ ] 요청·응답 타입이 명시되어 있는가?
 - [ ] 고정 콘텐츠 페이지가 SSG로 생성되는가?
 - [ ] 의도치 않게 정적 생성을 해제하는 요청 의존 API를 쓰지 않았는가?
