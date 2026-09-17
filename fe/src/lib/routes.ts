@@ -82,7 +82,13 @@ export const ROUTES = {
   // ---- 아래는 아직 화면이 없는 임시 경로입니다. 화면이 생기면 값만 고칩니다. ----
   /** 의뢰 목록. 방 화면(/rooms/{roomId})의 진입점이 됩니다. */
   requests: "/requests",
+  /**
+   * 정산. 한 사람이 의뢰인이면서 개발자일 수 있어 소비와 소득을 함께 둡니다.
+   * 기본 화면은 소비 내역이고, 달은 `?month=` 로 넘깁니다(`lib/settlement.ts`).
+   */
   settlements: "/settlements",
+  settlementsIncome: "/settlements/income",
+  settlementsDeposits: "/settlements/deposits",
   /** 푸터 "정산 방식" 안내. */
   settlementsGuide: "/settlements/guide",
   notifications: "/notifications",

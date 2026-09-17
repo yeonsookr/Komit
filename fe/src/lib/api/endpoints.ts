@@ -43,6 +43,11 @@ export const BACKEND = {
   CONTRACT_DEPOSIT: (contractId: number) => `/api/contracts/${contractId}/deposit`,
   CONTRACT_START: (contractId: number) => `/api/contracts/${contractId}/start`,
   CONTRACT_REVIEW: (contractId: number) => `/api/contracts/${contractId}/review`,
+  CONTRACT_LEDGER: (contractId: number) => `/api/contracts/${contractId}/ledger`,
+  /** 「7 정산」 — 소비는 달을 받고, 소득·예치금은 달 파라미터가 없습니다. */
+  SETTLEMENT_SPENDING: "/api/settlements/spending",
+  SETTLEMENT_INCOME: "/api/settlements/income",
+  SETTLEMENT_DEPOSITS: "/api/settlements/deposits",
   DEVELOPMENT_CONTRACTS: (roomId: number) => `/api/rooms/${roomId}/development-contracts`,
   MILESTONE_SUBMISSION: (milestoneId: number) => `/api/milestones/${milestoneId}/submission`,
   MILESTONE_QA_RESULTS: (milestoneId: number) => `/api/milestones/${milestoneId}/qa-results`,
