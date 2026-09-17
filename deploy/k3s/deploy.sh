@@ -111,13 +111,13 @@ resources:
 images:
   - name: komit-service
     newName: ${SERVICE_IMAGE%:*}
-    newTag: ${SERVICE_IMAGE##*:}
+    newTag: "${SERVICE_IMAGE##*:}"
   - name: komit-escrow
     newName: ${ESCROW_IMAGE%:*}
-    newTag: ${ESCROW_IMAGE##*:}
+    newTag: "${ESCROW_IMAGE##*:}"
   - name: komit-fe
     newName: ${FE_IMAGE%:*}
-    newTag: ${FE_IMAGE##*:}
+    newTag: "${FE_IMAGE##*:}"
 # 값이 바뀌면 ConfigMap 이름의 해시가 바뀌어 fe Pod가 새 값으로 다시 뜹니다.
 configMapGenerator:
   - name: fe-config
