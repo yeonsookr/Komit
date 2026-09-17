@@ -2100,12 +2100,14 @@ def upload_scan_result(
     if not (name.endswith(".md") or name.endswith(".json")):
         return _error_response(400, SCAN_FILE_INVALID)
 
-    # 읽을 수 있는 결과 파일이면 담아 두고, 이후 진단서와 결함 목록에 쓴다.
-    # 읽을 수 없으면 예전대로 고정 예시가 나간다.
+    # 결과 파일을 읽어 두고 이후 진단서와 결함 목록에 쓴다.
+    # 읽을 수 없으면 받지 않는다. 조용히 넘기면 의뢰인은 올라간 줄 알고
+    # 예전 진단서를 보게 된다.
     parsed = scan_result.parse(file.file.read())
-    if parsed is not None:
-        scan_result.remember(diagnosisId, parsed)
+    if parsed is None:
+        return _error_response(400, SCAN_FILE_INVALID)
 
+    scan_result.remember(diagnosisId, parsed)
     return InspectionResponse(**INSPECTION_RUNNING_EXAMPLE)
 
 
