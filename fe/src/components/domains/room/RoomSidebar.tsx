@@ -50,9 +50,17 @@ export function RoomSidebar({ rooms, me, previews }: Readonly<RoomSidebarProps>)
   /** 목록 화면(`/rooms`)에서는 고른 방이 없습니다. */
   const hasActiveRoom = Number.isFinite(activeRoomId);
 
-  // 내가 개발자로 들어간 방이 하나라도 있으면 기본 탭을 그쪽으로 엽니다.
-  const hasReceived = rooms.some((room) => isReceived(room, me));
-  const [side, setSide] = React.useState<RequestSide>(hasReceived ? "RECEIVED" : "SENT");
+  /**
+   * 처음에는 '맡긴 의뢰'를 엽니다. 개발자로도 등록한 사람이라도 이 화면에 들어오는
+   * 경로는 대개 내가 맡긴 의뢰 쪽입니다.
+   *
+   * 다만 이미 어떤 방을 보고 있다면 그 방이 있는 쪽을 엽니다 — 새로고침이나 링크로
+   * 바로 들어왔을 때 지금 보는 방이 목록에 없으면 안 됩니다.
+   */
+  const activeRoom = rooms.find((room) => room.roomId === activeRoomId);
+  const [side, setSide] = React.useState<RequestSide>(
+    activeRoom !== undefined && isReceived(activeRoom, me) ? "RECEIVED" : "SENT",
+  );
 
   const groups = React.useMemo(
     () => groupByProject(filterBySide(rooms, me, side)),

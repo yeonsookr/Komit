@@ -32,7 +32,7 @@ const MESSAGES: ChatMessage[] = [
     chatRefId: "room-91-chat",
     sender: "COUNTERPART",
     authorName: "이준",
-    body: "알겠습니다. 계약서 보내드릴게요.",
+    body: "(상담) 알겠습니다. 계약서 보내드릴게요.",
     sentAt: "2026-08-20T11:02:00+09:00",
   },
   {
@@ -40,7 +40,7 @@ const MESSAGES: ChatMessage[] = [
     chatRefId: "room-92-chat",
     sender: "COUNTERPART",
     authorName: "이준",
-    body: "범위가 아직 좀 넓어 보입니다. 30분만 통화하면서 정리하면 견적이 정확해질 것 같아요.",
+    body: "(컨설팅) 범위가 아직 좀 넓어 보입니다. 30분만 통화하면서 정리하면 견적이 정확해질 것 같아요.",
     sentAt: "2026-08-22T11:40:00+09:00",
   },
   {
@@ -56,7 +56,7 @@ const MESSAGES: ChatMessage[] = [
     chatRefId: "room-93-chat",
     sender: "COUNTERPART",
     authorName: "이준",
-    body: "그 부분은 코드 보고 말씀드릴게요",
+    body: "(진행 중) 그 부분은 코드 보고 말씀드릴게요",
     sentAt: "2026-08-28T14:20:00+09:00",
   },
 
@@ -65,7 +65,7 @@ const MESSAGES: ChatMessage[] = [
     chatRefId: "room-104-chat",
     sender: "COUNTERPART",
     authorName: "이준",
-    body: "네 건 다 통과 확인 감사합니다. 정산도 끝났습니다.",
+    body: "(완료) 네 건 다 통과 확인 감사합니다. 정산도 끝났습니다.",
     sentAt: "2026-09-04T17:05:00+09:00",
   },
 
@@ -83,24 +83,8 @@ const MESSAGES: ChatMessage[] = [
     chatRefId: "room-101-chat",
     sender: "ME",
     authorName: "김미미",
-    body: "확인했습니다. 예약 저장 쪽부터 보면 될 것 같아요.",
+    body: "(상담) 확인했습니다. 예약 저장 쪽부터 보면 될 것 같아요.",
     sentAt: "2026-08-24T10:41:00+09:00",
-  },
-  {
-    messageId: "m-102-1",
-    chatRefId: "room-102-chat",
-    sender: "COUNTERPART",
-    authorName: "박준호",
-    body: "직접 고쳐보고 싶은데 어디부터 봐야 할지 모르겠어요.",
-    sentAt: "2026-08-26T15:30:00+09:00",
-  },
-  {
-    messageId: "m-102-2",
-    chatRefId: "room-102-chat",
-    sender: "ME",
-    authorName: "김미미",
-    body: "30분 세션으로 순서부터 잡아드릴게요.",
-    sentAt: "2026-08-26T16:02:00+09:00",
   },
   {
     messageId: "m-103-1",
@@ -115,7 +99,7 @@ const MESSAGES: ChatMessage[] = [
     chatRefId: "room-103-chat",
     sender: "COUNTERPART",
     authorName: "박준호",
-    body: "네, 내용 보고 서명할게요.",
+    body: "(진행 중) 네, 내용 보고 서명할게요.",
     sentAt: "2026-08-29T11:15:00+09:00",
   },
 
@@ -133,7 +117,7 @@ const MESSAGES: ChatMessage[] = [
     chatRefId: "room-105-chat",
     sender: "COUNTERPART",
     authorName: "박준호",
-    body: "확인했습니다. 내용 보고 서명하겠습니다.",
+    body: "(계약 전) 확인했습니다. 내용 보고 서명하겠습니다.",
     sentAt: "2026-08-22T16:40:00+09:00",
   },
   {
@@ -149,25 +133,17 @@ const MESSAGES: ChatMessage[] = [
     chatRefId: "room-106-chat",
     sender: "ME",
     authorName: "김미미",
-    body: "네, 읽어보고 오늘 중으로 서명할게요.",
+    body: "(계약 전) 네, 읽어보고 오늘 중으로 서명할게요.",
     sentAt: "2026-08-22T16:35:00+09:00",
   },
 
-  // 서명은 끝나고 아직 착수하지 않은 방. 107 은 예치 전, 108 은 예치가 확인된 뒤입니다.
-  {
-    messageId: "m-107-1",
-    chatRefId: "room-107-chat",
-    sender: "COUNTERPART",
-    authorName: "박준호",
-    body: "서명했습니다. 예치는 오늘 안에 넣을게요.",
-    sentAt: "2026-08-23T09:10:00+09:00",
-  },
+  // 예치까지 끝나고 아직 착수하지 않은 방입니다.
   {
     messageId: "m-108-1",
     chatRefId: "room-108-chat",
     sender: "COUNTERPART",
     authorName: "박준호",
-    body: "예치까지 마쳤습니다. 착수해 주세요.",
+    body: "(착수 전) 예치까지 마쳤습니다. 착수해 주세요.",
     sentAt: "2026-08-23T10:30:00+09:00",
   },
 ];
