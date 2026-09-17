@@ -5,6 +5,7 @@ export * from "./DeveloperSection";
 export * from "./NameEditRow";
 export * from "./NotificationSection";
 export * from "./PolicySection";
+export * from "./ProfileImageEdit";
 export * from "./ProjectSection";
 export * from "./WithdrawButton";
 export * from "./WithdrawalBlockers";
