@@ -3543,6 +3543,21 @@ ROOMS = [
         "chatRefId": "room-105-chat",
         "openedAt": "2026-08-22T16:10:00+09:00",
     },
+    # 내가 개발자로 들어간 컨설팅 방. 계약서를 아직 쓰지 않아 작성 화면이 열린다.
+    # 이 방이 없으면 `4_개발자_계약서작성`을 목으로 눌러 볼 방법이 없다 — 컨설팅 방이
+    # 의뢰인으로 들어간 것 하나뿐이었다.
+    {
+        "roomId": 107,
+        "recommendationItemId": None,
+        "type": "CONSULTING",
+        "status": "OPEN",
+        "projectId": 21,
+        "projectName": "미미헤어샵 예약",
+        "developerId": 9,
+        "counterpartName": "박준호",
+        "chatRefId": "room-107-chat",
+        "openedAt": "2026-08-25T14:00:00+09:00",
+    },
     {
         "roomId": 106,
         "recommendationItemId": None,
@@ -4557,6 +4572,14 @@ class ConsultingSessionResponse(BaseModel):
     """컨설팅 세션 하나."""
 
     sessionId: int = Field(description="컨설팅 세션 식별자.", examples=[55])
+    contractId: int = Field(
+        description=(
+            "이 세션이 달린 계약 식별자.\n\n"
+            "세션 화면은 방 밖에 있는 별도 화면이라 세션 식별자만으로 열린다. 끝낸 뒤 "
+            "어느 방으로 돌아갈지, 요약을 어디서 볼지가 이 값에서 나온다."
+        ),
+        examples=[120],
+    )
     price: int = Field(description="세션 금액. 원 단위 정수다.", examples=[50000])
     durationMinutes: int = Field(
         description="계약서에 적힌 세션 시간(분).",
@@ -4635,6 +4658,15 @@ class ConsultingAgreementResponse(BaseModel):
         description="이 계약으로 오가는 전체 금액. 속한 세션 금액의 합이다.",
         examples=[50000],
     )
+    topic: str = Field(
+        description=(
+            "이 세션에서 다룰 것. 개발자가 한 줄로 적는다.\n\n"
+            "**요구사항 식별자를 담지 않는다.** 컨설팅은 요구사항 하나를 작업으로 만드는 "
+            "것이 아니라 한 번 만나 여러 갈래를 함께 보는 자리라, 요청서의 어느 줄에 "
+            "매이지 않는다. 요청서에 없는 것을 다루기로 할 수도 있다."
+        ),
+        examples=["회원탈퇴 경로와 결제 간헐 실패를 함께 봅니다"],
+    )
     sessions: list[ConsultingSessionResponse] = Field(
         description="이 계약에 속한 세션.",
     )
@@ -4672,10 +4704,6 @@ class ContractResponse(BaseModel):
         default=None,
         description="개발 계약일 때의 내용. 컨설팅 계약이면 null이다.",
     )
-    issueIds: list[int] = Field(
-        description="이 계약에서 다룰 요구사항 식별자.",
-        examples=[[312, 311]],
-    )
     detail: str | None = Field(
         description="계약서의 상세 설명. 적지 않았으면 null이다.",
         examples=["회원탈퇴 처리 흐름과 결제 실패 재현 방법을 화면 공유로 봅니다."],
@@ -4705,9 +4733,11 @@ class ContractResponse(BaseModel):
 class WriteConsultingContractRequest(BaseModel):
     """컨설팅 계약서 작성 요청."""
 
-    issueIds: list[int] = Field(
-        description="이 계약에서 다룰 요구사항 식별자.",
-        examples=[[312, 311]],
+    topic: str = Field(
+        min_length=1,
+        max_length=255,
+        description="이 세션에서 다룰 것. 한 줄로 적는다.",
+        examples=["회원탈퇴 경로와 결제 간헐 실패를 함께 봅니다"],
     )
     scheduledAt: str = Field(
         description="세션을 할 일시.",
@@ -4733,6 +4763,12 @@ class WriteConsultingContractRequest(BaseModel):
 class AmendConsultingContractRequest(BaseModel):
     """컨설팅 계약서 수정 제안. 보낸 항목만 바뀐다."""
 
+    topic: str | None = Field(
+        default=None,
+        max_length=255,
+        description="바꿀 「다룰 항목」.",
+        examples=["회원탈퇴 경로와 결제 간헐 실패를 함께 봅니다"],
+    )
     scheduledAt: str | None = Field(
         default=None,
         description="바꿀 세션 일시.",
@@ -4904,6 +4940,7 @@ NO_SUMMARY_SESSION_ID = 202
 
 SESSION_EXAMPLE = {
     "sessionId": SESSION_ID,
+    "contractId": CONTRACT_ID,
     "price": 50000,
     "durationMinutes": 30,
     "reservation": {
@@ -4925,10 +4962,10 @@ CONSULTING_CONTRACT_EXAMPLE = {
     "consulting": {
         "status": "SIGNED",
         "totalAmount": 50000,
+        "topic": "회원탈퇴 경로와 결제 간헐 실패를 함께 봅니다",
         "sessions": [SESSION_EXAMPLE],
     },
     "development": None,
-    "issueIds": [312, 311],
     "detail": "회원탈퇴 처리 흐름과 결제 실패 재현 방법을 화면 공유로 봅니다.",
     "clientSignature": None,
     "developerSignature": None,
@@ -5067,7 +5104,29 @@ def write_consulting_contract(
 ) -> ContractResponse | JSONResponse:
     if roomId == NOT_FOUND_ROOM_ID:
         return _error_response(404, ROOM_NOT_FOUND)
-    return ContractResponse(**CONSULTING_CONTRACT_EXAMPLE)
+    # 보낸 값을 그대로 담아 돌려준다. 저장하는 것이 아니라 방금 무엇을 보냈는지
+    # 화면이 확인할 수 있게 하는 것이라 호출 순서와는 무관하다.
+    session = {
+        **SESSION_EXAMPLE,
+        "price": request.price,
+        "durationMinutes": request.durationMinutes,
+        "reservation": {
+            **SESSION_EXAMPLE["reservation"],
+            "scheduledAt": request.scheduledAt,
+        },
+    }
+    return ContractResponse(
+        **{
+            **CONSULTING_CONTRACT_EXAMPLE,
+            "consulting": {
+                **CONSULTING_CONTRACT_EXAMPLE["consulting"],
+                "topic": request.topic,
+                "totalAmount": request.price,
+                "sessions": [session],
+            },
+            "detail": request.detail,
+        }
+    )
 
 
 @router.get(
@@ -5712,6 +5771,14 @@ class DevelopmentAgreementResponse(BaseModel):
         description="이 계약으로 오가는 전체 금액. 속한 작업 가격의 합이다.",
         examples=[650000],
     )
+    issueIds: list[int] = Field(
+        description=(
+            "이 계약에서 다룰 요구사항 식별자. 개발 계약에만 있다 — 요구사항 하나가 "
+            "작업 하나가 되므로 어느 줄을 맡기로 했는지가 계약의 내용이다. 컨설팅은 "
+            "요청서의 줄에 매이지 않아 대신 `topic` 한 줄을 둔다."
+        ),
+        examples=[[312, 313, 311]],
+    )
     startDate: str | None = Field(
         description="착수일. 정하기 전이면 null이다.",
         examples=["2026-08-26"],
@@ -6104,13 +6171,13 @@ DEV_CONTRACT_EXAMPLE = {
     "development": {
         "status": "IN_PROGRESS",
         "totalAmount": 650000,
+        "issueIds": [312, 313, 311],
         "startDate": "2026-08-26",
         "dueDate": "2026-09-16",
         "freeRepairDays": 14,
         "milestones": MILESTONES,
         "deliverables": DELIVERABLES,
     },
-    "issueIds": [312, 313, 311],
     "detail": None,
     "clientSignature": {
         "userId": 12,
