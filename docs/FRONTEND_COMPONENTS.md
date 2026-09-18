@@ -34,22 +34,39 @@ fe/src/
 │  │  │             CheckupIntro.tsx       사전 점검 소개 (정적 예시 카드)
 │  │  ├─ auth/     LoginCard.tsx          로그인 카드 (카카오 버튼 · 약관 안내 · 문서 링크 4개 · 실패 안내)
 │  │  │             SessionShell.tsx       인증 스토어를 읽어 헤더를 채우는 AppShell — (site) 레이아웃이 씁니다
-│  │  └─ mypage/   AccountSection.tsx     계정 칸 · 계좌 칸(SettlementAccountSection)
-│  │                NameEditRow.tsx        이름 줄 — 그 자리에서 고칩니다(클라이언트)
-│  │                ProjectSection.tsx     등록한 프로젝트 칸
-│  │                DeveloperSection.tsx   개발자 프로필 칸 — 프로필이 없으면 그리지 않습니다
+│  │  ├─ room/     RoomSidebar.tsx        의뢰 화면 좌측 목록 · 맡긴 의뢰/맡은 의뢰 전환
+│  │  │             RoomHeader.tsx         방 제목 · 상태 · 상대 정보
+│  │  │             RoomTabs.tsx           채팅 · 계약서 · 진행 · 확인 · 리뷰 탭
+│  │  │             RoomConversation.tsx   상담·컨설팅·개발 대화 흐름
+│  │  ├─ settlement/ SettlementShell.tsx   정산 좌측 목록과 본문 골격
+│  │  │                  SettlementSidebar.tsx 소비 · 소득 · 예치금 탐색
+│  │  │                  SpendingView.tsx  월별 소비 내역
+│  │  │                  IncomeView.tsx    개발 소득 내역
+│  │  │                  DepositsView.tsx  계약별 예치금 현황
+│  │  │                  MonthPicker.tsx   소비 내역 조회 월 선택
+│  │  │                  ContractGroup.tsx 계약별 정산 행 묶음
+│  │  │                  MoneyFlowRow.tsx  정산 금액 흐름 한 줄
+│  │  ├─ schedule/ ScheduleView.tsx        의뢰인·개발자 일정을 함께 표시하는 내 일정
+│  │  ├─ dispute/ ReportForm.tsx           문제 신고 내용 · 첨부파일 제출
+│  │  └─ mypage/   AccountSection.tsx      계정 칸 · 계좌 칸
+│  │                AccountVerificationForm.tsx 계좌 입력 · 1원 인증 흐름
+│  │                AccountVerificationCodeInput.tsx 인증번호 네 자리 입력
+│  │                ProfileImageEdit.tsx   계정과 헤더에 쓰는 프로필 사진 변경
+│  │                NameEditRow.tsx         이름 줄 — 그 자리에서 고칩니다(클라이언트)
+│  │                ProjectSection.tsx      등록한 프로젝트 칸
+│  │                DeveloperSection.tsx    개발자 프로필 칸 — 프로필이 없으면 만들기 안내
 │  │                NotificationSection.tsx 알림 칸 — 켜고 끄기(클라이언트)
-│  │                PolicySection.tsx      약관 칸 — 문서마다 본문으로 바로 갑니다
-│  │                WithdrawalSection.tsx  탈퇴 칸 — 탈퇴 화면으로 보내기만 합니다
-│  │                WithdrawalBlockers.tsx 탈퇴를 막는 것 목록 (R-ACC-05)
-│  │                WithdrawButton.tsx     탈퇴하기 — 잠금은 화면과 서버 두 겹(클라이언트)
+│  │                PolicySection.tsx       약관 칸 — 문서마다 본문으로 바로 갑니다
+│  │                WithdrawalSection.tsx   탈퇴 칸 — 탈퇴 화면으로 보내기만 합니다
+│  │                WithdrawalBlockers.tsx  탈퇴를 막는 것 목록 (R-ACC-05)
+│  │                WithdrawButton.tsx      탈퇴하기 — 잠금은 화면과 서버 두 겹(클라이언트)
 │  └─ common/   Input.tsx       Field, Input, Textarea, SearchInput
 │               Select.tsx      NativeSelect, Dropdown
 │               Choice.tsx      Checkbox, Radio, ChoiceCard, Switch, RatingScale
 │               Badge.tsx       Badge, CountBadge, Tag, StatusDot
 │               Chip.tsx        Chip, ChipGroup
 │               Card.tsx        Card, CardHeader, CardSection, KeyValueRow, StatCard
-               Section.tsx     SectionCard (제목 + 우측 안내 + 테두리 카드)
+│               Section.tsx     SectionCard (제목 + 우측 안내 + 테두리 카드)
 │               Tabs.tsx        SegmentedTabs, NavPill
 │               Avatar.tsx      Avatar, RatingDots
 │               Misc.tsx        Divider, Mono, Money, Eyebrow, PageHeader, Breadcrumb,
@@ -91,6 +108,10 @@ export default function SiteLayout({ children }) {
 하고 카드는 각 페이지가 그립니다. 로그인(`1_로그인`)과 운영 콘솔 로그인(`9_로그인`)이 같은 골격입니다.
 - 세션(화상) 화면이나 운영 콘솔처럼 골격이 다른 화면은 이 그룹 밖에 두고 별도 레이아웃을 만듭니다.
 
+`src/app/(rooms)/layout.tsx` 는 `RoomSidebar` 와 방 본문을 배치합니다. 정산은 조회 월이
+`searchParams`에 있어야 하므로 route group 레이아웃이 아니라 각 페이지의 `SettlementShell`이
+`SettlementSidebar`와 본문을 배치합니다.
+
 ### Header
 
 | 상태 | 구성 |
@@ -122,7 +143,8 @@ export default function SiteLayout({ children }) {
 
 브랜드 · 링크 3열(서비스 / 개발자 / 정책) · 통신판매중개자 고지 · 사업자 정보로 구성됩니다.
 링크와 사업자 정보는 `columns`, `notices`, `business` props 의 기본값으로 들어 있고, 값이 확정되면
-호출부에서 덮어쓰거나 기본 상수(`DEFAULT_FOOTER_COLUMNS` 등)를 고칩니다. **링크 경로는 아직 임시입니다.**
+호출부에서 덮어쓰거나 기본 상수(`DEFAULT_FOOTER_COLUMNS` 등)를 고칩니다. 정책 본문과 정산 방식 안내처럼
+아직 화면이 없는 링크는 6절에 따로 적습니다.
 
 ## 3. 디자인 규칙 요약 (화면에서 관찰된 것)
 
@@ -186,6 +208,13 @@ export default function SiteLayout({ children }) {
 | `ChatComposer` | `onSend` `disabled` `sending` | 메시지를 입력하세요 + 보내기 (Enter 전송) |
 | `ChatNotice` | `action` | 개발 계약으로 진행해 이 상담은 마무리됐습니다 + 개발 방으로 |
 | `ChatSessionBanner` | `title` `description` `action` | 컨설팅 세션 · 8월 29일 14:00 · 45분 + 입장 |
+| `RoomSidebar` | `rooms` `me` `previews` | 맡긴 의뢰·맡은 의뢰 목록과 현재 방 표시 |
+| `SettlementSidebar` | 소비·소득·예치금 요약 | 월별 소비, 개발 소득, 계약별 예치금 이동 |
+| `SettlementShell` | `month` `spending` `income` `deposits` `title` | 정산 화면의 320px 좌측 목록과 본문 배치 |
+| `SpendingView` / `IncomeView` / `DepositsView` | 정산 응답 | 소비 내역 · 소득 내역 · 예치금 현황 |
+| `AccountVerificationForm` / `AccountVerificationCodeInput` | 계좌 입력 · 네 자리 인증번호 | `/mypage/account` 계좌 등록·변경 |
+| `ScheduleView` | `schedule` `now` | `/mypage/schedule` 의뢰한 일정과 맡은 일정 |
+| `ReportForm` | `roomId` `contractId` | `/rooms/{roomId}/report` 문제 신고 |
 
 ## 5. 사용 예
 
@@ -224,10 +253,12 @@ import { KeyValueRow, SectionCard } from "@/components/common";
   (컨벤션 11장 기준 미완 항목입니다.)
 - **본문 폰트**: 디자인 기준은 Pretendard 이지만 next/font 로 자체 호스팅하기 위해 `Noto Sans KR` 로 대체해
   두었습니다. Pretendard woff2 를 확보하면 `app/layout.tsx` 에서 `next/font/local` 로 교체합니다.
-- **사이드바 레이아웃**: 의뢰·정산 화면의 좌측 스레드 목록(320px)은 아직 없습니다. 도메인 레이아웃이라
-  `components/domains/` 또는 해당 route group 의 layout 으로 만듭니다.
-- **푸터·헤더 링크 경로**: 목적지는 `src/lib/routes.ts` 의 `ROUTES` 에서 관리합니다(컨벤션 8.1).
-  `/requests`, `/checkup`, `/settlements`, `/mypage/*` 는 아직 화면이 없는 임시 값이라 화면이 생기면
-  `ROUTES` 의 값만 고칩니다. `Header.tsx`·`Footer.tsx` 의 메뉴 상수는 URL 을 직접 적지 않습니다.
-- **도메인 복합 컴포넌트**: 채팅 말풍선/입력바, 좌측 스레드 목록, 테이블(정산/관리자), OTP 4칸 입력,
-  서명판 캔버스, 캘린더, 세션 컨트롤 바는 위 기본 요소를 조합해 `components/domains/` 아래에 만듭니다.
+- **아직 화면이 없는 링크**: 정책 본문(`/policies/*`)과 푸터의 정산 방식 안내
+  (`/settlements/guide`)는 경로만 있고 화면은 없습니다. 목적지는 `src/lib/routes.ts` 의 `ROUTES` 에서
+  관리하며 `Header.tsx`·`Footer.tsx` 의 메뉴 상수에는 URL 을 직접 적지 않습니다.
+- **세션 컨트롤 바**: 일정과 채팅의 세션 안내는 구현되어 있지만 실제 화상 세션 화면의 입장·종료 컨트롤은
+  아직 별도 도메인 컴포넌트로 구현되지 않았습니다.
+
+의뢰 좌측 목록(`RoomSidebar`), 정산 좌측 목록과 소비·소득·예치금 화면, 계좌 인증번호 입력,
+내 일정, 문제 신고는 구현되어 있습니다. `/checkup`, `/settlements`, `/mypage/account`,
+`/mypage/profile`, `/mypage/schedule`, `/mypage/withdrawal`, `/rooms/{roomId}/report`는 실제 화면 경로입니다.
