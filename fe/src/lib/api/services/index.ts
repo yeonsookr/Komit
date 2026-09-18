@@ -8,6 +8,7 @@ export * from "./mypage";
 export * from "./notifications";
 export * from "./diagnoses";
 export * from "./recommendations";
+export * from "./reports";
 export * from "./rooms";
 export * from "./schedule";
 export * from "./settlements";

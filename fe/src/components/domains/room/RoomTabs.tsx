@@ -23,6 +23,8 @@ export function toRoomTab(pathname: string): RoomTab {
   const segment = /^\/rooms\/\d+\/([a-z-]+)/.exec(pathname)?.[1];
   // 예치는 탭이 아니라 계약서에서 서명하고 넘어오는 화면이라 계약서에 머뭅니다.
   if (segment === "deposit") return "contract";
+  // 문제 신고는 진행 화면에서 들어오는 보조 화면이라 진행 탭에 머뭅니다.
+  if (segment === "report") return "progress";
   return TABS.find((tab) => tab.value === segment)?.value ?? "chat";
 }
 
