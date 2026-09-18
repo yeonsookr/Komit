@@ -1,4 +1,5 @@
 export * from "./accounts";
+export * from "./admin";
 export * from "./chat";
 export * from "./contracts";
 export * from "./developers";
@@ -8,6 +9,7 @@ export * from "./mypage";
 export * from "./notifications";
 export * from "./diagnoses";
 export * from "./recommendations";
+export * from "./reports";
 export * from "./rooms";
 export * from "./schedule";
 export * from "./settlements";

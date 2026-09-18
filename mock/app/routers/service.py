@@ -7071,6 +7071,8 @@ def write_review(
 #
 # 접수된 신고를 확인하고 종결하는 것은 운영자 몫이라 9 운영 콘솔에서 다룬다.
 # 종결되면 신고한 사람에게 알림이 가고, 신고 상태를 따로 보는 화면은 두지 않는다.
+# 신고를 저장한 뒤 Service가 연결된 Escrow의 자금을 동결한다. 클라이언트는 Service만
+# 부르며, 저장과 동결이 모두 끝나야 접수 성공이다.
 #
 # ERD 확인 필요: notifications.target_type(NOTIFICATION_TARGET_TYPE)에 신고를 가리키는
 # 값이 없다. ANNOUNCEMENT / CONTRACT / ISSUE 뿐이라 지금은 CONTRACT 로 계약을 가리켜
@@ -7150,6 +7152,12 @@ AREA6_TAG = "6 문제 신고 · 이의 제기"
     tags=[AREA6_TAG],
     responses={
         201: {"content": {"application/json": {"example": REPORT_EXAMPLE}}},
+        **CONTRACT_ERRORS,
+        403: {
+            "model": ErrorResponse,
+            "description": "계약 당사자가 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
         409: {
             "model": ErrorResponse,
             "description": "이미 확인 중인 신고가 있음",
@@ -7162,7 +7170,11 @@ AREA6_TAG = "6 문제 신고 · 이의 제기"
                 }
             },
         },
-        **CONTRACT_ERRORS,
+        500: {
+            "model": ErrorResponse,
+            "description": "신고 저장 또는 Escrow 동결을 완료하지 못함",
+            "content": {"application/json": {"example": INTERNAL_ERROR_EXAMPLE}},
+        },
     },
     summary="문제 신고 · 이의 제기 접수",
     description=(
@@ -7171,21 +7183,26 @@ AREA6_TAG = "6 문제 신고 · 이의 제기"
         "문제 신고, 개발자가 내면 이의 제기라고 부르지만 **접수되는 내용과 처리 방식은 "
         "같다.** 누가 냈는지는 신고자로 구분한다.\n\n"
         "**접수는 계약이나 작업 상태를 바꾸지 않는다.** Komit이 누가 옳은지 정하지도 "
-        "않는다. 운영자가 내용을 확인한 뒤 종결한다.\n\n"
+        "않는다. 대신 Service가 신고를 저장한 뒤 연결된 Escrow의 지급과 일반 환불을 "
+        "동결하며, 운영자가 내용을 확인한 뒤 종결한다. 클라이언트는 Service API만 "
+        "호출하고 Escrow를 직접 호출하지 않는다.\n\n"
+        "**201은 신고 저장과 Escrow 동결이 모두 완료됐다는 뜻이다.** 둘 중 하나라도 "
+        "완료하지 못하면 성공을 반환하지 않는다.\n\n"
         "**종결되면 신고한 사람에게 알림이 간다.** 신고 상태를 따로 보는 화면은 두지 "
         "않고, 알림에서 해당 계약으로 들어간다.\n\n"
-        "다만 확인 중인 신고가 있는 계약은 **작업이 3일 만에 자동 통과되지 않는다.** "
-        "답이 없어 자동으로 넘어가는 일을 막기 위해서다.\n\n"
+        "확인 중인 신고가 있는 계약은 **작업이 3일 만에 자동 통과되지 않는다.** 답이 "
+        "없어 자동으로 넘어가는 일을 막기 위해서다. 종결되면 연결된 Escrow의 동결을 "
+        "해제한다.\n\n"
         "증거 파일은 하나까지 올릴 수 있고 없어도 된다.\n\n"
-        "- **201**: 접수했을 때. 상태는 `OPEN`이고 종결 시각은 null이다\n"
-        "- **400 / FILE_TOO_LARGE**: 첨부가 허용 용량을 넘겼을 때\n"
+        "- **201**: 신고 저장과 Escrow 동결이 끝났을 때. 상태는 `OPEN`이고 종결 시각은 "
+        "null이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 계약의 당사자가 아닐 때\n"
         "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때\n"
         "- **409 / REPORT_ALREADY_OPEN**: `contractId`가 409일 때. 아직 확인 중인 신고가 "
         "있어 새로 낼 수 없다\n"
         "- **422 / INVALID_REQUEST**: `reason`이 비었거나 255자를 넘을 때\n"
-        "- **500 / INTERNAL_ERROR**: 접수하지 못했을 때"
+        "- **500 / INTERNAL_ERROR**: 신고 저장 또는 Escrow 동결을 완료하지 못했을 때"
     ),
 )
 def create_report(
@@ -7201,6 +7218,7 @@ def create_report(
     reason: Annotated[
         str,
         Form(
+            min_length=1,
             max_length=255,
             description="적어 낼 내용. 255자까지 받는다.",
             examples=["8월 31일에 작업 진행 상황을 문의했지만 답변을 받지 못했습니다."],
@@ -7215,6 +7233,8 @@ def create_report(
         return _error_response(404, CONTRACT_NOT_FOUND)
     if contractId == OPEN_REPORT_CONTRACT_ID:
         return _error_response(409, REPORT_ALREADY_OPEN)
+    if not reason.strip():
+        return _field_error("reason", "내용을 입력해 주세요.")
     return ReportResponse(
         **{
             **REPORT_EXAMPLE,
@@ -10339,11 +10359,31 @@ ADMIN_REPORT_LIST_EXAMPLE = {
     "totalPages": 1,
 }
 
-ADMIN_REPORT_DETAIL_EXAMPLE = {
-    **ADMIN_REPORT_LIST_EXAMPLE["content"][0],
-    "evidenceFileId": 601,
-    "evidenceFileName": "화면 캡처.png",
+# 신고마다 붙은 증거 파일. 올리지 않은 신고는 여기 없고 상세에서 null로 나간다.
+ADMIN_REPORT_EVIDENCE = {
+    77: {"evidenceFileId": 601, "evidenceFileName": "화면 캡처.png"},
+    70: {"evidenceFileId": 612, "evidenceFileName": "대화 내용.pdf"},
 }
+
+
+def _admin_report_detail(reportId: int) -> dict:
+    """요청한 신고의 상세. 목록에 없는 id면 첫 신고로 대신한다.
+
+    **id마다 다른 값을 준다.** 목록에서 고른 줄과 아래 상세가 따로 놀면 화면이
+    골라도 바뀌지 않는 것처럼 보인다. 저장하는 것이 아니라 어느 줄을 물었는지에
+    따라 정해진 예시를 고르는 것이라 호출 순서와는 무관하다.
+    """
+    rows = ADMIN_REPORT_LIST_EXAMPLE["content"]
+    row = next((item for item in rows if item["reportId"] == reportId), rows[0])
+    return {
+        **row,
+        "evidenceFileId": None,
+        "evidenceFileName": None,
+        **ADMIN_REPORT_EVIDENCE.get(row["reportId"], {}),
+    }
+
+
+ADMIN_REPORT_DETAIL_EXAMPLE = _admin_report_detail(77)
 
 RECONCILIATION_EXAMPLE = {
     "latest": {
@@ -10455,6 +10495,35 @@ TEMPLATE_BODY = (
     "<p>전 작업이 통과 확정된 뒤 {{total_amount}}원을 한 번에 지급한다.</p>"
 )
 
+# 보관된 옛 판. 지금 판과 글이 달라야 판을 나눈 뜻이 화면에 드러난다.
+TEMPLATE_BODY_DEV_V2 = (
+    "<h2>개발 외주 계약서</h2>\n"
+    "<p>의뢰인 {{client_name}}과 개발자 {{developer_name}}는 아래 조건으로 "
+    "계약한다.</p>\n"
+    "<h3>제1조 (작업 범위)</h3>\n"
+    "<p>작업은 {{milestone_list}}로 한다.</p>"
+)
+
+TEMPLATE_BODY_CONSULT = (
+    "<h2>컨설팅 계약서</h2>\n"
+    "<p>의뢰인 {{client_name}}과 개발자 {{developer_name}}는 아래 조건으로 "
+    "상담을 진행한다.</p>\n"
+    "<h3>제1조 (일시)</h3>\n"
+    "<p>상담은 {{session_datetime}}에 {{duration_minutes}}분간 진행한다.</p>\n"
+    "<h3>제2조 (대금)</h3>\n"
+    "<p>대금은 {{total_amount}}원으로 한다.</p>"
+)
+
+TEMPLATE_BODY_ACCEPTANCE = (
+    "<h2>검수·납품 확인서</h2>\n"
+    "<p>의뢰인 {{client_name}}은 개발자 {{developer_name}}로부터 아래를 "
+    "인계받았음을 확인한다.</p>\n"
+    "<h3>제1조 (확인한 작업)</h3>\n"
+    "<p>{{milestone_list}}의 확인 문장을 모두 통과했다.</p>\n"
+    "<h3>제2조 (인계물)</h3>\n"
+    "<p>{{handover_list}}을 넘겨받았다.</p>"
+)
+
 CONTRACT_TEMPLATE_LIST_EXAMPLE = {
     "content": [
         {
@@ -10513,10 +10582,12 @@ CONTRACT_TEMPLATE_LIST_EXAMPLE = {
     ],
 }
 
-CONTRACT_TEMPLATE_DETAIL_EXAMPLE = {
-    **CONTRACT_TEMPLATE_LIST_EXAMPLE["content"][0],
-    "body": TEMPLATE_BODY,
-    "placeholders": DEV_PLACEHOLDERS,
+# 판마다 다른 본문. 목록에서 고른 줄과 아래 본문이 함께 바뀌어야 판이 뜻을 가진다.
+CONTRACT_TEMPLATE_BODIES = {
+    14: TEMPLATE_BODY,
+    12: TEMPLATE_BODY_CONSULT,
+    16: TEMPLATE_BODY_ACCEPTANCE,
+    9: TEMPLATE_BODY_DEV_V2,
 }
 
 TEMPLATE_PREVIEW_EXAMPLE = {
@@ -10544,6 +10615,24 @@ TEMPLATE_PLACEHOLDERS_BY_TYPE = {
     "ACCEPTANCE": ACCEPTANCE_PLACEHOLDERS,
     "AMENDMENT": DEV_PLACEHOLDERS,
 }
+
+
+def _contract_template_detail(templateId: int) -> dict:
+    """요청한 판의 본문. 목록에 없는 id면 사용 중인 첫 판으로 대신한다.
+
+    **id마다 다른 값을 준다.** 어느 줄을 물었는지에 따라 정해진 예시를 고르는
+    것이라 저장하는 것도 아니고 호출 순서에 따라 달라지지도 않는다.
+    """
+    rows = CONTRACT_TEMPLATE_LIST_EXAMPLE["content"]
+    row = next((item for item in rows if item["templateId"] == templateId), rows[0])
+    return {
+        **row,
+        "body": CONTRACT_TEMPLATE_BODIES.get(row["templateId"], TEMPLATE_BODY),
+        "placeholders": TEMPLATE_PLACEHOLDERS_BY_TYPE[row["type"]],
+    }
+
+
+CONTRACT_TEMPLATE_DETAIL_EXAMPLE = _contract_template_detail(14)
 
 
 @router.post(
@@ -10632,9 +10721,12 @@ def get_admin_summary() -> AdminSummaryResponse:
         "**화면 — `9_신고처리` › 들어온 신고**\n\n"
         "접수된 신고를 최근 순으로 준다. 의뢰인이 낸 문제 신고와 개발자가 낸 이의 제기가 "
         "한 목록에 섞이며, 어느 쪽이 냈는지는 `reporter.role`로 가른다.\n\n"
-        "목록의 '내용' 칸은 `reason`이다. 신고자가 적어 낸 글이라 길 수 있으므로 화면이 "
-        "줄여서 보여주고 전문은 상세에서 본다.\n\n"
-        "`openCount`와 `resolvedCount`는 조건이나 페이지와 상관없이 전체 기준이다.\n\n"
+        "`reason`과 `target`은 목록 표에 칸이 없다. 신고자가 적어 낸 글이라 길어서 "
+        "표를 넓히기만 하고, 같은 화면 아래 상세에 전문이 있기 때문이다. 목록은 어느 "
+        "건인지 가리는 값만 보인다.\n\n"
+        "`status`로 거르면 그 상태만 온다. `openCount`와 `resolvedCount`는 거른 조건이나 "
+        "페이지와 상관없이 전체 기준이라, 「접수됨」만 보는 중에도 종결된 건수를 함께 "
+        "적을 수 있다.\n\n"
         "- **200**: 항상. 신고가 없으면 빈 배열이다\n"
         "- **401 / UNAUTHORIZED**: 운영 콘솔에 로그인하지 않았을 때\n"
         "- **422 / INVALID_REQUEST**: `page`가 1보다 작거나 `size`가 범위를 벗어났을 때\n"
@@ -10705,7 +10797,7 @@ def get_admin_report(
 ) -> AdminReportDetailResponse | JSONResponse:
     if reportId == NOT_FOUND_REPORT_ID:
         return _error_response(404, REPORT_NOT_FOUND)
-    return AdminReportDetailResponse(**ADMIN_REPORT_DETAIL_EXAMPLE)
+    return AdminReportDetailResponse(**_admin_report_detail(reportId))
 
 
 @router.post(
@@ -10769,7 +10861,7 @@ def resolve_admin_report(
         return _error_response(409, REPORT_ALREADY_RESOLVED)
     return AdminReportDetailResponse(
         **{
-            **ADMIN_REPORT_DETAIL_EXAMPLE,
+            **_admin_report_detail(reportId),
             "status": "RESOLVED",
             "resolvedAt": "2026-09-02T17:12:00+09:00",
         }
@@ -10901,7 +10993,7 @@ def get_contract_template(
 ) -> ContractTemplateDetailResponse | JSONResponse:
     if templateId == NOT_FOUND_TEMPLATE_ID:
         return _error_response(404, TEMPLATE_NOT_FOUND)
-    return ContractTemplateDetailResponse(**CONTRACT_TEMPLATE_DETAIL_EXAMPLE)
+    return ContractTemplateDetailResponse(**_contract_template_detail(templateId))
 
 
 @router.post(
