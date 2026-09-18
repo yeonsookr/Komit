@@ -1,42 +1,38 @@
 package com.a501.service.domain.user.entity;
 
-import java.time.Instant;
-
+import com.a501.service.common.persistence.SoftDeleteEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
-import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.ColumnDefault;
 
 @Getter
 @Entity
 @Table(name = "users")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class User {
+public class User extends SoftDeleteEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @Column(name = "id", nullable = false)
     private Integer id;
 
     @Column(name = "profile_image_file_id")
     private Integer profileImageFileId;
 
-    @Column(length = 255)
+    @Column(name = "email", length = 255)
     private String email;
 
-    @Column(nullable = false, length = 25)
+    @Column(name = "name", nullable = false, length = 25)
     private String name;
-
-    @Column(name = "created_at", nullable = false, updatable = false)
-    private Instant createdAt;
-
-    @Column(name = "updated_at", nullable = false)
-    private Instant updatedAt;
 
     @Column(name = "kakao_id", nullable = false, unique = true)
     private Long kakaoId;
@@ -44,43 +40,32 @@ public class User {
     @Column(name = "kakao_profile_image_url", length = 500)
     private String kakaoProfileImageUrl;
 
+    @ColumnDefault("FALSE")
     @Column(name = "is_email_verified", nullable = false)
-    private boolean emailVerified;
+    private boolean emailVerified = false;
 
     @Column(name = "is_email_valid")
     private Boolean emailValid;
 
     @Column(name = "kakao_connected_at")
-    private Instant kakaoConnectedAt;
+    private LocalDateTime kakaoConnectedAt;
 
     @Getter(AccessLevel.NONE)
     @Column(name = "kakao_refresh_token", length = 255)
     private String kakaoRefreshToken;
 
     @Column(name = "kakao_refresh_token_expires_at")
-    private Instant kakaoRefreshTokenExpiresAt;
+    private LocalDateTime kakaoRefreshTokenExpiresAt;
 
     @Column(name = "last_login_at")
-    private Instant lastLoginAt;
+    private LocalDateTime lastLoginAt;
 
     @Column(name = "unlinked_at")
-    private Instant unlinkedAt;
+    private LocalDateTime unlinkedAt;
 
-    @Column(name = "deleted_at")
-    private Instant deletedAt;
-
-    @Getter(AccessLevel.NONE)
+    @ColumnDefault("FALSE")
     @Column(name = "has_dev_profile", nullable = false)
-    private boolean hasDevProfile;
-
-    @Column(name = "record_status", nullable = false, length = 50)
-    private String recordStatus;
-
-    @Column(name = "record_status_group", nullable = false, length = 50)
-    private String recordStatusGroup;
-
-    @Column(name = "is_deleted", nullable = false)
-    private boolean deleted;
+    private boolean hasDevProfile = false;
 
     public static User register(
             Long kakaoId,
@@ -100,14 +85,11 @@ public class User {
         user.email = email;
         user.emailVerified = emailVerified;
         user.emailValid = emailValid;
-        user.kakaoConnectedAt = connectedAt;
+        user.kakaoConnectedAt = utc(connectedAt);
         user.kakaoRefreshToken = protectedKakaoRefreshToken;
-        user.kakaoRefreshTokenExpiresAt = kakaoRefreshTokenExpiresAt;
-        user.lastLoginAt = now;
+        user.kakaoRefreshTokenExpiresAt = utc(kakaoRefreshTokenExpiresAt);
+        user.lastLoginAt = utc(now);
         user.hasDevProfile = false;
-        user.recordStatus = "ACTIVE";
-        user.recordStatusGroup = "RECORD_STATUS";
-        user.deleted = false;
         return user;
     }
 
@@ -124,29 +106,21 @@ public class User {
         this.email = email;
         this.emailVerified = emailVerified;
         this.emailValid = emailValid;
-        this.kakaoConnectedAt = connectedAt;
+        this.kakaoConnectedAt = utc(connectedAt);
         this.kakaoRefreshToken = protectedKakaoRefreshToken;
-        this.kakaoRefreshTokenExpiresAt = kakaoRefreshTokenExpiresAt;
-        this.lastLoginAt = now;
+        this.kakaoRefreshTokenExpiresAt = utc(kakaoRefreshTokenExpiresAt);
+        this.lastLoginAt = utc(now);
     }
 
     public boolean isWithdrawn() {
-        return deleted || deletedAt != null || unlinkedAt != null;
+        return isDeleted() || getDeletedAt() != null || unlinkedAt != null;
     }
 
     public boolean hasDevProfile() {
         return hasDevProfile;
     }
 
-    @PrePersist
-    void onCreate() {
-        Instant now = Instant.now();
-        createdAt = now;
-        updatedAt = now;
-    }
-
-    @PreUpdate
-    void onUpdate() {
-        updatedAt = Instant.now();
+    private static LocalDateTime utc(Instant value) {
+        return value == null ? null : LocalDateTime.ofInstant(value, ZoneOffset.UTC);
     }
 }

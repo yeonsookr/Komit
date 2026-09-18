@@ -9,6 +9,7 @@ import static org.mockito.Mockito.when;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Optional;
 
@@ -32,6 +33,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 @ExtendWith(MockitoExtension.class)
 class UserServiceTest {
     private static final Instant NOW = Instant.parse("2026-09-18T00:00:00Z");
+    private static final LocalDateTime NOW_UTC = LocalDateTime.ofInstant(NOW, ZoneOffset.UTC);
 
     @Mock
     private UserRepository userRepository;
@@ -70,7 +72,7 @@ class UserServiceTest {
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
         assertThat(ReflectionTestUtils.getField(captor.getValue(), "kakaoRefreshToken")).isEqualTo("protected");
-        assertThat(ReflectionTestUtils.getField(captor.getValue(), "lastLoginAt")).isEqualTo(NOW);
+        assertThat(ReflectionTestUtils.getField(captor.getValue(), "lastLoginAt")).isEqualTo(NOW_UTC);
     }
 
     @Test
@@ -85,7 +87,7 @@ class UserServiceTest {
         assertThat(result.newUser()).isFalse();
         assertThat(result.user().userId()).isEqualTo(12);
         assertThat(ReflectionTestUtils.getField(existing, "kakaoRefreshToken")).isEqualTo("protected-again");
-        assertThat(ReflectionTestUtils.getField(existing, "lastLoginAt")).isEqualTo(NOW);
+        assertThat(ReflectionTestUtils.getField(existing, "lastLoginAt")).isEqualTo(NOW_UTC);
         verify(userRepository, never()).save(any());
         verify(settingService, never()).createWithRequiredTerms(any());
     }
@@ -94,7 +96,10 @@ class UserServiceTest {
     @DisplayName("R-AUTH-05: 탈퇴한 카카오 계정은 다시 가입하지도 로그인하지도 못한다")
     void withdrawnUserIsRejectedWithoutChanges() {
         User withdrawn = existingUser(12);
-        ReflectionTestUtils.setField(withdrawn, "deletedAt", NOW.minusSeconds(60));
+        ReflectionTestUtils.setField(
+                withdrawn,
+                "deletedAt",
+                LocalDateTime.ofInstant(NOW.minusSeconds(60), ZoneOffset.UTC));
         when(stringCrypto.encrypt("kakao-refresh")).thenReturn("protected");
         when(userRepository.findByKakaoId(123L)).thenReturn(Optional.of(withdrawn));
 
@@ -110,7 +115,7 @@ class UserServiceTest {
     @DisplayName("카카오 연결을 끊은 사용자도 탈퇴로 본다")
     void unlinkedUserIsNotActive() {
         User unlinked = existingUser(12);
-        ReflectionTestUtils.setField(unlinked, "unlinkedAt", NOW);
+        ReflectionTestUtils.setField(unlinked, "unlinkedAt", NOW_UTC);
         when(userRepository.findById(12)).thenReturn(Optional.of(unlinked));
 
         assertThat(userService.isActive(12)).isFalse();

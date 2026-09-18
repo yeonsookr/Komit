@@ -3,11 +3,13 @@ spring:
     name: service
   profiles:
     default: local
+  flyway:
+    validate-migration-naming: true
   jpa:
     open-in-view: false
     hibernate:
-      # 스키마는 JPA 엔티티 매핑으로 만든다.
-      ddl-auto: update
+      # 운영에서는 매핑과 스키마가 다르면 시작을 막습니다. local만 update로 스키마를 만듭니다.
+      ddl-auto: validate
     properties:
       hibernate:
         jdbc:
