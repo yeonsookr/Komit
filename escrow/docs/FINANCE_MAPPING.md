@@ -132,7 +132,7 @@ Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemb
 | attempts.step | SSAFY API | 매핑 |
 | --- | --- | --- |
 | `HOLDER_VERIFY` | `inquireDemandDepositAccountHolderName`<br>req: `accountNo`(수취), Header.userKey = 에스크로 보관계좌 소유자 키 | 응답 `userName` ↔ 요청한 수취 예금주명 대조. 다르면 이체 중단 |
-| `PAYOUT_TRANSFER` / `REFUND_TRANSFER` | `updateDemandDepositAccountTransfer`<br>req: `depositAccountNo`(수취), `withdrawalAccountNo`(보관계좌), `transactionBalance`(`amount`) | 응답 `transactionUniqueNo`→`financial_transaction_id` |
+| `PAYOUT_TRANSFER` / `REFUND_TRANSFER` | `updateDemandDepositAccountTransfer`<br>req: `depositAccountNo`(수취), `withdrawalAccountNo`(보관계좌), `transactionBalance`(`amount`의 십진수 문자열)<br>Header.userKey = 에스크로 보관계좌 소유자 키 | 응답의 출금 거래 `transactionUniqueNo`→`financial_transaction_id` |
 | `RESULT_QUERY` | `inquireTransactionHistory`<br>req: `accountNo`(보관계좌), `transactionUniqueNo` | UNKNOWN 해소용. 성공·실패 확정 |
 
 - 지급·환불은 **같은 정산의 두 다리**다. `external_reference_id` = **`SETTLEMENT:<정산ID>`** 공유, `transaction_type`으로 구분
@@ -141,6 +141,7 @@ Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemb
 - `escrows.hold_status`가 HELD면 지급·일반 환불을 막는다 (D-4)
 - 2026-09-18 실호출에서 에스크로 보관계좌 소유자의 `userKey`로 다른 테스트 회원 계좌를 조회하자 `H0000`과 그 계좌의 `userName`이 반환됐다. 반대 방향 조회도 성공했다. 따라서 같은 SSAFY 앱에 등록된 다른 회원의 입출금 계좌는 지급·환불 직전에 예금주 조회가 가능하다. 다른 앱이나 외부 은행 계좌까지 확인한 결과는 아니다.
 - SSAFY 테스트 계좌의 `userName`은 회원 등록에 사용한 이메일의 `@` 앞부분이었다. Komit 프로필명과 같다고 가정하지 말고, 지급·환불 요청의 수취 예금주명에는 금융망 계좌의 실제 `userName`을 사용한다.
+- 같은 날 테스트 보관계좌의 3,000원 중 1,000원을 별도 작업자 테스트 계좌로 지급하고, 1,000원을 원래 의뢰인 테스트 계좌로 환불했다. 두 건 모두 수취 예금주 조회와 이체가 `H0000`이었고 이체 응답 `REC`는 출금·입금 거래 2건이었다. 지급 후 보관계좌 2,000원·작업자 계좌 1,000원, 환불 후 보관계좌 1,000원·의뢰인 계좌 1,000원 증가를 잔액 조회로 확인했다. 이는 금융망 이체 경로의 검증이며, 에스크로 애플리케이션의 지급·환불 상태 전이와 원장 기록은 아직 검증하지 않았다.
 
 ---
 
