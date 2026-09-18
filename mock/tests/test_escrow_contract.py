@@ -144,6 +144,31 @@ class EscrowContractTest(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(result, JSONResponse)
         self.assertEqual(json.loads(result.body)["Header"]["responseCode"], "E5009")
 
+    async def test_release_separates_gross_fee_and_net_without_charging_refund(self) -> None:
+        def request(amount: int) -> escrow.ReleaseEscrowRequest:
+            return escrow.ReleaseEscrowRequest(
+                Header=self.header("releaseEscrow"),
+                escrowId=escrow.ESCROW_ID,
+                referenceId="SETTLEMENT:9001",
+                amount=amount,
+                recipientBankCode="001",
+                recipientAccountNo="0019876543210987",
+                recipientName="이준",
+            )
+
+        settled = await escrow.release_escrow(request(400000))
+        rounded = await escrow.release_escrow(request(199))
+        no_fee = await escrow.release_escrow(request(99))
+
+        self.assertEqual(settled.REC.releasedAmount, 400000)
+        self.assertEqual(settled.REC.feeAmount, 4000)
+        self.assertEqual(settled.REC.netAmount, 396000)
+        self.assertEqual(settled.REC.balance, 250000)
+        self.assertEqual(rounded.REC.feeAmount, 1)
+        self.assertEqual(rounded.REC.netAmount, 198)
+        self.assertEqual(no_fee.REC.feeAmount, 0)
+        self.assertEqual(no_fee.REC.netAmount, 99)
+
 
 if __name__ == "__main__":
     unittest.main()

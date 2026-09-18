@@ -23,6 +23,9 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 # 태그와 합쳐버려서, 영역별 API가 기준 API 태그에도 함께 나온다.
 router = APIRouter(prefix="/api")
 
+# R-PAY-07: 계약 생성 시 고정하는 기본 요율. 목은 계약 상태를 저장하지 않아 이 값을 사용한다.
+MOCK_FEE_RATE_BPS = 100
+
 
 class CommonRequestHeader(BaseModel):
     apiName: str = Field(
@@ -1302,8 +1305,8 @@ class EscrowAmountRecord(BaseModel):
     )
     balance: int = Field(
         description=(
-            "가용 잔액. ERD escrow_transactions에서 완료된 DEPOSIT 합계에서 RELEASE와 "
-            "REFUND 합계를 뺀 값이며, 저장 컬럼이 아니라 계산값이다."
+            "가용 잔액. ERD escrow_transactions에서 완료된 DEPOSIT 합계에서 RELEASE, "
+            "FEE, REFUND 합계를 뺀 값이며, 저장 컬럼이 아니라 계산값이다."
         ),
         examples=[650000],
     )
@@ -1340,8 +1343,8 @@ class ReleaseEscrowRequest(BaseModel):
     )
     amount: int = Field(
         description=(
-            "지급할 금액. 정상 완료는 전액, 중도 종료는 통과한 작업분 합계다. 마일스톤 "
-            "단위로 나눠 지급하지 않는다."
+            "수수료 공제 전 승인 총액. 정상 완료는 전액, 중도 종료는 통과한 작업분 "
+            "합계다. 마일스톤 단위로 나눠 지급하지 않는다. (R-PAY-07)"
         ),
         examples=[400000],
         gt=0,
@@ -1372,12 +1375,24 @@ class ReleaseEscrowRecord(BaseModel):
         description="지급 원장 거래 식별자. ERD escrow_transactions.id에 대응한다.",
         examples=[1002],
     )
-    releasedAmount: int = Field(description="이번에 지급한 금액.", examples=[400000])
+    releasedAmount: int = Field(
+        description="이번 정산의 수수료 공제 전 승인 총액. RELEASE와 FEE 거래 금액의 합계다.",
+        examples=[400000],
+    )
+    feeAmount: int = Field(
+        description="이번 정산의 플랫폼 수수료. ERD escrow_transactions의 FEE 금액이다. (R-PAY-07)",
+        examples=[4000],
+    )
+    netAmount: int = Field(
+        description="이번 정산에 작업자에게 실제 지급한 금액. ERD escrow_transactions의 RELEASE 금액이다.",
+        examples=[396000],
+    )
     balance: int = Field(description="지급 뒤 남은 가용 잔액.", examples=[250000])
     status: str = Field(
         description=(
-            "거래 상태. PENDING / PROCESSING / UNKNOWN / COMPLETED / FAILED 중 "
-            "하나다. ERD escrow_transactions.status에 대응한다."
+            "정산 상태. PENDING / PROCESSING / UNKNOWN / COMPLETED / FAILED 중 "
+            "하나다. RELEASE와 수수료가 발생한 FEE가 모두 완료돼야 COMPLETED다. "
+            "각 거래 상태는 ERD escrow_transactions.status에 대응한다."
         ),
         examples=["COMPLETED"],
     )
@@ -1754,6 +1769,8 @@ async def create_escrow(
             {
                 "transactionId": 1002,
                 "releasedAmount": 400000,
+                "feeAmount": 4000,
+                "netAmount": 396000,
                 "balance": 250000,
                 "status": "COMPLETED",
             },
@@ -1762,12 +1779,14 @@ async def create_escrow(
     },
     summary="작업 대금 지급",
     description=(
-        "전 작업이 통과 확정된 뒤 계약 대금을 한 번에 지급할 때 부른다. 정상 완료는 "
-        "전액을, 중도 종료는 통과한 작업분 합계를 작업자 계좌로 보낸다. 보내기 직전에 "
+        "전 작업이 통과 확정된 뒤 계약 대금을 한 번에 정산할 때 부른다. 요청 금액은 "
+        "수수료 공제 전 승인 총액이며 작업자 순지급액과 플랫폼 수수료를 구분한다 "
+        "(R-PAY-07). 보내기 직전에 "
         "예금주와 동결 여부를 다시 확인한다.\n\n"
         "마일스톤 단위로 나눠 지급하지 않는다. 같은 `referenceId`로 다시 부르면 두 번 "
         "보내지 않는다.\n\n"
-        "- **200 / H0000**: 보냈을 때. 잔액이 모두 빠지면 에스크로가 COMPLETED가 된다\n"
+        "- **200 / H0000**: 작업자 지급과 수수료 이체가 모두 확정됐을 때. 잔액이 "
+        "모두 빠지면 에스크로가 COMPLETED가 된다\n"
         "- **400 / E5002**: `idempotencyKey`가 없을 때\n"
         "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
         "- **400 / E5004**: `escrowId`가 404일 때\n"
@@ -1813,6 +1832,7 @@ async def release_escrow(
             400, "E5008", "에스크로 잔액이 부족합니다.", payload.Header
         )
 
+    fee_amount = payload.amount * MOCK_FEE_RATE_BPS // 10000
     return ReleaseEscrowResponse(
         Header=_escrow_response_header(
             "H0000", "정상처리 되었습니다.", payload.Header
@@ -1820,6 +1840,8 @@ async def release_escrow(
         REC=ReleaseEscrowRecord(
             transactionId=1002,
             releasedAmount=payload.amount,
+            feeAmount=fee_amount,
+            netAmount=payload.amount - fee_amount,
             balance=650000 - payload.amount,
             status="COMPLETED",
         ),
@@ -2199,7 +2221,8 @@ class EscrowTransactionItem(BaseModel):
     )
     transactionType: str = Field(
         description=(
-            "거래 종류. DEPOSIT은 예치, RELEASE는 지급, REFUND는 환불이다. ERD "
+            "거래 종류. DEPOSIT은 예치, RELEASE는 작업자 순지급, FEE는 플랫폼 "
+            "수수료 이체, REFUND는 환불이다. ERD "
             "escrow_transactions.transaction_type에 대응한다."
         ),
         examples=["DEPOSIT"],
@@ -2256,7 +2279,11 @@ class InquireEscrowRecord(BaseModel):
         examples=[650000],
     )
     releasedAmount: int = Field(
-        description="지급된 총액. ERD escrow_transactions의 완료된 RELEASE 합계다.",
+        description="수수료 공제 전 승인 총액. 완료된 RELEASE와 FEE 합계다.",
+        examples=[0],
+    )
+    feeAmount: int = Field(
+        description="플랫폼으로 이체한 수수료 총액. 완료된 FEE 합계다. (R-PAY-07)",
         examples=[0],
     )
     refundedAmount: int = Field(
@@ -2265,7 +2292,7 @@ class InquireEscrowRecord(BaseModel):
     )
     balance: int = Field(
         description=(
-            "가용 잔액. ERD escrow_transactions에서 DEPOSIT 합계에서 RELEASE와 REFUND "
+            "가용 잔액. ERD escrow_transactions에서 DEPOSIT 합계에서 RELEASE, FEE, REFUND "
             "합계를 뺀 계산값이다."
         ),
         examples=[650000],
@@ -2339,6 +2366,7 @@ INQUIRE_ERRORS: dict = dict(ESCROW_ERRORS)
                 "status": "ACTIVE",
                 "depositedAmount": 650000,
                 "releasedAmount": 0,
+                "feeAmount": 0,
                 "refundedAmount": 0,
                 "balance": 650000,
                 "isHeld": False,
@@ -2417,6 +2445,7 @@ async def inquire_escrow(
                 status="DEPOSIT_PENDING",
                 depositedAmount=0,
                 releasedAmount=0,
+                feeAmount=0,
                 refundedAmount=0,
                 balance=0,
                 isHeld=False,
@@ -2442,6 +2471,7 @@ async def inquire_escrow(
             status="ACTIVE",
             depositedAmount=650000,
             releasedAmount=0,
+            feeAmount=0,
             refundedAmount=0,
             balance=650000,
             isHeld=False,
@@ -2623,7 +2653,8 @@ class ReconciliationRecord(BaseModel):
     ledgerTotal: int = Field(
         description=(
             "원장 기준으로 지금 보관 중인 총액. ERD escrows에 속한 "
-            "escrow_transactions의 예치액에서 지급액과 환불액을 뺀 값을 인증된 서비스의 "
+            "escrow_transactions의 예치액에서 작업자 순지급액·플랫폼 수수료·환불액을 "
+            "뺀 값을 인증된 서비스의 "
             "에스크로 전체에 대해 더한 것이다."
         ),
         examples=[650000],
@@ -2733,6 +2764,7 @@ def _reconciliation_day(offset: int) -> ReconciliationHistoryItem:
         "인증된 서비스의 에스크로를 통틀어, 원장이 말하는 보관액과 보관 주체 계좌에 "
         "실제로 남아 있는 잔액을 맞춰 본 결과를 돌려준다. 고객사의 운영 화면이 돈이 "
         "새지 않았는지 확인하는 데 쓴다.\n\n"
+        "보관총액은 완료된 DEPOSIT에서 RELEASE, FEE, REFUND를 뺀 값이다. "
         "다른 서비스의 에스크로는 합계에 섞이지 않는다. 읽기만 하므로 "
         "`idempotencyKey`를 쓰지 않는다.\n\n"
         "대사 기준 시각은 응답 Header의 `transmissionDate`와 `transmissionTime`이다.\n\n"

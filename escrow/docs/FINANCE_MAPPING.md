@@ -7,7 +7,7 @@
 | 항목 | 내용 |
 | --- | --- |
 | 대상 | `escrow`(be-escrow) 앱 전용 |
-| 스키마 | `V1`·`V2`·`V4`: 자금 처리, `V3`: 회원·계좌 발급과 1회 데모 입금 기록 |
+| 스키마 | `V1`·`V2`·`V4`·`V5`: 자금 처리, `V3`: 회원·계좌 발급과 1회 데모 입금 기록 |
 | 금융망 | SSAFY 교육용 금융망 API |
 
 ---
@@ -24,6 +24,7 @@
 | D-4 | **단일 동결.** 한 에스크로의 활성 동결은 최대 1개. `escrows.hold_status`로 가른다. | `R-RPT-05` |
 | D-5 | **회원 발급·계좌 확인은 에스크로가 금융망에 요청한다.** 발급 정보의 원본은 Komit이 보관하고 후속 금융 요청에 담는다. 에스크로는 응답 유실·재요청 복구를 위해 `V3`에 `userKey`·계좌번호의 암호화 사본과 은행코드를 보관한다. | `R-ACC-09`, `proposal.md` §7 |
 | D-6 | **원장은 별도 테이블이 아니라 `escrow_transactions` 집계.** 잔액·보관총액은 저장 컬럼이 아니라 계산값이다. | `inquireReconciliation` 설계 |
+| D-7 | **중개 수수료는 확정 작업 대금에서 공제한다.** 계약 생성 때 요율을 고정한다. 작업자 순지급과 별도 플랫폼 수익 계좌로의 수수료 이체를 각각 기록하며, 환불액에는 수수료를 부과하지 않는다. | `R-PAY-07` |
 
 ---
 
@@ -177,16 +178,18 @@ HTTP 201 / `H0000`으로 **서로 다른 두 번째 계좌가 실제 생성**됐
 
 ## 4. 지급 (RELEASE) / 환불 (REFUND)
 
-둘 다 보관계좌에서 나가는 이체로 구조가 같고 목적지만 다르다.
+작업자 순지급·플랫폼 수수료·의뢰인 환불은 모두 보관계좌에서 나가는 이체이며 목적지가 다르다.
 
 | attempts.step | SSAFY API | 매핑 |
 | --- | --- | --- |
 | `HOLDER_VERIFY` | `inquireDemandDepositAccountHolderName`<br>req: `accountNo`(수취), Header.userKey = 에스크로 보관계좌 소유자 키 | 응답 `userName` ↔ 요청한 수취 예금주명 대조. 다르면 이체 중단 |
-| `PAYOUT_TRANSFER` / `REFUND_TRANSFER` | `updateDemandDepositAccountTransfer`<br>req: `depositAccountNo`(수취), `withdrawalAccountNo`(보관계좌), `transactionBalance`(`amount`의 십진수 문자열), `withdrawalTransactionSummary`(요청 식별자 포함)<br>Header.userKey = 에스크로 보관계좌 소유자 키 | 응답의 출금 거래 `transactionUniqueNo`→`financial_transaction_id` |
+| `PAYOUT_TRANSFER` / `FEE_TRANSFER` / `REFUND_TRANSFER` | `updateDemandDepositAccountTransfer`<br>req: `depositAccountNo`(수취), `withdrawalAccountNo`(보관계좌), `transactionBalance`(`amount`의 십진수 문자열), `withdrawalTransactionSummary`(요청 식별자 포함)<br>Header.userKey = 에스크로 보관계좌 소유자 키 | 응답의 출금 거래 `transactionUniqueNo`→각 거래의 `financial_transaction_id` |
 | `RESULT_QUERY` | 먼저 `inquireTransactionHistoryList`<br>req: `accountNo`(보관계좌), `startDate`, `endDate`, `transactionType=D`<br>요약 표식·금액·수취 계좌를 대조하고, 찾은 거래의 `transactionUniqueNo`로 `inquireTransactionHistory` 단건 조회 | 일치하는 출금 거래를 확인하면 성공 확정. 목록에서 못 찾으면 `UNKNOWN` 유지 |
 
-- 지급·환불은 **같은 정산의 두 다리**다. `external_reference_id` = **`SETTLEMENT:<정산ID>`** 공유, `transaction_type`으로 구분
-- `amount`: RELEASE = 정상 완료 전액 또는 중도 종료 통과분 합계 (D-3)
+- 작업자 순지급·수수료·환불은 **같은 정산의 독립된 거래**다. `external_reference_id` = **`SETTLEMENT:<정산ID>`** 공유, `transaction_type`으로 구분한다. 각 이체는 자체 `financial_operation_attempts` 및 금융망 요청 식별자를 가지므로 결과 불명 시 해당 다리만 조회·복구한다.
+- `releaseEscrow.amount`는 수수료 공제 전 승인 총액이다. `escrows.fee_rate_bps`는 계약 생성 때 설정된 값을 고정한다. 수수료는 `floor(승인 총액 × fee_rate_bps / 10000)`원, 작업자 순지급액은 승인 총액에서 수수료를 뺀 금액이다. `escrow_transactions.amount`는 `RELEASE`에 순지급액, `FEE`에 수수료액을 저장한다. 수수료가 0원이면 FEE 거래·이체를 생략한다. `REFUND`는 별도로 남은 금액 전액이며 수수료 계산 대상이 아니다. (D-3, D-7)
+- FEE 수취 계좌는 에스크로가 소유한 **별도 플랫폼 수익 계좌**를 운영 설정으로 고정한다. 계좌번호를 Komit 요청으로 받지 않으며, 이체 당시 수취 계좌는 FEE 거래에 암호화해 기록한다. 실제 구현·실호출 전에 이 계좌를 준비하고 예금주 조회와 이체 가능 여부를 확인해야 한다.
+- `releaseEscrow`의 `releasedAmount`는 승인 총액, `feeAmount`는 FEE 금액, `netAmount`는 RELEASE 금액이다. `COMPLETED`는 작업자 이체와 수수료 이체가 모두 확정된 경우에만 반환한다. 한쪽이 `PROCESSING`·`UNKNOWN`이면 전체 정산을 완료로 표시하거나 환불을 시작하지 않는다. 이미 확정된 이체를 재실행하지 않고 미완료 다리만 기존 업무 참조로 복구한다.
 - 지급 수취 계좌는 **호출자(be-api)가 지정**한다. 에스크로는 등록 계좌 원장을 강제하지 않는다.
 - 환불 계좌는 해당 계약의 예치에 사용한 회원가입 발급 계좌로 고정한다 (`R-PAY-04`). Komit이 `refundBankCode`·`refundAccountNo`로 그 계좌를 전달하고, 에스크로는 완료된 예치 거래의 `source_bank_code`·복호화한 `source_account_encrypted`와 비교한다. 불일치하면 `E5009`로 거절하고 송금하지 않는다. 별도 1원 인증 계좌의 등록·교체는 환불 계좌를 바꾸지 않는다.
 - `escrows.hold_status`가 HELD면 지급·일반 환불을 막는다 (D-4)
@@ -219,7 +222,7 @@ Komit이 회원가입 때 보관한 `userKey`와 계좌번호를 에스크로에
 
 | 필드 | 출처 |
 | --- | --- |
-| `ledgerTotal` | `escrow_transactions` 집계: 완료 DEPOSIT − RELEASE − REFUND (`completed_at` 기준) |
+| `ledgerTotal` | `escrow_transactions` 집계: 완료 DEPOSIT − RELEASE(작업자 순지급) − FEE(플랫폼 수수료) − REFUND (`completed_at` 기준) |
 | `bankBalance` | SSAFY `inquireDemandDepositAccountBalance` 응답 (**ERD 밖 — SSAFY 대응 필드**) |
 | `differenceAmount` | `bankBalance − ledgerTotal`. 0이면 MATCHED |
 
@@ -268,6 +271,7 @@ Komit `EscrowDepositResponse.status`는 escrow의 상태를 번역한 값이다.
 | --- | --- |
 | `depositedAmount` | `depositedAmount` |
 | `releasedAmount` | `releasedAmount` |
+| 수수료·작업자 실수령액 | `feeAmount`·`netAmount` (`releaseEscrow` 응답). Service 화면 노출 여부는 Service 담당자가 결정 |
 | `remainingAmount` | `balance` |
 
 ### 계좌 1원 인증
@@ -289,3 +293,4 @@ Komit `EscrowDepositResponse.status`는 escrow의 상태를 번역한 값이다.
 | 운영 감사 기록 | UNKNOWN 해소·미결 처리 이력 테이블 미설계 |
 | 가입 발급 결과 복구 | 2026-09-18 실호출로 회원 조회·계좌 목록·입금내역 조회를 확인했다. 같은 상품의 계좌 개설 재호출은 새 계좌를 생성한다. 계좌 목록에 상품 고유번호가 없어 후보가 여러 개면 자동 복구할 수 없으므로 `UNKNOWN`을 유지한다. 실제 통신 단절·조회 지연 때의 동작은 미검증 |
 | Service Mock 환불 계좌 설명 | `mock/app/routers/service.py`는 별도 등록 계좌를 의뢰인 환불 계좌로 설명한다. Service 담당자가 `R-PAY-04`에 맞춰 회원가입 발급 계좌로 설명을 수정해야 한다 |
+| 플랫폼 수익 계좌 준비 | 별도 SSAFY 계좌의 개설·운영 설정 및 실이체 검증은 아직 하지 않았다. 계좌가 준비되기 전에는 실제 수수료 이체를 시작할 수 없다 |
