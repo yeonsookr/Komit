@@ -117,6 +117,7 @@ Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemb
 - `external_reference_id` = **`INITIAL`** (예치 고정)
 - `deposit_verification_status`: `verified_deposit_amount` == `escrows.expected_amount` → MATCHED, 다르면 MISMATCHED(부분·초과), 미확인 UNKNOWN
 - **VA 입금은 출처 계좌를 응답에 주지 않는다.** `source_*`는 be-api가 넘긴 참고값이지 금융망 확인값이 아니다.
+- 활성 가상계좌 수는 에스크로에서 숫자로 추정하거나 고정하지 않는다. SSAFY의 [`createVirtualAccount` 명세](https://project.ssafy.com/mkdocs/ssafy-finance/api-virtual-account.html#2141)에 따라 `E4065`(활성 가상계좌 수 초과)가 반환되면 발급 실패로 처리하고, 해당 계약의 이체·정산을 시작하지 않는다. 명세에는 최대 개수가 적혀 있지 않다.
 - 2026-09-18 실호출에서 회원 계좌 → 에스크로 소유 VA로 1,000원을 이체하고 `inquireVirtualAccountDeposits`로 조회한 뒤 `settleVirtualAccount`로 보관계좌에 정산했다. 회원 잔액은 1,000원 감소했고 보관계좌 잔액은 1,000원 증가했다. 세 호출 모두 `H0000`이었다.
 - 입금자명 일치 판정은 이체 요청의 **`depositTransactionSummary`를 VA 발급 시의 `depositorName`과 동일하게 보냈을 때** `nameMatched=true`였다. 실제 회원 예금주명과 VA 지정 입금자명이 같아도 거래 요약을 다른 값으로 보내면 `false`였다. `withdrawalTransactionSummary`는 다른 값을 유지한 추가 이체에서도 `true`였다. 따라서 이체를 구성할 때 두 값을 맞춘다. 이 검증 결과는 거래 요약과 지정 이름의 일치를 보여주며, 출금 계좌의 실제 명의 확인을 증명하지 않는다.
 - 테스트한 세 가상계좌는 정산 후 입금 내역의 `transferred=true`, `settledAt` 존재를 확인했고, `closeVirtualAccount`로 모두 `CLOSED` 처리했다. 보관계좌 최종 잔액은 테스트 이체 합계인 3,000원이었다.
@@ -194,6 +195,8 @@ FE는 SSAFY 형식을 몰라도 된다.
 | `contractId` (int, 예 130) | `external_contract_id` (str) | Komit 정수를 문자열로 변환해 넘긴다 |
 | — | `escrowId` (int) | escrow가 발급. Komit은 계약↔escrow 매핑을 보관 |
 
+Komit은 단건 조회 `inquireEscrow`에 저장한 `escrowId`와 자신의 `contractId`(문자열)를 함께 전달한다. Escrow는 두 값이 같은 계약을 가리키는지 확인하고, 다르면 `E5004`를 반환한다. `contractId`를 생략한 기존 조회 형식도 유지한다.
+
 ### 예치 출금 계좌
 
 Komit의 `GET /api/payment-methods`는 회원가입 때 발급한 SSAFY 계좌 한 건만 반환한다.
@@ -239,5 +242,4 @@ Komit `EscrowDepositResponse.status`는 escrow의 상태를 번역한 값이다.
 
 | 항목 | 상태 |
 | --- | --- |
-| VA 활성 상한 (`E4065`) | 명세에 값 없음 = 동시 진행 계약 수 상한. 실호출 확인 |
 | 운영 감사 기록 | UNKNOWN 해소·미결 처리 이력 테이블 미설계 |
