@@ -5852,8 +5852,8 @@ class EscrowDepositResponse(BaseModel):
     amount: int = Field(description="예치할 금액. 원 단위 정수다.", examples=[650000])
     status: Literal["PENDING", "DEPOSITED", "FAILED"] = Field(
         description=(
-            "예치 진행. PENDING은 결제창을 띄운 뒤 결과를 기다리는 상태, DEPOSITED는 "
-            "예치가 확인된 상태, FAILED는 실패한 상태다."
+            "예치 진행. PENDING은 입금 검증과 보관계좌 정산을 기다리는 상태, "
+            "DEPOSITED는 예치가 확인된 상태, FAILED는 실패한 상태다."
         ),
         examples=["DEPOSITED"],
     )
@@ -5866,14 +5866,13 @@ class EscrowDepositResponse(BaseModel):
 class DepositRequest(BaseModel):
     """예치 요청."""
 
-    paymentMethodId: int | None = Field(
+    paymentMethodId: int = Field(
         description=(
-            "쓸 결제 수단 식별자. 마이페이지에 등록해 둔 실시간 계좌이체 수단이다. "
-            "카드 결제는 쓰지 않는다. 목록은 결제 수단 조회로 받는다. **비우면 등록해 "
-            "두지 않은 계좌로 내는 것이라, 결제창에서 은행을 고르고 바로 이체한다.**"
+            "회원가입 때 발급한 SSAFY 출금 계좌의 결제 수단 식별자. "
+            "결제 수단 조회에서 받은 값을 보낸다. 별도 계좌 선택은 없다. (R-PAY-09)"
         ),
-        default=None,
         examples=[9],
+        gt=0,
     )
     idempotencyKey: str = Field(
         description=(
@@ -5944,7 +5943,6 @@ class WriteReviewRequest(BaseModel):
 MILESTONE_NOT_FOUND = ("MILESTONE_NOT_FOUND", "작업을 찾을 수 없습니다.")
 DEPOSIT_REQUIRED = ("DEPOSIT_REQUIRED", "예치가 끝나야 착수할 수 있습니다.")
 ALREADY_DEPOSITED = ("ALREADY_DEPOSITED", "이미 예치가 끝났습니다.")
-ACCOUNT_REQUIRED = ("ACCOUNT_REQUIRED", "예치에 쓸 결제 수단을 먼저 등록해 주세요.")
 QA_NOT_ALL_CHECKED = (
     "QA_NOT_ALL_CHECKED",
     "확인 문장을 모두 체크해야 통과시킬 수 있습니다.",
@@ -5991,7 +5989,6 @@ NOT_FOUND_MILESTONE_ID = 404
 CONFLICT_MILESTONE_ID = 409
 NOT_DEPOSITED_CONTRACT_ID = 402
 DEPOSITED_CONTRACT_ID = 409
-NO_ACCOUNT_CONTRACT_ID = 405
 
 MILESTONES = [
     {
@@ -6530,7 +6527,7 @@ def write_development_contract(
         201: {"content": {"application/json": {"example": DEPOSIT_EXAMPLE}}},
         409: {
             "model": ErrorResponse,
-            "description": "이미 예치됐거나 등록한 결제 수단이 없음",
+            "description": "이미 예치됨",
             "content": {
                 "application/json": {
                     "examples": {
@@ -6539,13 +6536,6 @@ def write_development_contract(
                             "value": {
                                 "code": ALREADY_DEPOSITED[0],
                                 "message": ALREADY_DEPOSITED[1],
-                            },
-                        },
-                        "ACCOUNT_REQUIRED": {
-                            "summary": "등록한 결제 수단 없음",
-                            "value": {
-                                "code": ACCOUNT_REQUIRED[0],
-                                "message": ACCOUNT_REQUIRED[1],
                             },
                         },
                     }
@@ -6567,17 +6557,17 @@ def write_development_contract(
         "**돈의 원장은 이 서버가 갖지 않는다.** 결제와 보관은 Escrow 서버가 맡고, 여기서는 "
         "예치를 걸고 그 결과를 확인만 한다. 같은 `idempotencyKey`로 다시 보내면 결제가 "
         "두 번 나가지 않는다.\n\n"
-        "**돈은 의뢰인이 등록해 둔 계좌에서 빠진다.** 카드 결제는 쓰지 않는다. 등록해 "
-        "둔 수단이 하나도 없으면 409로 막고, 화면은 결제 수단 등록으로 보낸다.\n\n"
+        "**돈은 회원가입 때 발급한 의뢰인의 SSAFY 계좌에서 빠진다.** Komit이 보관한 "
+        "`userKey`·은행코드·계좌번호를 Escrow의 `createEscrow` 요청에 전달한다. "
+        "`paymentMethodId`는 이 계좌를 가리키며 다른 계좌나 결제창은 제공하지 않는다. "
+        "(`R-PAY-09`)\n\n"
         "- **201**: 예치를 걸었을 때. 결제가 바로 확인되면 `DEPOSITED`, 결과를 기다리는 "
         "중이면 `PENDING`이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 계약의 의뢰인이 아닐 때. 예치는 의뢰인만 한다\n"
         "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때\n"
         "- **409 / ALREADY_DEPOSITED**: `contractId`가 409일 때\n"
-        "- **409 / ACCOUNT_REQUIRED**: `contractId`가 405일 때. 등록해 둔 결제 수단이 "
-        "없어 출금할 곳이 없다\n"
-        "- **422 / INVALID_REQUEST**: `idempotencyKey`가 없을 때\n"
+        "- **422 / INVALID_REQUEST**: `paymentMethodId`나 `idempotencyKey`가 없을 때\n"
         "- **500 / INTERNAL_ERROR**: 예치를 걸지 못했을 때"
     ),
 )
@@ -6585,10 +6575,7 @@ def deposit_contract(
     contractId: Annotated[
         int,
         Path(
-            description=(
-                "계약 식별자. 404는 없음, 409는 이미 예치됨, 405는 계좌 없음 "
-                "재현용 예약값이다."
-            ),
+            description="계약 식별자. 404는 없음, 409는 이미 예치됨 재현용 예약값이다.",
             examples=[DEV_CONTRACT_ID],
         ),
     ],
@@ -6598,8 +6585,6 @@ def deposit_contract(
         return _error_response(404, CONTRACT_NOT_FOUND)
     if contractId == DEPOSITED_CONTRACT_ID:
         return _error_response(409, ALREADY_DEPOSITED)
-    if contractId == NO_ACCOUNT_CONTRACT_ID:
-        return _error_response(409, ACCOUNT_REQUIRED)
     return EscrowDepositResponse(**DEPOSIT_EXAMPLE)
 
 
@@ -7414,8 +7399,7 @@ class ContractLedgerResponse(BaseModel):
 
 
 class AccountResponse(BaseModel):
-    """등록한 계좌. 의뢰인은 이 계좌로 예치금을 내고 환불을 받으며,
-    개발자는 이 계좌로 대금을 받는다. 사람마다 한 개다."""
+    """1원 인증으로 등록한 계좌. 예치 출금은 회원가입 때 발급한 SSAFY 계좌를 쓴다."""
 
     accountId: int = Field(description="계좌 식별자.", examples=[21])
     bankName: str = Field(description="은행 이름.", examples=["국민은행"])
@@ -7720,9 +7704,9 @@ def get_income() -> IncomeResponse:
 # 바꾼 뒤 삭제 시각을 적는다. 계약·정산 이력과 메시지, 리뷰가 상대 화면에도 있는
 # 기록이라 남겨야 하기 때문이다. 그래서 DELETE 가 아니라 POST 를 쓴다.
 #
-# 돈을 내는 수단과 받는 계좌는 다르다. 이 영역이 다루는 것은 받는 쪽인 accounts
-# 하나뿐이고 사람마다 한 개다. 의뢰인은 그 계좌로 환불을 받고 개발자는 대금을
-# 받는다. 내는 쪽은 여기서 다루지 않는다 — 예치할 때 영역 5 에서 고른다.
+# 예치 출금 계좌는 회원가입 때 발급한 SSAFY 계좌로 고정한다(R-PAY-09).
+# 이 영역의 accounts는 1원 인증으로 등록하는 계좌이고 사람마다 하나다.
+# 의뢰인은 환불을, 개발자는 대금을 이 계좌로 받는다.
 #
 # 계좌는 1원 인증으로만 등록한다. 계좌를 넣는 요청과 입금자명 뒤 네 자리를 내는
 # 요청이 나뉘며, 확인이 끝나는 순간에만 accounts 에 계좌가 남는다. 1원 이체와
@@ -7884,7 +7868,7 @@ class PaymentMethodResponse(BaseModel):
     )
     maskedNumber: str | None = Field(
         description="가린 계좌번호. 화면에 그대로 보여준다.",
-        examples=["우리은행 ···· 4412"],
+        examples=["한국은행 ···· 0123"],
     )
     isDefault: bool = Field(
         description="기본 수단인지. 예치 화면이 처음에 고르는 것이다.",
@@ -7893,10 +7877,10 @@ class PaymentMethodResponse(BaseModel):
 
 
 class PaymentMethodListResponse(BaseModel):
-    """등록해 둔 결제 수단 전부. 수가 적어 content만 담는다."""
+    """회원가입 때 발급한 출금 계좌 한 건을 content에 담는다."""
 
     content: list[PaymentMethodResponse] = Field(
-        description="등록한 수단. 하나도 없으면 빈 배열이다.",
+        description="회원가입 때 발급한 SSAFY 출금 계좌 한 건이다. (R-PAY-09)",
     )
 
 
@@ -7904,7 +7888,7 @@ PAYMENT_METHODS = [
     {
         "paymentMethodId": 9,
         "methodType": "REALTIME_TRANSFER",
-        "maskedNumber": "우리은행 ···· 4412",
+        "maskedNumber": "한국은행 ···· 0123",
         "isDefault": True,
     }
 ]
@@ -7922,11 +7906,10 @@ PAYMENT_METHODS = [
     summary="결제 수단 조회",
     description=(
         "**화면 — `5_의뢰인_계약예치` › 결제 수단**\n\n"
-        "예치에 쓸 수 있는 수단을 내려준다. **카드 결제는 쓰지 않으므로 실시간 계좌이체 "
-        "수단만 담긴다.** 예치 API가 받는 `paymentMethodId`가 여기서 나온다.\n\n"
-        "**빈 배열이면 아직 등록한 것이 없다는 뜻이다.** 그대로 예치를 걸면 409로 막히므로 "
-        "화면은 먼저 등록으로 보낸다.\n\n"
-        "- **200**: 읽었을 때. 등록한 것이 없으면 `content`가 빈 배열이다\n"
+        "회원가입 때 발급한 SSAFY 입출금 계좌를 유일한 예치 출금 수단으로 내려준다. "
+        "`paymentMethodId`는 예치 API에서 같은 계좌를 가리킨다. 다른 계좌 선택이나 "
+        "별도 결제창은 없다. (`R-PAY-09`)\n\n"
+        "- **200**: 발급 계좌 한 건을 `content`에 담아 반환\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **500 / INTERNAL_ERROR**: 목록을 읽지 못했을 때"
     ),
@@ -7960,8 +7943,9 @@ def get_payment_methods() -> PaymentMethodListResponse:
         "**화면 — `8_계좌등록` › 1원 보내기**\n\n"
         "**의뢰인과 개발자가 같은 API를 쓴다.** 의뢰인은 `8_마이페이지` › 계좌에서, "
         "개발자는 `7_개발자_소득내역` › 계좌 등록하기·계좌 변경하기에서 들어온다. "
-        "사람마다 계좌는 하나이고, 의뢰인은 그 계좌로 예치금을 내고 환불을 받으며 "
-        "개발자는 그 계좌로 대금을 받는다.\n\n"
+        "사람마다 등록 계좌는 하나이고, 의뢰인은 환불을, 개발자는 대금을 이 계좌로 "
+        "받는다. 예치 출금에는 회원가입 때 발급한 SSAFY 계좌를 쓴다. "
+        "(`R-PAY-09`)\n\n"
         "넣은 계좌로 1원을 보내 확인 건을 연다. 실제 이체는 Escrow 서버가 "
         "금융망에 요청한다. Komit Service는 확인을 끝낼 때 계좌를 저장할 수 있도록 "
         "확인 건과 계좌번호를 안전하게 보관하고, Escrow는 요청받은 `userKey`와 "

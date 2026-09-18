@@ -1200,7 +1200,8 @@ class WithdrawalAccount(BaseModel):
     )
     withdrawalAccountNo: str = Field(
         description=(
-            "의뢰인이 인증해 둔 출금 계좌번호 16자리. 원문으로 저장하지 않는다."
+            "의뢰인이 회원가입 때 발급받은 SSAFY 출금 계좌번호 16자리. "
+            "원문으로 저장하지 않는다. (R-PAY-09)"
         ),
         examples=[MOCK_ACCOUNT_NO],
         pattern=ACCOUNT_NO_PATTERN,
@@ -1629,6 +1630,10 @@ async def create_member_account(
     description=(
         "계약이 맺어진 직후 한 번 부른다. 에스크로를 만들고 의뢰인 계좌에서 계약금 "
         "전액을 받아 금액과 입금자명을 확인한 뒤 원장에 기록한다.\n\n"
+        "출금 계좌는 회원가입 때 발급한 의뢰인의 SSAFY 입출금 계좌로 고정한다. "
+        "Komit이 보관한 `Header.userKey`, `withdrawalBankCode`, "
+        "`withdrawalAccountNo`를 전달한다. 다른 출금 계좌를 선택하지 않는다. "
+        "(`R-PAY-09`)\n\n"
         "한 계약에는 에스크로가 하나만 생긴다. 같은 `contractId`로 다시 불러도 새로 "
         "만들지 않는다.\n\n"
         "- **200 / H0000**: 요청이 접수됐다. 입금 검증과 보관계좌 정산이 모두 "

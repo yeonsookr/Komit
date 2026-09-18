@@ -19,7 +19,7 @@
 | # | 결정 | 근거 |
 | --- | --- | --- |
 | D-1 | **집금(BaaS) 모델.** 에스크로 서비스가 SSAFY 회원 1개(`userKey`)와 보관계좌 1개를 소유한다. 계약마다 보관계좌에 연결된 가상계좌(VA) 1개로 입금받고, 입금 검증 후 보관계좌로 정산한다. | `R-PAY-05`, `R-PAY-06` |
-| D-2 | **Model A — 자금 이동은 전부 에스크로가 실행한다.** 예치 이체도 에스크로가 한다. 의뢰인 계좌 출금에 필요한 `userKey`와 계좌번호는 Komit이 요청에 담아 보낸다. be-api는 금융망 이체 API를 부르지 않는다. | `proposal.md` §5·§7, `R-ACC-09` |
+| D-2 | **Model A — 자금 이동은 전부 에스크로가 실행한다.** 예치 이체도 에스크로가 한다. 출금 계좌는 회원가입 시 발급한 의뢰인의 SSAFY 계좌로 고정하고, Komit이 보관한 `userKey`·은행코드·계좌번호를 요청에 담아 보낸다. be-api는 금융망 이체 API를 부르지 않는다. | `proposal.md` §5·§7, `R-ACC-09`, `R-PAY-09` |
 | D-3 | **일괄 지급.** 마일스톤 분할 지급은 없다. 정상 완료는 전액, 중도 종료는 통과분 합계를 한 번에 지급하고 나머지는 환불한다. | `R-PAY-01`, `R-PAY-03`, `R-PAY-04` |
 | D-4 | **단일 동결.** 한 에스크로의 활성 동결은 최대 1개. `escrows.hold_status`로 가른다. | `R-RPT-05` |
 | D-5 | **회원 발급·계좌 확인은 에스크로가 금융망에 요청한다.** 발급된 `userKey`·은행코드·계좌번호는 Komit이 보관하고 후속 금융 요청에 담는다. 에스크로는 성공한 발급의 중복 방지 기록만 `V3`에 보관한다. | `R-ACC-09`, `proposal.md` §7 |
@@ -76,7 +76,7 @@ Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemb
 | deposit_step | attempts.step | SSAFY API | 응답 → 컬럼 |
 | --- | --- | --- | --- |
 | VA_CREATING→VA_CREATED | `VA_CREATE` | `createVirtualAccount`<br>req: `mainAccountNo`(보관계좌), `depositorName`, `expectedAmount`, `expiryDate`, `autoTransfer=false` | `virtualAccountId`→`virtual_account_id`<br>`virtualAccountNo`→`virtual_account_no` |
-| TRANSFER_SENDING→TRANSFERRED | `DEPOSIT_TRANSFER` | `updateDemandDepositAccountTransfer`<br>req: `depositAccountNo`(VA번호), `withdrawalAccountNo`(의뢰인 계좌), `transactionBalance`<br>Header.userKey = Komit이 전달한 의뢰인 키 | `source_bank_code`, `source_account_encrypted` |
+| TRANSFER_SENDING→TRANSFERRED | `DEPOSIT_TRANSFER` | `updateDemandDepositAccountTransfer`<br>req: `depositAccountNo`(VA번호), `withdrawalAccountNo`(회원가입 때 발급한 의뢰인 계좌), `transactionBalance`<br>Header.userKey = Komit이 전달한 의뢰인 키 (`R-PAY-09`) | `source_bank_code`, `source_account_encrypted` |
 | VERIFIED | `DEPOSIT_VERIFY` | `inquireVirtualAccountDeposits`<br>req: `virtualAccountId` | `deposits[].depositAmount`→`verified_deposit_amount`<br>`nameMatched`→`depositor_name_matched`<br>→`deposit_verification_status` |
 | SETTLED | `VA_SETTLE` | `settleVirtualAccount`<br>req: `virtualAccountId` | `settledAmount`, `settledAt`→`completed_at` |
 | VA_CLOSED | `VA_CLOSE` | `closeVirtualAccount`<br>req: `virtualAccountId` | status=CLOSED→`virtual_account_closed_at` |
@@ -153,6 +153,17 @@ FE는 SSAFY 형식을 몰라도 된다.
 | --- | --- | --- |
 | `contractId` (int, 예 130) | `external_contract_id` (str) | Komit 정수를 문자열로 변환해 넘긴다 |
 | — | `escrowId` (int) | escrow가 발급. Komit은 계약↔escrow 매핑을 보관 |
+
+### 예치 출금 계좌
+
+Komit의 `GET /api/payment-methods`는 회원가입 때 발급한 SSAFY 계좌 한 건만 반환한다.
+FE가 전달한 `paymentMethodId`는 Komit 내부에서 이 계좌를 찾는 데만 사용한다.
+Komit은 계좌 소유자를 확인하고 보관 중인 금융정보를 에스크로 요청으로 변환한다. (`R-PAY-09`)
+
+| Komit (FE 대면) | Escrow (`createEscrow`) |
+| --- | --- |
+| `paymentMethodId`로 찾은 회원 발급 계좌 | `Header.userKey`, `withdrawalBankCode`, `withdrawalAccountNo` |
+| `idempotencyKey` | `Header.idempotencyKey` |
 
 ### 예치 상태
 
