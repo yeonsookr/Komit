@@ -124,6 +124,32 @@ CREATE TABLE escrows (
 
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='에스크로 | 계약 1건의 예치와 최종 정산';
 
+CREATE TABLE escrow_state_commands (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '상태 명령 ID | 서버에서 생성한 식별자',
+    service_client_id BIGINT NOT NULL COMMENT '이용 서비스 ID | 명령을 보낸 서비스',
+    escrow_id BIGINT NOT NULL COMMENT '에스크로 ID | 해당 서비스가 소유한 명령 대상',
+    api_name VARCHAR(30) NOT NULL COMMENT 'API 이름 | cancelEscrow / holdEscrow / unholdEscrow',
+    idempotency_key VARCHAR(255) NOT NULL COMMENT '멱등 키 | 같은 API와 서비스 안에서 재요청을 식별',
+    request_fingerprint VARCHAR(64) NOT NULL COMMENT '요청 지문 | 변하는 전송 Header를 제외한 업무 본문의 SHA-256 hex',
+    external_report_id VARCHAR(100) COMMENT '외부 신고 ID | 동결·해제 명령의 신고 식별값. 취소는 NULL',
+    result_state VARCHAR(20) NOT NULL COMMENT '성공 당시 결과 상태 | CANCELLED / HELD / RELEASED. 재요청 응답 재구성에 사용',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '명령 확정 일시 | 계약 상태 변경과 같은 트랜잭션에서 기록',
+    CONSTRAINT fk_escrow_state_commands_escrow
+        FOREIGN KEY (escrow_id, service_client_id) REFERENCES escrows (id, service_client_id),
+    CONSTRAINT uq_escrow_state_commands_idempotency
+        UNIQUE (service_client_id, api_name, idempotency_key),
+    CONSTRAINT ck_escrow_state_commands_idempotency_key CHECK (length(trim(idempotency_key)) > 0),
+    CONSTRAINT ck_escrow_state_commands_request_fingerprint
+        CHECK (request_fingerprint REGEXP '^[0-9a-f]{64}$'),
+    CONSTRAINT ck_escrow_state_commands_result CHECK (
+        (api_name = 'cancelEscrow' AND external_report_id IS NULL AND result_state = 'CANCELLED')
+        OR (api_name = 'holdEscrow' AND external_report_id IS NOT NULL
+            AND length(trim(external_report_id)) > 0 AND result_state = 'HELD')
+        OR (api_name = 'unholdEscrow' AND external_report_id IS NOT NULL
+            AND length(trim(external_report_id)) > 0 AND result_state = 'RELEASED')
+    )
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='에스크로 상태 명령 | 취소·동결·해제의 성공 결과와 멱등 키를 기록';
+
 CREATE TABLE settlements (
     id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '정산 ID | 내부 정산 식별자',
     escrow_id BIGINT NOT NULL COMMENT '에스크로 ID | 정산 대상 계약',
@@ -287,3 +313,4 @@ CREATE INDEX idx_operation_audit_events_transaction_created_at
     ON operation_audit_events (transaction_id, created_at);
 
 CREATE INDEX idx_escrows_status_hold_status ON escrows (status, hold_status);
+CREATE INDEX idx_escrow_state_commands_escrow_created_at ON escrow_state_commands (escrow_id, created_at);

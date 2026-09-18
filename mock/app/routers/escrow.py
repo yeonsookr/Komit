@@ -569,9 +569,10 @@ class EscrowRequestHeader(BaseModel):
     idempotencyKey: str | None = Field(
         default=None,
         description=(
-            "업무 멱등키. 사용자·계좌 발급과 자금 이동 API에는 반드시 담고, 같은 업무를 다시 보낼 때는 "
-            "같은 값을 유지한다. 조회 API에서는 쓰지 않는다. ERD "
-            "idempotency_records.idempotency_key에 대응한다. "
+            "업무 멱등키. 사용자·계좌 발급, 자금 이동, 취소·동결·해제 API에는 반드시 담고, "
+            "같은 업무를 다시 보낼 때는 같은 값을 유지한다. 조회 API에서는 쓰지 않는다. "
+            "ERD member_account_provisions, escrow_transactions, escrow_state_commands의 "
+            "idempotency_key에 각각 대응한다. "
             "conflict-idempotency-key는 본문이 처음과 달라 거절되는 사례의 "
             "재현용 예약값이다."
         ),
