@@ -9,10 +9,13 @@ import type { Me } from "@/types/user";
 
 /**
  * 내 정보를 헤더가 아는 모양으로 바꿉니다.
- * 프로필 사진은 파일 식별자만 오고 주소를 주는 API 가 아직 없어 이름 첫 글자를 씁니다.
  */
 function toHeaderUser(me: Me): HeaderUser {
-  return { name: me.name, unreadCount: me.unreadNotificationCount };
+  return {
+    name: me.name,
+    avatarSrc: me.profileImageUrl ?? undefined,
+    unreadCount: me.unreadNotificationCount,
+  };
 }
 
 export type SessionShellProps = Omit<AppShellProps, "user" | "headerProps"> & {

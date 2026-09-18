@@ -10,7 +10,7 @@ import { buttonClass } from "@/components/buttons/buttonStyles";
 import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
 import { ROUTES } from "@/lib/routes";
-import { isResolved } from "@/lib/diagnosisReport";
+import { isInRequest, isResolved } from "@/lib/diagnosisReport";
 import { ApiError } from "@/types/api";
 import type { Diagnosis, Issue } from "@/types/diagnosis";
 import type { RecommendationBatch } from "@/types/recommendation";
@@ -23,8 +23,8 @@ export interface RequestFormProps {
 /**
  * RequestForm — 개발자를 찾기 전에 요청서를 확인합니다.
  *
- * 요청서는 따로 저장되는 문서가 아니라 요구사항들을 모아 부르는 이름입니다
- * (목 명세). 그래서 전용 조회 API 없이 결함 목록으로 그립니다.
+ * 요청서는 따로 저장되는 문서가 아니라 고른 요구사항들을 모아 부르는 이름입니다
+ * (목 명세). 결함 목록 중 SUGGESTED·CONTRACTED만 요청서 본문으로 그립니다.
  * 직접 해결한 요구사항은 요청서에서 빠진 것으로 아래에 따로 보여줍니다.
  */
 export function RequestForm({ diagnosis, issues }: Readonly<RequestFormProps>) {
@@ -32,7 +32,8 @@ export function RequestForm({ diagnosis, issues }: Readonly<RequestFormProps>) {
   const showToast = useToast();
   const [submitting, setSubmitting] = React.useState(false);
 
-  const requirements = issues.filter((issue) => !isResolved(issue));
+  // R-REQ: 고른 이슈만 요청서로 이어집니다. 아직 고르지 않은 UNRESOLVED는 숨깁니다.
+  const requirements = issues.filter(isInRequest);
   const excluded = issues.filter(isResolved);
 
   /** 요청서의 요구사항으로 추천 회차를 만들고 그 화면으로 갑니다. */
@@ -151,7 +152,7 @@ export function RequestForm({ diagnosis, issues }: Readonly<RequestFormProps>) {
 
       <div className="mt-10 flex flex-wrap justify-end gap-3">
         <Link
-          href={ROUTES.checkupRequirements(diagnosis.diagnosisId)}
+          href={ROUTES.checkupRequestEdit(diagnosis.diagnosisId)}
           className={buttonClass({ variant: "outline", size: "lg" })}
         >
           요청서 수정하기

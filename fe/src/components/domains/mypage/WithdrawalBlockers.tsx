@@ -27,6 +27,10 @@ export interface WithdrawalBlockersProps {
  *
  * 막고 있는 줄은 그대로 보여주고 갈 곳이 있으면 「이동」을 답니다. 막는 것이 없는
  * 갈래는 회색 「없음」 한 줄로 둡니다.
+ *
+ * 「이동」은 계약서 화면으로 갑니다. 세 갈래 모두 정리하려면 결국 그 계약을 끝내야
+ * 하므로 예치금과 소득도 같은 곳으로 보냅니다. 계약서는 방 안의 탭이라 주소가 방
+ * 기준이고, 응답이 계약과 함께 `roomId` 를 주므로 계약을 다시 읽지 않습니다.
  */
 export function WithdrawalBlockers({ blockers }: Readonly<WithdrawalBlockersProps>) {
   return (
@@ -51,9 +55,9 @@ export function WithdrawalBlockers({ blockers }: Readonly<WithdrawalBlockersProp
             <Badge tone="danger" size="sm">
               진행중
             </Badge>
-            {blocker.targetId !== null && (
+            {blocker.roomId !== null && (
               <Link
-                href={ROUTES.contract(blocker.targetId)}
+                href={ROUTES.roomContract(blocker.roomId)}
                 className="rounded-sm text-[13px] font-semibold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               >
                 이동 ›

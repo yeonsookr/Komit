@@ -181,7 +181,7 @@ export function DepositForm({
             title="등록한 결제 수단이 없습니다"
             description="예치는 등록해 둔 실시간 계좌이체 수단에서 빠집니다. 먼저 등록해 주세요."
             action={
-              <Link href={ROUTES.mypageSettings} className={buttonClass()}>
+              <Link href={ROUTES.accountRegister} className={buttonClass()}>
                 결제 수단 등록
               </Link>
             }

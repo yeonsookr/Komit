@@ -1,11 +1,20 @@
 import { NextResponse } from "next/server";
-import { downloadDeliverable, uploadDeliverable } from "@/lib/api/services";
+import {
+  attachDeliverable,
+  downloadDeliverable,
+  uploadFile,
+} from "@/lib/api/services";
 import { parseNumericParam, toErrorResponse } from "@/lib/api/route";
 
 const INVALID_REQUEST = { code: "INVALID_REQUEST", message: "파일을 첨부해 주세요." };
 const NOT_FOUND = { code: "DELIVERABLE_NOT_FOUND", message: "인계물을 찾을 수 없습니다." };
 
-/** POST /api/deliverables/{id}/file — 개발자가 인계물을 올립니다. */
+/**
+ * POST /api/deliverables/{id}/file — 개발자가 인계물을 올립니다.
+ *
+ * 파일을 먼저 저장소에 올리고(3콜) 받은 `fileId` 로 인계물에 붙입니다.
+ * 올리기 주소는 브라우저가 알 필요가 없어 이 핸들러가 넷을 모두 처리합니다.
+ */
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ deliverableId: string }> },
@@ -26,7 +35,9 @@ export async function POST(
   }
 
   try {
-    return NextResponse.json(await uploadDeliverable(id, file), { status: 201 });
+    const uploaded = await uploadFile(file, "DELIVERABLE");
+    const deliverable = await attachDeliverable(id, uploaded.fileId);
+    return NextResponse.json(deliverable, { status: 201 });
   } catch (error) {
     return toErrorResponse(error);
   }

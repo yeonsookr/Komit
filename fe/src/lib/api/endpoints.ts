@@ -13,6 +13,9 @@ export const BACKEND = {
   LANDING_SUMMARY: "/api/landing/summary",
   LANDING_FEATURED: "/api/landing/featured-developers",
   ME: "/api/users/me",
+  PROFILE_IMAGE: "/api/users/me/profile-image",
+  MY_DEVELOPER_PROFILE: "/api/users/me/developer-profile",
+  REVIEW_REPLY: (reviewId: number) => `/api/reviews/${reviewId}/reply`,
   ROOMS: "/api/rooms",
   ROOM: (roomId: number) => `/api/rooms/${roomId}`,
   ROOM_CONVERSION: (roomId: number) => `/api/rooms/${roomId}/conversion`,
@@ -26,6 +29,8 @@ export const BACKEND = {
   DIAGNOSES: "/api/diagnoses",
   SURVEY: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/survey`,
   SURVEY_ANSWERS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/survey/answers`,
+  SURVEY_COMPLETE: (diagnosisId: number) =>
+    `/api/diagnoses/${diagnosisId}/survey/complete`,
   INSPECTIONS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/inspections`,
   SCAN_FILE: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/scan-file`,
   DIAGNOSIS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}`,
@@ -34,8 +39,16 @@ export const BACKEND = {
   REQUIREMENTS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/requirements`,
   RECOMMENDATIONS: (projectId: number) => `/api/projects/${projectId}/recommendations`,
   MYPAGE: "/api/mypage",
+  MY_SESSIONS: "/api/users/me/sessions",
+  ACCOUNT_VERIFICATIONS: "/api/accounts/verifications",
+  ACCOUNT_VERIFICATION_CONFIRM: (verificationId: number) =>
+    `/api/accounts/verifications/${verificationId}/confirm`,
   /** 알림톡 수신 설정. 마이페이지의 알림 칸이 씁니다. */
   NOTIFICATION_SETTING: "/api/settings/notification",
+  NOTIFICATIONS: "/api/notifications",
+  NOTIFICATIONS_READ_ALL: "/api/notifications/read-all",
+  NOTIFICATION_READ: (notificationId: number) =>
+    `/api/notifications/${notificationId}/read`,
   /** 탈퇴 전 확인(GET)과 탈퇴(POST). 계정을 지우는 것이 아니라 삭제 표시를 켭니다. */
   WITHDRAWAL: "/api/users/me/withdrawal",
   CONTRACT: (contractId: number) => `/api/contracts/${contractId}`,
@@ -68,6 +81,10 @@ export const INTERNAL = {
   AUTH_LOGOUT: "/api/auth/logout",
   SURVEY: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/survey`,
   ME: "/api/users/me",
+  PROFILE_IMAGE: "/api/users/me/profile-image",
+  MY_DEVELOPER_PROFILE: "/api/users/me/developer-profile",
+  REVIEW_REPLY: (reviewId: number) => `/api/reviews/${reviewId}/reply`,
+  PROFILE_UPLOAD: "/api/users/me/developer-profile/upload",
   ROOMS: "/api/rooms",
   ROOM: (roomId: number) => `/api/rooms/${roomId}`,
   ROOM_MESSAGES: (roomId: number) => `/api/rooms/${roomId}/messages`,
@@ -78,6 +95,8 @@ export const INTERNAL = {
     `/api/recommendations/${batchId}/consultation-requests`,
   DIAGNOSES: "/api/diagnoses",
   SURVEY_ANSWERS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/survey/answers`,
+  SURVEY_COMPLETE: (diagnosisId: number) =>
+    `/api/diagnoses/${diagnosisId}/survey/complete`,
   INSPECTIONS: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/inspections`,
   ISSUES: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/issues`,
   ISSUE: (issueId: number) => `/api/issues/${issueId}`,
@@ -85,7 +104,13 @@ export const INTERNAL = {
   RECOMMENDATIONS: (projectId: number) => `/api/projects/${projectId}/recommendations`,
   SCAN_FILE: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/scan-file`,
   MY_NAME: "/api/users/me",
+  ACCOUNT_VERIFICATIONS: "/api/accounts/verifications",
+  ACCOUNT_VERIFICATION_CONFIRM: (verificationId: number) =>
+    `/api/accounts/verifications/${verificationId}/confirm`,
   NOTIFICATION_SETTING: "/api/settings/notification",
+  NOTIFICATIONS_READ_ALL: "/api/notifications/read-all",
+  NOTIFICATION_READ: (notificationId: number) =>
+    `/api/notifications/${notificationId}/read`,
   /** 회원 탈퇴. 탈퇴 화면의 「탈퇴하기」가 부릅니다. */
   WITHDRAWAL: "/api/users/me/withdrawal",
   CONTRACT_SIGNATURES: (contractId: number) => `/api/contracts/${contractId}/signatures`,

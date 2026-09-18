@@ -13,6 +13,8 @@ import type { Inspection } from "@/types/diagnosis";
 const RUN_PROMPT = "komit-scan.md를 읽고 이 프로젝트를 검사해줘";
 /** ① 에 적히는 설치 명령. */
 const INSTALL_COMMAND = "/plugin install komit-scan@komit";
+/** 검사가 만들어 주는 파일. 내려받은 검사 파일이 아니라 이것을 올립니다. */
+const RESULT_FILE_NAME = "komit-result.md";
 
 export interface ScanFileStepProps {
   diagnosisId: number;
@@ -67,7 +69,7 @@ export function ScanFileStep({
       showToast({
         tone: "danger",
         title: error instanceof ApiError ? error.message : "파일을 올리지 못했습니다.",
-        description: "내려받은 결과 파일을 그대로 올려주세요.",
+        description: `AI 도구가 만들어 준 ${RESULT_FILE_NAME} 를 그대로 올려주세요.`,
       });
     } finally {
       setUploading(false);
@@ -102,7 +104,7 @@ export function ScanFileStep({
 
       <NumberedRow index="③" label="만들어진 결과 파일 올리기">
         <CommandBox
-          text={uploadedFileName ?? "komit-scan-XXXXX.md"}
+          text={uploadedFileName ?? RESULT_FILE_NAME}
           muted={uploadedFileName === null}
           action={
             <>

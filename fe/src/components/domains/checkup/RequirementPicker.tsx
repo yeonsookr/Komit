@@ -9,18 +9,26 @@ import { cn } from "@/lib/cn";
 import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
 import { ROUTES } from "@/lib/routes";
-import { dropSelection, isResolved, SEVERITY_LABEL } from "@/lib/diagnosisReport";
+import { dropSelection, isInRequest, isResolved, SEVERITY_LABEL } from "@/lib/diagnosisReport";
 import { ApiError } from "@/types/api";
 import type { BadgeTone } from "@/components/common";
 import type { CodeItem } from "@/types/developer";
 import type { Diagnosis, Issue, IssueSeverity, WriteRequirement } from "@/types/diagnosis";
 import { AddRequirementForm } from "./AddRequirementForm";
 
-/** 분류별 배지 색. 목에 없는 분류는 회색으로 둡니다. */
-const CATEGORY_TONE: Record<string, BadgeTone> = {
-  보안: "danger",
-  위법: "warning",
-  결제: "brand",
+/**
+ * 갈래별 배지 색. 코드 번호로 잡습니다 — 이름으로 잡으면 이름을 다듬는 순간
+ * 색이 조용히 빠집니다. 모르는 번호는 회색으로 둡니다.
+ */
+const CATEGORY_TONE: Record<number, BadgeTone> = {
+  71: "danger",   // 보안
+  72: "danger",   // 위법
+  73: "warning",  // 결제
+  74: "neutral",  // 기타
+  75: "info",     // 데이터
+  76: "success",  // 비용
+  77: "brand",    // 인계
+  78: "warning",  // AI 잔재
 };
 
 /** 위험도 배지 색. */
@@ -51,11 +59,16 @@ export function RequirementPicker({
   const showToast = useToast();
 
   const [issues, setIssues] = React.useState(initialIssues);
-  const [selected, setSelected] = React.useState<number[]>([]);
+  const [selected, setSelected] = React.useState<number[]>(() =>
+    initialIssues.filter(isInRequest).map((issue) => issue.issueId),
+  );
   const [busyIssueId, setBusyIssueId] = React.useState<number | null>(null);
   const [submitting, setSubmitting] = React.useState(false);
 
-  React.useEffect(() => setIssues(initialIssues), [initialIssues]);
+  React.useEffect(() => {
+    setIssues(initialIssues);
+    setSelected(initialIssues.filter(isInRequest).map((issue) => issue.issueId));
+  }, [initialIssues]);
 
   const toggle = (issueId: number) =>
     setSelected((prev) =>
@@ -148,10 +161,10 @@ export function RequirementPicker({
               />
 
               <Badge
-                tone={CATEGORY_TONE[issue.category.codeName] ?? "neutral"}
+                tone={CATEGORY_TONE[issue.category.codeId] ?? "neutral"}
                 shape="square"
                 size="sm"
-                className="w-14 shrink-0 justify-center"
+                className="w-[68px] shrink-0 justify-center"
               >
                 {issue.category.codeName}
               </Badge>

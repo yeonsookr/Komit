@@ -117,7 +117,7 @@ export function IncomeView({ income }: Readonly<IncomeViewProps>) {
             </div>
           )}
 
-          <Link href={ROUTES.mypageSettings} className={buttonClass({ variant: "outline", size: "md" })}>
+          <Link href={ROUTES.mypage} className={buttonClass({ variant: "outline", size: "md" })}>
             마이페이지에서 {account ? "변경" : "등록"}
           </Link>
         </Card>

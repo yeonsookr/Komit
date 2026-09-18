@@ -16,15 +16,37 @@ test.describe('마이페이지', () => {
     await expect(page).toHaveTitle('마이페이지 | Komit');
     await expect(page.getByRole('heading', { name: '마이페이지', level: 1 })).toBeVisible();
 
-    // 개발자 프로필 칸은 프로필이 없으면 그리지 않습니다.
+    // 개발자 프로필 칸은 프로필이 없어도 만들러 가는 줄 하나로 남습니다.
     await expect(page.getByRole('heading', { level: 2 })).toHaveText([
       '계정',
       '계좌',
       '등록한 프로젝트',
+      '개발자 프로필',
       '알림',
       '약관',
       '탈퇴',
     ]);
+  });
+
+  /**
+   * 목의 사용자는 개발자 프로필이 없습니다(`developer: null`). 감추지 않고
+   * 만들러 보내야 개발자로도 활동할 수 있다는 것을 알 수 있습니다.
+   */
+  test('개발자 프로필이 없으면 프로필 생성으로 보낸다', async ({ page }) => {
+    await page.goto('/mypage');
+
+    await expect(page.getByText('아직 만들지 않았습니다')).toBeVisible();
+    await expect(page.getByRole('link', { name: '프로필 생성' })).toHaveAttribute(
+      'href',
+      '/mypage/profile',
+    );
+
+    // 의뢰인 일정도 있으므로 개발자 프로필이 없어도 일정으로 갈 수 있습니다.
+    await expect(page.getByRole('link', { name: '일정 관리' })).toHaveAttribute(
+      'href',
+      '/mypage/schedule',
+    );
+    await expect(page.getByRole('link', { name: '프로필 편집' })).toHaveCount(0);
   });
 
   test('계정과 계좌 칸이 목의 값을 보여준다', async ({ page }) => {
@@ -55,6 +77,10 @@ test.describe('마이페이지', () => {
     await expect(page.getByRole('button', { name: '이름 바꾸기' })).toBeVisible();
   });
 
+  /**
+   * 판매자 약관은 개발자에게만 나옵니다. 목의 사용자는 개발자 프로필이 없어
+   * 넷만 보여야 합니다 — 다섯이 나오면 조건이 빠진 것입니다.
+   */
   test('약관 칸의 문서 넷이 각 본문으로 간다', async ({ page }) => {
     await page.goto('/mypage');
 
@@ -64,6 +90,8 @@ test.describe('마이페이지', () => {
       '/policies/electronic-finance',
       '/policies/refund-dispute',
     ];
+
+    await expect(page.getByText('개발자 판매자 약관')).toHaveCount(0);
 
     // 프로젝트 칸의 「진단서 보기」와 섞이지 않게 이름을 정확히 맞춥니다.
     const links = page.getByRole('link', { name: '보기', exact: true });
@@ -101,6 +129,27 @@ test.describe('회원 탈퇴', () => {
 
     await expect(page.getByText('수제 비누 가게 · 진행 중인 의뢰')).toBeVisible();
     await expect(page.getByText('예치금 650,000원', { exact: true })).toBeVisible();
+  });
+
+  /**
+   * 응답은 계약 식별자와 방 식별자를 함께 주는데 화면 주소는 방 기준입니다.
+   * 계약 번호(130)로 주소를 만들면 없는 화면으로 가므로 방 번호(93)인지 봅니다.
+   *
+   * 두 줄이 같은 계약을 가리켜 목적지도 같습니다 — 예치금을 정리하려면 결국
+   * 그 계약을 끝내야 하기 때문입니다.
+   */
+  test('이동을 누르면 그 계약의 계약서 화면으로 간다', async ({ page }) => {
+    const moves = page.getByRole('link', { name: '이동' });
+    await expect(moves).toHaveCount(2);
+
+    for (const index of [0, 1]) {
+      await expect(moves.nth(index)).toHaveAttribute('href', '/rooms/93/contract');
+    }
+
+    await moves.first().click();
+
+    await expect(page).toHaveURL(/\/rooms\/93\/contract$/);
+    await expect(page).toHaveTitle(/계약서/);
   });
 
   /**

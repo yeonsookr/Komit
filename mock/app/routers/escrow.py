@@ -4,7 +4,7 @@
 응답 형식·상태코드·description 작성 방식을 이 API에 맞춘다.
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 from typing import Annotated, List, Literal
 
@@ -652,8 +652,6 @@ ACCOUNT_NO_PATTERN = r"^\d{16}$"
 
 MOCK_ACCOUNT_NO = "0011234567890123"
 INVALID_ACCOUNT_NO = "0000000000000000"
-MISMATCH_AUTH_CODE = "9999"
-
 # SSAFY 금융망 형식은 오류를 본문의 responseCode로 전한다. HTTP 상태코드는 기준 API와
 # 같이 400과 500만 쓰고, 어떤 오류인지는 responseCode로 가른다.
 ACCOUNT_ERRORS: dict = {
@@ -698,6 +696,14 @@ class OpenAccountAuthRecord(BaseModel):
     accountNo: str = Field(
         description="인증 대상 계좌번호. 요청에서 받은 값을 그대로 돌려준다.",
         examples=[MOCK_ACCOUNT_NO],
+    )
+    expiresAt: str = Field(
+        description=(
+            "이 시각이 지나면 인증이 만료된다. 화면의 남은 시간이 이 값에서 나온다. "
+            "SSAFY 금융망 응답에 대응하며 유효 시간은 R-ACC-02다. 에스크로는 이 값을 "
+            "저장하지 않고 Komit Service에 전달한다."
+        ),
+        examples=["2026-09-09T12:10:00+09:00"],
     )
 
 
@@ -793,9 +799,10 @@ class CheckAuthCodeRequest(BaseModel):
     authCode: str = Field(
         description=(
             "사용자가 입력한 네 자리 인증번호. 앞자리 0을 보존해야 하므로 숫자가 아니라 "
-            "문자열로 다룬다. 9999는 인증번호 불일치 재현용 예약값이다."
+            "문자열로 다룬다. 은행 앱이 없는 현재 모의 환경에서는 일치 여부를 검사하지 "
+            "않는다."
         ),
-        examples=["1234", MISMATCH_AUTH_CODE],
+        examples=["1234"],
         json_schema_extra={"pattern": r"^\d{4}$"},
     )
 
@@ -866,6 +873,7 @@ def _success_header_example(api_name: str) -> dict:
             {
                 "transactionUniqueNo": "1000000001",
                 "accountNo": MOCK_ACCOUNT_NO,
+                "expiresAt": "2026-09-09T12:10:00+09:00",
             },
         ),
         **ACCOUNT_ERRORS,
@@ -875,7 +883,8 @@ def _success_header_example(api_name: str) -> dict:
         "인증할 계좌에 1원을 입금하고 거래내역에 기업명과 네 자리 인증번호를 남긴다. "
         "원화 수시입출금 계좌만 쓸 수 있다.\n\n"
         "기업명은 에스크로가 고객사 설정에서 꺼내 채우므로 요청 본문에 담지 않는다. "
-        "에스크로는 계좌를 저장하지 않고 SSAFY로 중계만 한다.\n\n"
+        "에스크로는 계좌번호 원문과 인증 세션을 보관하지 않는다. 금융망에서 받은 "
+        "`expiresAt`를 Komit Service에 전달하며, 인증 세션은 Service가 관리한다.\n\n"
         "- **200 / H0000**: 1원을 보냈을 때\n"
         "- **400 / A1003**: `accountNo`가 `0000000000000000`일 때. 계좌번호가 "
         "유효하지 않다\n"
@@ -913,7 +922,9 @@ async def open_account_auth(
             "H0000", "정상처리 되었습니다.", payload.Header
         ),
         REC=OpenAccountAuthRecord(
-            transactionUniqueNo="1000000001", accountNo=payload.accountNo
+            transactionUniqueNo="1000000001",
+            accountNo=payload.accountNo,
+            expiresAt="2026-09-09T12:10:00+09:00",
         ),
     )
 
@@ -1037,13 +1048,12 @@ async def inquire_transaction_history_list(
     },
     summary="계좌 인증번호 검증",
     description=(
-        "사용자가 입력한 네 자리 인증번호가 맞는지 확인한다. 기업명은 에스크로가 채워 "
-        "넣으므로 발급 때와 항상 같다.\n\n"
+        "사용자가 입력한 네 자리 인증번호를 금융망에 전달한다. 기업명은 에스크로가 "
+        "채워 넣으므로 발급 때와 항상 같다.\n\n"
         "성공하면 고객사가 그 계좌를 인증됨으로 표시하고 보관한다. 에스크로는 계좌를 "
-        "저장하지 않는다.\n\n"
-        "- **200 / H0000**: 인증번호가 맞을 때\n"
-        "- **400 / A1090**: `authCode`가 `9999`일 때. 인증번호가 맞지 않으니 다시 "
-        "입력하도록 안내한다\n"
+        "저장하지 않는다. 은행 앱이 없는 현재 모의 환경에서는 형식에 맞는 숫자 네 "
+        "자리이면 일치 여부와 무관하게 성공한다. 이는 실제 계좌 소유 인증이 아니다.\n\n"
+        "- **200 / H0000**: 숫자 네 자리 형식이 맞을 때\n"
         "- **400 / A1003**: `accountNo`가 `0000000000000000`일 때\n"
         "- **400 / H1009**: `userKey`가 없거나 `invalid-user-key`일 때\n"
         "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
@@ -1074,11 +1084,6 @@ async def check_auth_code(
         return _escrow_error(
             400, "A1003", "계좌번호가 유효하지 않습니다.", payload.Header
         )
-    if payload.authCode == MISMATCH_AUTH_CODE:
-        return _escrow_error(
-            400, "A1090", "인증번호가 일치하지 않습니다.", payload.Header
-        )
-
     return CheckAuthCodeResponse(
         Header=_escrow_response_header(
             "H0000", "정상처리 되었습니다.", payload.Header
@@ -1095,7 +1100,7 @@ async def check_auth_code(
 # 에스크로 자금 — 예치 · 추가예치 · 지급 · 환불 · 취소
 #
 # 여기서부터는 패스스루가 아니라 에스크로 고유 기능이다. 결과가 내부 원장에 남고
-# 응답 필드는 escrows / escrow_transactions / escrow_holds 컬럼에 근거한다.
+# 응답 필드는 escrows / escrow_transactions 컬럼에 근거한다.
 # 계좌번호와 예금주명은 ERD에 원문으로 저장되지 않으며 요청 경계에서만 오간다.
 # --------------------------------------------------------------------------- #
 
@@ -1103,6 +1108,9 @@ ESCROW_ID = 42
 NOT_FOUND_ESCROW_ID = 404
 HELD_ESCROW_ID = 409
 DEPOSIT_PENDING_ESCROW_ID = 202
+# createEscrow에서 이 contractId로 부르면 입금이 아직 확인되지 않은 DEPOSIT_PENDING을
+# 돌려준다. 별도 속성을 늘리지 않고 실제 필드(contractId) 값으로 분기한다.
+PENDING_CONTRACT_ID = "CONTRACT-PENDING"
 
 BANK_CODE_PATTERN = r"^\d{3}$"
 
@@ -1195,13 +1203,16 @@ class EscrowAmountRecord(BaseModel):
         examples=["ACTIVE"],
     )
     depositedAmount: int = Field(
-        description="예치가 끝난 총액. ERD escrows.deposited_amount에 대응한다.",
+        description=(
+            "예치가 끝난 총액. 저장 컬럼이 아니라 ERD escrow_transactions의 완료된 "
+            "DEPOSIT 금액 합계로 계산한다."
+        ),
         examples=[650000],
     )
     balance: int = Field(
         description=(
-            "가용 잔액. 예치액에서 지급액과 환불액을 뺀 값이며 ERD의 deposited_amount, "
-            "released_amount, refunded_amount로 계산한다."
+            "가용 잔액. ERD escrow_transactions에서 완료된 DEPOSIT 합계에서 RELEASE와 "
+            "REFUND 합계를 뺀 값이며, 저장 컬럼이 아니라 계산값이다."
         ),
         examples=[650000],
     )
@@ -1216,39 +1227,6 @@ class CreateEscrowResponse(BaseModel):
     REC: EscrowAmountRecord = Field(description="생성과 예치 결과.")
 
 
-class AddDepositRequest(WithdrawalAccount):
-    """특약 증액분 추가 예치 요청."""
-
-    Header: EscrowRequestHeader = Field(
-        description="JSON Body 안에 담는 공통 요청 Header."
-    )
-    escrowId: int = Field(
-        description=(
-            "증액할 기존 에스크로. ACTIVE여야 한다. 404는 없음, 409는 동결 중 재현용 "
-            "예약값이다."
-        ),
-        examples=[ESCROW_ID],
-    )
-    addendumId: str = Field(
-        description=(
-            "특약 식별자. 같은 특약으로 두 번 예치되지 않도록 가르는 값이다. ERD "
-            "escrow_transactions.external_reference_id에 대응한다."
-        ),
-        examples=["ADDENDUM-1"],
-        json_schema_extra={"minLength": 1, "maxLength": 100},
-    )
-    addAmount: int = Field(
-        description="특약으로 늘어난 금액. 원 단위 양수다.",
-        examples=[150000],
-        gt=0,
-    )
-
-
-class AddDepositResponse(BaseModel):
-    Header: CommonResponseHeader = Field(description="공통 성공 응답 Header.")
-    REC: EscrowAmountRecord = Field(description="추가 예치 결과.")
-
-
 class ReleaseEscrowRequest(BaseModel):
     """승인된 작업 대금 지급 요청."""
 
@@ -1261,15 +1239,18 @@ class ReleaseEscrowRequest(BaseModel):
     )
     referenceId: str = Field(
         description=(
-            "지급 단위 식별자. 마일스톤이나 세션 식별자를 담으며 같은 값으로 두 번 "
-            "지급되지 않는다. ERD escrow_transactions.external_reference_id에 "
-            "대응한다."
+            "정산 식별자. 계약 최종 정산의 지급과 환불이 같은 `SETTLEMENT:정산ID`를 "
+            "쓰고 거래 유형으로 구분한다. 마일스톤 ID를 담지 않는다. ERD "
+            "escrow_transactions.external_reference_id에 대응한다."
         ),
-        examples=["MILESTONE-1"],
+        examples=["SETTLEMENT:9001"],
         json_schema_extra={"minLength": 1, "maxLength": 100},
     )
     amount: int = Field(
-        description="지급할 금액. 가용 잔액을 넘을 수 없다.",
+        description=(
+            "지급할 금액. 정상 완료는 전액, 중도 종료는 통과한 작업분 합계다. 마일스톤 "
+            "단위로 나눠 지급하지 않는다."
+        ),
         examples=[400000],
         gt=0,
     )
@@ -1352,10 +1333,11 @@ class RefundEscrowRequest(BaseModel):
     referenceId: str | None = Field(
         default=None,
         description=(
-            "참조 식별자. 특약 식별자 등을 담을 수 있다. ERD "
-            "escrow_transactions.external_reference_id에 대응한다."
+            "정산 식별자. 같은 정산의 지급과 같은 `SETTLEMENT:정산ID`를 쓰고 거래 "
+            "유형으로 구분한다. ERD escrow_transactions.external_reference_id에 "
+            "대응한다."
         ),
-        examples=["REFUND-1"],
+        examples=["SETTLEMENT:9001"],
         json_schema_extra={"maxLength": 100},
     )
 
@@ -1464,7 +1446,7 @@ def _escrow_state_error(
         "만들지 않는다.\n\n"
         "- **200 / H0000**: 예치까지 끝났을 때 `status`가 ACTIVE다. 입금이 아직 "
         "확인되지 않았으면 DEPOSIT_PENDING이며, 고객사는 ACTIVE를 확인한 뒤 계약을 "
-        "진행한다\n"
+        "진행한다. `contractId`가 `CONTRACT-PENDING`이면 DEPOSIT_PENDING을 재현한다\n"
         "- **400 / H1009**: `userKey`가 없거나 `invalid-user-key`일 때\n"
         "- **400 / E5002**: `idempotencyKey`가 없을 때\n"
         "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
@@ -1500,6 +1482,21 @@ async def create_escrow(
     if error:
         return _escrow_error(*error, payload.Header)
 
+    # 입금이 아직 확인되지 않은 경우. 예치액은 0이고 고객사는 ACTIVE를 조회로 기다린다.
+    if payload.contractId == PENDING_CONTRACT_ID:
+        return CreateEscrowResponse(
+            Header=_escrow_response_header(
+                "H0000", "정상처리 되었습니다.", payload.Header
+            ),
+            REC=EscrowAmountRecord(
+                escrowId=DEPOSIT_PENDING_ESCROW_ID,
+                status="DEPOSIT_PENDING",
+                depositedAmount=0,
+                balance=0,
+                transactionId=1001,
+            ),
+        )
+
     return CreateEscrowResponse(
         Header=_escrow_response_header(
             "H0000", "정상처리 되었습니다.", payload.Header
@@ -1510,81 +1507,6 @@ async def create_escrow(
             depositedAmount=payload.amount,
             balance=payload.amount,
             transactionId=1001,
-        ),
-    )
-
-
-@router.post(
-    "/v1/escrow/addDeposit",
-    response_model=AddDepositResponse,
-    tags=["에스크로 자금"],
-    responses={
-        200: _ok(
-            "기존 에스크로에 증액분을 예치했다",
-            "addDeposit",
-            {
-                "escrowId": ESCROW_ID,
-                "status": "ACTIVE",
-                "depositedAmount": 800000,
-                "balance": 800000,
-                "transactionId": 1004,
-            },
-        ),
-        **ESCROW_ERRORS,
-    },
-    summary="특약 증액분 추가 예치",
-    description=(
-        "계약 도중 특약으로 예산이 늘어날 때 부른다. 새 에스크로를 만들지 않고 이미 "
-        "있는 건에 증액분을 더한다.\n\n"
-        "예산이 늘어도 지급은 그대로 승인 단위로 나뉘어 나간다.\n\n"
-        "- **200 / H0000**: 증액분을 예치했을 때. `status`는 ACTIVE로 유지된다\n"
-        "- **400 / H1009**: `userKey`가 없거나 `invalid-user-key`일 때\n"
-        "- **400 / E5002**: `idempotencyKey`가 없을 때\n"
-        "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
-        "- **400 / E5004**: `escrowId`가 404일 때\n"
-        "- **400 / E5005**: `escrowId`가 409일 때. 동결 중이라 자금을 옮길 수 없다\n"
-        "- **400 / E5003**: `idempotencyKey`가 `conflict-idempotency-key`일 때\n"
-        "- **400 / Q1001**: 필수 속성이 없거나 형식이 맞지 않을 때\n"
-        "- **500 / Q1000**: 처리하지 못했을 때"
-    ),
-)
-async def add_deposit(
-    payload: Annotated[
-        AddDepositRequest,
-        Body(
-            examples=[
-                {
-                    "Header": _escrow_header_example("addDeposit", True),
-                    "escrowId": ESCROW_ID,
-                    "addendumId": "ADDENDUM-1",
-                    "addAmount": 150000,
-                    "withdrawalBankCode": "001",
-                    "withdrawalAccountNo": MOCK_ACCOUNT_NO,
-                }
-            ]
-        ),
-    ],
-) -> AddDepositResponse | JSONResponse:
-    error = _validate_escrow_header(
-        payload.Header, "addDeposit", needs_idempotency_key=True, needs_user_key=True
-    )
-    if error:
-        return _escrow_error(*error, payload.Header)
-    state_error = _escrow_state_error(payload.escrowId, payload.Header)
-    if state_error:
-        return state_error
-
-    total = 650000 + payload.addAmount
-    return AddDepositResponse(
-        Header=_escrow_response_header(
-            "H0000", "정상처리 되었습니다.", payload.Header
-        ),
-        REC=EscrowAmountRecord(
-            escrowId=payload.escrowId,
-            status="ACTIVE",
-            depositedAmount=total,
-            balance=total,
-            transactionId=1004,
         ),
     )
 
@@ -1608,10 +1530,11 @@ async def add_deposit(
     },
     summary="작업 대금 지급",
     description=(
-        "의뢰인이 작업 완료를 승인한 순간 부른다. 승인된 금액만 작업자 계좌로 보낸다. "
-        "보내기 직전에 예금주와 동결 여부를 다시 확인한다.\n\n"
-        "계약금이 한 번에 들어왔더라도 지급은 승인 단위로 나뉜다. 같은 `referenceId`로 "
-        "다시 부르면 두 번 보내지 않는다.\n\n"
+        "전 작업이 통과 확정된 뒤 계약 대금을 한 번에 지급할 때 부른다. 정상 완료는 "
+        "전액을, 중도 종료는 통과한 작업분 합계를 작업자 계좌로 보낸다. 보내기 직전에 "
+        "예금주와 동결 여부를 다시 확인한다.\n\n"
+        "마일스톤 단위로 나눠 지급하지 않는다. 같은 `referenceId`로 다시 부르면 두 번 "
+        "보내지 않는다.\n\n"
         "- **200 / H0000**: 보냈을 때. 잔액이 모두 빠지면 에스크로가 COMPLETED가 된다\n"
         "- **400 / E5002**: `idempotencyKey`가 없을 때\n"
         "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
@@ -1632,7 +1555,7 @@ async def release_escrow(
                 {
                     "Header": _escrow_header_example("releaseEscrow"),
                     "escrowId": ESCROW_ID,
-                    "referenceId": "MILESTONE-1",
+                    "referenceId": "SETTLEMENT:9001",
                     "amount": 400000,
                     "recipientBankCode": "001",
                     "recipientAccountNo": "0019876543210987",
@@ -1683,7 +1606,7 @@ async def release_escrow(
     },
     summary="잔액 환불",
     description=(
-        "계약이 깨지거나 특약으로 금액이 줄어 의뢰인에게 돌려줄 때 부른다. 절차는 "
+        "중도 종료로 통과분을 지급한 뒤 남은 잔액을 의뢰인에게 돌려줄 때 부른다. 절차는 "
         "지급과 같지만 받을 계좌를 요청할 때마다 받아 예금주를 대조한 뒤 쓴다.\n\n"
         "한 에스크로에서 여러 번 나눠 환불할 수 있다.\n\n"
         "- **200 / H0000**: 돌려줬을 때. 잔액이 남아 있으면 `status`가 ACTIVE, 모두 "
@@ -1710,7 +1633,7 @@ async def refund_escrow(
                     "refundBankCode": "001",
                     "refundAccountNo": MOCK_ACCOUNT_NO,
                     "refundHolderName": "김미미",
-                    "referenceId": "REFUND-1",
+                    "referenceId": "SETTLEMENT:9001",
                 }
             ]
         ),
@@ -1803,8 +1726,8 @@ async def cancel_escrow(
 # --------------------------------------------------------------------------- #
 # 동결 — 신고가 접수되면 걸고 끝나면 푼다
 #
-# 금융망은 관여하지 않고 에스크로 안의 상태만 바뀐다. 동결 여부는 해제일시가 비어 있는
-# 신고별 동결 행이 하나라도 있는지로 가른다(ERD escrow_holds.released_at).
+# 금융망은 관여하지 않고 에스크로 안의 상태만 바뀐다. 동결은 에스크로당 하나이며
+# escrows.hold_status(NONE / HELD / RELEASED)로 가른다. 활성 신고는 최대 1개다.
 # escrows.status는 동결로 바뀌지 않는다.
 # --------------------------------------------------------------------------- #
 
@@ -1821,8 +1744,8 @@ class HoldEscrowRequest(BaseModel):
     )
     reportId: str = Field(
         description=(
-            "고객사의 신고 식별자. 신고 하나에 동결 한 행이 걸린다. ERD "
-            "escrow_holds.external_report_id에 대응한다."
+            "고객사의 신고 식별자. 에스크로당 활성 신고는 최대 1개다. ERD "
+            "escrows.external_report_id에 대응한다."
         ),
         examples=["REPORT-7"],
         json_schema_extra={"minLength": 1, "maxLength": 100},
@@ -1831,15 +1754,11 @@ class HoldEscrowRequest(BaseModel):
 
 class HoldRecord(BaseModel):
     escrowId: int = Field(description="대상 에스크로.", examples=[ESCROW_ID])
-    activeHolds: int = Field(
-        description=(
-            "아직 풀리지 않은 동결 수. ERD escrow_holds에서 released_at이 비어 있는 "
-            "행을 센 값이다."
-        ),
-        examples=[1],
-    )
     isHeld: bool = Field(
-        description="잠겨 있는지. activeHolds가 0보다 크면 참이다.",
+        description=(
+            "잠겨 있는지. ERD escrows.hold_status가 HELD이면 참이다. "
+            "잠긴 동안은 지급과 일반 환불이 막힌다."
+        ),
         examples=[True],
     )
 
@@ -1861,8 +1780,8 @@ class UnholdEscrowRequest(BaseModel):
     )
     reportId: str = Field(
         description=(
-            "풀 신고의 식별자. 그 신고로 걸린 동결 행의 해제일시만 채운다. ERD "
-            "escrow_holds.external_report_id에 대응한다."
+            "풀 신고의 식별자. 그 신고로 걸린 동결을 해제한다. ERD "
+            "escrows.external_report_id에 대응하고 released_at을 채운다."
         ),
         examples=["REPORT-7"],
         json_schema_extra={"minLength": 1, "maxLength": 100},
@@ -1884,7 +1803,6 @@ class UnholdEscrowResponse(BaseModel):
             "holdEscrow",
             {
                 "escrowId": ESCROW_ID,
-                "activeHolds": 1,
                 "isHeld": True,
             },
         ),
@@ -1894,7 +1812,7 @@ class UnholdEscrowResponse(BaseModel):
     description=(
         "고객사에 신고가 접수되면 자동으로 건다. 관리자가 버튼을 눌러 거는 것이 "
         "아니다.\n\n"
-        "동결 중에는 지급도 환불도 거절된다. 신고 하나에 동결 한 행이 걸리며, 같은 "
+        "동결 중에는 지급도 환불도 거절된다. 에스크로당 활성 동결은 하나이며, 같은 "
         "신고로 다시 불러도 이미 걸려 있으므로 성공으로 처리한다.\n\n"
         "- **200 / H0000**: 걸었을 때. 이미 걸려 있어도 같은 응답을 준다\n"
         "- **400 / E5002**: `idempotencyKey`가 없을 때\n"
@@ -1933,7 +1851,7 @@ async def hold_escrow(
         Header=_escrow_response_header(
             "H0000", "정상처리 되었습니다.", payload.Header
         ),
-        REC=HoldRecord(escrowId=payload.escrowId, activeHolds=1, isHeld=True),
+        REC=HoldRecord(escrowId=payload.escrowId, isHeld=True),
     )
 
 
@@ -1947,7 +1865,6 @@ async def hold_escrow(
             "unholdEscrow",
             {
                 "escrowId": ESCROW_ID,
-                "activeHolds": 0,
                 "isHeld": False,
             },
         ),
@@ -1955,11 +1872,11 @@ async def hold_escrow(
     },
     summary="신고 종료로 동결 해제",
     description=(
-        "신고가 끝나면 그 신고로 걸린 동결만 푼다. 다른 신고의 동결이 남아 있으면 "
-        "여전히 잠긴 상태다.\n\n"
+        "신고가 끝나면 걸려 있던 동결을 푼다. 에스크로당 활성 동결은 하나이므로 "
+        "풀면 바로 잠금이 해제된다.\n\n"
         "늦게 도착한 동결·해제가 뒤바뀌지 않도록 걸린 시각과 풀린 시각으로 순서를 "
         "가린다.\n\n"
-        "- **200 / H0000**: 풀었을 때. `activeHolds`가 0이면 다시 지급과 환불을 할 수 "
+        "- **200 / H0000**: 풀었을 때. `isHeld`가 거짓이면 다시 지급과 환불을 할 수 "
         "있다\n"
         "- **400 / E5002**: `idempotencyKey`가 없을 때\n"
         "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
@@ -1997,7 +1914,7 @@ async def unhold_escrow(
         Header=_escrow_response_header(
             "H0000", "정상처리 되었습니다.", payload.Header
         ),
-        REC=HoldRecord(escrowId=payload.escrowId, activeHolds=0, isHeld=False),
+        REC=HoldRecord(escrowId=payload.escrowId, isHeld=False),
     )
 
 
@@ -2016,7 +1933,7 @@ class EscrowTransactionItem(BaseModel):
         description="거래 식별자. ERD escrow_transactions.id에 대응한다.",
         examples=[1001],
     )
-    type: str = Field(
+    transactionType: str = Field(
         description=(
             "거래 종류. DEPOSIT은 예치, RELEASE는 지급, REFUND는 환불이다. ERD "
             "escrow_transactions.transaction_type에 대응한다."
@@ -2059,15 +1976,29 @@ class InquireEscrowRecord(BaseModel):
         examples=["CONTRACT-999"],
     )
     status: str = Field(description="에스크로 상태.", examples=["ACTIVE"])
-    depositedAmount: int = Field(description="예치된 총액.", examples=[650000])
-    releasedAmount: int = Field(description="지급된 총액.", examples=[400000])
-    refundedAmount: int = Field(description="환불된 총액.", examples=[0])
+    depositedAmount: int = Field(
+        description="예치된 총액. ERD escrow_transactions의 완료된 DEPOSIT 합계다.",
+        examples=[650000],
+    )
+    releasedAmount: int = Field(
+        description="지급된 총액. ERD escrow_transactions의 완료된 RELEASE 합계다.",
+        examples=[400000],
+    )
+    refundedAmount: int = Field(
+        description="환불된 총액. ERD escrow_transactions의 완료된 REFUND 합계다.",
+        examples=[0],
+    )
     balance: int = Field(
-        description="가용 잔액. 예치액에서 지급액과 환불액을 뺀 값이다.",
+        description=(
+            "가용 잔액. ERD escrow_transactions에서 DEPOSIT 합계에서 RELEASE와 REFUND "
+            "합계를 뺀 계산값이다."
+        ),
         examples=[250000],
     )
-    isHeld: bool = Field(description="동결 여부.", examples=[False])
-    activeHolds: int = Field(description="풀리지 않은 동결 수.", examples=[0])
+    isHeld: bool = Field(
+        description="동결 여부. ERD escrows.hold_status가 HELD이면 참이다.",
+        examples=[False],
+    )
     transactions: List[EscrowTransactionItem] = Field(
         description="원장 항목. 없으면 빈 배열이다."
     )
@@ -2136,21 +2067,20 @@ INQUIRE_ERRORS: dict = dict(ESCROW_ERRORS)
                 "refundedAmount": 0,
                 "balance": 250000,
                 "isHeld": False,
-                "activeHolds": 0,
                 "transactions": [
                     {
                         "transactionId": 1001,
-                        "type": "DEPOSIT",
+                        "transactionType": "DEPOSIT",
                         "amount": 650000,
                         "status": "COMPLETED",
-                        "referenceId": "CONTRACT-999",
+                        "referenceId": "INITIAL",
                     },
                     {
                         "transactionId": 1002,
-                        "type": "RELEASE",
+                        "transactionType": "RELEASE",
                         "amount": 400000,
                         "status": "COMPLETED",
-                        "referenceId": "MILESTONE-1",
+                        "referenceId": "SETTLEMENT:9001",
                     },
                 ],
             },
@@ -2209,21 +2139,20 @@ async def inquire_escrow(
             refundedAmount=0,
             balance=250000,
             isHeld=False,
-            activeHolds=0,
             transactions=[
                 EscrowTransactionItem(
                     transactionId=1001,
-                    type="DEPOSIT",
+                    transactionType="DEPOSIT",
                     amount=650000,
                     status="COMPLETED",
-                    referenceId="CONTRACT-999",
+                    referenceId="INITIAL",
                 ),
                 EscrowTransactionItem(
                     transactionId=1002,
-                    type="RELEASE",
+                    transactionType="RELEASE",
                     amount=400000,
                     status="COMPLETED",
-                    referenceId="MILESTONE-1",
+                    referenceId="SETTLEMENT:9001",
                 ),
             ],
         ),
@@ -2307,4 +2236,227 @@ async def inquire_escrow_list(
             "H0000", "정상처리 되었습니다.", payload.Header
         ),
         REC=InquireEscrowListRecord(totalCount=len(rows), list=rows),
+    )
+
+
+# --------------------------------------------------------------------------- #
+# 정산 대사
+# --------------------------------------------------------------------------- #
+
+
+class InquireReconciliationRequest(BaseModel):
+    """정산 대사 조회 요청. 조회 대상을 고르지 않고 인증된 서비스 전체를 본다."""
+
+    Header: EscrowRequestHeader = Field(
+        description="JSON Body 안에 담는 공통 요청 Header."
+    )
+    days: int = Field(
+        default=7,
+        description=(
+            "지난 며칠치를 함께 볼지. 오늘을 1일째로 세며 1 이상 30 이하다. "
+            "비우면 7일이다."
+        ),
+        examples=[7],
+        ge=1,
+        le=30,
+    )
+
+
+class ReconciliationHistoryItem(BaseModel):
+    """하루치 대사 결과."""
+
+    asOf: str = Field(
+        description="이 시점까지 확정된 거래로 맞춰 봤다.",
+        examples=["2026-09-09T09:00:00+09:00"],
+    )
+    ledgerTotal: int = Field(
+        description=(
+            "그 시점까지 확정된 거래로 계산한 보관 총액. ERD escrow_transactions의 "
+            "completed_at 기준이다."
+        ),
+        examples=[250000],
+    )
+    bankBalance: int = Field(
+        description=(
+            "그 시점의 보관 주체 계좌 잔액. ERD에는 없으며 SSAFY 금융망 거래내역 "
+            "조회(inquireTransactionHistoryList)의 거래 후 잔액에 대응하는 필드다."
+        ),
+        examples=[250000],
+    )
+    differenceAmount: int = Field(
+        description="bankBalance에서 ledgerTotal을 뺀 값.",
+        examples=[0],
+    )
+    result: Literal["MATCHED", "BANK_MISMATCH"] = Field(
+        description="그날의 판정.",
+        examples=["MATCHED"],
+    )
+
+
+class ReconciliationRecord(BaseModel):
+    """대사 결과. 원장이 말하는 보관액과 은행이 말하는 잔액을 맞춰 본 것이다."""
+
+    ledgerTotal: int = Field(
+        description=(
+            "원장 기준으로 지금 보관 중인 총액. ERD escrows에 속한 "
+            "escrow_transactions의 예치액에서 지급액과 환불액을 뺀 값을 인증된 서비스의 "
+            "에스크로 전체에 대해 더한 것이다."
+        ),
+        examples=[250000],
+    )
+    bankBalance: int = Field(
+        description=(
+            "보관 주체 계좌에 실제로 남아 있는 잔액. ERD에는 없으며 SSAFY 금융망 "
+            "계좌 잔액 조회(inquireDemandDepositAccountBalance) 응답에 대응하는 필드다."
+        ),
+        examples=[250000],
+    )
+    differenceAmount: int = Field(
+        description=(
+            "bankBalance에서 ledgerTotal을 뺀 값. 0이면 맞은 것이고, 음수면 은행 잔액이 "
+            "원장보다 적다는 뜻이다."
+        ),
+        examples=[0],
+    )
+    result: Literal["MATCHED", "BANK_MISMATCH"] = Field(
+        description=(
+            "대사 판정. differenceAmount가 0이면 MATCHED, 아니면 BANK_MISMATCH다."
+        ),
+        examples=["MATCHED"],
+    )
+    escrowCount: int = Field(
+        description=(
+            "ledgerTotal에 잡힌 에스크로 수. 잔액이 남아 있는 것만 센다. ERD escrows의 "
+            "건수다."
+        ),
+        examples=[1],
+    )
+    history: List[ReconciliationHistoryItem] = Field(
+        description=(
+            "요청한 일수만큼의 하루치 결과. 최근 것이 먼저이고 첫 항목은 지금 결과와 "
+            "같다."
+        ),
+    )
+
+
+class InquireReconciliationResponse(BaseModel):
+    Header: CommonResponseHeader = Field(description="공통 성공 응답 Header.")
+    REC: ReconciliationRecord = Field(description="대사 결과.")
+
+
+# 대사 기준일. 목은 상태를 두지 않으므로 오늘 날짜가 아니라 명세 예시일을 쓴다.
+RECONCILIATION_BASE_DATE = datetime(2026, 9, 9, 9, 0, 0)
+
+# 은행 잔액이 어긋난 날. 며칠 전인지로 적는다.
+RECONCILIATION_MISMATCH_OFFSET = 3
+
+
+def _reconciliation_day(offset: int) -> ReconciliationHistoryItem:
+    """며칠 전 대사 한 줄. 지나간 날은 값이 바뀌지 않으므로 offset만으로 정해진다."""
+    as_of = RECONCILIATION_BASE_DATE - timedelta(days=offset)
+    # 가장 최근 지급 뒤라 오늘만 잔액이 줄어 있다.
+    ledger_total = 250000 if offset == 0 else 650000
+    bank_balance = (
+        ledger_total - 50000
+        if offset == RECONCILIATION_MISMATCH_OFFSET
+        else ledger_total
+    )
+    difference = bank_balance - ledger_total
+    return ReconciliationHistoryItem(
+        asOf=as_of.strftime("%Y-%m-%dT%H:%M:%S+09:00"),
+        ledgerTotal=ledger_total,
+        bankBalance=bank_balance,
+        differenceAmount=difference,
+        result="MATCHED" if difference == 0 else "BANK_MISMATCH",
+    )
+
+
+@router.post(
+    "/v1/escrow/inquireReconciliation",
+    response_model=InquireReconciliationResponse,
+    tags=["에스크로 조회"],
+    responses={
+        200: _ok(
+            "원장 합계와 은행 잔액을 맞춰 본 결과를 돌려준다",
+            "inquireReconciliation",
+            {
+                "ledgerTotal": 250000,
+                "bankBalance": 250000,
+                "differenceAmount": 0,
+                "result": "MATCHED",
+                "escrowCount": 1,
+                "history": [
+                    {
+                        "asOf": "2026-09-09T09:00:00+09:00",
+                        "ledgerTotal": 250000,
+                        "bankBalance": 250000,
+                        "differenceAmount": 0,
+                        "result": "MATCHED",
+                    },
+                    {
+                        "asOf": "2026-09-06T09:00:00+09:00",
+                        "ledgerTotal": 650000,
+                        "bankBalance": 600000,
+                        "differenceAmount": -50000,
+                        "result": "BANK_MISMATCH",
+                    },
+                ],
+            },
+        ),
+        **INQUIRE_ERRORS,
+    },
+    summary="정산 대사 조회",
+    description=(
+        "인증된 서비스의 에스크로를 통틀어, 원장이 말하는 보관액과 보관 주체 계좌에 "
+        "실제로 남아 있는 잔액을 맞춰 본 결과를 돌려준다. 고객사의 운영 화면이 돈이 "
+        "새지 않았는지 확인하는 데 쓴다.\n\n"
+        "다른 서비스의 에스크로는 합계에 섞이지 않는다. 읽기만 하므로 "
+        "`idempotencyKey`를 쓰지 않는다.\n\n"
+        "대사 기준 시각은 응답 Header의 `transmissionDate`와 `transmissionTime`이다.\n\n"
+        "**대사 이력은 이 API가 다루지 않는다.** 지금 시점의 결과만 돌려준다.\n\n"
+        "- **200 / H0000**: 대사했을 때. 보관 중인 에스크로가 하나도 없으면 금액이 "
+        "모두 0이고 `result`는 MATCHED다\n"
+        "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
+        "- **400 / Q1001**: 필수 속성이 없거나 형식이 맞지 않을 때\n"
+        "- **500 / Q1000**: 처리하지 못했을 때"
+    ),
+)
+async def inquire_reconciliation(
+    payload: Annotated[
+        InquireReconciliationRequest,
+        Body(
+            examples=[
+                {
+                    "Header": {
+                        k: v
+                        for k, v in _escrow_header_example(
+                            "inquireReconciliation"
+                        ).items()
+                        if k != "idempotencyKey"
+                    },
+                    "days": 7,
+                }
+            ]
+        ),
+    ],
+) -> InquireReconciliationResponse | JSONResponse:
+    error = _validate_escrow_header(payload.Header, "inquireReconciliation")
+    if error:
+        return _escrow_error(*error, payload.Header)
+
+    history = [_reconciliation_day(offset) for offset in range(payload.days)]
+    today = history[0]
+
+    return InquireReconciliationResponse(
+        Header=_escrow_response_header(
+            "H0000", "정상처리 되었습니다.", payload.Header
+        ),
+        REC=ReconciliationRecord(
+            ledgerTotal=today.ledgerTotal,
+            bankBalance=today.bankBalance,
+            differenceAmount=today.differenceAmount,
+            result=today.result,
+            escrowCount=1,
+            history=history,
+        ),
     )

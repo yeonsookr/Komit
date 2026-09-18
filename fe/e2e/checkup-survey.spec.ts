@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { signIn } from './support/session';
 
 /**
  * 사전점검 설문. 목 서버가 닿아야 합니다(BACKEND_API_BASE_URL).
@@ -15,8 +16,17 @@ test.describe('사전점검 설문', () => {
 
     await expect(page.getByText('STEP 1 / 4')).toBeVisible();
     await expect(page.getByRole('heading', { name: '어떤 걸 만드셨나요?' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '진행 중인 설문' })).toHaveCount(0);
     // 이름과 단계를 모두 채우기 전에는 넘어갈 수 없습니다.
     await expect(page.getByRole('button', { name: '다음 →' })).toBeDisabled();
+  });
+
+  test('로그인한 사용자에게만 진행 중인 설문을 보여준다', async ({ page }) => {
+    await signIn(page);
+    await page.goto('/checkup');
+
+    await expect(page.getByRole('heading', { name: '진행 중인 설문' })).toBeVisible();
+    await expect(page.getByRole('link', { name: '이어서 하기 ›' }).first()).toBeVisible();
   });
 
   test('이름과 단계를 채우면 진단이 열리고 설문2로 간다', async ({ page }) => {

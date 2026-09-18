@@ -15,19 +15,27 @@ export const TOTAL_STEPS = 4;
 /**
  * 단계별로 답할 문항의 자리(0부터).
  *
- * 설문1은 진단을 열기 전이라 첫 문항 하나, 설문2는 두 문항을 함께 받습니다.
- * **설문3은 검사 파일 단계라 문항이 없습니다** — 목 명세의 답 저장 화면도
- * 설문1·2·4뿐입니다. 설문4는 검사 결과에서 나온 마지막 문항입니다.
+ * **설문1은 문항이 없습니다.** 진단을 열기 전이라 서버에 문항이 없고, 화면도
+ * 프로젝트 이름과 설명만 받습니다. 설문2가 문항 셋을 한 화면에서 받습니다.
+ * **설문3은 검사 파일 단계라 문항이 없습니다.**
+ *
+ * 설문4는 자리를 정해 두지 않습니다. 검사 결과에서 나온 문항이라 몇 개일지
+ * 미리 알 수 없고, 코드만으로 판단할 수 없는 것이 몇 가지였느냐에 따라
+ * 달라집니다. 앞의 고정 문항 뒤에 오는 것을 모두 설문4로 봅니다.
  */
 export const STEP_QUESTION_INDEXES: Record<number, number[]> = {
-  1: [0],
-  2: [1, 2],
+  1: [],
+  2: [0, 1, 2],
   3: [],
-  4: [3],
 };
+
+/** 설문4 앞에 오는 고정 문항의 수. 그 뒤가 검사 결과에서 나온 문항입니다. */
+const FIXED_QUESTION_COUNT = 3;
 
 /** 그 단계에서 답할 문항들. 아직 없는 문항은 빠집니다. */
 export function questionsForStep(questions: SurveyQuestion[], step: number): SurveyQuestion[] {
+  if (step === TOTAL_STEPS) return questions.slice(FIXED_QUESTION_COUNT);
+
   return (STEP_QUESTION_INDEXES[step] ?? [])
     .map((index) => questions[index])
     .filter((question): question is SurveyQuestion => question !== undefined);

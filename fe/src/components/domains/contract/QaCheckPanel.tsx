@@ -14,6 +14,7 @@ import {
   StickyBar,
 } from "@/components/common";
 import { Callout, useToast } from "@/components/feedback";
+import { DeliverableFiles } from "./DeliverableFiles";
 import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
 import {
@@ -193,21 +194,21 @@ export function QaCheckPanel({
                     </span>
                   </div>
 
+                  {/* 넘겨받을 파일. 확인 문장과 짝이 아니라 따로 셉니다. */}
+                  {isHandover(milestone) && (
+                    <DeliverableFiles
+                      deliverables={development.deliverables}
+                      received={false}
+                    />
+                  )}
+
                   <ul className="mt-3 flex flex-col gap-2 px-4 sm:px-5">
-                    {milestone.qaCriteria.map((qa, index) => {
+                    {milestone.qaCriteria.map((qa) => {
                       const passed = qa.status === "RESOLVED";
-                      // 인계 작업의 문장은 넘겨받을 것 하나씩과 짝입니다. 그 줄에서 바로 받습니다.
-                      const deliverable = isHandover(milestone)
-                        ? development.deliverables[index]
-                        : undefined;
 
                       return (
-                        <li
-                          key={qa.qaCriterionId}
-                          className="flex items-center gap-3"
-                        >
+                        <li key={qa.qaCriterionId}>
                           <Checkbox
-                            className="min-w-0 flex-1"
                             label={qa.testCase ?? ""}
                             checked={
                               passed || picked[qa.qaCriterionId] === true
@@ -217,21 +218,6 @@ export function QaCheckPanel({
                             disabled={passed || confirmed}
                             onChange={() => toggle(qa.qaCriterionId)}
                           />
-                          {deliverable &&
-                            (deliverable.fileId === null ? (
-                              <span className="shrink-0 text-[13px] text-fg-subtle">
-                                아직 올라오지 않았습니다
-                              </span>
-                            ) : (
-                              <a
-                                href={INTERNAL.DELIVERABLE_FILE(
-                                  deliverable.deliverableId,
-                                )}
-                                className="shrink-0 rounded-sm text-[13px] font-semibold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                              >
-                                받기
-                              </a>
-                            ))}
                         </li>
                       );
                     })}

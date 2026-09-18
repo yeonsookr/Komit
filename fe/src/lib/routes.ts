@@ -36,6 +36,8 @@ export const ROUTES = {
   policiesPrivacy: "/policies/privacy",
   policiesElectronicFinance: "/policies/electronic-finance",
   policiesRefundDispute: "/policies/refund-dispute",
+  /** 개발자 판매자 약관. 개발자 프로필을 만들면 동의한 것으로 봅니다. */
+  policiesSellerTerms: "/policies/seller-terms",
 
   /** 사전점검(진단) 시작. 로그인이 필요합니다. */
   checkup: "/checkup",
@@ -51,6 +53,8 @@ export const ROUTES = {
    * 요청서는 따로 저장되는 문서가 아니라 요구사항들을 모아 부르는 이름입니다.
    */
   checkupRequest: (diagnosisId: number) => `/checkup/${diagnosisId}/request`,
+  /** 요청서 수정. 요청서의 「요청서 수정하기」가 여기로 옵니다. */
+  checkupRequestEdit: (diagnosisId: number) => `/checkup/${diagnosisId}/request/edit`,
 
   /** 방 대화. 상담·컨설팅·개발 방이 같은 주소를 씁니다. 방의 기본 탭입니다. */
   room: (roomId: number) => `/rooms/${roomId}`,
@@ -79,9 +83,16 @@ export const ROUTES = {
   /** 회원 탈퇴. 마이페이지의 「탈퇴하기」가 옵니다. */
   mypageWithdrawal: "/mypage/withdrawal",
 
+  /**
+   * 의뢰 목록. 헤더 「의뢰」가 여기로 옵니다.
+   *
+   * 방 화면(`room`)과 같은 세그먼트를 씁니다 — 목록이 `/rooms`, 방 하나가
+   * `/rooms/{roomId}` 입니다. 목록에서는 어느 방도 고르지 않은 채 왼쪽 목록만
+   * 보여줍니다.
+   */
+  requests: "/rooms",
+
   // ---- 아래는 아직 화면이 없는 임시 경로입니다. 화면이 생기면 값만 고칩니다. ----
-  /** 의뢰 목록. 방 화면(/rooms/{roomId})의 진입점이 됩니다. */
-  requests: "/requests",
   /**
    * 정산. 한 사람이 의뢰인이면서 개발자일 수 있어 소비와 소득을 함께 둡니다.
    * 기본 화면은 소비 내역이고, 달은 `?month=` 로 넘깁니다(`lib/settlement.ts`).
@@ -92,13 +103,10 @@ export const ROUTES = {
   /** 푸터 "정산 방식" 안내. */
   settlementsGuide: "/settlements/guide",
   notifications: "/notifications",
-  /** 계좌 등록. 마이페이지의 「계좌 변경」이 옵니다. */
+  /** 계좌 등록·변경. 마이페이지 계좌 칸과 예치 화면이 옵니다. */
   accountRegister: "/mypage/account",
-  /** 계약서. 탈퇴 화면의 「이동」이 막고 있는 계약으로 보냅니다. */
-  contract: (contractId: number) => `/contracts/${contractId}`,
-  /** 내 개발자 프로필. 푸터 "프로필 등록"도 여기로 옵니다. */
+  /** 내 개발자 프로필. 만들기와 편집이 같은 화면을 씁니다. */
   mypageProfile: "/mypage/profile",
   /** 내 일정. 마이페이지의 「일정 관리」가 옵니다. */
   mypageSchedule: "/mypage/schedule",
-  mypageSettings: "/mypage/settings",
 } as const;

@@ -2,6 +2,7 @@ import "server-only";
 
 import { backendApi } from "../server";
 import { BACKEND } from "../endpoints";
+import { authorized } from "@/lib/auth/session";
 import type {
   CreateIssueRequest,
   Diagnosis,
@@ -11,9 +12,29 @@ import type {
   SaveSurveyAnswersRequest,
   StartDiagnosisRequest,
   Survey,
+  UnfinishedSurvey,
   UpdateIssueStatusRequest,
   WriteRequirementsRequest,
 } from "@/types/diagnosis";
+
+/** 목록 응답. 목이 `content` 로 감싸 내려줍니다. */
+interface UnfinishedSurveyListResponse {
+  content: UnfinishedSurvey[];
+}
+
+/**
+ * 끝내지 않은 설문 목록.
+ *
+ * 설문을 끝내지 않고 나간 진단만 옵니다. 설문1 아래 「진행 중인 설문」이 이걸로
+ * 그려지고, 마지막으로 저장한 시각의 내림차순입니다.
+ */
+export async function getUnfinishedSurveys(): Promise<UnfinishedSurvey[]> {
+  const { data } = await backendApi().get<UnfinishedSurveyListResponse>(
+    BACKEND.DIAGNOSES,
+    await authorized(),
+  );
+  return data.content;
+}
 
 /**
  * 진단 시작.
@@ -48,6 +69,20 @@ export async function saveSurveyAnswers(
   body: SaveSurveyAnswersRequest,
 ): Promise<Survey> {
   const { data } = await backendApi().patch<Survey>(BACKEND.SURVEY_ANSWERS(diagnosisId), body);
+  return data;
+}
+
+/**
+ * 설문 완료.
+ *
+ * 설문4까지 마쳤다고 알립니다. **답 저장이 완료를 겸하지 않습니다** — 설문4
+ * 문항은 검사 결과에서 나오므로, 답이 다 찼는지로 판정하면 설문2까지만 하고도
+ * 완료로 찍힙니다. 그래서 끝났다는 것은 화면이 따로 알립니다.
+ *
+ * 아직 답하지 않은 문항이 남았거나 이미 끝낸 설문이면 409 입니다.
+ */
+export async function completeSurvey(diagnosisId: number): Promise<Survey> {
+  const { data } = await backendApi().post<Survey>(BACKEND.SURVEY_COMPLETE(diagnosisId));
   return data;
 }
 
@@ -109,7 +144,11 @@ export async function getDiagnosis(diagnosisId: number): Promise<Diagnosis> {
 
 /** 검사에서 나온 결함 목록. 진단서와 요구사항 선택이 함께 씁니다. */
 export async function getIssues(diagnosisId: number): Promise<Issue[]> {
-  const { data } = await backendApi().get<IssueListResponse>(BACKEND.ISSUES(diagnosisId));
+  const { data } = await backendApi().get<IssueListResponse>(BACKEND.ISSUES(diagnosisId), {
+    // 진단서와 요청서는 일부 페이지만 보여주면 분류와 요구사항이 조용히 사라집니다.
+    // 목·실서버 계약이 허용하는 최대 크기로 한 회차의 결함을 모두 받습니다.
+    params: { page: 1, size: 100 },
+  });
   return data.content;
 }
 

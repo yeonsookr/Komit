@@ -3,6 +3,16 @@ import "server-only";
 import { cookies } from "next/headers";
 import { ApiError } from "@/types/api";
 import { UNAUTHORIZED_CODE, type TokenResponse } from "@/types/auth";
+/**
+ * 쿠키 **이름**은 `cookies.ts` 에 있습니다 — proxy 도 같은 값을 읽어야 하는데
+ * 이 모듈은 `server-only` 라 거기서 불러올 수 없습니다. 쓰던 곳이 그대로 쓰도록
+ * 여기서 다시 내보냅니다. 쿠키를 굽고 지우는 일은 계속 이 모듈이 합니다.
+ */
+import {
+  ACCESS_TOKEN_COOKIE,
+  OAUTH_HANDOFF_COOKIE,
+  REFRESH_TOKEN_COOKIE,
+} from "./cookies";
 
 /**
  * 로그인 세션은 httpOnly 쿠키 두 개입니다. 브라우저 자바스크립트는 토큰을 읽지
@@ -14,9 +24,7 @@ import { UNAUTHORIZED_CODE, type TokenResponse } from "@/types/auth";
  *   화면 요청마다 실려 다닐 이유가 없습니다.
  * - 인가 진행값: 인가 시작 → 콜백 사이에만 살고, 콜백에서 바로 지웁니다.
  */
-export const ACCESS_TOKEN_COOKIE = "komit_access_token";
-export const REFRESH_TOKEN_COOKIE = "komit_refresh_token";
-export const OAUTH_HANDOFF_COOKIE = "komit_oauth";
+export { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE, OAUTH_HANDOFF_COOKIE };
 
 /** 재발급·로그아웃 Route Handler 가 있는 곳. 리프레시 쿠키는 여기로만 갑니다. */
 const AUTH_COOKIE_PATH = "/api/auth";

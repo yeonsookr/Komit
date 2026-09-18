@@ -9,6 +9,9 @@ import type {
   DeveloperListResponse,
   DeveloperSearchParams,
   ReviewListResponse,
+  MyDeveloperProfile,
+  Review,
+  WriteDeveloperProfileRequest,
 } from "@/types/developer";
 
 /**
@@ -26,6 +29,29 @@ export async function findDevelopers(
     params,
     paramsSerializer: { indexes: null },
   });
+  return data;
+}
+
+/** 내 개발자 프로필. 아직 만들지 않았으면 NO_DEVELOPER_PROFILE 오류가 그대로 올라갑니다. */
+export async function getMyDeveloperProfile(): Promise<MyDeveloperProfile> {
+  const { data } = await backendApi().get<MyDeveloperProfile>(BACKEND.MY_DEVELOPER_PROFILE);
+  return data;
+}
+
+/** 내 개발자 프로필 전체 저장. 처음 저장하면 201, 이후에는 200입니다. */
+export async function writeMyDeveloperProfile(
+  body: WriteDeveloperProfileRequest,
+): Promise<{ profile: MyDeveloperProfile; status: number }> {
+  const { data, status } = await backendApi().put<MyDeveloperProfile>(
+    BACKEND.MY_DEVELOPER_PROFILE,
+    body,
+  );
+  return { profile: data, status };
+}
+
+/** 내가 받은 리뷰의 답글 쓰기·수정. */
+export async function writeReviewReply(reviewId: number, reply: string): Promise<Review> {
+  const { data } = await backendApi().put<Review>(BACKEND.REVIEW_REPLY(reviewId), { reply });
   return data;
 }
 
