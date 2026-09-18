@@ -4049,8 +4049,9 @@ def get_developer_reviews(
         "**이 진단에서 나오지 않은 요구사항이 섞였을 때.** 고르지 않은 것이 요청서에 "
         "실리면 계약까지 따라가므로 조용히 버리지 않고 막는다\n"
         "- **500 / INTERNAL_ERROR**: 추천을 만들지 못했을 때\n\n"
-        "목에서는 `issueIds`에 이 진단의 요구사항(311·312·313·314)이 아닌 값이 하나라도 "
-        "있으면 422를 준다."
+        "목에서는 검사 결과를 올린 진단이면 그 결과에서 나온 요구사항만 허용하고, "
+        "결과가 없는 진단이면 고정 예시 요구사항만 허용한다. 다른 진단의 요구사항이 "
+        "하나라도 섞이면 422를 준다."
     ),
 )
 def create_recommendation(
@@ -4066,7 +4067,11 @@ def create_recommendation(
     if projectId == NOT_FOUND_PROJECT_ID:
         return _error_response(404, PROJECT_NOT_FOUND)
 
-    known = {issue["issueId"] for issue in ISSUES}
+    known = {
+        issue["issueId"]
+        for issue in _issue_rows(request.diagnosisId)
+        if issue["status"] in {"SUGGESTED", "CONTRACTED"}
+    }
     unknown = [issue_id for issue_id in request.issueIds if issue_id not in known]
     if unknown:
         body = ValidationErrorResponse(
