@@ -652,8 +652,6 @@ ACCOUNT_NO_PATTERN = r"^\d{16}$"
 
 MOCK_ACCOUNT_NO = "0011234567890123"
 INVALID_ACCOUNT_NO = "0000000000000000"
-MISMATCH_AUTH_CODE = "9999"
-
 # SSAFY 금융망 형식은 오류를 본문의 responseCode로 전한다. HTTP 상태코드는 기준 API와
 # 같이 400과 500만 쓰고, 어떤 오류인지는 responseCode로 가른다.
 ACCOUNT_ERRORS: dict = {
@@ -702,8 +700,8 @@ class OpenAccountAuthRecord(BaseModel):
     expiresAt: str = Field(
         description=(
             "이 시각이 지나면 인증이 만료된다. 화면의 남은 시간이 이 값에서 나온다. "
-            "ERD account_verifications.expires_at에 대응하며 유효 시간은 R-ACC-02다. "
-            "에스크로가 이 값을 계산해 내려주므로 Komit은 그대로 전달만 한다."
+            "SSAFY 금융망 응답에 대응하며 유효 시간은 R-ACC-02다. 에스크로는 이 값을 "
+            "저장하지 않고 Komit Service에 전달한다."
         ),
         examples=["2026-09-09T12:10:00+09:00"],
     )
@@ -801,9 +799,10 @@ class CheckAuthCodeRequest(BaseModel):
     authCode: str = Field(
         description=(
             "사용자가 입력한 네 자리 인증번호. 앞자리 0을 보존해야 하므로 숫자가 아니라 "
-            "문자열로 다룬다. 9999는 인증번호 불일치 재현용 예약값이다."
+            "문자열로 다룬다. 은행 앱이 없는 현재 모의 환경에서는 일치 여부를 검사하지 "
+            "않는다."
         ),
-        examples=["1234", MISMATCH_AUTH_CODE],
+        examples=["1234"],
         json_schema_extra={"pattern": r"^\d{4}$"},
     )
 
@@ -884,8 +883,8 @@ def _success_header_example(api_name: str) -> dict:
         "인증할 계좌에 1원을 입금하고 거래내역에 기업명과 네 자리 인증번호를 남긴다. "
         "원화 수시입출금 계좌만 쓸 수 있다.\n\n"
         "기업명은 에스크로가 고객사 설정에서 꺼내 채우므로 요청 본문에 담지 않는다. "
-        "에스크로는 계좌번호 원문을 보관하지 않지만, 인증 세션과 만료 시각은 "
-        "에스크로가 관리해 `expiresAt`로 내려준다.\n\n"
+        "에스크로는 계좌번호 원문과 인증 세션을 보관하지 않는다. 금융망에서 받은 "
+        "`expiresAt`를 Komit Service에 전달하며, 인증 세션은 Service가 관리한다.\n\n"
         "- **200 / H0000**: 1원을 보냈을 때\n"
         "- **400 / A1003**: `accountNo`가 `0000000000000000`일 때. 계좌번호가 "
         "유효하지 않다\n"
@@ -1049,13 +1048,12 @@ async def inquire_transaction_history_list(
     },
     summary="계좌 인증번호 검증",
     description=(
-        "사용자가 입력한 네 자리 인증번호가 맞는지 확인한다. 기업명은 에스크로가 채워 "
-        "넣으므로 발급 때와 항상 같다.\n\n"
+        "사용자가 입력한 네 자리 인증번호를 금융망에 전달한다. 기업명은 에스크로가 "
+        "채워 넣으므로 발급 때와 항상 같다.\n\n"
         "성공하면 고객사가 그 계좌를 인증됨으로 표시하고 보관한다. 에스크로는 계좌를 "
-        "저장하지 않는다.\n\n"
-        "- **200 / H0000**: 인증번호가 맞을 때\n"
-        "- **400 / A1090**: `authCode`가 `9999`일 때. 인증번호가 맞지 않으니 다시 "
-        "입력하도록 안내한다\n"
+        "저장하지 않는다. 은행 앱이 없는 현재 모의 환경에서는 형식에 맞는 숫자 네 "
+        "자리이면 일치 여부와 무관하게 성공한다. 이는 실제 계좌 소유 인증이 아니다.\n\n"
+        "- **200 / H0000**: 숫자 네 자리 형식이 맞을 때\n"
         "- **400 / A1003**: `accountNo`가 `0000000000000000`일 때\n"
         "- **400 / H1009**: `userKey`가 없거나 `invalid-user-key`일 때\n"
         "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
@@ -1086,11 +1084,6 @@ async def check_auth_code(
         return _escrow_error(
             400, "A1003", "계좌번호가 유효하지 않습니다.", payload.Header
         )
-    if payload.authCode == MISMATCH_AUTH_CODE:
-        return _escrow_error(
-            400, "A1090", "인증번호가 일치하지 않습니다.", payload.Header
-        )
-
     return CheckAuthCodeResponse(
         Header=_escrow_response_header(
             "H0000", "정상처리 되었습니다.", payload.Header

@@ -968,6 +968,10 @@ def get_featured_developers(
         "**화면 — `1_로그인` › 카카오로 시작하기**\n\n"
         "카카오 로그인 화면에서 받은 인가 코드로 로그인한다. 처음 들어온 사용자라면 "
         "이 요청으로 가입까지 끝나며, 별도의 가입 화면이나 약관 동의 화면은 없다.\n\n"
+        "처음 가입할 때는 SSAFY 금융망 `userKey`를 발급받고 별도 계좌 생성 API로 "
+        "개인 계좌도 만든 뒤, 두 값을 Komit Service DB에 저장한다. 이 금융 정보까지 "
+        "준비되어야 가입이 완료된 것으로 처리한다. 기존 사용자의 로그인에서는 다시 "
+        "발급하지 않는다.\n\n"
         "로그인 화면이 '계속하시면 아래 이용약관과 개인정보 처리방침에 동의하신 것으로 "
         "간주합니다'라고 안내하므로 필수 약관 동의는 이 요청으로 함께 처리된다. "
         "개발자 판매자 약관만 선택이며, 개발자 프로필을 만들 때 그 행위로 갈음한다.\n\n"
@@ -7671,8 +7675,8 @@ def get_income() -> IncomeResponse:
 #
 # 계좌는 1원 인증으로만 등록한다. 계좌를 넣는 요청과 입금자명 뒤 네 자리를 내는
 # 요청이 나뉘며, 확인이 끝나는 순간에만 accounts 에 계좌가 남는다. 1원 이체와
-# 확인 호출은 Escrow 서버가 금융망에 하고, Komit 은 확인 건의 식별자와 가린
-# 계좌번호만 들고 있다. 계좌번호 원문은 어느 쪽에도 남지 않는다.
+# 확인 호출은 Escrow 서버가 금융망에 하고, Komit 은 확인 건과 계좌 원본을 안전하게
+# 보관한다. Escrow는 요청받은 userKey와 계좌번호를 금융망 호출 뒤 보관하지 않는다.
 #
 # Escrow 서버는 SSAFY 금융망과 Komit 사이의 프록시로 동작한다. 클라이언트에서
 # Komit 까지는 아래 API 들의 간소화된 형식을 쓰고, Komit 에서 Escrow 까지는 SSAFY
@@ -7744,8 +7748,9 @@ class ConfirmAccountVerificationRequest(BaseModel):
     """입금자명 뒤 4자리 확인 요청."""
 
     authCode: str = Field(
-        description="입금자명 뒤에 붙은 숫자 네 자리.",
+        description="입금자명 뒤에 붙은 숫자 네 자리. 앞자리 0을 보존하는 문자열이다.",
         examples=["1234"],
+        json_schema_extra={"pattern": r"^\d{4}$"},
     )
 
 AREA8_TAG = "8 계정 · 공통"
@@ -7763,10 +7768,6 @@ AREA8_FORBIDDEN: dict = {
 ACCOUNT_REJECTED = (
     "ACCOUNT_REJECTED",
     "은행과 계좌번호를 다시 확인해 주세요.",
-)
-AUTH_CODE_MISMATCH = (
-    "AUTH_CODE_MISMATCH",
-    "숫자 네 자리가 맞지 않습니다. 입금 내역을 다시 확인해 주세요.",
 )
 ESCROW_UNAVAILABLE = (
     "ESCROW_UNAVAILABLE",
@@ -7795,17 +7796,12 @@ REVIEW_NOT_FOUND_EXAMPLE = {
 
 # 목에서 실패 응답을 보고 싶을 때 쓰는 값.
 REJECTED_ACCOUNT_NUMBER = "00000000000000"
-VALID_AUTH_CODE = "1234"
 NOT_FOUND_VERIFICATION_ID = 404
 NOT_FOUND_NOTIFICATION_ID = 404
 
 ACCOUNT_REJECTED_EXAMPLE = {
     "code": ACCOUNT_REJECTED[0],
     "message": ACCOUNT_REJECTED[1],
-}
-AUTH_CODE_MISMATCH_EXAMPLE = {
-    "code": AUTH_CODE_MISMATCH[0],
-    "message": AUTH_CODE_MISMATCH[1],
 }
 ESCROW_UNAVAILABLE_EXAMPLE = {
     "code": ESCROW_UNAVAILABLE[0],
@@ -7913,8 +7909,9 @@ def get_payment_methods() -> PaymentMethodListResponse:
         "사람마다 계좌는 하나이고, 의뢰인은 그 계좌로 예치금을 내고 환불을 받으며 "
         "개발자는 그 계좌로 대금을 받는다.\n\n"
         "넣은 계좌로 1원을 보내 확인 건을 연다. 실제 이체는 Escrow 서버가 "
-        "금융망에 요청하고, Komit은 확인 건의 식별자와 가린 계좌번호만 들고 있는다. "
-        "계좌번호 원문은 Komit에도 Escrow에도 남지 않는다.\n\n"
+        "금융망에 요청한다. Komit Service는 확인을 끝낼 때 계좌를 저장할 수 있도록 "
+        "확인 건과 계좌번호를 안전하게 보관하고, Escrow는 요청받은 `userKey`와 "
+        "계좌번호를 금융망 호출 뒤 보관하지 않는다.\n\n"
         "이 요청만으로는 계좌가 등록되지 않는다. 입금자명 뒤 4자리를 확인 API에 "
         "내야 등록이 끝난다. `expiresAt`이 지나면 이 확인 건은 쓸 수 없고, 같은 "
         "요청을 다시 보내 새 확인 건을 연다. 화면의 **다시 보내기**가 이 경로다.\n\n"
@@ -7963,8 +7960,7 @@ def request_account_verification(
         },
         400: {
             "model": ErrorResponse,
-            "description": "네 자리가 맞지 않거나 확인 건을 더 쓸 수 없음",
-            "content": {"application/json": {"example": AUTH_CODE_MISMATCH_EXAMPLE}},
+            "description": "확인 건이 만료됐거나 닫힘",
         },
         **AREA8_FORBIDDEN,
         404: {
@@ -7980,22 +7976,20 @@ def request_account_verification(
     summary="계좌 확인 · 등록",
     description=(
         "**화면 — `8_계좌인증` › 계좌 등록하기**\n\n"
-        "입금자명 뒤 네 자리를 내면 확인 건이 끝나고 그 계좌가 등록된다. 등록한 계좌가 "
+        "숫자 네 자리를 내면 확인 건이 끝나고 그 계좌가 등록된다. 등록한 계좌가 "
         "이미 있으면 이 시점에 대체된다.\n\n"
         "계좌번호는 암호화해 보관하고 응답에는 언제나 가려서 내보낸다.\n\n"
         "**지금 단계에서는 네 자리를 실제로 검사하지 않는다.** 은행 앱을 쓸 수 없어 "
-        "입금자명에 찍힌 인증코드를 읽어올 방법이 없기 때문이다. 클라이언트가 어떤 "
-        "값을 보내든, 에스크로 서버가 금융망에 맞는 값을 대신 건네 확인을 끝낸다. "
-        "따라서 이 단계에서 400 `AUTH_CODE_MISMATCH`는 실제로 나오지 않는다.\n\n"
+        "입금자명에 찍힌 인증코드를 읽어올 방법이 없기 때문이다. 클라이언트가 형식에 "
+        "맞는 숫자 네 자리를 보내면, 에스크로 서버가 금융망에 맞는 값을 대신 건네 "
+        "확인을 끝낸다. 이는 실제 계좌 소유 인증이 아니다.\n\n"
         "은행 앱을 쓸 수 있게 되면 클라이언트가 보낸 값을 그대로 금융망에 넘기도록 "
         "바꾼다. **요청·응답 형식은 그대로이므로 클라이언트는 고칠 것이 없다.**\n\n"
         "**확인 건의 주인이 토큰의 주인인지 검증한다.** `verificationId`의 확인 건을 "
         "연 사람이 `sub`와 같은지 확인한 뒤에 처리하고, 다르면 403으로 막는다. 남의 "
         "확인 건을 끝내 그 계좌를 내 계좌로 등록하는 일이 없어야 한다. 등록되는 계좌는 "
         "언제나 `sub`의 계좌다.\n\n"
-        "- **200**: 네 자리가 맞아 계좌가 등록됐을 때\n"
-        "- **400 / AUTH_CODE_MISMATCH**: 네 자리가 다를 때. 확인 건은 아직 살아 "
-        "있어 다시 낼 수 있다\n"
+        "- **200**: 숫자 네 자리 형식이 맞아 계좌가 등록됐을 때\n"
         "- **400 / VERIFICATION_EXPIRED**: `expiresAt`이 지났을 때\n"
         "- **400 / VERIFICATION_CLOSED**: 여러 번 틀려 확인 건이 닫혔을 때. 계좌 "
         "입력부터 다시 한다\n"
@@ -8004,9 +7998,7 @@ def request_account_verification(
         "- **404 / VERIFICATION_NOT_FOUND**: `verificationId`에 해당하는 확인 건이 "
         "없을 때\n"
         "- **422 / INVALID_REQUEST**: `authCode`가 네 자리 숫자가 아닐 때\n"
-        "- **500 / INTERNAL_ERROR**: 계좌를 저장하지 못했을 때\n\n"
-        "`authCode`가 `1234`면 등록에 성공하고, 그 밖의 값이면 400 "
-        "`AUTH_CODE_MISMATCH`를 준다."
+        "- **500 / INTERNAL_ERROR**: 계좌를 저장하지 못했을 때"
     ),
 )
 def confirm_account_verification(
@@ -8018,9 +8010,6 @@ def confirm_account_verification(
 ) -> AccountResponse | JSONResponse:
     if verificationId == NOT_FOUND_VERIFICATION_ID:
         return _error_response(404, VERIFICATION_NOT_FOUND)
-    if request.authCode != VALID_AUTH_CODE:
-        return _error_response(400, AUTH_CODE_MISMATCH)
-
     return AccountResponse(**INCOME_EXAMPLE["settlementAccount"])
 
 
