@@ -1234,8 +1234,8 @@ class CreateEscrowRequest(WithdrawalAccount):
     )
     depositorName: str = Field(
         description=(
-            "예치자의 인증된 예금주명. 입금자명이 맞는지 대조하는 데 쓰이며 원문으로 "
-            "저장하지 않는다."
+            "가상계좌 입금자명 일치 여부를 확인할 기준값. 실제 출금 계좌 명의의 "
+            "인증 결과를 뜻하지 않으며 원문으로 저장하지 않는다."
         ),
         examples=["김미미"],
         min_length=1,

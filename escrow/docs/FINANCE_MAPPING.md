@@ -103,7 +103,7 @@ Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemb
 | deposit_step | attempts.step | SSAFY API | 응답 → 컬럼 |
 | --- | --- | --- | --- |
 | VA_CREATING→VA_CREATED | `VA_CREATE` | `createVirtualAccount`<br>req: `mainAccountNo`(보관계좌), `depositorName`, `expectedAmount`, `expiryDate`, `autoTransfer=false` | `virtualAccountId`→`virtual_account_id`<br>`virtualAccountNo`→`virtual_account_no` |
-| TRANSFER_SENDING→TRANSFERRED | `DEPOSIT_TRANSFER` | `updateDemandDepositAccountTransfer`<br>req: `depositAccountNo`(VA번호), `withdrawalAccountNo`(회원가입 때 발급한 의뢰인 계좌), `transactionBalance`<br>Header.userKey = Komit이 전달한 의뢰인 키 (`R-PAY-09`) | `source_bank_code`, `source_account_encrypted` |
+| TRANSFER_SENDING→TRANSFERRED | `DEPOSIT_TRANSFER` | `updateDemandDepositAccountTransfer`<br>req: `depositAccountNo`(VA번호), `withdrawalAccountNo`(회원가입 때 발급한 의뢰인 계좌), `transactionBalance`(십진수 문자열), `depositTransactionSummary`(`createVirtualAccount.depositorName`과 동일한 값)<br>Header.userKey = Komit이 전달한 의뢰인 키 (`R-PAY-09`) | `source_bank_code`, `source_account_encrypted` |
 | VERIFIED | `DEPOSIT_VERIFY` | `inquireVirtualAccountDeposits`<br>req: `virtualAccountId` | `deposits[].depositAmount`→`verified_deposit_amount`<br>`nameMatched`→`depositor_name_matched`<br>→`deposit_verification_status` |
 | SETTLED | `VA_SETTLE` | `settleVirtualAccount`<br>req: `virtualAccountId` | `settledAmount`, `settledAt`→`completed_at` |
 | VA_CLOSED | `VA_CLOSE` | `closeVirtualAccount`<br>req: `virtualAccountId` | status=CLOSED→`virtual_account_closed_at` |
@@ -111,6 +111,9 @@ Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemb
 - `external_reference_id` = **`INITIAL`** (예치 고정)
 - `deposit_verification_status`: `verified_deposit_amount` == `escrows.expected_amount` → MATCHED, 다르면 MISMATCHED(부분·초과), 미확인 UNKNOWN
 - **VA 입금은 출처 계좌를 응답에 주지 않는다.** `source_*`는 be-api가 넘긴 참고값이지 금융망 확인값이 아니다.
+- 2026-09-18 실호출에서 회원 계좌 → 에스크로 소유 VA로 1,000원을 이체하고 `inquireVirtualAccountDeposits`로 조회한 뒤 `settleVirtualAccount`로 보관계좌에 정산했다. 회원 잔액은 1,000원 감소했고 보관계좌 잔액은 1,000원 증가했다. 세 호출 모두 `H0000`이었다.
+- 입금자명 일치 판정은 이체 요청의 **`depositTransactionSummary`를 VA 발급 시의 `depositorName`과 동일하게 보냈을 때** `nameMatched=true`였다. 실제 회원 예금주명과 VA 지정 입금자명이 같아도 거래 요약을 다른 값으로 보내면 `false`였다. `withdrawalTransactionSummary`는 다른 값을 유지한 추가 이체에서도 `true`였다. 따라서 이체를 구성할 때 두 값을 맞춘다. 이 검증 결과는 거래 요약과 지정 이름의 일치를 보여주며, 출금 계좌의 실제 명의 확인을 증명하지 않는다.
+- 테스트한 세 가상계좌는 정산 후 입금 내역의 `transferred=true`, `settledAt` 존재를 확인했고, `closeVirtualAccount`로 모두 `CLOSED` 처리했다. 보관계좌 최종 잔액은 테스트 이체 합계인 3,000원이었다.
 
 ### 예치 상태 확정
 
