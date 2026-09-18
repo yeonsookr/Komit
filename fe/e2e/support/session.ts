@@ -22,3 +22,20 @@ export async function signIn(page: Page): Promise<void> {
     { name: ACCESS_TOKEN_COOKIE, value: SAMPLE_USER_TOKEN, url: baseURL },
   ]);
 }
+
+/** 운영자 세션 쿠키. 사용자 쿠키와 이름부터 다릅니다(`src/lib/admin/cookies.ts`). */
+const ADMIN_ACCESS_TOKEN_COOKIE = 'komit_admin_token';
+
+/**
+ * 운영 콘솔을 열 수 있는 상태로 만듭니다. `signIn` 과 **겹쳐 쓰지 마세요** —
+ * 두 세션이 서로를 침범하지 않는지 보는 것이 admin-auth 스펙의 일이라,
+ * 그 스펙만 두 쿠키를 함께 넣습니다.
+ *
+ * 목 서버는 토큰을 검사하지 않아 값은 무엇이든 됩니다. proxy 가 보는 것은
+ * 쿠키가 있는지뿐입니다.
+ */
+export async function signInAsAdmin(page: Page): Promise<void> {
+  await page.context().addCookies([
+    { name: ADMIN_ACCESS_TOKEN_COOKIE, value: 'admin.e2e-token', url: baseURL },
+  ]);
+}

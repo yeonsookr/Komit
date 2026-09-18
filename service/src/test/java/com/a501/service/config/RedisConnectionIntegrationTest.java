@@ -12,6 +12,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.data.redis.test.autoconfigure.DataRedisTest;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.data.redis.core.StringRedisTemplate;
+import com.a501.service.config.AuthProperties;
+import com.a501.service.domain.auth.repository.RefreshTokenRepository;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -54,5 +56,25 @@ class RedisConnectionIntegrationTest {
 
         assertThat(redisTemplate.hasKey(key)).isFalse();
         assertThat(redisTemplate.opsForValue().get(key)).isNull();
+    }
+
+    @Test
+    @DisplayName("사용자당 한 세션만 남고 리프레시 토큰은 한 번만 회전한다")
+    void oneSessionAndSingleUseRotation() {
+        RefreshTokenRepository repository = new RefreshTokenRepository(redisTemplate, new AuthProperties(
+                "user-jwt-secret-for-tests-at-least-32-bytes",
+                "ZGV2LW9ubHkta2FrYW8tdG9rZW4ta2V5LTMyYnl0ZXM=",
+                Duration.ofMinutes(15),
+                Duration.ofDays(14)));
+
+        String first = repository.issue(12);
+        String second = repository.issue(12);
+
+        assertThat(repository.rotate(first).valid()).isFalse();
+        RefreshTokenRepository.RotationResult rotation = repository.rotate(second);
+        assertThat(rotation.valid()).isTrue();
+        assertThat(rotation.userId()).isEqualTo(12);
+        assertThat(repository.rotate(second).valid()).isFalse();
+        assertThat(repository.rotate(rotation.refreshToken()).valid()).isTrue();
     }
 }

@@ -1,8 +1,10 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import * as React from "react";
 import { useStore } from "zustand";
 import { onSessionExpired } from "@/lib/auth/sessionEvents";
+import { ROUTES } from "@/lib/routes";
 import { type AuthStore, type AuthStoreApi, createAuthStore } from "./authStore";
 
 const AuthStoreContext = React.createContext<AuthStoreApi | undefined>(undefined);
@@ -15,15 +17,24 @@ const AuthStoreContext = React.createContext<AuthStoreApi | undefined>(undefined
  *
  * 서버 컴포넌트는 이 스토어를 읽지도 쓰지도 않습니다. 서버에서 이미 확정된 사용자
  * 데이터가 필요한 화면(방 레이아웃 등)은 `getMe()` 로 직접 읽어 props 로 내립니다.
+ *
+ * **운영 콘솔(`/admin`)에서는 내 정보를 읽지 않습니다.** 운영자는 사용자 계정과 별개라
+ * 읽을 「내 정보」가 없습니다. 그대로 두면 운영 화면마다 401 이 나는 사용자 요청이
+ * 나가고, 그 401 이 사용자 토큰 재발급까지 부릅니다. 사용자로도 로그인해 있었다면
+ * 운영 콘솔을 여는 것만으로 그 세션이 흔들립니다.
  */
 export function AuthStoreProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   const [store] = React.useState(createAuthStore);
+  const pathname = usePathname();
+  const isAdminConsole =
+    pathname === ROUTES.adminHome || pathname.startsWith(`${ROUTES.adminHome}/`);
 
   React.useEffect(() => {
+    if (isAdminConsole) return;
     // loadMe 는 실패를 안에서 비로그인 상태로 삼키므로 기다리지 않아도 됩니다.
     store.getState().loadMe();
     return onSessionExpired(() => store.getState().clear());
-  }, [store]);
+  }, [store, isAdminConsole]);
 
   return <AuthStoreContext.Provider value={store}>{children}</AuthStoreContext.Provider>;
 }
