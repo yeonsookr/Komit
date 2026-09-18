@@ -169,6 +169,89 @@ class EscrowContractTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(no_fee.REC.feeAmount, 0)
         self.assertEqual(no_fee.REC.netAmount, 99)
 
+    async def test_partial_settlement_reports_only_confirmed_outflow(self) -> None:
+        for escrow_id, status in (
+            (escrow.SETTLEMENT_PROCESSING_ESCROW_ID, "PROCESSING"),
+            (escrow.SETTLEMENT_UNKNOWN_ESCROW_ID, "UNKNOWN"),
+        ):
+            request = escrow.ReleaseEscrowRequest(
+                Header=self.header("releaseEscrow"),
+                escrowId=escrow_id,
+                referenceId=escrow.SETTLEMENT_FIXTURE_REFERENCE_ID,
+                amount=400000,
+                recipientBankCode="001",
+                recipientAccountNo="0019876543210987",
+                recipientName="이준",
+            )
+            released = await escrow.release_escrow(request)
+            repeated = await escrow.release_escrow(request)
+            lookup = await escrow.inquire_escrow(
+                escrow.InquireEscrowRequest(
+                    Header=self.header("inquireEscrow"), escrowId=escrow_id
+                )
+            )
+            refund = await escrow.refund_escrow(
+                escrow.RefundEscrowRequest(
+                    Header=self.header("refundEscrow"),
+                    escrowId=escrow_id,
+                    amount=250000,
+                    refundBankCode="001",
+                    refundAccountNo=escrow.MOCK_ACCOUNT_NO,
+                    refundHolderName="김미미",
+                    referenceId=escrow.SETTLEMENT_FIXTURE_REFERENCE_ID,
+                )
+            )
+
+            self.assertEqual(released.REC.status, status)
+            self.assertEqual(repeated.REC, released.REC)
+            self.assertEqual(released.REC.releasedAmount, 396000)
+            self.assertEqual(released.REC.netAmount, 396000)
+            self.assertEqual(released.REC.feeAmount, 0)
+            self.assertEqual(released.REC.balance, 254000)
+            self.assertEqual(lookup.REC.releasedAmount, released.REC.releasedAmount)
+            self.assertEqual(lookup.REC.balance, released.REC.balance)
+            self.assertEqual(lookup.REC.transactions[-1].transactionType, "FEE")
+            self.assertEqual(lookup.REC.transactions[-1].status, status)
+            self.assertEqual(json.loads(refund.body)["Header"]["responseCode"], "E5010")
+
+            new_settlement = await escrow.release_escrow(
+                request.model_copy(update={"referenceId": "SETTLEMENT:9002"})
+            )
+            self.assertEqual(
+                json.loads(new_settlement.body)["Header"]["responseCode"], "E5010"
+            )
+
+    async def test_failed_settlement_has_no_outflow(self) -> None:
+        result = await escrow.release_escrow(
+            escrow.ReleaseEscrowRequest(
+                Header=self.header("releaseEscrow"),
+                escrowId=escrow.SETTLEMENT_FAILED_ESCROW_ID,
+                referenceId=escrow.SETTLEMENT_FIXTURE_REFERENCE_ID,
+                amount=400000,
+                recipientBankCode="001",
+                recipientAccountNo="0019876543210987",
+                recipientName="이준",
+            )
+        )
+        lookup = await escrow.inquire_escrow(
+            escrow.InquireEscrowRequest(
+                Header=self.header("inquireEscrow"),
+                escrowId=escrow.SETTLEMENT_FAILED_ESCROW_ID,
+            )
+        )
+
+        self.assertEqual(result.REC.status, "FAILED")
+        self.assertEqual(result.REC.releasedAmount, 0)
+        self.assertEqual(result.REC.feeAmount, 0)
+        self.assertEqual(result.REC.netAmount, 0)
+        self.assertEqual(result.REC.balance, 650000)
+        self.assertEqual(lookup.REC.transactions[-1].status, "FAILED")
+
+        listed = await escrow.inquire_escrow_list(
+            escrow.InquireEscrowListRequest(Header=self.header("inquireEscrowList"))
+        )
+        self.assertEqual(listed.REC.totalCount, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

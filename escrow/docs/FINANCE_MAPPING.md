@@ -189,7 +189,10 @@ HTTP 201 / `H0000`으로 **서로 다른 두 번째 계좌가 실제 생성**됐
 - 작업자 순지급·수수료·환불은 **같은 정산의 독립된 거래**다. `external_reference_id` = **`SETTLEMENT:<정산ID>`** 공유, `transaction_type`으로 구분한다. 각 이체는 자체 `financial_operation_attempts` 및 금융망 요청 식별자를 가지므로 결과 불명 시 해당 다리만 조회·복구한다.
 - `releaseEscrow.amount`는 수수료 공제 전 승인 총액이다. `escrows.fee_rate_bps`는 계약 생성 때 설정된 값을 고정한다. 수수료는 `floor(승인 총액 × fee_rate_bps / 10000)`원, 작업자 순지급액은 승인 총액에서 수수료를 뺀 금액이다. `escrow_transactions.amount`는 `RELEASE`에 순지급액, `FEE`에 수수료액을 저장한다. 수수료가 0원이면 FEE 거래·이체를 생략한다. `REFUND`는 별도로 남은 금액 전액이며 수수료 계산 대상이 아니다. (D-3, D-7)
 - FEE 수취 계좌는 에스크로가 소유한 **별도 플랫폼 수익 계좌**를 운영 설정으로 고정한다. 계좌번호를 Komit 요청으로 받지 않으며, 이체 당시 수취 계좌는 FEE 거래에 암호화해 기록한다. 실제 구현·실호출 전에 이 계좌를 준비하고 예금주 조회와 이체 가능 여부를 확인해야 한다.
-- `releaseEscrow`의 `releasedAmount`는 승인 총액, `feeAmount`는 FEE 금액, `netAmount`는 RELEASE 금액이다. `COMPLETED`는 작업자 이체와 수수료 이체가 모두 확정된 경우에만 반환한다. 한쪽이 `PROCESSING`·`UNKNOWN`이면 전체 정산을 완료로 표시하거나 환불을 시작하지 않는다. 이미 확정된 이체를 재실행하지 않고 미완료 다리만 기존 업무 참조로 복구한다.
+- `releaseEscrow`는 요청을 정상 처리했으면 HTTP 200 / `H0000`과 현재 정산 `status`를 돌려준다. `H0000`만으로 지급 완료를 판단하지 않는다. `releasedAmount`는 이번 정산에서 완료가 확인된 RELEASE+FEE의 합계, `feeAmount`는 완료된 FEE, `netAmount`는 완료된 RELEASE다. `balance`는 완료된 DEPOSIT−RELEASE−FEE−REFUND이며, 진행 중인 이체는 차감하지 않는다. 승인 총액은 요청의 `amount`와 같은 정산의 거래 예정액으로 보관한다. (`R-PAY-12`)
+- 작업자 순지급 이체를 확인한 뒤에만 수수료 이체를 시작한다. 둘 다 확인됐거나 수수료가 0원이고 작업자 이체가 확인됐을 때만 정산 `COMPLETED`다. 한쪽이 진행 중이면 `PROCESSING`, 결과를 확인할 수 없으면 `UNKNOWN`이다. `FAILED`는 출금이 전혀 없고 실패가 확정된 경우에만 사용한다. 작업자 이체 후 수수료 이체가 확정 실패해도 정산 전체는 `FAILED`가 아니라 `PROCESSING`으로 두고 수수료 다리만 복구한다. (`R-PAY-07`, `R-PAY-12`)
+- `PROCESSING`·`UNKNOWN`인 정산이 남아 있으면 같은 계약의 새 지급과 환불을 막는다. 재요청은 같은 `referenceId`·동일한 요청 내용으로만 받으며, 현재 상태를 반환한다. 응답을 잃은 Service는 같은 요청을 재전송하거나 `inquireEscrow`의 거래 상태를 조회한다. 이미 확인된 이체를 다시 실행하지 않고 미완료 다리만 기존 업무 참조로 복구한다. 표시되는 `balance`는 완료가 확인된 거래 기준이며 정산 진행 중에는 새 지급·환불에 사용할 수 없다. `FAILED`는 유출액이 0인 종결 결과이므로, 원인을 고친 뒤 새로 승인된 요청은 새 정산 식별자로 시작할 수 있다. (`R-PAY-12`)
+- 예: 예치 650,000원, 승인 총액 400,000원에서 작업자에게 396,000원을 지급했고 수수료 4,000원 이체 결과가 불명확하면 `status=UNKNOWN`, `releasedAmount=396000`, `feeAmount=0`, `netAmount=396000`, `balance=254000`이다. 수수료 이체를 확인한 뒤에는 `COMPLETED`, `releasedAmount=400000`, `feeAmount=4000`, `balance=250000`으로 바뀐다. Mock은 상태를 저장하지 않으므로 각 상태를 고정 계약 사례로 제공한다.
 - 지급 수취 계좌는 **호출자(be-api)가 지정**한다. 에스크로는 등록 계좌 원장을 강제하지 않는다.
 - 환불 계좌는 해당 계약의 예치에 사용한 회원가입 발급 계좌로 고정한다 (`R-PAY-04`). Komit이 `refundBankCode`·`refundAccountNo`로 그 계좌를 전달하고, 에스크로는 완료된 예치 거래의 `source_bank_code`·복호화한 `source_account_encrypted`와 비교한다. 불일치하면 `E5009`로 거절하고 송금하지 않는다. 별도 1원 인증 계좌의 등록·교체는 환불 계좌를 바꾸지 않는다.
 - `escrows.hold_status`가 HELD면 지급·일반 환불을 막는다 (D-4)
@@ -273,6 +276,19 @@ Komit `EscrowDepositResponse.status`는 escrow의 상태를 번역한 값이다.
 | `releasedAmount` | `releasedAmount` |
 | 수수료·작업자 실수령액 | `feeAmount`·`netAmount` (`releaseEscrow` 응답). Service 화면 노출 여부는 Service 담당자가 결정 |
 | `remainingAmount` | `balance` |
+
+### 최종 정산 상태
+
+Service는 `releaseEscrow`의 HTTP 200 / `H0000`을 정산 요청의 처리 결과 수신으로 해석하고, 지급 완료 판정에는 반드시 `REC.status`를 사용한다. (`R-PAY-12`)
+
+| Escrow `REC.status` | Service 처리 |
+| --- | --- |
+| `PROCESSING` | 지급 진행 중으로 유지. 같은 정산 식별자로 재조회·재요청하고 새 지급·환불은 시작하지 않음 |
+| `UNKNOWN` | 자금 이동 결과 확인 중으로 유지. 같은 정산 식별자로 재조회·재요청하고 새 지급·환불은 시작하지 않음 |
+| `COMPLETED` | 작업자 지급과 수수료 이체가 모두 확인된 정산으로 처리 |
+| `FAILED` | 자금 유출 없는 확정 실패로 처리. 원인을 고친 뒤 승인된 새 요청은 새 정산 식별자 사용 |
+
+`inquireEscrow.status=ACTIVE`만으로 정산 가능 여부를 판단하지 않는다. 같은 정산 참조를 가진 RELEASE·FEE 거래의 상태를 함께 확인한다. 진행 중 응답의 `balance`는 완료된 거래 기준 잔액이지만 환불 가능액이 아니며, 이때 새 지급·환불 요청은 `E5010`으로 거절된다.
 
 ### 계좌 1원 인증
 
