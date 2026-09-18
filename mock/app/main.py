@@ -16,8 +16,14 @@ from fastapi import FastAPI
 
 from .factory import create_app
 from .routers import ESCROW_ROUTERS, SERVICE_ROUTERS, SERVICE_TAGS
-from .routers.service import validation_exception_handler as service_validation_handler
-from .routers.escrow import validation_exception_handler as escrow_validation_handler
+from .routers.service import (
+    http_exception_handler as service_http_handler,
+    validation_exception_handler as service_validation_handler,
+)
+from .routers.escrow import (
+    http_exception_handler as escrow_http_handler,
+    validation_exception_handler as escrow_validation_handler,
+)
 
 # 문서 상단 드롭다운에 실을 목록. (표시 이름, 마운트 경로)
 DOCS = [("코밋", "service"), ("에스크로", "escrow")]
@@ -31,6 +37,7 @@ service_app = create_app(
     SERVICE_ROUTERS,
     DOCS,
     validation_error_handler=service_validation_handler,
+    http_error_handler=service_http_handler,
     openapi_tags=SERVICE_TAGS,
 )
 escrow_app = create_app(
@@ -39,6 +46,7 @@ escrow_app = create_app(
     ESCROW_ROUTERS,
     DOCS,
     validation_error_handler=escrow_validation_handler,
+    http_error_handler=escrow_http_handler,
 )
 
 app.mount("/service", service_app)

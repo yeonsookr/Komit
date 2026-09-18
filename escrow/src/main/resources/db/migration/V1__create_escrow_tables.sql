@@ -101,7 +101,7 @@ COMMENT ON COLUMN escrow_transactions.virtual_account_id IS '금융기관이 반
 COMMENT ON COLUMN escrow_transactions.virtual_account_no IS '가상계좌 번호. 표시 목적 외 접근 차단, 로그 출력 금지. 암호문 컬럼은 아님';
 COMMENT ON COLUMN escrow_transactions.deposit_verification_status IS 'DEPOSIT 전용: PENDING / MATCHED / MISMATCHED / UNKNOWN';
 COMMENT ON COLUMN escrow_transactions.verified_deposit_amount IS '조회로 확인한 입금 금액. 미확인 NULL, 0 이상';
-COMMENT ON COLUMN escrow_transactions.depositor_name_matched IS '금융기관 입금자명 일치 결과. 미확인 NULL';
+COMMENT ON COLUMN escrow_transactions.depositor_name_matched IS '가상계좌 지정 입금자명과 이체 입금계좌 거래 요약의 금융망 일치 결과. 실제 출금 계좌 명의 증명은 아님. 미확인 NULL';
 COMMENT ON COLUMN escrow_transactions.source_bank_code IS '거래 당시 출금 은행코드';
 COMMENT ON COLUMN escrow_transactions.source_account_encrypted IS '거래 당시 출금 계좌 암호문. 키 버전, nonce, 인증 태그를 포함한 암호화 봉투 형식';
 COMMENT ON COLUMN escrow_transactions.recipient_bank_code IS '지급 또는 환불 수취 은행코드';
