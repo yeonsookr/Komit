@@ -22,7 +22,7 @@
 | D-2 | **Model A — 자금 이동은 전부 에스크로가 실행한다.** 예치 이체도 에스크로가 한다. 출금 계좌는 회원가입 시 발급한 의뢰인의 SSAFY 계좌로 고정하고, Komit이 보관한 `userKey`·은행코드·계좌번호를 요청에 담아 보낸다. be-api는 금융망 이체 API를 부르지 않는다. | `proposal.md` §5·§7, `R-ACC-09`, `R-PAY-09` |
 | D-3 | **일괄 지급.** 마일스톤 분할 지급은 없다. 정상 완료는 전액, 중도 종료는 통과분 합계를 한 번에 지급하고 나머지는 환불한다. | `R-PAY-01`, `R-PAY-03`, `R-PAY-04` |
 | D-4 | **단일 동결.** 한 에스크로의 활성 동결은 최대 1개. `escrows.hold_status`로 가른다. | `R-RPT-05` |
-| D-5 | **회원 발급·계좌 확인은 에스크로가 금융망에 요청한다.** 발급된 `userKey`·은행코드·계좌번호는 Komit이 보관하고 후속 금융 요청에 담는다. 에스크로는 성공한 발급의 중복 방지 기록만 `V3`에 보관한다. | `R-ACC-09`, `proposal.md` §7 |
+| D-5 | **회원 발급·계좌 확인은 에스크로가 금융망에 요청한다.** 발급 정보의 원본은 Komit이 보관하고 후속 금융 요청에 담는다. 에스크로는 응답 유실·재요청 복구를 위해 `V3`에 `userKey`·계좌번호의 암호화 사본과 은행코드를 보관한다. | `R-ACC-09`, `proposal.md` §7 |
 | D-6 | **원장은 별도 테이블이 아니라 `escrow_transactions` 집계.** 잔액·보관총액은 저장 컬럼이 아니라 계산값이다. | `inquireReconciliation` 설계 |
 
 ---
@@ -59,12 +59,34 @@ Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemb
 
 2026-09-18 SSAFY 데모 환경에서 `createDemandDeposit` 성공 응답을 두 번 받았다. 두 상품 모두 `bankCode=001`, `accountTypeCode=1`, `accountType=DOMESTIC`, `accountName=Komit 데모 입출금`이다. **회원 계좌 개설에 사용할 상품 고유번호는 두 번째 응답의 `001-1-231ecb61d2554c`로 확정한다.** 같은 날 `inquireDemandDepositList` 응답에서도 이 번호와 상품 속성을 확인했다. 첫 번째 응답의 `001-1-c40bb57b2fc749`는 회원 계좌 개설에 사용하지 않는다. 이 고유번호는 해당 SSAFY 환경의 발급 결과다.
 
-`V3.member_account_provisions`는 서비스·`userId`와 멱등키를 각각 유일하게 묶고,
-데모 입금액·상태·요청 식별자·금융망 거래번호를 기록한다. 입금 호출 전에
-`seed_request_reference`를 저장한다. 응답이 유실되면 `UNKNOWN`으로 두고
-회원 계좌의 입금 거래내역 목록에서 표식·금액을 대조해 먼저 확인하며, 확인 전에는 같은 회원에게 재입금하지 않는다.
-`COMPLETED`인 동일 `userId`의 재요청에는 기존 발급 결과를 돌려주고 입금은 반복하지
-않는다. 이 테이블에는 `userKey`, 은행코드, 계좌번호를 저장하지 않는다.
+`V3.member_account_provisions`는 서비스·`userId`와 멱등키를 각각 유일하게 묶는다.
+`provision_step`은 `USER_REGISTER → ACCOUNT_OPEN → SEED_DEPOSIT → COMPLETED`로 진행한다.
+현재 단계의 `provision_status`는 `PENDING` 또는 `UNKNOWN`이고, 전체 발급이 끝나면
+`COMPLETED`다. 외부 생성·입금 API를 부르기 직전에 `step_requested_at`을 영속 저장하고,
+단계를 넘길 때는 비운다. 현재 단계가 `PENDING`이면서 이 시각이 없으면 아직 호출을
+시작하지 않은 것이므로 진행할 수 있다. 시각이 있으면 실제 전송·응답 유실 가능성이
+있으므로 먼저 금융망 결과를 확인하고, 결과가 불명확하면 재호출하지 않는다.
+
+회원 등록 응답의 `userKey`를 암호화해 저장한 뒤에만 계좌 개설을 시작한다. 계좌 개설
+응답의 은행코드와 암호화한 계좌번호를 저장한 뒤에만 데모 입금을 시작한다. 암호문은
+키 버전·nonce·인증 태그를 포함하는 봉투 형식으로 저장하고, 평문은 로그와 일반 조회
+응답에 남기지 않는다. Komit이 받은 발급 정보의 원본을 관리하며, Escrow의 사본은
+동일 발급 업무의 재시도·응답 재생에만 사용한다.
+
+데모 입금 호출 전에는 `step_requested_at`과 `seed_request_reference`를 함께 저장한다. 응답이 유실되면
+`provision_status`와 `seed_status`를 `UNKNOWN`으로 두고 회원 계좌의 입금 거래내역에서
+표식·금액을 확인한다. 확인 전에는 같은 회원에게 재입금하지 않는다. `COMPLETED`인
+동일 `userId`의 재요청에는 암호화해 보관한 기존 발급 결과를 복호화해 반환하고 입금은
+반복하지 않는다. 발급 API의 요청·응답 형식은 바꾸지 않는다.
+
+| 현재 단계 | 영속 기록 후 다음 작업 | 응답 유실·재요청 시 |
+| --- | --- | --- |
+| `USER_REGISTER` | SSAFY 회원 등록 → `user_key_encrypted` 저장 → `ACCOUNT_OPEN` | `userId`로 기존 회원 결과를 확인한다. 확인 전 재등록하지 않는다 |
+| `ACCOUNT_OPEN` | SSAFY 계좌 개설 → `bank_code`·`account_no_encrypted` 저장 → `SEED_DEPOSIT` | 등록된 회원의 기존 계좌·상품을 확인한다. 확인 전 재개설하지 않는다 |
+| `SEED_DEPOSIT` | 요청 표식 저장 → 1회 입금 → 거래번호·성공 시각 저장 → `COMPLETED` | 입금 내역에서 표식·금액을 확인한다. 확인 전 재입금하지 않는다 |
+
+SSAFY가 회원 또는 계좌의 기존 발급 결과를 조회할 수 있는지는 별도 확인이 필요하다.
+조회 수단이 없거나 결과가 모호한 경우 `UNKNOWN`을 유지하고 운영 확인 대상으로 남긴다.
 
 | 응답 `REC` | 용도 |
 | --- | --- |
@@ -243,3 +265,4 @@ Komit `EscrowDepositResponse.status`는 escrow의 상태를 번역한 값이다.
 | 항목 | 상태 |
 | --- | --- |
 | 운영 감사 기록 | UNKNOWN 해소·미결 처리 이력 테이블 미설계 |
+| 가입 발급 결과 복구 | `userId`로 회원 등록 결과, 발급 `userKey`·상품으로 계좌 개설 결과를 재조회할 수 있는 SSAFY API·중복 요청 동작 확인 필요. 확인 전에는 자동 재발급 금지 |
