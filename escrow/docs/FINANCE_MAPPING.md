@@ -221,13 +221,17 @@ Komit이 회원가입 때 보관한 `userKey`와 계좌번호를 에스크로에
 
 ## 6. 대사 (Reconciliation)
 
-원장(집계)과 은행 잔액을 맞춰 본다. `inquireReconciliation`.
+원장(집계)과 은행 잔액을 맞춰 본다. `inquireReconciliation`은 보관계좌 전체에 대한 에스크로 운영 전용 조회다. 일반 이용 서비스의 `clientApiKey`는 이 API에서 `E5001`로 거절한다. 에스크로가 배포 환경의 Secret으로 관리하는 별도 운영 키를 같은 `Header.clientApiKey`에 담는다. 이 운영 키는 다른 서비스 API에 사용할 수 없다. (`R-PAY-13`)
 
 | 필드 | 출처 |
 | --- | --- |
-| `ledgerTotal` | `escrow_transactions` 집계: 완료 DEPOSIT − RELEASE(작업자 순지급) − FEE(플랫폼 수수료) − REFUND (`completed_at` 기준) |
+| `ledgerTotal` | 보관계좌에 연결된 **모든 이용 서비스**의 `escrow_transactions` 집계: 완료 DEPOSIT − RELEASE(작업자 순지급) − FEE(플랫폼 수수료) − REFUND (`completed_at` 기준) |
 | `bankBalance` | SSAFY `inquireDemandDepositAccountBalance` 응답 (**ERD 밖 — SSAFY 대응 필드**) |
 | `differenceAmount` | `bankBalance − ledgerTotal`. 0이면 MATCHED |
+
+`escrowCount`도 모든 이용 서비스에서 보관액이 남은 계약 수다. 개별 이용 서비스는 자기 계약의 `inquireEscrow`·`inquireEscrowList`만 조회하며 보관계좌 전체 잔액을 받지 않는다. 예를 들어 Komit의 완료 원장 잔액이 650,000원이고 다른 이용 서비스가 350,000원이면, 대사는 전체 원장 1,000,000원과 은행 잔액 1,000,000원을 비교한다. 원장에 잡힌 계약이 없어도 은행 잔액이 0이 아니면 `BANK_MISMATCH`다.
+
+운영 보관계좌는 계약 예치금 전용으로 두고 사용 전 초기 잔액을 확인한다. 테스트 이체나 별도 자금 유입은 운영 대사 계좌에 섞지 않는다. 원장 밖 자금이 남으면 숫자를 임의로 맞추지 않고 불일치로 표시해 원인을 확인한다. 플랫폼 수익 계좌의 잔액은 이 보관계좌 대사에 합산하지 않는다. (`R-PAY-05`, `R-PAY-07`, `R-PAY-13`)
 
 ---
 

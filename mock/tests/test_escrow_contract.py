@@ -252,6 +252,46 @@ class EscrowContractTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(listed.REC.totalCount, 2)
 
+    async def test_reconciliation_uses_operator_key_and_all_services(self) -> None:
+        operator_header = self.header("inquireReconciliation").model_copy(
+            update={"clientApiKey": escrow.MOCK_OPERATOR_CLIENT_API_KEY}
+        )
+        result = await escrow.inquire_reconciliation(
+            escrow.InquireReconciliationRequest(Header=operator_header, days=4)
+        )
+
+        self.assertEqual(result.REC.ledgerTotal, 1000000)
+        self.assertEqual(result.REC.bankBalance, 1000000)
+        self.assertEqual(result.REC.escrowCount, 2)
+        self.assertEqual(result.REC.result, "MATCHED")
+        self.assertEqual(result.REC.history[3].bankBalance, 950000)
+        self.assertEqual(result.REC.history[3].result, "BANK_MISMATCH")
+
+        service_result = await escrow.inquire_reconciliation(
+            escrow.InquireReconciliationRequest(
+                Header=self.header("inquireReconciliation")
+            )
+        )
+        self.assertIsInstance(service_result, JSONResponse)
+        self.assertEqual(service_result.status_code, 400)
+        self.assertEqual(
+            json.loads(service_result.body)["Header"]["responseCode"], "E5001"
+        )
+
+        operator_lookup = await escrow.inquire_escrow(
+            escrow.InquireEscrowRequest(
+                Header=self.header("inquireEscrow").model_copy(
+                    update={"clientApiKey": escrow.MOCK_OPERATOR_CLIENT_API_KEY}
+                ),
+                escrowId=escrow.ESCROW_ID,
+            )
+        )
+        self.assertIsInstance(operator_lookup, JSONResponse)
+        self.assertEqual(operator_lookup.status_code, 400)
+        self.assertEqual(
+            json.loads(operator_lookup.body)["Header"]["responseCode"], "E5001"
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

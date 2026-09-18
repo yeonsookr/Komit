@@ -486,6 +486,7 @@ async def get_default(
 
 INVALID_CLIENT_API_KEY = "invalid-client-api-key"
 SERVER_ERROR_CLIENT_API_KEY = "server-error-client-api-key"
+MOCK_OPERATOR_CLIENT_API_KEY = "mock-operator-client-api-key"
 CONFLICT_IDEMPOTENCY_KEY = "conflict-idempotency-key"
 
 
@@ -551,13 +552,15 @@ class EscrowRequestHeader(BaseModel):
     )
     clientApiKey: str = Field(
         description=(
-            "고객사에 발급된 키. 이 키로 어느 서비스의 요청인지 가른다. ERD의 "
-            "client_api_keys에 대응하는 요청 필드이며, 에스크로가 SSAFY를 부를 때 쓰는 "
-            "apiKey와는 다른 값이다. invalid-client-api-key는 E5001, "
+            "일반 API에서는 고객사 서비스 키, inquireReconciliation에서는 에스크로 "
+            "운영 전용 키다. 일반 서비스 키의 해시는 ERD service_clients.api_key_hash에 "
+            "대응한다. 운영 키는 배포 환경 Secret으로 관리한다. 에스크로가 SSAFY를 "
+            "부를 때 쓰는 apiKey와는 다르다. invalid-client-api-key는 E5001, "
             "server-error-client-api-key는 Q1000 실패 재현용 예약값이다."
         ),
         examples=[
             "mock-client-api-key",
+            MOCK_OPERATOR_CLIENT_API_KEY,
             INVALID_CLIENT_API_KEY,
             SERVER_ERROR_CLIENT_API_KEY,
         ],
@@ -677,6 +680,11 @@ def _validate_escrow_header(
         or header.clientApiKey == INVALID_CLIENT_API_KEY
     ):
         return 400, "E5001", "CLIENT API KEY가 유효하지 않습니다."
+    if (
+        header.clientApiKey == MOCK_OPERATOR_CLIENT_API_KEY
+        and api_name != "inquireReconciliation"
+    ):
+        return 400, "E5001", "운영 키는 이 API에 사용할 수 없습니다."
     if needs_idempotency_key:
         if not (header.idempotencyKey or "").strip():
             return 400, "E5002", "멱등키가 필요합니다."
@@ -2774,7 +2782,7 @@ async def inquire_escrow_list(
 
 
 class InquireReconciliationRequest(BaseModel):
-    """정산 대사 조회 요청. 조회 대상을 고르지 않고 인증된 서비스 전체를 본다."""
+    """정산 대사 조회 요청. 운영 권한으로 보관계좌 전체를 본다."""
 
     Header: EscrowRequestHeader = Field(
         description="JSON Body 안에 담는 공통 요청 Header."
@@ -2800,17 +2808,17 @@ class ReconciliationHistoryItem(BaseModel):
     )
     ledgerTotal: int = Field(
         description=(
-            "그 시점까지 확정된 거래로 계산한 보관 총액. ERD escrow_transactions의 "
-            "completed_at 기준이다."
+            "그 시점까지 모든 이용 서비스의 확정 거래로 계산한 보관 총액. "
+            "ERD escrow_transactions의 completed_at 기준이다."
         ),
-        examples=[650000],
+        examples=[1000000],
     )
     bankBalance: int = Field(
         description=(
             "그 시점의 보관 주체 계좌 잔액. ERD에는 없으며 SSAFY 금융망 거래내역 "
             "조회(inquireTransactionHistoryList)의 거래 후 잔액에 대응하는 필드다."
         ),
-        examples=[650000],
+        examples=[1000000],
     )
     differenceAmount: int = Field(
         description="bankBalance에서 ledgerTotal을 뺀 값.",
@@ -2829,17 +2837,16 @@ class ReconciliationRecord(BaseModel):
         description=(
             "원장 기준으로 지금 보관 중인 총액. ERD escrows에 속한 "
             "escrow_transactions의 예치액에서 작업자 순지급액·플랫폼 수수료·환불액을 "
-            "뺀 값을 인증된 서비스의 "
-            "에스크로 전체에 대해 더한 것이다."
+            "뺀 값을 보관계좌를 공유하는 모든 이용 서비스의 에스크로에 대해 더한 것이다."
         ),
-        examples=[650000],
+        examples=[1000000],
     )
     bankBalance: int = Field(
         description=(
             "보관 주체 계좌에 실제로 남아 있는 잔액. ERD에는 없으며 SSAFY 금융망 "
             "계좌 잔액 조회(inquireDemandDepositAccountBalance) 응답에 대응하는 필드다."
         ),
-        examples=[650000],
+        examples=[1000000],
     )
     differenceAmount: int = Field(
         description=(
@@ -2856,10 +2863,10 @@ class ReconciliationRecord(BaseModel):
     )
     escrowCount: int = Field(
         description=(
-            "ledgerTotal에 잡힌 에스크로 수. 잔액이 남아 있는 것만 센다. ERD escrows의 "
-            "건수다."
+            "모든 이용 서비스에서 ledgerTotal에 잡힌 에스크로 수. 잔액이 남아 있는 "
+            "것만 센다. ERD escrows의 건수다."
         ),
-        examples=[1],
+        examples=[2],
     )
     history: List[ReconciliationHistoryItem] = Field(
         description=(
@@ -2876,6 +2883,9 @@ class InquireReconciliationResponse(BaseModel):
 
 # 대사 기준일. 목은 상태를 두지 않으므로 오늘 날짜가 아니라 명세 예시일을 쓴다.
 RECONCILIATION_BASE_DATE = datetime(2026, 9, 9, 9, 0, 0)
+RECONCILIATION_KOMIT_BALANCE = 650000
+RECONCILIATION_OTHER_SERVICE_BALANCE = 350000
+RECONCILIATION_ESCROW_COUNT = 2
 
 # 은행 잔액이 어긋난 날. 며칠 전인지로 적는다.
 RECONCILIATION_MISMATCH_OFFSET = 3
@@ -2884,7 +2894,9 @@ RECONCILIATION_MISMATCH_OFFSET = 3
 def _reconciliation_day(offset: int) -> ReconciliationHistoryItem:
     """며칠 전 대사 한 줄. 지나간 날은 값이 바뀌지 않으므로 offset만으로 정해진다."""
     as_of = RECONCILIATION_BASE_DATE - timedelta(days=offset)
-    ledger_total = 650000
+    ledger_total = (
+        RECONCILIATION_KOMIT_BALANCE + RECONCILIATION_OTHER_SERVICE_BALANCE
+    )
     bank_balance = (
         ledger_total - 50000
         if offset == RECONCILIATION_MISMATCH_OFFSET
@@ -2909,23 +2921,23 @@ def _reconciliation_day(offset: int) -> ReconciliationHistoryItem:
             "원장 합계와 은행 잔액을 맞춰 본 결과를 돌려준다",
             "inquireReconciliation",
             {
-                "ledgerTotal": 650000,
-                "bankBalance": 650000,
+                "ledgerTotal": 1000000,
+                "bankBalance": 1000000,
                 "differenceAmount": 0,
                 "result": "MATCHED",
-                "escrowCount": 1,
+                "escrowCount": 2,
                 "history": [
                     {
                         "asOf": "2026-09-09T09:00:00+09:00",
-                        "ledgerTotal": 650000,
-                        "bankBalance": 650000,
+                        "ledgerTotal": 1000000,
+                        "bankBalance": 1000000,
                         "differenceAmount": 0,
                         "result": "MATCHED",
                     },
                     {
                         "asOf": "2026-09-06T09:00:00+09:00",
-                        "ledgerTotal": 650000,
-                        "bankBalance": 600000,
+                        "ledgerTotal": 1000000,
+                        "bankBalance": 950000,
                         "differenceAmount": -50000,
                         "result": "BANK_MISMATCH",
                     },
@@ -2936,18 +2948,20 @@ def _reconciliation_day(offset: int) -> ReconciliationHistoryItem:
     },
     summary="정산 대사 조회",
     description=(
-        "인증된 서비스의 에스크로를 통틀어, 원장이 말하는 보관액과 보관 주체 계좌에 "
-        "실제로 남아 있는 잔액을 맞춰 본 결과를 돌려준다. 고객사의 운영 화면이 돈이 "
-        "새지 않았는지 확인하는 데 쓴다.\n\n"
+        "에스크로 운영 전용 API다. 보관계좌를 공유하는 모든 이용 서비스의 원장 "
+        "보관액과 해당 계좌의 금융망 잔액을 비교한다. Header.clientApiKey에는 "
+        "일반 서비스 키 대신 운영 전용 키를 넣는다. 목 운영 키는 "
+        "`mock-operator-client-api-key`다.\n\n"
         "보관총액은 완료된 DEPOSIT에서 RELEASE, FEE, REFUND를 뺀 값이다. "
-        "다른 서비스의 에스크로는 합계에 섞이지 않는다. 읽기만 하므로 "
-        "`idempotencyKey`를 쓰지 않는다.\n\n"
+        "목 예시는 Komit 650,000원과 다른 서비스 350,000원을 합산한다. "
+        "개별 서비스의 계약 조회에는 다른 서비스의 계약이 나타나지 않는다. "
+        "읽기만 하므로 `idempotencyKey`를 쓰지 않는다. (`R-PAY-13`)\n\n"
         "대사 기준 시각은 응답 Header의 `transmissionDate`와 `transmissionTime`이다.\n\n"
         "**지금 결과와 함께 `days`만큼의 하루치 이력을 돌려준다.** `history`는 최근 것이 "
         "먼저이고 첫 항목이 지금 결과와 같다. `days`를 비우면 7일이다.\n\n"
-        "- **200 / H0000**: 대사했을 때. 보관 중인 에스크로가 하나도 없으면 금액이 "
-        "모두 0이고 `result`는 MATCHED다\n"
-        "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
+        "- **200 / H0000**: 대사했을 때. 원장에 보관액이 없어도 은행 잔액이 "
+        "남아 있으면 `BANK_MISMATCH`다\n"
+        "- **400 / E5001**: 운영 전용 키가 아닐 때\n"
         "- **400 / Q1001**: 필수 속성이 없거나 형식이 맞지 않을 때\n"
         "- **500 / Q1000**: `clientApiKey`가 `server-error-client-api-key`일 때. "
         "분류되지 않은 서버 오류다"
@@ -2960,11 +2974,14 @@ async def inquire_reconciliation(
             examples=[
                 {
                     "Header": {
-                        k: v
-                        for k, v in _escrow_header_example(
-                            "inquireReconciliation"
-                        ).items()
-                        if k != "idempotencyKey"
+                        **{
+                            k: v
+                            for k, v in _escrow_header_example(
+                                "inquireReconciliation"
+                            ).items()
+                            if k != "idempotencyKey"
+                        },
+                        "clientApiKey": MOCK_OPERATOR_CLIENT_API_KEY,
                     },
                     "days": 7,
                 }
@@ -2975,6 +2992,8 @@ async def inquire_reconciliation(
     error = _validate_escrow_header(payload.Header, "inquireReconciliation")
     if error:
         return _escrow_error(*error, payload.Header)
+    if payload.Header.clientApiKey != MOCK_OPERATOR_CLIENT_API_KEY:
+        return _escrow_error(400, "E5001", "운영 전용 키가 필요합니다.", payload.Header)
 
     history = [_reconciliation_day(offset) for offset in range(payload.days)]
     today = history[0]
@@ -2988,7 +3007,7 @@ async def inquire_reconciliation(
             bankBalance=today.bankBalance,
             differenceAmount=today.differenceAmount,
             result=today.result,
-            escrowCount=1,
+            escrowCount=RECONCILIATION_ESCROW_COUNT,
             history=history,
         ),
     )
