@@ -7,7 +7,7 @@
 | 항목 | 내용 |
 | --- | --- |
 | 대상 | `escrow`(be-escrow) 앱 전용 |
-| 스키마 | `V1`·`V2`·`V4`: 자금 처리, `V3`: 성공한 회원·계좌 발급 기록 |
+| 스키마 | `V1`·`V2`·`V4`: 자금 처리, `V3`: 회원·계좌 발급과 1회 데모 입금 기록 |
 | 금융망 | SSAFY 교육용 금융망 API |
 
 ---
@@ -35,11 +35,36 @@ Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemb
 
 에스크로는 자기 SSAFY 앱 키로 회원 등록(`POST /ssafy/api/v1/member/`)과 입출금 계좌 개설(`POST /ssafy/api/v1/edu/demandDeposit/createDemandDepositAccount`)을 처리한다. **사용자와 계좌가 모두 준비된 결과만** 응답한다. 같은 `userId`의 재요청에는 기존 발급값을 반환한다.
 
+계좌 개설 직후 에스크로가 SSAFY 금융망의
+[`updateDemandDepositAccountDeposit`](https://project.ssafy.com/mkdocs/ssafy-finance/api-demand-deposit.html#249)을
+호출해 회원 계좌에 데모 자금을 한 번 입금한다. 요청에는 새 `userKey`를 Header에,
+발급된 계좌번호를 `accountNo`에, `R-PAY-10`의 데모 입금액을 십진수 문자열로
+변환해 `transactionBalance`에 담는다.
+`transactionSummary`에는 이 발급 업무를 식별할 수 있는 값을 넣는다. 응답의
+`transactionUniqueNo`를 기록하고 입금 성공이 확인된 뒤에만 `createMemberAccount`의
+기존 성공 응답을 반환한다. 이 입금은 회원 계좌 자금이며 계약 예치 원장에는 넣지 않는다.
+(`R-PAY-10`)
+
+2026-09-18 실계 금융망 테스트에서 테스트 회원을 등록하고 위 상품으로 계좌를 개설한 뒤,
+`updateDemandDepositAccountDeposit`으로 1원을 입금했다. 입금 전후
+`inquireDemandDepositAccountBalance`의 잔액은 각각 `0`, `1`이었고 입금 응답은
+`H0000`과 `transactionUniqueNo`를 반환했다. **요청 JSON의 `transactionBalance`는
+숫자 `1`이 아닌 문자열 `"1"`로 전송해야 성공했다.** 숫자로 전송하면 `Q1001`을
+반환했다. 1원은 연동 검증용 금액이며 가입 시 초기 입금액은 `R-PAY-10`을 따른다.
+같은 날 별도 테스트 회원·계좌에서 `R-PAY-10`의 전체 금액을 한 번의 입금 요청으로
+보냈고, `H0000`과 거래번호를 받았다. 잔액 조회도 입금 전 `0`에서 정책 금액만큼
+증가한 결과를 확인했다.
+
 회원가입 전에 에스크로가 `createDemandDeposit`으로 `R-ACC-10`의 상품을 한 번 등록한다. 요청에는 `bankCode=001`, `accountName=Komit 데모 입출금`을 사용하고, 응답의 `accountType=DOMESTIC`을 확인한 뒤 `accountTypeUniqueNo`를 에스크로 설정에 둔다. 회원가입마다 이 고유번호를 `createDemandDepositAccount`에 사용한다. 상품 등록 응답의 고유번호는 환경에 따라 달라질 수 있으므로 문서의 예시값을 고정 설정값으로 쓰지 않는다. Komit은 상품을 고르거나 이 고유번호를 보내지 않는다.
 
 2026-09-18 SSAFY 데모 환경에서 `createDemandDeposit` 성공 응답을 두 번 받았다. 두 상품 모두 `bankCode=001`, `accountTypeCode=1`, `accountType=DOMESTIC`, `accountName=Komit 데모 입출금`이다. **회원 계좌 개설에 사용할 상품 고유번호는 두 번째 응답의 `001-1-231ecb61d2554c`로 확정한다.** 같은 날 `inquireDemandDepositList` 응답에서도 이 번호와 상품 속성을 확인했다. 첫 번째 응답의 `001-1-c40bb57b2fc749`는 회원 계좌 개설에 사용하지 않는다. 이 고유번호는 해당 SSAFY 환경의 발급 결과다.
 
-`V3.member_account_provisions`는 성공한 발급의 서비스·`userId`와 멱등키를 각각 유일하게 묶는다. 이 테이블에는 `userKey`, 은행코드, 계좌번호를 저장하지 않는다.
+`V3.member_account_provisions`는 서비스·`userId`와 멱등키를 각각 유일하게 묶고,
+데모 입금액·상태·요청 식별자·금융망 거래번호를 기록한다. 입금 호출 전에
+`seed_request_reference`를 저장한다. 응답이 유실되면 `UNKNOWN`으로 두고
+거래내역 조회로 먼저 확인하며, 확인 전에는 같은 회원에게 재입금하지 않는다.
+`COMPLETED`인 동일 `userId`의 재요청에는 기존 발급 결과를 돌려주고 입금은 반복하지
+않는다. 이 테이블에는 `userKey`, 은행코드, 계좌번호를 저장하지 않는다.
 
 | 응답 `REC` | 용도 |
 | --- | --- |
@@ -47,7 +72,9 @@ Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemb
 | `userKey` | Komit DB에 보관하고 후속 금융 요청의 `Header.userKey`로 전달 |
 | `bankCode`·`accountNo` | Komit DB에 보관하고 후속 계좌 관련 요청에 전달 |
 
-목 서버는 실제 SSAFY를 호출하거나 상태를 저장하지 않는다. 같은 `userId`에는 같은 테스트 발급값을 반환한다. 요청·응답 형식과 오류는 에스크로 mock Swagger의 `createMemberAccount`를 기준으로 한다. (`R-ACC-09`)
+목 서버는 실제 SSAFY를 호출하거나 상태를 저장하지 않는다. 데모 입금까지 완료된
+성공 사례를 응답하며, 같은 `userId`에는 같은 테스트 발급값을 반환한다. 발급 API의
+요청·응답 형식은 바꾸지 않는다. (`R-ACC-09`, `R-PAY-10`)
 
 ---
 
