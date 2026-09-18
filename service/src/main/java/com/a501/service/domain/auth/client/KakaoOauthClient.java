@@ -7,6 +7,7 @@ import com.a501.service.config.KakaoProperties;
 import com.a501.service.domain.auth.AuthErrorCode;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
@@ -15,6 +16,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+@Slf4j
 @Component
 public class KakaoOauthClient {
     private final KakaoProperties properties;
@@ -32,6 +34,15 @@ public class KakaoOauthClient {
             String nickname = nickname(user);
             if (token.refreshToken() == null || token.refreshToken().isBlank()
                     || user.id() == null || nickname == null || nickname.isBlank()) {
+                // 값은 남기지 않고 어느 항목이 비었는지만 남깁니다. 닉네임은 필수 동의 항목입니다. (R-AUTH-04)
+                log.warn("Kakao login rejected: missing fields refreshToken={} id={} nickname={} "
+                                + "(response has kakao_account={} profile={} properties={})",
+                        token.refreshToken() == null || token.refreshToken().isBlank(),
+                        user.id() == null,
+                        nickname == null || nickname.isBlank(),
+                        user.kakaoAccount() != null,
+                        user.kakaoAccount() != null && user.kakaoAccount().profile() != null,
+                        user.properties() != null);
                 throw new BusinessException(AuthErrorCode.KAKAO_AUTH_FAILED);
             }
             KakaoAccount account = user.kakaoAccount();
@@ -48,8 +59,12 @@ public class KakaoOauthClient {
         } catch (BusinessException exception) {
             throw exception;
         } catch (HttpClientErrorException exception) {
+            // 카카오 오류 본문에는 error_code(KOE010 등)만 있고 토큰·시크릿은 없습니다.
+            log.warn("Kakao login rejected: status={} body={}",
+                    exception.getStatusCode().value(), exception.getResponseBodyAsString());
             throw new BusinessException(AuthErrorCode.KAKAO_AUTH_FAILED);
         } catch (RestClientException exception) {
+            log.warn("Kakao unavailable: {}", exception.getMessage());
             throw new BusinessException(AuthErrorCode.KAKAO_UNAVAILABLE);
         }
     }

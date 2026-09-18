@@ -1,0 +1,110 @@
+# 로컬 전체 구동. PostgreSQL·Redis와 service·escrow·fe를 한 번에 올립니다.
+# 앱 설정값은 각 서버의 application-local.yml 기본값과 같고, 컨테이너 사이 주소만 서비스 이름으로 바꿨습니다.
+# 카카오 키처럼 개인 값은 이 디렉터리의 .env 에서 읽습니다. (.env.example 참고)
+#
+#   docker compose -f deploy/local/docker-compose.yml up -d --build   # 첫 실행·코드 변경 후
+#   docker compose -f deploy/local/docker-compose.yml logs -f service
+#   docker compose -f deploy/local/docker-compose.yml down             # 데이터 유지
+#   docker compose -f deploy/local/docker-compose.yml down -v          # 데이터까지 삭제
+#
+#   fe       http://localhost:3000
+#   service  http://localhost:8080   (Swagger /docs)
+#   escrow   http://localhost:8081   (Swagger /docs)
+#   postgres localhost:5432 (service/service, DB service)
+
+name: komit-local
+
+services:
+  # 로컬은 PostgreSQL 하나를 두 서버가 같이 씁니다. 각 서버가 application-local.yml 의 DB_* 자리로 붙고, 테이블은 JPA 가 만듭니다.
+  postgres:
+    image: postgres:18.6-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: service
+      POSTGRES_USER: service
+      POSTGRES_PASSWORD: service
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U service -d service"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  service:
+    build:
+      context: ../../service
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      DB_URL: jdbc:postgresql://postgres:5432/service
+      DB_USERNAME: service
+      DB_PASSWORD: service
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      APP_INSTANCE_ROLE: WRITER
+      APP_PUBLIC_BASE_URL: http://localhost:8080
+      # 카카오 REST API 키·시크릿. .env 에 없으면 로그인만 실패하고 나머지는 동작합니다.
+      KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID:-kakao-client-id-dev-only}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-kakao-client-secret-dev-only}
+
+  escrow:
+    build:
+      context: ../../escrow
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      DB_URL: jdbc:postgresql://postgres:5432/service
+      DB_USERNAME: service
+      DB_PASSWORD: service
+      APP_INSTANCE_ROLE: WRITER
+      APP_PUBLIC_BASE_URL: http://localhost:8081
+
+  fe:
+    build:
+      context: ../../fe
+      # next build 가 랜딩을 정적 생성하며 이 주소에서 데이터를 읽습니다. 빌드 때는 service 컨테이너가 없으므로
+      # 계약 모양이 보장되는 목 서버를 쓰고, 실행 값은 아래 environment 가 덮습니다.
+      args:
+        BACKEND_API_BASE_URL: https://komit.site/mock/service
+        AI_API_BASE_URL: https://komit.site/mock/service
+    ports:
+      - "3000:3000"
+    depends_on:
+      - service
+      - escrow
+    environment:
+      BACKEND_API_BASE_URL: http://service:8080
+      ESCROW_API_BASE_URL: http://escrow:8081
+      AI_API_BASE_URL: ${AI_API_BASE_URL:-https://komit.site/mock/service}
+      KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID:-}
+      # 카카오 콘솔에 등록한 Redirect URI 와 글자까지 같아야 합니다.
+      KAKAO_REDIRECT_URI: http://localhost:3000/api/auth/kakao/callback
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+
+volumes:
+  postgres-data:
+  redis-data:
