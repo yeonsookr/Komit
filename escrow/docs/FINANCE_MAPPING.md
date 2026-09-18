@@ -1,13 +1,13 @@
 # 에스크로 ↔ SSAFY 금융망 매핑
 
-에스크로의 세 자금 흐름(예치·지급·환불)을 SSAFY 금융망 API와 DB 스키마(`V1~V3`)에 맞춘 참고 문서다.
+에스크로의 회원 발급과 세 자금 흐름(예치·지급·환불)을 SSAFY 금융망 API에 맞춘 참고 문서다.
 엔티티·서비스를 짤 때 이 문서의 필드 대응을 기준으로 한다. 값과 불변식은 `docs/RULES.md`가,
 계약 흐름은 `docs/proposal.md`가 상위 출처다. 여기서는 금융망 연동 상세만 고정한다.
 
 | 항목 | 내용 |
 | --- | --- |
 | 대상 | `escrow`(be-escrow) 앱 전용 |
-| 스키마 | `escrow/src/main/resources/db/migration/V1~V3` |
+| 스키마 | `V1`·`V2`·`V4`: 자금 처리, `V3`: 성공한 회원·계좌 발급 기록 |
 | 금융망 | SSAFY 교육용 금융망 API |
 
 ---
@@ -18,16 +18,40 @@
 
 | # | 결정 | 근거 |
 | --- | --- | --- |
-| D-1 | **집금(BaaS) 모델.** 에스크로는 SSAFY 회원 1개(`userKey`)와 보관계좌 1개를 소유하고, 계약마다 그 보관계좌에 연결한 가상계좌(VA)로 받는다. | `R-PAY-05` |
-| D-2 | **Model A — 자금 이동은 전부 에스크로가 실행한다.** 예치 이체도 에스크로가 한다. 은행 앱이 없으므로 의뢰인 계좌 출금에 필요한 `userKey`는 party 참조로 조회한다. be-api는 금융망 이체 API를 부르지 않는다. | `proposal.md` §5·§7 |
+| D-1 | **집금(BaaS) 모델.** 에스크로 서비스가 SSAFY 회원 1개(`userKey`)와 보관계좌 1개를 소유한다. 계약마다 보관계좌에 연결된 가상계좌(VA) 1개로 입금받고, 입금 검증 후 보관계좌로 정산한다. | `R-PAY-05`, `R-PAY-06` |
+| D-2 | **Model A — 자금 이동은 전부 에스크로가 실행한다.** 예치 이체도 에스크로가 한다. 의뢰인 계좌 출금에 필요한 `userKey`와 계좌번호는 Komit이 요청에 담아 보낸다. be-api는 금융망 이체 API를 부르지 않는다. | `proposal.md` §5·§7, `R-ACC-09` |
 | D-3 | **일괄 지급.** 마일스톤 분할 지급은 없다. 정상 완료는 전액, 중도 종료는 통과분 합계를 한 번에 지급하고 나머지는 환불한다. | `R-PAY-01`, `R-PAY-03`, `R-PAY-04` |
 | D-4 | **단일 동결.** 한 에스크로의 활성 동결은 최대 1개. `escrows.hold_status`로 가른다. | `R-RPT-05` |
-| D-5 | **계좌 확인은 에스크로가 담당.** `userKey`와 검증 계좌를 에스크로가 보관한다(`V3`). be-api는 party 참조만 넘긴다. | `proposal.md` §7 |
+| D-5 | **회원 발급·계좌 확인은 에스크로가 금융망에 요청한다.** 발급된 `userKey`·은행코드·계좌번호는 Komit이 보관하고 후속 금융 요청에 담는다. 에스크로는 성공한 발급의 중복 방지 기록만 `V3`에 보관한다. | `R-ACC-09`, `proposal.md` §7 |
 | D-6 | **원장은 별도 테이블이 아니라 `escrow_transactions` 집계.** 잔액·보관총액은 저장 컬럼이 아니라 계산값이다. | `inquireReconciliation` 설계 |
 
 ---
 
-## 1. 공통 Header
+## 1. 회원가입 시 사용자·계좌 발급
+
+은행 앱이 없는 SSAFY 교육용 금융망 데모를 위한 발급 단계다. 정상적인 발급 요청은 성공을 전제로 한다.
+
+Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemberAccount`를 호출한다. 요청에는 공통 `Header`와 SSAFY 회원 등록용 이메일 형식 `userId`를 담고, 쓰기 요청이므로 `idempotencyKey`를 포함한다. 아직 발급 전이므로 `Header.userKey`는 필요하지 않다.
+
+에스크로는 자기 SSAFY 앱 키로 회원 등록(`POST /ssafy/api/v1/member/`)과 입출금 계좌 개설(`POST /ssafy/api/v1/edu/demandDeposit/createDemandDepositAccount`)을 처리한다. **사용자와 계좌가 모두 준비된 결과만** 응답한다. 같은 `userId`의 재요청에는 기존 발급값을 반환한다.
+
+회원가입 전에 에스크로가 `createDemandDeposit`으로 `R-ACC-10`의 상품을 한 번 등록한다. 요청에는 `bankCode=001`, `accountName=Komit 데모 입출금`을 사용하고, 응답의 `accountType=DOMESTIC`을 확인한 뒤 `accountTypeUniqueNo`를 에스크로 설정에 둔다. 회원가입마다 이 고유번호를 `createDemandDepositAccount`에 사용한다. 상품 등록 응답의 고유번호는 환경에 따라 달라질 수 있으므로 문서의 예시값을 고정 설정값으로 쓰지 않는다. Komit은 상품을 고르거나 이 고유번호를 보내지 않는다.
+
+2026-09-18 SSAFY 데모 환경에서 `createDemandDeposit` 성공 응답을 두 번 받았다. 두 상품 모두 `bankCode=001`, `accountTypeCode=1`, `accountType=DOMESTIC`, `accountName=Komit 데모 입출금`이다. **회원 계좌 개설에 사용할 상품 고유번호는 두 번째 응답의 `001-1-231ecb61d2554c`로 확정한다.** 같은 날 `inquireDemandDepositList` 응답에서도 이 번호와 상품 속성을 확인했다. 첫 번째 응답의 `001-1-c40bb57b2fc749`는 회원 계좌 개설에 사용하지 않는다. 이 고유번호는 해당 SSAFY 환경의 발급 결과다.
+
+`V3.member_account_provisions`는 성공한 발급의 서비스·`userId`와 멱등키를 각각 유일하게 묶는다. 이 테이블에는 `userKey`, 은행코드, 계좌번호를 저장하지 않는다.
+
+| 응답 `REC` | 용도 |
+| --- | --- |
+| `userId` | 발급 대상 확인 |
+| `userKey` | Komit DB에 보관하고 후속 금융 요청의 `Header.userKey`로 전달 |
+| `bankCode`·`accountNo` | Komit DB에 보관하고 후속 계좌 관련 요청에 전달 |
+
+목 서버는 실제 SSAFY를 호출하거나 상태를 저장하지 않는다. 같은 `userId`에는 같은 테스트 발급값을 반환한다. 요청·응답 형식과 오류는 에스크로 mock Swagger의 `createMemberAccount`를 기준으로 한다. (`R-ACC-09`)
+
+---
+
+## 2. 공통 Header
 
 모든 계좌 조작 API는 공통 `Header`를 쓴다. 에스크로는 아래를 자동으로 채운다.
 
@@ -38,21 +62,21 @@
 | `institutionCode` / `fintechAppNo` | `00100` / `001` 고정 | |
 | `institutionTransactionUniqueNo` | 20자리, **매 호출 새 값** | → `financial_operation_attempts.request_reference` |
 | `apiKey` | 에스크로 앱 키 | 환경변수 |
-| `userKey` | 자금 이동 주체의 신원 | 보관계좌 소유자 또는 party 조회값 |
+| `userKey` | 자금 이동 주체의 신원 | 발급 요청에는 없음. 후속 요청에는 Komit이 전달한 회원 키 또는 에스크로 보관계좌 소유자 키 |
 
 **멱등 규칙:** `request_reference`를 외부 호출 **전에** 채번·저장(`requested_at`)하고 그 값을 `institutionTransactionUniqueNo`로 보낸다. 재시도는 `attempt_no`를 올리고 **새 `request_reference`**를 쓴다. 응답 유실 시 이 값으로 조회한다.
 
 ---
 
-## 2. 예치 (DEPOSIT)
+## 3. 예치 (DEPOSIT)
 
 `autoTransfer=false`로 발급해, **검증(VERIFY)을 통과한 뒤에만 보관계좌로 정산(SETTLE)**한다.
-이로써 "외부 결과가 일치하는지 확인한 뒤 완료"(`proposal.md` §7)가 강제된다.
+이로써 "외부 결과가 일치하는지 확인한 뒤 완료"(`proposal.md` §7, `R-PAY-08`)가 강제된다.
 
 | deposit_step | attempts.step | SSAFY API | 응답 → 컬럼 |
 | --- | --- | --- | --- |
 | VA_CREATING→VA_CREATED | `VA_CREATE` | `createVirtualAccount`<br>req: `mainAccountNo`(보관계좌), `depositorName`, `expectedAmount`, `expiryDate`, `autoTransfer=false` | `virtualAccountId`→`virtual_account_id`<br>`virtualAccountNo`→`virtual_account_no` |
-| TRANSFER_SENDING→TRANSFERRED | `DEPOSIT_TRANSFER` | `updateDemandDepositAccountTransfer`<br>req: `depositAccountNo`(VA번호), `withdrawalAccountNo`(의뢰인 계좌), `transactionBalance`<br>Header.userKey = 의뢰인(party 조회) | `source_bank_code`, `source_account_encrypted` |
+| TRANSFER_SENDING→TRANSFERRED | `DEPOSIT_TRANSFER` | `updateDemandDepositAccountTransfer`<br>req: `depositAccountNo`(VA번호), `withdrawalAccountNo`(의뢰인 계좌), `transactionBalance`<br>Header.userKey = Komit이 전달한 의뢰인 키 | `source_bank_code`, `source_account_encrypted` |
 | VERIFIED | `DEPOSIT_VERIFY` | `inquireVirtualAccountDeposits`<br>req: `virtualAccountId` | `deposits[].depositAmount`→`verified_deposit_amount`<br>`nameMatched`→`depositor_name_matched`<br>→`deposit_verification_status` |
 | SETTLED | `VA_SETTLE` | `settleVirtualAccount`<br>req: `virtualAccountId` | `settledAmount`, `settledAt`→`completed_at` |
 | VA_CLOSED | `VA_CLOSE` | `closeVirtualAccount`<br>req: `virtualAccountId` | status=CLOSED→`virtual_account_closed_at` |
@@ -61,9 +85,17 @@
 - `deposit_verification_status`: `verified_deposit_amount` == `escrows.expected_amount` → MATCHED, 다르면 MISMATCHED(부분·초과), 미확인 UNKNOWN
 - **VA 입금은 출처 계좌를 응답에 주지 않는다.** `source_*`는 be-api가 넘긴 참고값이지 금융망 확인값이 아니다.
 
+### 예치 상태 확정
+
+- `createEscrow`는 같은 HTTP 200 / `H0000`에서도, 응답 시점에 검증·정산·로컬 기록이 모두 확정됐으면 `ACTIVE`, 아직 처리 중이면 `DEPOSIT_PENDING`을 반환한다. `H0000`만으로 예치 완료를 판단하지 않는다.
+- `DEPOSIT_PENDING`에서는 완료된 DEPOSIT이 없으므로 `depositedAmount=0`, `balance=0`이다. `inquireEscrow`는 같은 계약의 최신 상태를 돌려준다. `ACTIVE`가 확인된 뒤에만 Komit이 예치 완료 및 착수를 처리한다.
+- 금융망 결과가 불명확하면 거래를 `UNKNOWN`으로 두고 조회로 해소한다. 확정 실패는 거래 `FAILED`로 기록한다. `escrows.status`에 `FAILED`는 없다.
+- `VA_CLOSE`는 `SETTLE` 이후의 별도 정리 단계다. 해지가 늦어져도 정산과 로컬 완료 기록이 확정됐다면 `ACTIVE`로 볼 수 있다.
+- 같은 계약의 재요청은 기존 에스크로와 거래의 현재 상태를 반환한다. 처리 중이거나 결과 불명인 자금 이동을 새 이체로 중복 실행하지 않는다.
+
 ---
 
-## 3. 지급 (RELEASE) / 환불 (REFUND)
+## 4. 지급 (RELEASE) / 환불 (REFUND)
 
 둘 다 보관계좌에서 나가는 이체로 구조가 같고 목적지만 다르다.
 
@@ -80,23 +112,22 @@
 
 ---
 
-## 4. 계좌 확인 (1원 인증)
+## 5. 계좌 확인 (1원 인증)
 
-`V3`의 `account_verifications` → 성공 시 `registered_accounts` 생성. 에스크로가 `authText`를 주입한다.
+Komit이 회원가입 때 보관한 `userKey`와 계좌번호를 에스크로에 전달한다. 에스크로는 SSAFY 계좌 확인 API를 중계하고 `authText`를 주입한다. 인증 결과와 사용 계좌는 Komit이 보관한다. 에스크로 `V3`에는 회원별 계좌 확인 테이블을 두지 않는다.
 
-| 단계 | SSAFY API | 매핑 |
+| 단계 | 에스크로 API·금융망 처리 | Komit으로 전달할 결과 |
 | --- | --- | --- |
-| 인증 요청 | `openAccountAuth`<br>req: `accountNo`, `authText`(= `service_clients.one_won_auth_message`) | 응답 `transactionUniqueNo`→`account_verifications.transaction_unique_no` |
-| 인증 검증 | `checkAuthCode`<br>req: `accountNo`, `authText`, `authCode`(4자리) | `status` SUCCESS/FAIL |
+| 인증 요청 | `openAccountAuth`<br>req: `accountNo`, `authText`(에스크로 설정값) | `transactionUniqueNo`, `accountNo`, `expiresAt` |
+| 인증 검증 | 에스크로 `checkAuthCode`<br>req: `accountNo`, `authCode`(4자리 숫자). 은행 앱이 없는 데모이므로 실제 코드 일치 검사는 하지 않는다 | `status=SUCCESS`, `transactionUniqueNo`, `accountNo` |
 
-- **be-api는 `accountNo`만 넘기고, `authText`는 에스크로가 채운다.** (목의 요청에 `authText`가 없는 이유)
-- `R-ACC-02`: 인증 4자리 / 유효 시간. `expires_at`는 애플리케이션이 규칙을 참조해 계산 (DB에 값 안 박음)
-- `R-ACC-03`: 반복 실패 시 취소. `attempt_count`로 세되 임계값은 미확정
-- `R-ACC-04`: party당 유효 계좌 1개 (partial unique, V3)
+- **be-api는 `Header.userKey`와 `accountNo`를 넘기고, `authText`는 에스크로가 채운다.** (목의 요청에 `authText`가 없는 이유)
+- `R-ACC-02`: 유효 시간 안에 네 자리 숫자를 입력하면 어떤 값이든 성공한다. `expiresAt`은 에스크로 응답을 Komit이 전달한다.
+- `R-ACC-04`: Komit 회원당 유효 계좌 1개. 이 제약을 에스크로 `V3`의 party 테이블에 의존하지 않는다.
 
 ---
 
-## 5. 대사 (Reconciliation)
+## 6. 대사 (Reconciliation)
 
 원장(집계)과 은행 잔액을 맞춰 본다. `inquireReconciliation`.
 
@@ -108,7 +139,7 @@
 
 ---
 
-## 6. Komit ↔ Escrow 번역 매핑
+## 7. Komit ↔ Escrow 번역 매핑
 
 계층이 다르므로 필드명·타입·상태 어휘가 다르다. be-api가 escrow 클라이언트를 짤 때 아래 대응을 구현한다.
 
@@ -145,12 +176,12 @@ Komit `EscrowDepositResponse.status`는 escrow의 상태를 번역한 값이다.
 | Komit (`AccountVerificationResponse`) | Escrow (`openAccountAuth` / `checkAuthCode`) |
 | --- | --- |
 | `verificationId` (int) | 상관키는 `accountNo`. Komit이 자체 세션 ID를 발급하고 `accountNo`(가린 값)와 함께 보관 |
-| `expiresAt` | `openAccountAuth` 응답의 `expiresAt` (escrow가 `account_verifications.expires_at`로 계산). Komit은 전달만 한다 |
-| (검증 요청) | `checkAuthCode` req: `accountNo`, `authCode`(4자리). `authText`는 escrow가 주입 |
+| `expiresAt` | `openAccountAuth` 응답의 `expiresAt`. Komit은 전달만 한다 |
+| (검증 요청) | `checkAuthCode` req: `accountNo`, `authCode`(4자리 숫자). 실제 코드 일치 여부는 검사하지 않는다 (`R-ACC-02`) |
 
 ---
 
-## 7. 미결 (확정 필요)
+## 8. 미결 (확정 필요)
 
 키 발급·실호출 뒤 확인하거나 팀이 정할 항목.
 
@@ -159,7 +190,4 @@ Komit `EscrowDepositResponse.status`는 escrow의 상태를 번역한 값이다.
 | `HOLDER_VERIFY`가 타인 계좌도 조회되나 | 미확인. 안 되면 수취 검증을 등록 시점으로 이동 |
 | VA 활성 상한 (`E4065`) | 명세에 값 없음 = 동시 진행 계약 수 상한. 실호출 확인 |
 | 이체 한도 상향 | 기본 1회 1억/1일 5억. 집금 계좌는 `updateTransferLimit` 필요. 상향폭 미정 |
-| 예치 확정 동기/비동기 | createEscrow가 ACTIVE 또는 DEPOSIT_PENDING. 문서화 여부 보류 |
-| 1원 인증 실패 임계 횟수 | `R-ACC-03` 값 없음 (`RULES.md` 미확정) |
-| `/member` 호출 주체 | 에스크로가 userKey 발급 후 party 참조 반환하는지 |
 | 운영 감사 기록 | UNKNOWN 해소·미결 처리 이력 테이블 미설계 |

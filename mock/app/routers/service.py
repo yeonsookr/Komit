@@ -13,7 +13,7 @@
 
 import copy
 import re
-
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
 
 from fastapi import (
@@ -7595,10 +7595,6 @@ ACCOUNT_REJECTED = (
     "ACCOUNT_REJECTED",
     "은행과 계좌번호를 다시 확인해 주세요.",
 )
-AUTH_CODE_MISMATCH = (
-    "AUTH_CODE_MISMATCH",
-    "숫자 네 자리가 맞지 않습니다. 입금 내역을 다시 확인해 주세요.",
-)
 ESCROW_UNAVAILABLE = (
     "ESCROW_UNAVAILABLE",
     "지금은 계좌를 확인할 수 없습니다. 잠시 뒤 다시 시도해 주세요.",
@@ -7626,17 +7622,12 @@ REVIEW_NOT_FOUND_EXAMPLE = {
 
 # 목에서 실패 응답을 보고 싶을 때 쓰는 값.
 REJECTED_ACCOUNT_NUMBER = "0000000000000000"
-VALID_AUTH_CODE = "1234"
 NOT_FOUND_VERIFICATION_ID = 404
 NOT_FOUND_NOTIFICATION_ID = 404
 
 ACCOUNT_REJECTED_EXAMPLE = {
     "code": ACCOUNT_REJECTED[0],
     "message": ACCOUNT_REJECTED[1],
-}
-AUTH_CODE_MISMATCH_EXAMPLE = {
-    "code": AUTH_CODE_MISMATCH[0],
-    "message": AUTH_CODE_MISMATCH[1],
 }
 ESCROW_UNAVAILABLE_EXAMPLE = {
     "code": ESCROW_UNAVAILABLE[0],
@@ -7778,7 +7769,10 @@ def request_account_verification(
         bankName="국민은행",
         maskedNumber="···· " + request.accountNumber[-4:],
         accountHolder=request.accountHolder,
-        expiresAt="2026-09-02T14:12:00+09:00",
+        # R-ACC-02: 확인 유효 시간은 요청 시점부터 10분이다.
+        expiresAt=(
+            datetime.now(timezone(timedelta(hours=9))) + timedelta(minutes=10)
+        ).isoformat(timespec="seconds"),
     )
 
 
@@ -7791,11 +7785,6 @@ def request_account_verification(
             "content": {
                 "application/json": {"example": INCOME_EXAMPLE["settlementAccount"]}
             }
-        },
-        400: {
-            "model": ErrorResponse,
-            "description": "네 자리가 맞지 않거나 확인 건을 더 쓸 수 없음",
-            "content": {"application/json": {"example": AUTH_CODE_MISMATCH_EXAMPLE}},
         },
         **AREA8_FORBIDDEN,
         404: {
@@ -7814,30 +7803,22 @@ def request_account_verification(
         "입금자명 뒤 네 자리를 내면 확인 건이 끝나고 그 계좌가 등록된다. 등록한 계좌가 "
         "이미 있으면 이 시점에 대체된다.\n\n"
         "계좌번호는 암호화해 보관하고 응답에는 언제나 가려서 내보낸다.\n\n"
-        "**지금 단계에서는 네 자리를 실제로 검사하지 않는다.** 은행 앱을 쓸 수 없어 "
-        "입금자명에 찍힌 인증코드를 읽어올 방법이 없기 때문이다. 클라이언트가 어떤 "
-        "값을 보내든, 에스크로 서버가 금융망에 맞는 값을 대신 건네 확인을 끝낸다. "
-        "따라서 이 단계에서 400 `AUTH_CODE_MISMATCH`는 실제로 나오지 않는다.\n\n"
-        "은행 앱을 쓸 수 있게 되면 클라이언트가 보낸 값을 그대로 금융망에 넘기도록 "
-        "바꾼다. **요청·응답 형식은 그대로이므로 클라이언트는 고칠 것이 없다.**\n\n"
+        "**R-ACC-02:** 데모에서는 은행 앱이 없어 실제 인증번호를 확인할 수 없다. "
+        "Komit이 네 자리 숫자를 에스크로의 `checkAuthCode` API에 보내면, "
+        "에스크로는 숫자의 값과 관계없이 확인 성공을 돌려준다.\n\n"
         "**확인 건의 주인이 토큰의 주인인지 검증한다.** `verificationId`의 확인 건을 "
         "연 사람이 `sub`와 같은지 확인한 뒤에 처리하고, 다르면 403으로 막는다. 남의 "
         "확인 건을 끝내 그 계좌를 내 계좌로 등록하는 일이 없어야 한다. 등록되는 계좌는 "
         "언제나 `sub`의 계좌다.\n\n"
-        "- **200**: 네 자리가 맞아 계좌가 등록됐을 때\n"
-        "- **400 / AUTH_CODE_MISMATCH**: 네 자리가 다를 때. 확인 건은 아직 살아 "
-        "있어 다시 낼 수 있다\n"
-        "- **400 / VERIFICATION_EXPIRED**: `expiresAt`이 지났을 때\n"
-        "- **400 / VERIFICATION_CLOSED**: 여러 번 틀려 확인 건이 닫혔을 때. 계좌 "
-        "입력부터 다시 한다\n"
+        "- **200**: 네 자리 숫자로 계좌가 등록됐을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: `sub`가 연 확인 건이 아닐 때\n"
         "- **404 / VERIFICATION_NOT_FOUND**: `verificationId`에 해당하는 확인 건이 "
         "없을 때\n"
         "- **422 / INVALID_REQUEST**: `authCode`가 네 자리 숫자가 아닐 때\n"
         "- **500 / INTERNAL_ERROR**: 계좌를 저장하지 못했을 때\n\n"
-        "`authCode`가 `1234`면 등록에 성공하고, 그 밖의 값이면 400 "
-        "`AUTH_CODE_MISMATCH`를 준다."
+        "목 서버에서는 확인 건 상태를 저장하지 않는다. `verificationId`가 `404`인 "
+        "경우를 제외하면 유효한 네 자리 숫자는 모두 성공한다."
     ),
 )
 def confirm_account_verification(
@@ -7849,9 +7830,6 @@ def confirm_account_verification(
 ) -> AccountResponse | JSONResponse:
     if verificationId == NOT_FOUND_VERIFICATION_ID:
         return _error_response(404, VERIFICATION_NOT_FOUND)
-    if request.authCode != VALID_AUTH_CODE:
-        return _error_response(400, AUTH_CODE_MISMATCH)
-
     return AccountResponse(**INCOME_EXAMPLE["settlementAccount"])
 
 
