@@ -3,14 +3,7 @@
  */
 import type { ConsultingSession, Contract } from "@/types/contract";
 
-/**
- * 시작 몇 분 전부터 들어갈 수 있는지.
- *
- * ⚠️ **`RULES.md` 에 아직 규칙 번호가 없습니다.** 와이어프레임 `4_의뢰인_입장전` 의
- * 「시작 10분 전부터 들어갈 수 있습니다」에서 가져온 값입니다. 기한 값은 규칙서에만
- * 두는 것이 저장소 규약이므로(`AGENTS.md` 1장), 번호가 붙으면 여기 주석을 그 번호로
- * 바꾸고 화면 문구도 값을 다시 적지 않게 고칩니다.
- */
+/** R-CON-08: 컨설팅 세션은 시작 전 정해진 시간부터 들어갈 수 있다. */
 export const SESSION_OPEN_BEFORE_MINUTES = 10;
 
 const MINUTE = 60 * 1000;
