@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/layouts";
 import { EmptyState } from "@/components/feedback";
-import { ContractEditor } from "@/components/domains/contract";
+import { ConsultingContractForm, ContractEditor } from "@/components/domains/contract";
 import { RoomHeader } from "@/components/domains/room";
 import { getContract, getIssues, getMe, getRoom } from "@/lib/api/services";
 import { isSignedByBoth } from "@/lib/contract";
@@ -11,10 +11,22 @@ import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
 import type { Contract } from "@/types/contract";
 
-export const metadata: Metadata = {
-  title: "계약서 수정 | Komit",
-  description: "보낸 계약서를 고쳐 다시 보냅니다.",
-};
+/** 갈래마다 계약의 내용이 달라 제목도 갈립니다. */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ roomId: string }>;
+}): Promise<Metadata> {
+  const { roomId } = await params;
+  const id = Number(roomId);
+  if (!Number.isInteger(id)) return { title: "방을 찾을 수 없습니다 | Komit" };
+
+  const { room } = await loadEditor(id);
+  return {
+    title: room.type === "CONSULTING" ? "컨설팅 계약서 수정 | Komit" : "계약서 수정 | Komit",
+    description: "보낸 계약서를 고쳐 다시 보냅니다.",
+  };
+}
 
 /**
  * 방·내 정보·계약서와 요청서의 요구사항을 읽습니다.
@@ -53,7 +65,14 @@ export default async function ContractEditPage({
     <Container className="py-8 sm:py-10">
       <RoomHeader room={room} me={me} contract={contract} />
 
-      {canWrite && contract !== null && !isSignedByBoth(contract) ? (
+      {canWrite && contract !== null && !isSignedByBoth(contract) &&
+      room.type === "CONSULTING" ? (
+        <ConsultingContractForm
+          roomId={room.roomId}
+          counterpartName={room.counterpartName}
+          contract={contract}
+        />
+      ) : canWrite && contract !== null && !isSignedByBoth(contract) ? (
         <ContractEditor
           roomId={room.roomId}
           contract={contract}

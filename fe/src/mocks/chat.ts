@@ -146,6 +146,36 @@ const MESSAGES: ChatMessage[] = [
     body: "(착수 전) 예치까지 마쳤습니다. 착수해 주세요.",
     sentAt: "2026-08-23T10:30:00+09:00",
   },
+
+  /*
+    세션 중의 대화입니다. 방 대화와 `chatRefId` 가 다릅니다 — 세션에서 오간 말은
+    세션이 끝나면 요약의 근거가 되므로 방의 흐름과 섞이지 않습니다.
+    값은 목 서버 세션 응답의 `chatRefId`(session-55-chat)와 맞춰 둡니다.
+  */
+  {
+    messageId: "m-s55-1",
+    chatRefId: "session-55-chat",
+    sender: "COUNTERPART",
+    authorName: "이준",
+    body: "지금 보고 계신 화면 기준으로 말씀드릴게요",
+    sentAt: "2026-08-29T14:03:00+09:00",
+  },
+  {
+    messageId: "m-s55-2",
+    chatRefId: "session-55-chat",
+    sender: "ME",
+    authorName: "김미미",
+    body: "네, 이미지 쪽부터 부탁드립니다",
+    sentAt: "2026-08-29T14:04:00+09:00",
+  },
+  {
+    messageId: "m-s55-3",
+    chatRefId: "session-55-chat",
+    sender: "COUNTERPART",
+    authorName: "이준",
+    body: "그 부분은 코드 보고 말씀드릴게요",
+    sentAt: "2026-08-29T14:06:00+09:00",
+  },
 ];
 
 /** 한 방의 메시지를 보낸 순서로 돌려줍니다. */

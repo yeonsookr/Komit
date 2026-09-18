@@ -125,6 +125,11 @@ export interface Reservation {
 /** 컨설팅 세션 하나. */
 export interface ConsultingSession {
   sessionId: number;
+  /**
+   * 이 세션이 달린 계약. 세션 화면은 방 밖에 있는 별도 화면이라 세션 식별자만으로
+   * 열리는데, 끝낸 뒤 어느 방으로 돌아갈지가 이 값에서 나옵니다.
+   */
+  contractId: number;
   price: number;
   durationMinutes: number;
   reservation: Reservation;
@@ -140,6 +145,13 @@ export interface ConsultingAgreement {
   status: ConsultingStatus;
   /** 속한 세션 금액의 합. */
   totalAmount: number;
+  /**
+   * 이 세션에서 다룰 것. 개발자가 한 줄로 적습니다.
+   *
+   * **요구사항 식별자를 담지 않습니다.** 컨설팅은 요구사항 하나를 작업으로 만드는 것이
+   * 아니라 한 번 만나 여러 갈래를 함께 보는 자리라 요청서의 어느 줄에 매이지 않습니다.
+   */
+  topic: string;
   sessions: ConsultingSession[];
 }
 
@@ -148,6 +160,11 @@ export interface DevelopmentAgreement {
   status: DevelopmentStatus;
   /** 계약 금액. 작업별 금액은 이것의 배분 표시입니다 (R-CON-04). */
   totalAmount: number;
+  /**
+   * 이 계약에서 다룰 요구사항. 개발 계약에만 있습니다 — 요구사항 하나가 작업 하나가
+   * 되므로 어느 줄을 맡기로 했는지가 곧 계약의 내용입니다.
+   */
+  issueIds: number[];
   /** 정하기 전이면 null. */
   startDate: string | null;
   /** 최종 납기일. 작업마다 따로 납기를 두지 않습니다. */
@@ -167,8 +184,6 @@ export interface Contract {
   status: ContractStatus;
   consulting: ConsultingAgreement | null;
   development: DevelopmentAgreement | null;
-  /** 이 계약에서 다룰 요구사항 식별자. */
-  issueIds: number[];
   /** 계약서의 상세 설명. 적지 않았으면 null. */
   detail: string | null;
   clientSignature: ContractSignature | null;
@@ -280,4 +295,70 @@ export interface WriteReviewRequest {
   /** 설명력. 1~5. */
   expScore: number;
   content?: string | null;
+}
+
+/**
+ * 컨설팅 계약서 작성. 개발자가 상담방에서 보냅니다 (`4_개발자_계약서작성`).
+ *
+ * 개발 계약과 달리 작업을 쪼개지 않습니다. 한 번 만나서 무엇을 다룰지(`topic`),
+ * 언제 얼마나(`scheduledAt`·`durationMinutes`), 얼마에(`price`) 하는지가 전부입니다.
+ */
+export interface WriteConsultingContractRequest {
+  /** 이 세션에서 다룰 것. 한 줄로 적습니다. */
+  topic: string;
+  scheduledAt: string;
+  durationMinutes: number;
+  price: number;
+  detail?: string | null;
+  /** 계약서와 함께 상대에게 남기는 말. 계약 조건이 아닙니다. */
+  message?: string | null;
+}
+
+/** 컨설팅 계약서 수정 제안. **보낸 항목만** 바뀝니다. */
+export interface AmendConsultingContractRequest {
+  topic?: string | null;
+  scheduledAt?: string | null;
+  durationMinutes?: number | null;
+  price?: number | null;
+  detail?: string | null;
+  message?: string | null;
+}
+
+/** 세션 요약의 항목 하나. 논의·결정·다음 할 일이 같은 모양입니다. */
+export interface SummaryItem {
+  title: string;
+  detail: string | null;
+}
+
+/**
+ * 요청서에 반영할 수 있는 변경 후보.
+ *
+ * 요약을 읽는 것과 요청서를 고치는 것은 다른 일입니다. 세션에서 정해진 것이 곧바로
+ * 요청서에 들어가지 않고, 의뢰인이 골라 반영해야 바뀝니다.
+ */
+export interface SummaryChange {
+  changeId: number;
+  /** UPDATE 는 있는 요구사항을 고치고, ADD 는 새로 넣습니다. */
+  kind: "UPDATE" | "ADD";
+  /** 고칠 요구사항. 새로 넣는 것이면 null 입니다. */
+  issueId: number | null;
+  title: string;
+  detail: string | null;
+  isApplied: boolean;
+}
+
+/** 세션이 끝난 뒤 만들어지는 요약 (`4_의뢰인_요약`). */
+export interface SessionSummary {
+  sessionId: number;
+  /** 논의한 것. 요청서에는 반영되지 않습니다. */
+  discussed: SummaryItem[];
+  decided: SummaryItem[];
+  nextActions: SummaryItem[];
+  changes: SummaryChange[];
+  updatedAt: string;
+}
+
+/** 고른 변경 후보를 요청서에 반영합니다. */
+export interface ApplySummaryChangesRequest {
+  changeIds: number[];
 }

@@ -71,6 +71,16 @@ export const ROUTES = {
   roomDeposit: (roomId: number) => `/rooms/${roomId}/deposit`,
   roomProgress: (roomId: number) => `/rooms/${roomId}/progress`,
   roomCheck: (roomId: number) => `/rooms/${roomId}/check`,
+  /** 컨설팅 방의 요약 탭. 세션이 끝나야 내용이 생깁니다 (`4_의뢰인_요약`). */
+  roomSummary: (roomId: number) => `/rooms/${roomId}/summary`,
+  /**
+   * 세션 화면 (`4_의뢰인_세션중`).
+   *
+   * **방 안의 탭이 아니라 별도 화면입니다.** 화상과 화면 공유가 화면을 가득 채워
+   * 사이드바도 방 머리도 두지 않습니다(`docs/FRONTEND_COMPONENTS.md` 2장 — 골격이
+   * 다른 화면은 별도 레이아웃). 그래서 방이 아니라 세션 식별자로 찾아갑니다.
+   */
+  session: (sessionId: number) => `/sessions/${sessionId}`,
   /** 계약이 끝난 뒤에만 들어갑니다 (R-REV-02). */
   roomReview: (roomId: number) => `/rooms/${roomId}/review`,
   /** 문제 신고. 의뢰인·개발자 모두 같은 자리에서 넣습니다. (화면 없음 — 영역 6) */

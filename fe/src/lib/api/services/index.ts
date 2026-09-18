@@ -1,6 +1,7 @@
 export * from "./accounts";
 export * from "./admin";
 export * from "./chat";
+export * from "./consultingSessions";
 export * from "./contracts";
 export * from "./developers";
 export * from "./landing";

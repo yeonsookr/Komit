@@ -49,7 +49,6 @@ function contract(override: Partial<Contract> = {}): Contract {
     status: "NEGOTIATING",
     consulting: null,
     development: null,
-    issueIds: [],
     detail: null,
     clientSignature: null,
     developerSignature: null,
