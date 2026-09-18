@@ -144,3 +144,74 @@ export interface ReviewListResponse {
   totalElements: number;
   totalPages: number;
 }
+
+/** 내 프로필 편집 화면에서만 필요한 경력 첨부 정보. */
+export interface MyCareer extends Career {
+  evidenceFileId: number | null;
+  evidenceFileName: string | null;
+}
+
+/** 내 프로필 편집 화면에서만 필요한 작업물 사진 정보. */
+export interface MyPortfolioItem extends PortfolioItem {
+  thumbnailUrl: string | null;
+}
+
+export interface MyDeveloperProfile {
+  developerId: number;
+  name: string;
+  profileImageUrl: string | null;
+  intro: string;
+  description: string | null;
+  yearsOfExperience: number | null;
+  field: CodeItem | null;
+  activeFrom: string | null;
+  activeTo: string | null;
+  isCareerVerified: boolean;
+  devRating: Rating;
+  explanatoryRating: Rating;
+  techCategories: CodeItem[];
+  careers: MyCareer[];
+  portfolioItems: MyPortfolioItem[];
+  priceCatalog: PriceCatalogItem[];
+  reviews: Review[];
+  replyCount: number;
+  updatedAt: string;
+}
+
+export interface WriteCareerRequest {
+  careerId: number | null;
+  company: string;
+  role: string;
+  startDate: string;
+  endDate: string | null;
+  evidenceFileId: number | null;
+}
+
+export interface WritePortfolioItemRequest {
+  portfolioItemId: number | null;
+  title: string;
+  description: string | null;
+  linkUrl: string | null;
+  thumbnailFileId: number | null;
+}
+
+export interface WritePriceRequest {
+  priceId: number | null;
+  taskType: TaskType;
+  taskName: string;
+  price: number;
+  periodDays: number | null;
+}
+
+export interface WriteDeveloperProfileRequest {
+  intro: string;
+  description: string | null;
+  fieldCodeId: number | null;
+  yearsOfExperience: number | null;
+  activeFrom: string | null;
+  activeTo: string | null;
+  techCodeIds: number[];
+  careers: WriteCareerRequest[];
+  portfolioItems: WritePortfolioItemRequest[];
+  prices: WritePriceRequest[];
+}

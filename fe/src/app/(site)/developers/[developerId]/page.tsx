@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Container } from "@/components/layouts";
-import { Button } from "@/components/buttons";
+import { buttonClass } from "@/components/buttons";
 import { StickyBar } from "@/components/common";
 import {
   BackToSearch,
@@ -16,10 +17,14 @@ import {
 } from "@/components/domains/developer";
 import { getDeveloper, getDeveloperReviews } from "@/lib/api/services";
 import { splitPriceCatalog } from "@/lib/developerProfile";
+import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
 
 /** 프로필에 미리 보여주는 리뷰 수. 나머지는 '모두 보기'로 넘깁니다. */
 const PREVIEW_REVIEW_COUNT = 3;
+
+/** 와이어프레임의 무료 상담 예시 방. */
+const FREE_INQUIRY_ROOM_ID = 91;
 
 /** 경로의 개발자 식별자를 읽습니다. 숫자가 아니면 없는 개발자로 봅니다. */
 function parseDeveloperId(value: string): number | null {
@@ -129,11 +134,14 @@ export default async function DeveloperProfilePage({
         </div>
       </ProfileSection>
 
-      {/* 하단 고정 CTA. 무료 상담은 요청서를 고른 뒤 열리므로 의뢰 화면으로 보냅니다. */}
+      {/* 하단 고정 CTA. 와이어프레임의 무료 상담방으로 바로 이동합니다. */}
       <StickyBar className="mt-10">
-        <Button variant="primary" size="lg" fullWidth>
+        <Link
+          href={ROUTES.room(FREE_INQUIRY_ROOM_ID)}
+          className={buttonClass({ variant: "primary", size: "lg", fullWidth: true })}
+        >
           무료로 물어보기
-        </Button>
+        </Link>
       </StickyBar>
     </Container>
   );

@@ -122,7 +122,8 @@ Komit이 회원가입 때 보관한 `userKey`와 계좌번호를 에스크로에
 | 인증 검증 | 에스크로 `checkAuthCode`<br>req: `accountNo`, `authCode`(4자리 숫자). 은행 앱이 없는 데모이므로 실제 코드 일치 검사는 하지 않는다 | `status=SUCCESS`, `transactionUniqueNo`, `accountNo` |
 
 - **be-api는 `Header.userKey`와 `accountNo`를 넘기고, `authText`는 에스크로가 채운다.** (목의 요청에 `authText`가 없는 이유)
-- `R-ACC-02`: 유효 시간 안에 네 자리 숫자를 입력하면 어떤 값이든 성공한다. `expiresAt`은 에스크로 응답을 Komit이 전달한다.
+- `R-ACC-02`: 유효 시간 안에 네 자리 숫자를 입력하면 어떤 값이든 성공한다. `expiresAt`은 에스크로 응답을 Komit이 인증 세션과 함께 관리한다.
+- `R-ACC-11`: 이 성공 결과는 실제 계좌 소유 증명이 아니다.
 - `R-ACC-04`: Komit 회원당 유효 계좌 1개. 이 제약을 에스크로 `V3`의 party 테이블에 의존하지 않는다.
 
 ---
@@ -175,8 +176,8 @@ Komit `EscrowDepositResponse.status`는 escrow의 상태를 번역한 값이다.
 
 | Komit (`AccountVerificationResponse`) | Escrow (`openAccountAuth` / `checkAuthCode`) |
 | --- | --- |
-| `verificationId` (int) | 상관키는 `accountNo`. Komit이 자체 세션 ID를 발급하고 `accountNo`(가린 값)와 함께 보관 |
-| `expiresAt` | `openAccountAuth` 응답의 `expiresAt`. Komit은 전달만 한다 |
+| `verificationId` (int) | 상관키는 `accountNo`. Komit이 자체 세션 ID를 발급하고 `accountNo` 원문을 암호화해 보관하며 화면에는 가린 값만 전달 |
+| `expiresAt` | `openAccountAuth` 응답의 `expiresAt`. Komit이 인증 세션과 함께 관리하고 FE에 전달한다 |
 | (검증 요청) | `checkAuthCode` req: `accountNo`, `authCode`(4자리 숫자). 실제 코드 일치 여부는 검사하지 않는다 (`R-ACC-02`) |
 
 ---

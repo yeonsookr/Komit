@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { signIn } from './support/session';
 
 /**
  * 개발자 프로필. 목 서버가 닿아야 합니다(BACKEND_API_BASE_URL).
@@ -60,6 +61,16 @@ test.describe('개발자 프로필', () => {
 
     await expect(page).toHaveURL('/developers/3');
     await expect(page.getByRole('heading', { name: '이준', level: 1 })).toBeVisible();
+  });
+
+  test('무료로 물어보기를 누르면 무료 상담방으로 간다', async ({ page }) => {
+    await signIn(page);
+    await page.goto('/developers/3');
+
+    await page.getByRole('link', { name: '무료로 물어보기' }).click();
+
+    await expect(page).toHaveURL('/rooms/91');
+    await expect(page.getByRole('heading', { name: '수제 비누 가게' })).toBeVisible();
   });
 
   test('없는 개발자는 찾을 수 없다고 알린다', async ({ page }) => {

@@ -1,4 +1,7 @@
 import { expect, test } from '@playwright/test';
+import { seedExampleRequest } from './support/request';
+
+const DIAGNOSIS_ID = 34;
 
 /**
  * 요청서 수정. 목 서버가 닿아야 합니다(BACKEND_API_BASE_URL).
@@ -6,12 +9,15 @@ import { expect, test } from '@playwright/test';
  * 404 는 없는 진단 재현용 예약값입니다.
  */
 test.describe('요청서 수정', () => {
+  test.describe.configure({ mode: 'serial' });
+
   test.beforeEach(async ({ page }) => {
+    await seedExampleRequest(page, DIAGNOSIS_ID);
     await page.setViewportSize({ width: 1260, height: 1100 });
   });
 
   test('요구사항과 확인 문장을 입력칸으로 보여준다', async ({ page }) => {
-    await page.goto('/checkup/31/request/edit');
+    await page.goto(`/checkup/${DIAGNOSIS_ID}/request/edit`);
 
     await expect(page.getByRole('heading', { name: '요청서 수정' })).toBeVisible();
     await expect(page.getByText('수제 비누 가게 · 요청서의 요구사항을 수정합니다')).toBeVisible();
@@ -23,7 +29,7 @@ test.describe('요청서 수정', () => {
   });
 
   test('직접 해결한 요구사항은 수정 대상이 아니다', async ({ page }) => {
-    await page.goto('/checkup/31/request/edit');
+    await page.goto(`/checkup/${DIAGNOSIS_ID}/request/edit`);
 
     // 요청서에 없는 것이라 여기에도 없습니다.
     await expect(page.getByText('service_role 키 노출 정리')).toHaveCount(0);
@@ -31,7 +37,7 @@ test.describe('요청서 수정', () => {
   });
 
   test('확인 문장을 더하고 뺄 수 있다', async ({ page }) => {
-    await page.goto('/checkup/31/request/edit');
+    await page.goto(`/checkup/${DIAGNOSIS_ID}/request/edit`);
 
     const criteria = page.getByRole('textbox', { name: '확인 문장' });
     const before = await criteria.count();
@@ -44,7 +50,7 @@ test.describe('요청서 수정', () => {
   });
 
   test('요구사항을 지우면 목록에서 빠진다', async ({ page }) => {
-    await page.goto('/checkup/31/request/edit');
+    await page.goto(`/checkup/${DIAGNOSIS_ID}/request/edit`);
 
     await page.getByRole('button', { name: '요구사항 삭제' }).first().click();
 
@@ -53,7 +59,7 @@ test.describe('요청서 수정', () => {
   });
 
   test('요구사항을 모두 빼면 저장할 수 없다', async ({ page }) => {
-    await page.goto('/checkup/31/request/edit');
+    await page.goto(`/checkup/${DIAGNOSIS_ID}/request/edit`);
 
     for (let i = 0; i < 3; i += 1) {
       await page.getByRole('button', { name: '요구사항 삭제' }).first().click();
@@ -63,7 +69,7 @@ test.describe('요청서 수정', () => {
   });
 
   test('요구사항을 직접 더할 수 있다', async ({ page }) => {
-    await page.goto('/checkup/31/request/edit');
+    await page.goto(`/checkup/${DIAGNOSIS_ID}/request/edit`);
 
     await page.getByRole('button', { name: '+ 요구사항 추가' }).click();
     await page.getByRole('textbox', { name: '무엇을 맡기고 싶으신가요?' }).fill('주문 취소 화면 추가');
@@ -74,20 +80,20 @@ test.describe('요청서 수정', () => {
   });
 
   test('저장하면 요청서 화면으로 돌아간다', async ({ page }) => {
-    await page.goto('/checkup/31/request/edit');
+    await page.goto(`/checkup/${DIAGNOSIS_ID}/request/edit`);
 
     await page.getByRole('button', { name: '저장하기' }).click();
 
     await expect(page.getByText('요청서를 저장했습니다.')).toBeVisible();
-    await expect(page).toHaveURL('/checkup/31/request');
+    await expect(page).toHaveURL(`/checkup/${DIAGNOSIS_ID}/request`);
   });
 
   test('요청서에서 이어진다', async ({ page }) => {
-    await page.goto('/checkup/31/request');
+    await page.goto(`/checkup/${DIAGNOSIS_ID}/request`);
 
     await page.getByRole('link', { name: '요청서 수정하기' }).click();
 
-    await expect(page).toHaveURL('/checkup/31/request/edit');
+    await expect(page).toHaveURL(`/checkup/${DIAGNOSIS_ID}/request/edit`);
   });
 
   test('없는 진단은 찾을 수 없다고 알린다', async ({ page }) => {

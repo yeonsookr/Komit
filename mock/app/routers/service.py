@@ -683,10 +683,19 @@ class MeResponse(BaseModel):
     name: str = Field(description="화면에 표시하는 이름.", examples=["김미미"])
     profileImageFileId: int | None = Field(
         description=(
-            "직접 올린 프로필 사진의 파일 식별자. 올린 사진이 없으면 null이고, "
-            "그때 화면은 이름 첫 글자를 동그라미에 넣어 보여준다."
+            "직접 올린 프로필 사진의 파일 식별자. 올린 사진이 없으면 null이다."
         ),
-        examples=[None],
+        examples=[512],
+    )
+    profileImageUrl: str | None = Field(
+        description=(
+            "헤더 아바타에 그대로 거는 프로필 사진 주소. 직접 올린 사진이 있으면 "
+            "그 사진의 주소이고, 없으면 카카오 사진 주소다. 둘 다 없으면 null이며 "
+            "이때 화면은 이름 첫 글자를 동그라미에 넣어 보여준다.\n\n"
+            "직접 올린 사진의 주소는 한동안만 쓸 수 있는 임시 주소다. 만료되면 다시 "
+            "받아야 하므로 저장해 두고 오래 쓰지 않는다."
+        ),
+        examples=["https://cdn.komit.example.com/profiles/512.png"],
     )
     hasDevProfile: bool = Field(
         description=(
@@ -841,7 +850,8 @@ TOKEN_EXAMPLE = {
 ME_EXAMPLE = {
     "userId": 12,
     "name": "김미미",
-    "profileImageFileId": None,
+    "profileImageFileId": 512,
+    "profileImageUrl": "https://cdn.komit.example.com/profiles/512.png",
     "hasDevProfile": True,
     "developerId": 9,
     "unreadNotificationCount": 3,
@@ -988,6 +998,11 @@ def get_featured_developers(
         "**화면 — `1_로그인` › 카카오로 시작하기**\n\n"
         "카카오 로그인 화면에서 받은 인가 코드로 로그인한다. 처음 들어온 사용자라면 "
         "이 요청으로 가입까지 끝나며, 별도의 가입 화면이나 약관 동의 화면은 없다.\n\n"
+        "처음 가입할 때는 에스크로의 `createMemberAccount` API로 SSAFY 금융망 "
+        "`userKey`와 개인 계좌 발급을 요청한 뒤, 결과를 Komit Service DB에 저장한다. "
+        "이 금융 정보까지 "
+        "준비되어야 가입이 완료된 것으로 처리한다. 기존 사용자의 로그인에서는 다시 "
+        "발급하지 않는다.\n\n"
         "로그인 화면이 '계속하시면 아래 이용약관과 개인정보 처리방침에 동의하신 것으로 "
         "간주합니다'라고 안내하므로 필수 약관 동의는 이 요청으로 함께 처리된다. "
         "개발자 판매자 약관만 선택이며, 개발자 프로필을 만들 때 그 행위로 갈음한다.\n\n"
@@ -1110,6 +1125,9 @@ def logout() -> Response:
     description=(
         "**화면 — 전 영역 헤더 › 아바타 · 알림 배지**\n\n"
         "모든 화면의 헤더를 채우는 내 정보다. 아바타와 알림 배지를 한 번에 받는다.\n\n"
+        "`profileImageUrl`은 직접 올린 사진, 카카오 사진 순서로 고른 주소다. 둘 다 "
+        "없으면 null이며 화면은 이름 첫 글자를 보여준다. 직접 올린 사진의 주소는 "
+        "임시 주소이므로 화면을 다시 열 때 이 API에서 새로 받는다.\n\n"
         "`hasDevProfile`과 `developerId`는 헤더가 쓰지 않는다. 헤더에 의뢰인·개발자를 "
         "가르는 전환은 없다. 두 값은 마이페이지가 「프로필 생성」과 「프로필 편집」을 "
         "가를 때, 그리고 방 목록이 '받은 의뢰'를 가릴 때 쓴다.\n\n"
@@ -1608,6 +1626,9 @@ SCAN_FILE_INVALID_EXAMPLE = {
 
 # 실패 사례를 재현하는 진단 식별자. 속성을 늘리지 않고 경로 값으로만 고른다.
 DIAGNOSIS_ID = 31
+# 막 시작해 아직 아무것도 답하지 않은 진단. 31은 이어서 하는 쪽이라 답이 차 있어,
+# 새로 시작한 화면까지 그것을 주면 남의 답이 체크된 채로 뜬다.
+NEW_DIAGNOSIS_ID = 33
 NOT_FOUND_DIAGNOSIS_ID = 404
 # 설문을 아직 끝낼 수 없는 진단 재현용 예약값.
 NOT_COMPLETABLE_DIAGNOSIS_ID = 409
@@ -1645,6 +1666,19 @@ DIAGNOSIS_EXAMPLE = {
     "unresolvedIssueCount": 9,
     "totalIssueCount": 11,
     "resolvedSinceLastVersionCount": 3,
+}
+
+# 막 시작한 진단. 검사를 돌린 적이 없어 점수와 검사 시각이 비어 있다.
+NEW_DIAGNOSIS_EXAMPLE = {
+    **DIAGNOSIS_EXAMPLE,
+    "diagnosisId": NEW_DIAGNOSIS_ID,
+    "version": 1,
+    "userInput": None,
+    "readinessScore": None,
+    "scannedAt": None,
+    "unresolvedIssueCount": 0,
+    "totalIssueCount": 0,
+    "resolvedSinceLastVersionCount": 0,
 }
 
 UNFINISHED_SURVEY_LIST_EXAMPLE = {
@@ -1740,6 +1774,58 @@ INSPECTION_DONE_EXAMPLE = {
     "scannedAt": SCANNED_AT,
 }
 
+def _unanswered(example: dict) -> dict:
+    """아무것도 고르지 않은 설문. 보기는 그대로 두고 선택만 지운다."""
+    return {
+        **example,
+        "isDone": False,
+        "questions": [
+            {
+                **question,
+                "options": [
+                    {**option, "isSelected": False} for option in question["options"]
+                ],
+            }
+            for question in example["questions"]
+        ],
+    }
+
+
+NEW_SURVEY_EXAMPLE = _unanswered(SURVEY_EXAMPLE)
+
+
+def _survey_example(diagnosis_id: int) -> dict:
+    """그 진단의 설문지. 조회·저장·완료가 같은 것을 봐야 한다."""
+    example = NEW_SURVEY_EXAMPLE if diagnosis_id == NEW_DIAGNOSIS_ID else SURVEY_EXAMPLE
+    return scan_result.survey_questions(diagnosis_id, example)
+
+
+def _with_answers(example: dict, answers: list) -> dict:
+    """보낸 답을 설문지에 얹는다.
+
+    실서버는 저장한 뒤 저장된 상태를 돌려준다. 목이 원본을 그대로 돌려주면
+    화면이 그것으로 갈아 끼우면서 방금 고른 답이 눈앞에서 지워진다.
+    """
+    picked = {answer.questionId: answer for answer in answers}
+    questions = []
+    for question in example["questions"]:
+        answer = picked.get(question["questionId"])
+        if answer is None:
+            questions.append(question)
+            continue
+        chosen = set(answer.selectedOptionIds)
+        questions.append(
+            {
+                **question,
+                "options": [
+                    {**option, "isSelected": option["optionId"] in chosen}
+                    for option in question["options"]
+                ],
+            }
+        )
+    return {**example, "questions": questions}
+
+
 ISSUES = [
     {
         "issueId": 311,
@@ -1816,6 +1902,71 @@ ISSUES = [
         "originIssueId": 205,
         "qaCriteria": [],
     },
+    {
+        "issueId": 315,
+        "title": "주문 취소가 기록되지 않습니다",
+        "detail": "취소해도 예전 값이 그대로 남아 매출이 어긋납니다",
+        "location": "app/api/orders/cancel.ts:31",
+        "isInput": False,
+        "category": {"codeId": 75, "codeName": "데이터"},
+        "status": "UNRESOLVED",
+        "severity": "HIGH",
+        "fixedVersion": None,
+        "originIssueId": None,
+        "qaCriteria": [],
+    },
+    {
+        "issueId": 316,
+        "title": "이미지를 원본 그대로 내려줍니다",
+        "detail": "사람이 늘면 전송 요금이 그만큼 늡니다",
+        "location": "app/components/Photo.tsx:12",
+        "isInput": False,
+        "category": {"codeId": 76, "codeName": "비용"},
+        "status": "UNRESOLVED",
+        "severity": "MEDIUM",
+        "fixedVersion": None,
+        "originIssueId": None,
+        "qaCriteria": [],
+    },
+    {
+        "issueId": 317,
+        "title": "실행 방법 문서가 기본 문구 그대로입니다",
+        "detail": "받는 사람이 혼자 띄울 수 없습니다",
+        "location": "README.md:1",
+        "isInput": False,
+        "category": {"codeId": 77, "codeName": "인계"},
+        "status": "UNRESOLVED",
+        "severity": "MEDIUM",
+        "fixedVersion": None,
+        "originIssueId": None,
+        "qaCriteria": [],
+    },
+    {
+        "issueId": 318,
+        "title": "예시 계정과 임시 주석이 남아 있습니다",
+        "detail": "AI가 만든 자리 채움 코드가 그대로 돌고 있습니다",
+        "location": "lib/seed/sample.ts:8",
+        "isInput": False,
+        "category": {"codeId": 78, "codeName": "AI 잔재"},
+        "status": "UNRESOLVED",
+        "severity": "LOW",
+        "fixedVersion": None,
+        "originIssueId": None,
+        "qaCriteria": [],
+    },
+    {
+        "issueId": 319,
+        "title": "쓰지 않는 설정 파일이 남아 있습니다",
+        "detail": "어느 것이 진짜 설정인지 알기 어렵습니다",
+        "location": None,
+        "isInput": False,
+        "category": {"codeId": 74, "codeName": "기타"},
+        "status": "UNRESOLVED",
+        "severity": "LOW",
+        "fixedVersion": None,
+        "originIssueId": None,
+        "qaCriteria": [],
+    },
 ]
 
 ISSUE_LIST_EXAMPLE = {
@@ -1825,6 +1976,31 @@ ISSUE_LIST_EXAMPLE = {
     "totalElements": 11,
     "totalPages": 1,
 }
+
+# 진단별 요청서. PUT /requirements가 고른 이슈를 저장하면 GET /issues에서도
+# SUGGESTED 상태로 보이게 해 다음 화면이 요청서 범위를 다시 알아낼 수 있다.
+# 목 서버 프로세스가 내려가면 사라지는 데모용 상태다.
+_SAVED_REQUIREMENTS: dict[int, list[dict]] = {}
+
+
+def _base_issue_rows(diagnosis_id: int) -> list[dict]:
+    """검사 결과 또는 고정 예시에서 진단의 전체 이슈를 읽는다."""
+    kept = scan_result.stored(diagnosis_id)
+    return kept["issues"] if kept else ISSUES
+
+
+def _issue_rows(diagnosis_id: int) -> list[dict]:
+    """전체 이슈에 저장된 요청서 상태와 편집 내용을 겹쳐 돌려준다."""
+    rows = copy.deepcopy(_base_issue_rows(diagnosis_id))
+    saved = _SAVED_REQUIREMENTS.get(diagnosis_id)
+    if saved is None:
+        return rows
+
+    saved_by_id = {row["issueId"]: row for row in saved}
+    merged = [saved_by_id.get(row["issueId"], row) for row in rows]
+    known_ids = {row["issueId"] for row in rows}
+    merged.extend(row for row in saved if row["issueId"] not in known_ids)
+    return merged
 
 DIAGNOSIS_NOT_FOUND_EXAMPLE = {
     "code": "DIAGNOSIS_NOT_FOUND",
@@ -1892,7 +2068,7 @@ def list_unfinished_surveys() -> UnfinishedSurveyListResponse:
     status_code=201,
     tags=[AREA2_TAG],
     responses={
-        201: {"content": {"application/json": {"example": DIAGNOSIS_EXAMPLE}}},
+        201: {"content": {"application/json": {"example": NEW_DIAGNOSIS_EXAMPLE}}},
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -1921,7 +2097,7 @@ def start_diagnosis(request: StartDiagnosisRequest) -> DiagnosisResponse | JSONR
         )
         return JSONResponse(status_code=422, content=jsonable_encoder(body))
 
-    return DiagnosisResponse(**DIAGNOSIS_EXAMPLE)
+    return DiagnosisResponse(**NEW_DIAGNOSIS_EXAMPLE)
 
 
 @router.get(
@@ -1959,9 +2135,7 @@ def get_survey(
 ) -> SurveyResponse | JSONResponse:
     if diagnosisId == NOT_FOUND_DIAGNOSIS_ID:
         return _error_response(404, DIAGNOSIS_NOT_FOUND)
-    return SurveyResponse(
-        **scan_result.survey_questions(diagnosisId, SURVEY_EXAMPLE)
-    )
+    return SurveyResponse(**_survey_example(diagnosisId))
 
 
 @router.patch(
@@ -1998,7 +2172,9 @@ def save_survey_answers(
 ) -> SurveyResponse | JSONResponse:
     if diagnosisId == NOT_FOUND_DIAGNOSIS_ID:
         return _error_response(404, DIAGNOSIS_NOT_FOUND)
-    return SurveyResponse(**SURVEY_EXAMPLE)
+    return SurveyResponse(
+        **_with_answers(_survey_example(diagnosisId), request.answers)
+    )
 
 
 @router.post(
@@ -2061,7 +2237,7 @@ def complete_survey(
         return _error_response(404, DIAGNOSIS_NOT_FOUND)
     if diagnosisId == NOT_COMPLETABLE_DIAGNOSIS_ID:
         return _error_response(409, SURVEY_NOT_COMPLETABLE)
-    return SurveyResponse(**{**SURVEY_EXAMPLE, "isDone": True})
+    return SurveyResponse(**{**_survey_example(diagnosisId), "isDone": True})
 
 
 # --------------------------------------------------------------------------- #
@@ -2187,7 +2363,13 @@ def get_diagnosis(
 ) -> DiagnosisResponse | JSONResponse:
     if diagnosisId == NOT_FOUND_DIAGNOSIS_ID:
         return _error_response(404, DIAGNOSIS_NOT_FOUND)
-    return DiagnosisResponse(**scan_result.diagnosis(diagnosisId, DIAGNOSIS_EXAMPLE))
+    example = (
+        NEW_DIAGNOSIS_EXAMPLE
+        if diagnosisId == NEW_DIAGNOSIS_ID
+        else DIAGNOSIS_EXAMPLE
+    )
+    example = {**example, "diagnosisId": diagnosisId}
+    return DiagnosisResponse(**scan_result.diagnosis(diagnosisId, example))
 
 
 @router.get(
@@ -2246,8 +2428,7 @@ def get_issues(
     if diagnosisId == NOT_FOUND_DIAGNOSIS_ID:
         return _error_response(404, DIAGNOSIS_NOT_FOUND)
 
-    kept = scan_result.stored(diagnosisId)
-    rows = kept["issues"] if kept else ISSUES
+    rows = _issue_rows(diagnosisId)
     if status is not None:
         rows = [row for row in rows if row["status"] == status]
     if isInput is not None:
@@ -2365,37 +2546,54 @@ def write_requirements(
     if diagnosisId == NOT_FOUND_DIAGNOSIS_ID:
         return _error_response(404, DIAGNOSIS_NOT_FOUND)
 
-    saved = [
-        {
-            "issueId": item.issueId or 399,
-            "title": item.title,
-            "detail": item.detail,
-            "location": None,
-            "isInput": False,
-            "category": jsonable_encoder(_issue_category(item.categoryCodeId)),
-            "status": "UNRESOLVED",
-            "severity": item.severity,
-            "fixedVersion": None,
-            "originIssueId": None,
-            "qaCriteria": [
-                {
-                    "qaCriterionId": qa.qaCriterionId or 299,
-                    "testCase": qa.testCase,
-                    "condition": None,
-                    "status": "UNRESOLVED",
-                    "issueId": item.issueId or 399,
-                }
-                for qa in item.qaCriteria
-            ],
-        }
-        for item in request.requirements
-    ]
+    source_by_id = {row["issueId"]: row for row in _issue_rows(diagnosisId)}
+    next_issue_id = max(source_by_id, default=399) + 1
+    saved = []
+
+    for item in request.requirements:
+        issue_id = item.issueId
+        if issue_id is None:
+            issue_id = next_issue_id
+            next_issue_id += 1
+
+        source = source_by_id.get(issue_id)
+        status = (
+            "CONTRACTED"
+            if source is not None and source["status"] == "CONTRACTED"
+            else "SUGGESTED"
+        )
+        saved.append(
+            {
+                "issueId": issue_id,
+                "title": item.title,
+                "detail": item.detail,
+                "location": source["location"] if source else None,
+                "isInput": source["isInput"] if source else False,
+                "category": jsonable_encoder(_issue_category(item.categoryCodeId)),
+                "status": status,
+                "severity": item.severity,
+                "fixedVersion": source["fixedVersion"] if source else None,
+                "originIssueId": source["originIssueId"] if source else None,
+                "qaCriteria": [
+                    {
+                        "qaCriterionId": qa.qaCriterionId or 290000 + order,
+                        "testCase": qa.testCase,
+                        "condition": None,
+                        "status": "UNRESOLVED",
+                        "issueId": issue_id,
+                    }
+                    for order, qa in enumerate(item.qaCriteria)
+                ],
+            }
+        )
+
+    _SAVED_REQUIREMENTS[diagnosisId] = saved
     return IssueListResponse(
-        **{
-            **ISSUE_LIST_EXAMPLE,
-            "content": saved,
-            "totalElements": len(saved),
-        }
+        content=saved,
+        page=1,
+        size=max(len(saved), 1),
+        totalElements=len(saved),
+        totalPages=1,
     )
 
 
@@ -3084,6 +3282,10 @@ ISSUE_CATEGORY_CODES = [
     {"codeId": 71, "codeName": "보안"},
     {"codeId": 72, "codeName": "위법"},
     {"codeId": 73, "codeName": "결제"},
+    {"codeId": 75, "codeName": "데이터"},
+    {"codeId": 76, "codeName": "비용"},
+    {"codeId": 77, "codeName": "인계"},
+    {"codeId": 78, "codeName": "AI 잔재"},
     {"codeId": 74, "codeName": "기타"},
 ]
 
@@ -3882,8 +4084,9 @@ def get_developer_reviews(
         "**이 진단에서 나오지 않은 요구사항이 섞였을 때.** 고르지 않은 것이 요청서에 "
         "실리면 계약까지 따라가므로 조용히 버리지 않고 막는다\n"
         "- **500 / INTERNAL_ERROR**: 추천을 만들지 못했을 때\n\n"
-        "목에서는 `issueIds`에 이 진단의 요구사항(311·312·313·314)이 아닌 값이 하나라도 "
-        "있으면 422를 준다."
+        "목에서는 검사 결과를 올린 진단이면 그 결과에서 나온 요구사항만 허용하고, "
+        "결과가 없는 진단이면 고정 예시 요구사항만 허용한다. 다른 진단의 요구사항이 "
+        "하나라도 섞이면 422를 준다."
     ),
 )
 def create_recommendation(
@@ -3899,7 +4102,11 @@ def create_recommendation(
     if projectId == NOT_FOUND_PROJECT_ID:
         return _error_response(404, PROJECT_NOT_FOUND)
 
-    known = {issue["issueId"] for issue in ISSUES}
+    known = {
+        issue["issueId"]
+        for issue in _issue_rows(request.diagnosisId)
+        if issue["status"] in {"SUGGESTED", "CONTRACTED"}
+    }
     unknown = [issue_id for issue_id in request.issueIds if issue_id not in known]
     if unknown:
         body = ValidationErrorResponse(
@@ -6892,6 +7099,8 @@ def write_review(
 #
 # 접수된 신고를 확인하고 종결하는 것은 운영자 몫이라 9 운영 콘솔에서 다룬다.
 # 종결되면 신고한 사람에게 알림이 가고, 신고 상태를 따로 보는 화면은 두지 않는다.
+# 신고를 저장한 뒤 Service가 연결된 Escrow의 자금을 동결한다. 클라이언트는 Service만
+# 부르며, 저장과 동결이 모두 끝나야 접수 성공이다.
 #
 # ERD 확인 필요: notifications.target_type(NOTIFICATION_TARGET_TYPE)에 신고를 가리키는
 # 값이 없다. ANNOUNCEMENT / CONTRACT / ISSUE 뿐이라 지금은 CONTRACT 로 계약을 가리켜
@@ -6971,6 +7180,12 @@ AREA6_TAG = "6 문제 신고 · 이의 제기"
     tags=[AREA6_TAG],
     responses={
         201: {"content": {"application/json": {"example": REPORT_EXAMPLE}}},
+        **CONTRACT_ERRORS,
+        403: {
+            "model": ErrorResponse,
+            "description": "계약 당사자가 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
         409: {
             "model": ErrorResponse,
             "description": "이미 확인 중인 신고가 있음",
@@ -6983,7 +7198,11 @@ AREA6_TAG = "6 문제 신고 · 이의 제기"
                 }
             },
         },
-        **CONTRACT_ERRORS,
+        500: {
+            "model": ErrorResponse,
+            "description": "신고 저장 또는 Escrow 동결을 완료하지 못함",
+            "content": {"application/json": {"example": INTERNAL_ERROR_EXAMPLE}},
+        },
     },
     summary="문제 신고 · 이의 제기 접수",
     description=(
@@ -6992,21 +7211,26 @@ AREA6_TAG = "6 문제 신고 · 이의 제기"
         "문제 신고, 개발자가 내면 이의 제기라고 부르지만 **접수되는 내용과 처리 방식은 "
         "같다.** 누가 냈는지는 신고자로 구분한다.\n\n"
         "**접수는 계약이나 작업 상태를 바꾸지 않는다.** Komit이 누가 옳은지 정하지도 "
-        "않는다. 운영자가 내용을 확인한 뒤 종결한다.\n\n"
+        "않는다. 대신 Service가 신고를 저장한 뒤 연결된 Escrow의 지급과 일반 환불을 "
+        "동결하며, 운영자가 내용을 확인한 뒤 종결한다. 클라이언트는 Service API만 "
+        "호출하고 Escrow를 직접 호출하지 않는다.\n\n"
+        "**201은 신고 저장과 Escrow 동결이 모두 완료됐다는 뜻이다.** 둘 중 하나라도 "
+        "완료하지 못하면 성공을 반환하지 않는다.\n\n"
         "**종결되면 신고한 사람에게 알림이 간다.** 신고 상태를 따로 보는 화면은 두지 "
         "않고, 알림에서 해당 계약으로 들어간다.\n\n"
-        "다만 확인 중인 신고가 있는 계약은 **작업이 3일 만에 자동 통과되지 않는다.** "
-        "답이 없어 자동으로 넘어가는 일을 막기 위해서다.\n\n"
+        "확인 중인 신고가 있는 계약은 **작업이 3일 만에 자동 통과되지 않는다.** 답이 "
+        "없어 자동으로 넘어가는 일을 막기 위해서다. 종결되면 연결된 Escrow의 동결을 "
+        "해제한다.\n\n"
         "증거 파일은 하나까지 올릴 수 있고 없어도 된다.\n\n"
-        "- **201**: 접수했을 때. 상태는 `OPEN`이고 종결 시각은 null이다\n"
-        "- **400 / FILE_TOO_LARGE**: 첨부가 허용 용량을 넘겼을 때\n"
+        "- **201**: 신고 저장과 Escrow 동결이 끝났을 때. 상태는 `OPEN`이고 종결 시각은 "
+        "null이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 계약의 당사자가 아닐 때\n"
         "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때\n"
         "- **409 / REPORT_ALREADY_OPEN**: `contractId`가 409일 때. 아직 확인 중인 신고가 "
         "있어 새로 낼 수 없다\n"
         "- **422 / INVALID_REQUEST**: `reason`이 비었거나 255자를 넘을 때\n"
-        "- **500 / INTERNAL_ERROR**: 접수하지 못했을 때"
+        "- **500 / INTERNAL_ERROR**: 신고 저장 또는 Escrow 동결을 완료하지 못했을 때"
     ),
 )
 def create_report(
@@ -7022,6 +7246,7 @@ def create_report(
     reason: Annotated[
         str,
         Form(
+            min_length=1,
             max_length=255,
             description="적어 낼 내용. 255자까지 받는다.",
             examples=["8월 31일에 작업 진행 상황을 문의했지만 답변을 받지 못했습니다."],
@@ -7036,6 +7261,8 @@ def create_report(
         return _error_response(404, CONTRACT_NOT_FOUND)
     if contractId == OPEN_REPORT_CONTRACT_ID:
         return _error_response(409, REPORT_ALREADY_OPEN)
+    if not reason.strip():
+        return _field_error("reason", "내용을 입력해 주세요.")
     return ReportResponse(
         **{
             **REPORT_EXAMPLE,
@@ -7470,7 +7697,7 @@ def get_income() -> IncomeResponse:
 #
 # 화면: 8_마이페이지 · 8_마이페이지_등록전 · 8_계좌등록 · 8_계좌인증
 #       8_펼침_은행선택 · 8_아바타메뉴 · 8_회원탈퇴 · 8_알림 · 8_약관
-#       8_개발자_내프로필 · 8_개발자_내일정
+#       8_개발자_내프로필 · 8_내일정
 #
 # 8_약관과 8_아바타메뉴에는 API 가 없다. 약관 문서와 개정일, 사업자 정보는 서버가
 # 들고 있지 않고 화면이 가진 정적 문서이며, 아바타 메뉴는 이미 받은 값으로 그리는
@@ -7499,8 +7726,8 @@ def get_income() -> IncomeResponse:
 #
 # 계좌는 1원 인증으로만 등록한다. 계좌를 넣는 요청과 입금자명 뒤 네 자리를 내는
 # 요청이 나뉘며, 확인이 끝나는 순간에만 accounts 에 계좌가 남는다. 1원 이체와
-# 확인 호출은 Escrow 서버가 금융망에 하고, Komit 은 확인 건의 식별자와 가린
-# 계좌번호만 들고 있다. 계좌번호 원문은 어느 쪽에도 남지 않는다.
+# 확인 호출은 Escrow 서버가 금융망에 하고, Komit 은 확인 건과 계좌 원본을 안전하게
+# 보관한다. Escrow는 요청받은 userKey와 계좌번호를 금융망 호출 뒤 보관하지 않는다.
 #
 # Escrow 서버는 SSAFY 금융망과 Komit 사이의 프록시로 동작한다. 클라이언트에서
 # Komit 까지는 아래 API 들의 간소화된 형식을 쓰고, Komit 에서 Escrow 까지는 SSAFY
@@ -7515,8 +7742,9 @@ def get_income() -> IncomeResponse:
 # 자리가 없어 나올 수가 없기 때문이다. 토큰을 고쳐 남의 sub 를 넣는 경우도 서명이
 # 깨져 401 에서 끝난다.
 #
-# 403 은 두 뜻으로 쓴다. FORBIDDEN 은 남의 자원, NO_DEVELOPER_PROFILE 은 개발자로
-# 전환하지 않은 것이다. 화면 분기는 상태코드가 아니라 code 로 가른다.
+# 403 은 두 뜻으로 쓴다. FORBIDDEN 은 남의 자원, NO_DEVELOPER_PROFILE 은 개발자
+# 프로필이 반드시 필요한 API 에서 프로필이 없는 것이다. 화면 분기는 상태코드가
+# 아니라 code 로 가른다.
 #
 # 함께 쓰는 API (다른 영역에 있다):
 #   GET /api/users/me                 전 영역 헤더
@@ -7536,8 +7764,8 @@ class RequestAccountVerificationRequest(BaseModel):
     )
     accountNumber: str = Field(
         description=(
-            "계좌번호. 하이픈 없는 숫자 16자리다. 확인이 끝날 때까지만 두고 그 뒤에는 "
-            "가린 번호만 남는다."
+            "계좌번호. 하이픈 없는 숫자 16자리다. Komit은 원문을 암호화해 보관하고 "
+            "화면에는 가린 번호만 보낸다."
         ),
         pattern=r"^\d{16}$",
         examples=["0011012345678842"],
@@ -7574,7 +7802,7 @@ class ConfirmAccountVerificationRequest(BaseModel):
     """입금자명 뒤 4자리 확인 요청."""
 
     authCode: str = Field(
-        description="입금자명 뒤에 붙은 숫자 네 자리.",
+        description="입금자명 뒤에 붙은 숫자 네 자리. 앞자리 0을 보존하는 문자열이다.",
         pattern=r"^\d{4}$",
         examples=["1234"],
     )
@@ -7735,8 +7963,9 @@ def get_payment_methods() -> PaymentMethodListResponse:
         "사람마다 계좌는 하나이고, 의뢰인은 그 계좌로 예치금을 내고 환불을 받으며 "
         "개발자는 그 계좌로 대금을 받는다.\n\n"
         "넣은 계좌로 1원을 보내 확인 건을 연다. 실제 이체는 Escrow 서버가 "
-        "금융망에 요청하고, Komit은 확인 건의 식별자와 가린 계좌번호만 들고 있는다. "
-        "계좌번호 원문은 Komit에도 Escrow에도 남지 않는다.\n\n"
+        "금융망에 요청한다. Komit Service는 확인을 끝낼 때 계좌를 저장할 수 있도록 "
+        "확인 건과 계좌번호를 안전하게 보관하고, Escrow는 요청받은 `userKey`와 "
+        "계좌번호를 금융망 호출 뒤 보관하지 않는다.\n\n"
         "이 요청만으로는 계좌가 등록되지 않는다. 입금자명 뒤 4자리를 확인 API에 "
         "내야 등록이 끝난다. `expiresAt`이 지나면 이 확인 건은 쓸 수 없고, 같은 "
         "요청을 다시 보내 새 확인 건을 연다. 화면의 **다시 보내기**가 이 경로다.\n\n"
@@ -7800,7 +8029,7 @@ def request_account_verification(
     summary="계좌 확인 · 등록",
     description=(
         "**화면 — `8_계좌인증` › 계좌 등록하기**\n\n"
-        "입금자명 뒤 네 자리를 내면 확인 건이 끝나고 그 계좌가 등록된다. 등록한 계좌가 "
+        "숫자 네 자리를 내면 확인 건이 끝나고 그 계좌가 등록된다. 등록한 계좌가 "
         "이미 있으면 이 시점에 대체된다.\n\n"
         "계좌번호는 암호화해 보관하고 응답에는 언제나 가려서 내보낸다.\n\n"
         "**R-ACC-02:** 데모에서는 은행 앱이 없어 실제 인증번호를 확인할 수 없다. "
@@ -8126,6 +8355,13 @@ class MyPortfolioItemResponse(BaseModel):
         description="배포 사이트나 저장소 주소. 없으면 null이다.",
         examples=["https://hairshop-mimi.com"],
     )
+    thumbnailFileId: int | None = Field(
+        description=(
+            "현재 붙어 있는 썸네일 파일 식별자. 사진이 없으면 null이다. 편집 화면은 "
+            "사진을 바꾸지 않을 때 이 값을 저장 요청에 다시 보낸다."
+        ),
+        examples=[512],
+    )
     thumbnailUrl: str | None = Field(
         description=(
             "화면에 그대로 거는 사진 주소. 계정의 `profileImageUrl`과 같은 방식으로, "
@@ -8135,6 +8371,25 @@ class MyPortfolioItemResponse(BaseModel):
             "오래 쓰지 않는다."
         ),
         examples=["https://cdn.komit.example.com/portfolio/512.png"],
+    )
+
+
+class MyCareerResponse(CareerResponse):
+    """내 프로필 편집 화면이 쓰는 경력 한 줄."""
+
+    evidenceFileId: int | None = Field(
+        description=(
+            "확인 전 증빙 파일 식별자. 편집 화면은 증빙을 바꾸지 않을 때 이 값을 저장 "
+            "요청에 다시 보낸다. 확인을 마치면 원본을 지우므로 null이다."
+        ),
+        examples=[512],
+    )
+    evidenceFileName: str | None = Field(
+        description=(
+            "확인 전 증빙의 원래 파일명. `evidenceFileId`와 함께 값이 있거나 함께 "
+            "null이다. 확인을 마치면 원본을 지우므로 null이다."
+        ),
+        examples=["재직증명서.pdf"],
     )
 
 
@@ -8196,7 +8451,12 @@ class MyDeveloperProfileResponse(BaseModel):
     techCategories: list[CodeResponse] = Field(
         description="다룰 수 있는 기술. 등록 전이면 빈 배열이다.",
     )
-    careers: list[CareerResponse] = Field(description="등록한 경력.")
+    careers: list[MyCareerResponse] = Field(
+        description=(
+            "등록한 경력. 확인 전 증빙은 파일 식별자와 이름을 함께 내려주고, 확인을 "
+            "마쳐 원본을 지운 경력은 두 값이 모두 null이다."
+        ),
+    )
     portfolioItems: list[MyPortfolioItemResponse] = Field(
         description="등록한 작업물. 보낸 순서가 화면에 보이는 순서다.",
     )
@@ -8238,8 +8498,9 @@ class WriteCareerRequest(BaseModel):
     evidenceFileId: int | None = Field(
         default=None,
         description=(
-            "증빙 서류 파일 식별자. 올리기 시작·완료를 먼저 거쳐 그 식별자를 넣는다. "
-            "증빙은 경력 확인에만 쓰고 확인이 끝나면 원본을 지운다."
+            "증빙 서류 파일 식별자. 기존 식별자를 보내면 증빙을 유지하고, 새 식별자를 "
+            "보내면 교체하며, null이면 증빙을 붙이지 않는다. 확인을 마친 경력은 원본이 "
+            "이미 삭제되어 null을 보내도 확인 상태와 확인 시각이 그대로 유지된다."
         ),
         examples=[512],
     )
@@ -8255,7 +8516,8 @@ class WritePortfolioItemRequest(BaseModel):
     )
     title: str = Field(description="작업물 제목.", examples=["미미헤어샵 예약"])
     description: str | None = Field(
-        description="설명.",
+        max_length=500,
+        description="설명. 500자까지 적을 수 있고, 적지 않으면 null이다.",
         examples=["예약이 저장되지 않던 문제를 고쳤습니다."],
     )
     linkUrl: str | None = Field(
@@ -8264,9 +8526,9 @@ class WritePortfolioItemRequest(BaseModel):
     )
     thumbnailFileId: int | None = Field(
         description=(
-            "올려 둔 사진의 파일 식별자. 올리기 완료까지 마친 내 파일이어야 하며, "
-            "사진을 빼려면 null을 보낸다. 응답에는 이 식별자가 아니라 바로 걸 수 있는 "
-            "`thumbnailUrl`이 담긴다."
+            "올려 둔 사진의 파일 식별자. 조회에서 받은 기존 식별자를 보내면 사진을 "
+            "유지하고, 새 식별자를 보내면 교체하며, null을 보내면 사진을 제거한다. "
+            "응답에는 이 식별자와 바로 걸 수 있는 `thumbnailUrl`이 함께 담긴다."
         ),
         examples=[512],
     )
@@ -8368,12 +8630,25 @@ class MySessionResponse(BaseModel):
         ),
         examples=[92],
     )
-    clientName: str = Field(
-        description="의뢰인 이름. 사용자 정보에서 가져오는 값이다.",
-        examples=["김미미"],
+    role: Literal["CLIENT", "DEVELOPER"] = Field(
+        description=(
+            "이 계약에서 내가 맡은 쪽. CLIENT는 의뢰인, DEVELOPER는 개발자다. "
+            "한 사용자가 계약마다 다른 역할로 참여할 수 있으므로 세션마다 내려준다."
+        ),
+        examples=["CLIENT"],
+    )
+    counterpartName: str = Field(
+        description=(
+            "이 세션에서 상대방의 이름. 내가 의뢰인이면 개발자 이름이고, 내가 "
+            "개발자면 의뢰인 이름이다."
+        ),
+        examples=["이준"],
     )
     scheduledAt: str = Field(
-        description="예약한 일시. 세션이 아니라 그 세션에 잡힌 예약이 가진 값이다.",
+        description=(
+            "확정된 예약의 일시. 세션이 아니라 그 세션에 잡힌 CONFIRMED 예약이 "
+            "가진 값이다."
+        ),
         examples=["2026-08-22T15:00:00+09:00"],
     )
     durationMinutes: int = Field(description="세션 시간(분).", examples=[30])
@@ -8741,6 +9016,8 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
             "endDate": "2024-08-31",
             "isVerified": True,
             "verifiedAt": "2026-03-04T10:00:00+09:00",
+            "evidenceFileId": None,
+            "evidenceFileName": None,
         },
         {
             "careerId": 42,
@@ -8750,6 +9027,8 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
             "endDate": "2020-12-31",
             "isVerified": True,
             "verifiedAt": "2026-03-04T10:00:00+09:00",
+            "evidenceFileId": None,
+            "evidenceFileName": None,
         },
         {
             "careerId": 43,
@@ -8759,6 +9038,8 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
             "endDate": None,
             "isVerified": False,
             "verifiedAt": None,
+            "evidenceFileId": 514,
+            "evidenceFileName": "프리랜서_경력증명서.pdf",
         },
     ],
     "portfolioItems": [
@@ -8767,6 +9048,7 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
             "title": "미미헤어샵 예약",
             "description": "예약이 저장되지 않던 문제를 고쳤습니다.",
             "linkUrl": "https://hairshop-mimi.com",
+            "thumbnailFileId": 512,
             "thumbnailUrl": "https://cdn.komit.example.com/portfolio/512.png",
         },
         {
@@ -8774,6 +9056,7 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
             "title": "동네 필라테스 수업",
             "description": "회원가입 없이 수업을 예약할 수 있게 했습니다.",
             "linkUrl": "https://pilates-onnuri.kr",
+            "thumbnailFileId": 513,
             "thumbnailUrl": "https://cdn.komit.example.com/portfolio/513.png",
         },
         {
@@ -8781,6 +9064,7 @@ MY_DEVELOPER_PROFILE_EXAMPLE = {
             "title": "사내 재고 관리",
             "description": "엑셀로 관리하던 재고를 DB로 옮겼습니다.",
             "linkUrl": None,
+            "thumbnailFileId": None,
             "thumbnailUrl": None,
         },
     ],
@@ -8818,9 +9102,10 @@ MY_SESSION_LIST_EXAMPLE = {
     "upcoming": [
         {
             "sessionId": 56,
-            "contractId": 121,
-            "roomId": 95,
-            "clientName": "김미미",
+            "contractId": 120,
+            "roomId": 92,
+            "role": "CLIENT",
+            "counterpartName": "이준",
             "scheduledAt": "2026-08-22T15:00:00+09:00",
             "durationMinutes": 30,
             "price": 50000,
@@ -8833,7 +9118,8 @@ MY_SESSION_LIST_EXAMPLE = {
             "sessionId": 55,
             "contractId": 120,
             "roomId": 92,
-            "clientName": "김미미",
+            "role": "CLIENT",
+            "counterpartName": "이준",
             "scheduledAt": "2026-08-15T14:00:00+09:00",
             "durationMinutes": 30,
             "price": 50000,
@@ -8894,9 +9180,9 @@ UPLOAD_TARGET_EXAMPLE = {
         "`settlementAccount`가 null이면 화면이 그 칸을 등록 안내로 바꾼다. 같은 "
         "API이며 화면만 갈린다.\n\n"
         "`developer`는 개발자 프로필이 없는 사람에게 null로 나간다. 이때 화면은 개발자 "
-        "프로필 칸을 감추지 않고 「프로필」 한 줄만 남겨 「프로필 생성」을 보여준다. "
-        "「일정」 줄은 프로필이 있어야 의미가 있어 빠진다. 두 버튼 모두 같은 화면"
-        "(`8_개발자_내프로필`)으로 가며, 거기서 저장하면 프로필이 만들어진다.\n\n"
+        "프로필 칸을 감추지 않고 「프로필 생성」을 보여준다. 일정은 의뢰인으로 참여한 "
+        "컨설팅도 포함하므로 개발자 프로필 여부와 관계없이 내 일정 화면으로 갈 수 있다. "
+        "일정 자체는 `GET /api/users/me/sessions`에서 조회한다.\n\n"
         "약관 칸은 이 응답에 없다. 약관 문서와 개정일은 서버가 들고 있지 않고 화면이 "
         "가진 정적 문서이며, 동의 여부도 이 응답에 담지 않는다.\n\n"
         "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
@@ -9268,6 +9554,10 @@ def withdraw() -> WithdrawalResultResponse | JSONResponse:
         "전부와 받은 리뷰를 더한 모양이다.\n\n"
         "줄 단위 가격표는 개발자 상세에서 물려받은 `priceCatalog`다. 같은 데이터를 "
         "이름만 바꿔 두 번 내려보내지 않으려고 모양을 맞췄다.\n\n"
+        "편집한 다른 내용을 저장할 때 기존 첨부가 사라지지 않도록 작업물에는 "
+        "`thumbnailFileId`와 `thumbnailUrl`을 함께 내려준다. 확인 전 경력 증빙에는 "
+        "`evidenceFileId`와 `evidenceFileName`을 함께 내려준다. 확인을 마친 증빙은 원본을 "
+        "삭제하므로 두 값이 모두 null이다.\n\n"
         "평점은 읽기 전용이다. 유료 거래를 마친 의뢰인의 리뷰로만 매겨지므로 저장 "
         "요청으로 바꿀 수 없다.\n\n"
         "**403은 개발자 프로필이 없을 때만 나온다.** 대상을 요청에 담지 않아 남의 "
@@ -9320,6 +9610,12 @@ def get_my_developer_profile() -> MyDeveloperProfileResponse:
         "로그인으로 처리하는 것과 같은 방식이며, 화면이 '만들면 판매자 약관에 동의한 "
         "것으로 간주합니다'라고 안내한다. 동의한 문서는 마이페이지 약관 칸에서 본다.\n\n"
         "새로 추가하는 줄은 식별자를 null로 보내고, 서버가 만들어 응답에 담아 준다.\n\n"
+        "작업물 썸네일은 기존 파일 식별자를 다시 보내면 유지되고, 새 식별자를 보내면 "
+        "교체되며, null을 보내면 제거된다. 확인 전 경력 증빙도 기존 식별자를 다시 "
+        "보내면 유지되고 새 식별자를 보내면 교체된다. 확인을 마친 경력은 증빙 원본이 "
+        "이미 삭제되어 null을 보내도 확인 상태와 확인 시각이 유지된다.\n\n"
+        "작업물 공개 여부와 순서를 따로 저장하는 값은 받지 않는다. 공개 스위치나 순서 "
+        "변경은 이 계약의 범위가 아니다.\n\n"
         "**저장되는 곳은 토큰의 주인의 프로필이다.** 액세스 토큰을 검증해 `sub`를 꺼내 "
         "그 사용자의 개발자 프로필에 저장하며, 대상을 요청에 담지 않는다. 요청에 실린 "
         "`careerId`·`portfolioItemId`·`priceId`가 그 프로필의 것인지도 확인하고, 남의 "
@@ -9409,24 +9705,26 @@ def write_review_reply(
         200: {
             "content": {"application/json": {"example": MY_SESSION_LIST_EXAMPLE}}
         },
-        **AREA8_NO_DEVELOPER_PROFILE,
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
     summary="내 일정 조회",
     description=(
-        "**화면 — `8_개발자_내일정`**\n\n"
-        "잡힌 컨설팅 세션과 지난 세션을 나눠 내려준다. 한 세션에 예약은 하나뿐이고 "
+        "**화면 — `8_내일정`**\n\n"
+        "의뢰인이나 개발자로 참여한 컨설팅 세션을 잡힌 세션과 지난 세션으로 나눠 "
+        "내려준다. 한 사용자가 두 역할로 모두 활동할 수 있으므로 각 세션의 `role`로 "
+        "그 계약에서 맡은 쪽을 구분하고, `counterpartName`에는 반대쪽 이름을 담는다.\n\n"
+        "한 세션에 예약 제안이 여러 번 생길 수 있지만 일정에는 확정된 예약만 쓴다. "
         "양쪽이 서명한 뒤에는 시각을 바꾸지 않으므로, 여기 `scheduledAt`이 곧 확정된 "
         "시각이다.\n\n"
         "화면의 '시작 N분 전'은 `scheduledAt`에서, '언제까지 질문 받습니다'는 "
         "`followUpUntil`에서 만든다.\n\n"
         "개발 계약에는 예약이 없으므로 이 목록에 나오지 않는다.\n\n"
-        "**403은 개발자 프로필이 없을 때만 나온다.** 대상을 요청에 담지 않아 남의 "
-        "것을 가리킬 자리가 없고, 토큰을 고치면 서명이 깨져 401이 된다.\n\n"
-        "- **200**: 항상. 잡힌 세션이 없으면 빈 배열이다\n"
+        "개발자 프로필이 없어도 의뢰인으로 참여한 일정을 조회할 수 있다. 개발자 "
+        "프로필이 반드시 필요한 `GET /api/users/me/developer-profile`과 달리 이 API에는 "
+        "`NO_DEVELOPER_PROFILE` 응답이 없다.\n\n"
+        "- **200**: 항상. 역할별로 참여한 세션이 없으면 빈 배열이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / NO_DEVELOPER_PROFILE**: 개발자 프로필이 없을 때\n"
         "- **500 / INTERNAL_ERROR**: 일정을 만들지 못했을 때"
     ),
 )
@@ -11084,8 +11382,8 @@ SERVICE_TAGS = [
     {
         "name": "8 계정 · 공통",
         "description": (
-            "마이페이지에서 계정·계좌·알림을 관리하고, 개발자는 자기 프로필과 일정을 "
-            "본다. 의뢰 흐름 밖 화면이다.\n\n"
+            "마이페이지에서 계정·계좌·알림을 관리하고, 자기 개발자 프로필과 의뢰인·"
+            "개발자로 참여한 일정을 본다. 의뢰 흐름 밖 화면이다.\n\n"
             "### 화면과 API\n\n"
             "| 화면 | API |\n"
             "| --- | --- |\n"
@@ -11104,7 +11402,7 @@ SERVICE_TAGS = [
             "`GET /api/users/me/developer-profile` · "
             "`PUT /api/users/me/developer-profile` · "
             "`PUT /api/reviews/{reviewId}/reply` |\n"
-            "| `8_개발자_내일정` | `GET /api/users/me/sessions` |\n"
+            "| `8_내일정` | `GET /api/users/me/sessions` |\n"
             "| `8_마이페이지` · `8_개발자_내프로필` › 파일 올리기 | "
             "`POST /api/uploads` · `POST /api/uploads/{uploadId}/complete` |\n"
             "| `8_펼침_은행선택` | `GET /api/codes/{groupKey}` — 영역 3 |\n"
@@ -11139,8 +11437,9 @@ SERVICE_TAGS = [
             "401에서 끝난다. 403이 실려 있는 API는 요청에 남의 식별자를 적을 수 있는 "
             "쪽이다.\n\n"
             "**403은 두 뜻으로 쓴다.** `FORBIDDEN`은 남의 자원을 건드렸다는 뜻이고, "
-            "`NO_DEVELOPER_PROFILE`은 개발자 프로필이 없다는 뜻이다. 화면 분기는 "
-            "상태코드가 아니라 `code`로 가른다.\n\n"
+            "`NO_DEVELOPER_PROFILE`은 개발자 프로필이 반드시 필요한 API에서 프로필이 "
+            "없다는 뜻이다. 내 일정은 의뢰인 일정도 포함하므로 이 오류를 쓰지 않는다. "
+            "화면 분기는 상태코드가 아니라 `code`로 가른다.\n\n"
             "---\n\n"
             "### 파일\n\n"
             "**파일은 이 서버를 거치지 않는다.** 올릴 파일을 알리면 보낼 주소를 받고, "

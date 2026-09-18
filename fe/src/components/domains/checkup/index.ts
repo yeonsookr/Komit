@@ -3,6 +3,7 @@ export * from "./AddRequirementForm";
 export * from "./CheckupStart";
 export * from "./CheckupSurvey";
 export * from "./DiagnosisReport";
+export * from "./IssueGroupList";
 export * from "./QuestionField";
 export * from "./RequestForm";
 export * from "./RequestFormEditor";
