@@ -21,6 +21,9 @@ export const OAUTH_HANDOFF_COOKIE = "komit_oauth";
 /** 재발급·로그아웃 Route Handler 가 있는 곳. 리프레시 쿠키는 여기로만 갑니다. */
 const AUTH_COOKIE_PATH = "/api/auth";
 
+/** R-AUTH-02: 코밋 리프레시 토큰과 쿠키는 같은 시점에 만료합니다. */
+const REFRESH_TOKEN_MAX_AGE_SECONDS = 14 * 24 * 60 * 60;
+
 /** 카카오 인가 화면을 오가는 데 넉넉한 시간. 넘기면 처음부터 다시 시작합니다. */
 const OAUTH_HANDOFF_MAX_AGE_SECONDS = 10 * 60;
 
@@ -43,16 +46,18 @@ function baseOptions(path: string) {
 /**
  * 로그인·재발급 응답의 토큰을 쿠키에 넣습니다.
  *
- * 리프레시 쿠키에는 만료를 적지 않습니다(브라우저를 닫으면 사라지는 세션 쿠키).
- * 리프레시 토큰의 만료 기간이 아직 정해지지 않았기 때문입니다(docs/jwt-samples.md,
- * RULES.md 「미확정」). 값이 정해지면 여기에 `maxAge` 를 더합니다.
+ * 액세스 쿠키는 서버 응답의 수명을 따르고, 리프레시 쿠키는 R-AUTH-02를 따릅니다.
+ * 둘 다 httpOnly라 브라우저 자바스크립트에는 노출되지 않습니다.
  */
 export function setSessionCookies(store: CookieStore, tokens: TokenResponse): void {
   store.set(ACCESS_TOKEN_COOKIE, tokens.accessToken, {
     ...baseOptions("/"),
     maxAge: tokens.expiresIn,
   });
-  store.set(REFRESH_TOKEN_COOKIE, tokens.refreshToken, baseOptions(AUTH_COOKIE_PATH));
+  store.set(REFRESH_TOKEN_COOKIE, tokens.refreshToken, {
+    ...baseOptions(AUTH_COOKIE_PATH),
+    maxAge: REFRESH_TOKEN_MAX_AGE_SECONDS,
+  });
 }
 
 /** 로그아웃과 재발급 실패에서 부릅니다. 지울 때도 넣을 때와 같은 path 여야 지워집니다. */
