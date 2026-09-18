@@ -6,8 +6,8 @@ spring:
   jpa:
     open-in-view: false
     hibernate:
-      # 스키마는 JPA 엔티티 매핑으로 만든다.
-      ddl-auto: update
+      # Escrow 스키마는 통합 SQL이 기준이다. JPA 자동 DDL을 금지한다.
+      ddl-auto: none
     properties:
       hibernate:
         jdbc:

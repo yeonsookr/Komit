@@ -627,9 +627,10 @@ QueryDSL 쿼리는 필요한 정보만 가져오도록 작성합니다.
 
 ### 13.4 스키마 변경
 
-- 스키마는 JPA 엔티티 매핑이 기준이며 `spring.jpa.hibernate.ddl-auto: update`로 만듭니다.
+- Komit Service 스키마는 JPA 엔티티 매핑이 기준이며 `spring.jpa.hibernate.ddl-auto: update`로 만듭니다.
+- Escrow 스키마는 `escrow/src/main/resources/db/migration/V1__create_escrow_schema.sql`이 기준입니다. Escrow에서는 JPA 자동 DDL로 이 테이블을 생성·변경하지 않습니다.
 - `create`, `create-drop`은 운영 설정에 사용하지 않습니다.
-- 테이블·컬럼 변경은 엔티티와 ERD에 함께 반영합니다.
+- 테이블·컬럼 변경은 해당 서버의 기준 스키마와 ERD에 함께 반영합니다.
 
 PostgreSQL의 `jsonb`, `timestamptz`, partial index 같은 기능은 실제 조회 요구가 있을 때 사용합니다. 특정 DB 기능 도입은 Repository 테스트로 동작을 검증하고 문서화합니다.
 
