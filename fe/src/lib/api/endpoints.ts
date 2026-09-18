@@ -70,6 +70,20 @@ export const BACKEND = {
   PAYMENT_METHODS: "/api/payment-methods",
   UPLOADS: "/api/uploads",
   UPLOAD_COMPLETE: (uploadId: number) => `/api/uploads/${uploadId}/complete`,
+  /**
+   * 운영 콘솔(영역 9). 사용자 토큰으로는 부를 수 없고 운영 로그인으로 받은 토큰만
+   * 통합니다. 붙이는 자리는 `lib/admin/session.ts` 의 `adminAuthorized()` 입니다.
+   */
+  ADMIN_LOGIN: "/api/admin/login",
+  ADMIN_SUMMARY: "/api/admin/summary",
+  ADMIN_REPORTS: "/api/admin/reports",
+  ADMIN_REPORT: (reportId: number) => `/api/admin/reports/${reportId}`,
+  ADMIN_REPORT_RESOLVE: (reportId: number) => `/api/admin/reports/${reportId}/resolve`,
+  ADMIN_RECONCILIATION: "/api/admin/reconciliation",
+  ADMIN_CONTRACT_TEMPLATES: "/api/admin/contract-templates",
+  ADMIN_CONTRACT_TEMPLATE: (templateId: number) =>
+    `/api/admin/contract-templates/${templateId}`,
+  ADMIN_CONTRACT_TEMPLATE_PREVIEW: "/api/admin/contract-templates/preview",
 } as const;
 
 export const INTERNAL = {
@@ -123,4 +137,15 @@ export const INTERNAL = {
   MILESTONE_CONFIRMATION: (milestoneId: number) =>
     `/api/milestones/${milestoneId}/confirmation`,
   DELIVERABLE_FILE: (deliverableId: number) => `/api/deliverables/${deliverableId}/file`,
+  /**
+   * 운영 콘솔. **누른 뒤에야 생기는 요청만 있습니다** — 목록·상세·본문은 서버
+   * 컴포넌트가 직접 읽어 내려보내므로 브라우저가 부를 일이 없고, 부를 일이 없는
+   * 경로를 적어 두면 쓰지 않는 문을 열어 두는 것과 같습니다(컨벤션 5장: Route
+   * Handler 는 필요한 경로·메서드만 명시적으로 연다).
+   */
+  ADMIN_LOGIN: "/api/admin/login",
+  ADMIN_LOGOUT: "/api/admin/logout",
+  ADMIN_REPORT_RESOLVE: (reportId: number) => `/api/admin/reports/${reportId}/resolve`,
+  ADMIN_CONTRACT_TEMPLATES: "/api/admin/contract-templates",
+  ADMIN_CONTRACT_TEMPLATE_PREVIEW: "/api/admin/contract-templates/preview",
 } as const;

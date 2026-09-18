@@ -109,4 +109,14 @@ export const ROUTES = {
   mypageProfile: "/mypage/profile",
   /** 내 일정. 마이페이지의 「일정 관리」가 옵니다. */
   mypageSchedule: "/mypage/schedule",
+
+  /** 내부 운영 콘솔. 사용자 세션과 별도의 운영자 세션을 사용합니다. */
+  adminLogin: "/admin/login",
+  adminHome: "/admin",
+  adminReports: "/admin/reports",
+  adminReconciliation: "/admin/reconciliation",
+  adminContractTemplates: "/admin/contract-templates",
+  adminContractTemplateNew: "/admin/contract-templates/new",
+  adminContractTemplateEdit: (templateId: number) =>
+    `/admin/contract-templates/${templateId}/edit`,
 } as const;
