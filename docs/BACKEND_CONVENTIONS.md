@@ -139,6 +139,16 @@ Komit 서버와 Escrow 서버는 논리적 모듈이 아니라 **서로 완전�
 
 Escrow가 금융 거래 상태의 원본을 소유한다면 Komit는 필요한 Escrow 식별자와 화면 표시용 최소 정보만 보관합니다. 어느 서버가 어떤 데이터의 원본인지 API별로 명확히 정하고 양쪽에서 같은 상태를 독립적으로 수정하지 않습니다.
 
+금융망 사용자 식별정보와 개인 계좌의 원본은 Komit Service가 소유합니다. 처음
+회원가입할 때 Service가 SSAFY 금융망 `userKey`를 발급받고 별도 계좌 생성 API로
+개인 계좌를 만든 뒤 두 값을 Service DB에 저장합니다. Service는 예치·지급·환불 등
+금융 업무에 필요한 `userKey`와 계좌번호를 Escrow 요청에 담고, Escrow는 이를 금융망
+호출에만 사용하며 자기 DB에 사용자 금융 식별정보나 개인 계좌 원장을 만들지 않습니다.
+
+Escrow가 소유하는 것은 보관계좌, 계약별 가상계좌, 에스크로 상태와 거래 원장입니다.
+예치 상태는 입금 검증, 보관계좌 정산, 내부 기록이 모두 확정되기 전까지
+`DEPOSIT_PENDING`이며 전부 확정된 뒤에만 `ACTIVE`로 전이합니다.
+
 프런트엔드는 목 서버와 실제 서버 사이에서 **base URL만 바꾸면 동작**해야 합니다. 따라서 실제 서버의 HTTP method, `/api` 이후 경로, query/path parameter, JSON 필드, 상태 코드와 응답 바디는 목 서버 Swagger 계약과 같아야 합니다.
 
 예시:
@@ -673,6 +683,7 @@ spring:
 - 각 서버는 자신의 Spring Security 설정을 독립적으로 관리합니다.
 - Komit 사용자 API는 `Authorization: Bearer <accessToken>`을 기준으로 인증합니다.
 - Escrow 금융망 API는 JSON `Header`의 `apiKey`와 `userKey` 및 서버 간 인증 정책을 기준으로 검증합니다. Komit의 사용자 인증 설정을 그대로 공유하지 않습니다.
+- 사용자 `userKey`와 개인 계좌번호는 Komit Service가 암호화해 보관하고, Escrow는 금융망 호출이 끝난 뒤 요청 범위를 넘어 보관하지 않습니다.
 - 공개 엔드포인트를 명시하고 나머지는 기본적으로 인증을 요구합니다.
 - Controller에서 전달된 사용자 ID를 신뢰하지 않고 인증 컨텍스트의 사용자와 소유권을 대조합니다.
 - 비밀번호는 검증된 password encoder로 단방향 해시합니다.
