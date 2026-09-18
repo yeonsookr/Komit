@@ -1,3 +1,7 @@
 # Claude Code 스킬 설치본.
 # 원본은 ai/komit-scan/skills/ 에 있다. 쓰려면 그것을 여기로 복사한다.
 .claude/skills/
+
+# 로컬 compose 개인 값
+deploy/local/.env
+fe/.env

@@ -1,6 +1,6 @@
 # JWT 검증용 샘플 토큰
 
-알고리즘 HS256. 사용자와 운영자는 **서명 키를 분리**한다. 클레임은 `sub` + 표준(`iat`, `exp`)뿐이다.
+알고리즘 HS256. 사용자와 운영자는 **서명 키를 분리**한다. 클레임은 `sub` + 표준(`iat`, `exp`)뿐이다. 실제 사용자 액세스 토큰의 발급 수명은 `R-AUTH-01`을 따른다. 아래의 유효 토큰은 고정된 검증 환경에서 서명·영역 분리를 재현하기 위한 샘플이며 발급 수명 예시가 아니다.
 
 ```
 KOMIT_USER_JWT_SECRET  = komit-user-jwt-secret-dev-only-change-me
@@ -52,9 +52,10 @@ eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxIiwiaWF0IjoxNzg5MzQ0MDAwLCJleHA
 | 항목 | 값 |
 |---|---|
 | 형식 | UUID v4 (`f8c1d2e3-4b5a-6789-abcd-ef0123456789`) |
-| 저장 | Redis, TTL로 만료 (BACKEND_CONVENTIONS 6.4). DB 테이블에는 저장하지 않는다 |
-| 만료 기간 | **미정** |
-| 재발급 시 | 새 값으로 바뀌고 이전 값은 삭제된다 |
+| 저장 | Redis, TTL로 만료 (BACKEND_CONVENTIONS 6.4, `R-AUTH-02`). DB 테이블에는 저장하지 않는다 |
+| 만료 기간 | `R-AUTH-02` |
+| 활성 세션 | 사용자당 하나만 유지한다 (`R-AUTH-03`) |
+| 로그인·재발급 시 | 새 값으로 바뀌고 이전 값은 삭제된다 (`R-AUTH-03`) |
 | 로그아웃 시 | 삭제된다 |
 
 ```

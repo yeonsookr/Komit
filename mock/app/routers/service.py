@@ -601,6 +601,9 @@ class LoginUserResponse(BaseModel):
     )
 
 
+ACCESS_TOKEN_EXPIRES_IN_SECONDS = 900  # R-AUTH-01
+
+
 class TokenResponse(BaseModel):
     """토큰 발급 응답. 재발급도 같은 형태를 쓴다."""
 
@@ -619,8 +622,8 @@ class TokenResponse(BaseModel):
         examples=["f8c1d2e3-4b5a-6789-abcd-ef0123456789"],
     )
     expiresIn: int = Field(
-        description="액세스 토큰이 유효한 시간. 초 단위다.",
-        examples=[3600],
+        description="액세스 토큰이 유효한 시간. 초 단위이며 R-AUTH-01을 따른다.",
+        examples=[ACCESS_TOKEN_EXPIRES_IN_SECONDS],
     )
 
 
@@ -806,7 +809,7 @@ LOGIN_USER = {
 LOGIN_EXAMPLE = {
     "accessToken": ACCESS_TOKEN,
     "refreshToken": REFRESH_TOKEN,
-    "expiresIn": 3600,
+    "expiresIn": ACCESS_TOKEN_EXPIRES_IN_SECONDS,
     "isNewUser": False,
     "user": LOGIN_USER,
 }
@@ -814,7 +817,7 @@ LOGIN_EXAMPLE = {
 TOKEN_EXAMPLE = {
     "accessToken": ACCESS_TOKEN,
     "refreshToken": REISSUED_REFRESH_TOKEN,
-    "expiresIn": 3600,
+    "expiresIn": ACCESS_TOKEN_EXPIRES_IN_SECONDS,
 }
 
 ME_EXAMPLE = {
@@ -1000,7 +1003,7 @@ def login_with_kakao(request: KakaoLoginRequest) -> KakaoLoginResponse | JSONRes
     return KakaoLoginResponse(
         accessToken=ACCESS_TOKEN,
         refreshToken=REFRESH_TOKEN,
-        expiresIn=3600,
+        expiresIn=ACCESS_TOKEN_EXPIRES_IN_SECONDS,
         isNewUser=request.code == NEW_USER_CODE,
         user=LoginUserResponse(**LOGIN_USER),
     )
@@ -1051,7 +1054,7 @@ def refresh_access_token(request: RefreshTokenRequest) -> TokenResponse | JSONRe
     return TokenResponse(
         accessToken=ACCESS_TOKEN,
         refreshToken=REISSUED_REFRESH_TOKEN,
-        expiresIn=3600,
+        expiresIn=ACCESS_TOKEN_EXPIRES_IN_SECONDS,
     )
 
 
