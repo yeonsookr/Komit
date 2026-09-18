@@ -3,6 +3,8 @@ spring:
     name: service
   profiles:
     default: local
+  flyway:
+    validate-migration-naming: true
   jpa:
     open-in-view: false
     hibernate:
