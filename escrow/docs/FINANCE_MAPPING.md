@@ -82,11 +82,32 @@ Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemb
 | 현재 단계 | 영속 기록 후 다음 작업 | 응답 유실·재요청 시 |
 | --- | --- | --- |
 | `USER_REGISTER` | SSAFY 회원 등록 → `user_key_encrypted` 저장 → `ACCOUNT_OPEN` | `userId`로 기존 회원 결과를 확인한다. 확인 전 재등록하지 않는다 |
-| `ACCOUNT_OPEN` | SSAFY 계좌 개설 → `bank_code`·`account_no_encrypted` 저장 → `SEED_DEPOSIT` | 등록된 회원의 기존 계좌·상품을 확인한다. 확인 전 재개설하지 않는다 |
+| `ACCOUNT_OPEN` | SSAFY 계좌 개설 → `bank_code`·`account_no_encrypted` 저장 → `SEED_DEPOSIT` | 계좌 목록에서 은행·상품명·계좌종류·통화가 맞는 후보를 확인한다. 고유한 결과로 특정할 수 없으면 `UNKNOWN`을 유지하고 재개설하지 않는다 |
 | `SEED_DEPOSIT` | 요청 표식 저장 → 1회 입금 → 거래번호·성공 시각 저장 → `COMPLETED` | 입금 내역에서 표식·금액을 확인한다. 확인 전 재입금하지 않는다 |
 
-SSAFY가 회원 또는 계좌의 기존 발급 결과를 조회할 수 있는지는 별도 확인이 필요하다.
-조회 수단이 없거나 결과가 모호한 경우 `UNKNOWN`을 유지하고 운영 확인 대상으로 남긴다.
+2026-09-18 SSAFY 실호출에서 신규 테스트 회원을 등록한 뒤 `POST /ssafy/api/v1/member/search`에
+같은 `userId`와 앱 `apiKey`를 보내자 등록 응답과 같은 `userKey`를 받았다(HTTP 201).
+같은 `userId`의 회원 등록 재호출은 HTTP 400 / `E4002`였고 새 `userKey`를 반환하지
+않았다. 따라서 회원 등록 응답이 유실되면 재등록보다 회원 조회로 `userKey`를 복구한다.
+
+같은 테스트 회원의 계좌 개설 응답을 잃었다고 가정하고
+`inquireDemandDepositAccountList`를 호출하자 방금 만든 계좌번호가 목록에 있었다
+(HTTP 200 / `H0000`). **목록 항목에는 `accountTypeUniqueNo`가 없고**
+`bankCode`·`accountName`·`accountTypeCode`·`accountCreatedDate`·`currency` 등이
+있다. 같은 상품으로 새 기관거래고유번호를 써 계좌 개설을 다시 호출하자
+HTTP 201 / `H0000`으로 **서로 다른 두 번째 계좌가 실제 생성**됐다. 따라서 목록에서
+발급 대상 계좌를 하나로 특정할 수 있을 때만 그 계좌번호를 복구한다. 같은 조건의
+후보가 여러 개이거나 목록만으로 발급 결과를 특정할 수 없으면 `UNKNOWN`을 유지한다.
+목록에 후보가 없다는 사실만으로 새 계좌 개설이 안전하다고 판단하지 않는다.
+
+테스트 계좌에는 복구 검증용으로 1원을 한 번 입금했다. 같은
+`institutionTransactionUniqueNo`로 입금 요청을 재전송하자 HTTP 400 / `H1007`이
+나왔고, `inquireTransactionHistoryList`에서는 요청 `transactionSummary`와
+금액이 일치하는 거래 **한 건**과 원래 입금 응답의 `transactionUniqueNo`가
+확인됐다(HTTP 200 / `H0000`). 입금 응답 유실 시 이 조회로 성공을 확정할 수 있다.
+`H1007`만으로는 원래 거래번호를 얻을 수 없으므로 조회 전 재입금하지 않는다.
+이 테스트는 응답 유실을 호출 측에서 가정해 조회 경로를 검증한 것이며, 실제 통신
+단절을 발생시킨 테스트는 아니다.
 
 | 응답 `REC` | 용도 |
 | --- | --- |
@@ -166,7 +187,8 @@ SSAFY가 회원 또는 계좌의 기존 발급 결과를 조회할 수 있는지
 
 - 지급·환불은 **같은 정산의 두 다리**다. `external_reference_id` = **`SETTLEMENT:<정산ID>`** 공유, `transaction_type`으로 구분
 - `amount`: RELEASE = 정상 완료 전액 또는 중도 종료 통과분 합계 (D-3)
-- 수취 계좌는 **호출자(be-api)가 지정**한다. 에스크로는 등록 계좌 원장을 강제하지 않는다
+- 지급 수취 계좌는 **호출자(be-api)가 지정**한다. 에스크로는 등록 계좌 원장을 강제하지 않는다.
+- 환불 계좌는 해당 계약의 예치에 사용한 회원가입 발급 계좌로 고정한다 (`R-PAY-04`). Komit이 `refundBankCode`·`refundAccountNo`로 그 계좌를 전달하고, 에스크로는 완료된 예치 거래의 `source_bank_code`·복호화한 `source_account_encrypted`와 비교한다. 불일치하면 `E5009`로 거절하고 송금하지 않는다. 별도 1원 인증 계좌의 등록·교체는 환불 계좌를 바꾸지 않는다.
 - `escrows.hold_status`가 HELD면 지급·일반 환불을 막는다 (D-4)
 - 2026-09-18 실호출에서 에스크로 보관계좌 소유자의 `userKey`로 다른 테스트 회원 계좌를 조회하자 `H0000`과 그 계좌의 `userName`이 반환됐다. 반대 방향 조회도 성공했다. 따라서 같은 SSAFY 앱에 등록된 다른 회원의 입출금 계좌는 지급·환불 직전에 예금주 조회가 가능하다. 다른 앱이나 외부 은행 계좌까지 확인한 결과는 아니다.
 - SSAFY 테스트 계좌의 `userName`은 회원 등록에 사용한 이메일의 `@` 앞부분이었다. Komit 프로필명과 같다고 가정하지 말고, 지급·환불 요청의 수취 예금주명에는 금융망 계좌의 실제 `userName`을 사용한다.
@@ -265,4 +287,5 @@ Komit `EscrowDepositResponse.status`는 escrow의 상태를 번역한 값이다.
 | 항목 | 상태 |
 | --- | --- |
 | 운영 감사 기록 | UNKNOWN 해소·미결 처리 이력 테이블 미설계 |
-| 가입 발급 결과 복구 | `userId`로 회원 등록 결과, 발급 `userKey`·상품으로 계좌 개설 결과를 재조회할 수 있는 SSAFY API·중복 요청 동작 확인 필요. 확인 전에는 자동 재발급 금지 |
+| 가입 발급 결과 복구 | 2026-09-18 실호출로 회원 조회·계좌 목록·입금내역 조회를 확인했다. 같은 상품의 계좌 개설 재호출은 새 계좌를 생성한다. 계좌 목록에 상품 고유번호가 없어 후보가 여러 개면 자동 복구할 수 없으므로 `UNKNOWN`을 유지한다. 실제 통신 단절·조회 지연 때의 동작은 미검증 |
+| Service Mock 환불 계좌 설명 | `mock/app/routers/service.py`는 별도 등록 계좌를 의뢰인 환불 계좌로 설명한다. Service 담당자가 `R-PAY-04`에 맞춰 회원가입 발급 계좌로 설명을 수정해야 한다 |

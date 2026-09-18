@@ -1404,13 +1404,18 @@ class RefundEscrowRequest(BaseModel):
         gt=0,
     )
     refundBankCode: str = Field(
-        description="환불 받을 은행코드 세 자리. 원문으로 저장하지 않는다.",
+        description=(
+            "해당 계약의 예치에 사용한 회원가입 발급 계좌의 은행코드 세 자리. "
+            "예치 거래의 출금 은행코드와 같아야 한다. (R-PAY-04)"
+        ),
         examples=["001"],
         pattern=BANK_CODE_PATTERN,
     )
     refundAccountNo: str = Field(
         description=(
-            "환불 받을 계좌번호 16자리. 요청할 때마다 받으며 보관해 두지 않는다."
+            "해당 계약의 예치에 사용한 회원가입 발급 계좌번호 16자리. "
+            "예치 거래의 출금 계좌와 같아야 한다. 거래에는 암호화해 기록한다. "
+            "(R-PAY-04)"
         ),
         examples=[MOCK_ACCOUNT_NO],
         pattern=ACCOUNT_NO_PATTERN,
@@ -1841,7 +1846,10 @@ async def release_escrow(
     summary="잔액 환불",
     description=(
         "중도 종료로 통과분을 지급한 뒤 남은 잔액을 의뢰인에게 돌려줄 때 부른다. 절차는 "
-        "지급과 같지만 받을 계좌를 요청할 때마다 받아 예금주를 대조한 뒤 쓴다.\n\n"
+        "지급과 같다. 환불 계좌는 해당 계약의 예치에 사용한 회원가입 발급 계좌로 "
+        "고정한다. 요청의 은행코드·계좌번호를 예치 출금 계좌와 대조하고, 금융망 "
+        "예금주를 확인한 뒤 송금한다. 별도로 등록·교체한 계좌로는 환불하지 않는다. "
+        "(R-PAY-04)\n\n"
         "한 에스크로에서 여러 번 나눠 환불할 수 있다.\n\n"
         "- **200 / H0000**: 돌려줬을 때. 잔액이 남아 있으면 `status`가 ACTIVE, 모두 "
         "빠지면 REFUNDED다\n"
@@ -1851,6 +1859,8 @@ async def release_escrow(
         "- **400 / E5005**: `escrowId`가 409일 때. 동결 중에는 환불하지 않는다\n"
         "- **400 / E5007**: `escrowId`가 202일 때. 예치 완료 전에는 환불하지 않는다\n"
         "- **400 / E5008**: 요청 금액이 목의 예치 잔액을 초과할 때\n"
+        "- **400 / E5009**: 예시 에스크로 42에서 환불 계좌가 예치 출금 계좌와 "
+        "다를 때. 실서버는 모든 계약에 이 검증을 적용한다\n"
         "- **400 / E5003**: `idempotencyKey`가 `conflict-idempotency-key`일 때\n"
         "- **400 / Q1001**: 필수 속성이 없거나 형식이 맞지 않을 때\n"
         "- **500 / Q1000**: `clientApiKey`가 `server-error-client-api-key`일 때. "
@@ -1884,6 +1894,14 @@ async def refund_escrow(
     state_error = _escrow_state_error(payload.escrowId, payload.Header)
     if state_error:
         return state_error
+    # 무상태 목은 42번 예시 계약의 예치 출금 계좌만 알고 있다 (R-PAY-04).
+    if payload.escrowId == ESCROW_ID and (
+        payload.refundBankCode != "001"
+        or payload.refundAccountNo != MOCK_ACCOUNT_NO
+    ):
+        return _escrow_error(
+            400, "E5009", "환불 계좌가 예치 출금 계좌와 다릅니다.", payload.Header
+        )
     if payload.amount > 650000:
         return _escrow_error(
             400, "E5008", "에스크로 잔액이 부족합니다.", payload.Header

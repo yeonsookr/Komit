@@ -129,6 +129,21 @@ class EscrowContractTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(exact_refund.REC.balance, 0)
         self.assertEqual(exact_refund.REC.status, "REFUNDED")
 
+    async def test_refund_to_other_account_is_rejected_for_example_escrow(self) -> None:
+        result = await escrow.refund_escrow(
+            escrow.RefundEscrowRequest(
+                Header=self.header("refundEscrow"),
+                escrowId=escrow.ESCROW_ID,
+                amount=250000,
+                refundBankCode="001",
+                refundAccountNo="0019999999999999",
+                refundHolderName="김미미",
+            )
+        )
+
+        self.assertIsInstance(result, JSONResponse)
+        self.assertEqual(json.loads(result.body)["Header"]["responseCode"], "E5009")
+
 
 if __name__ == "__main__":
     unittest.main()
