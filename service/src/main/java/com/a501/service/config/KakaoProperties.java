@@ -14,4 +14,14 @@ public record KakaoProperties(
         @NotBlank String clientSecret,
         @NotNull URI tokenUri,
         @NotNull URI userInfoUri) {
+
+    public KakaoProperties {
+        // 환경변수가 없으면 "${KAKAO_CLIENT_ID}" 글자 그대로가 들어와 @NotBlank 를 통과합니다. 그 상태로 기동하지 않게 막습니다.
+        if (clientId != null && clientId.startsWith("${")) {
+            throw new IllegalArgumentException("KAKAO_CLIENT_ID environment variable is not set");
+        }
+        if (clientSecret != null && clientSecret.startsWith("${")) {
+            throw new IllegalArgumentException("KAKAO_CLIENT_SECRET environment variable is not set");
+        }
+    }
 }
