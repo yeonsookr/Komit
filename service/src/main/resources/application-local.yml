@@ -10,6 +10,9 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
   jpa:
+    hibernate:
+      # 로컬 개발 DB는 JPA 엔티티 매핑을 기준으로 갱신합니다.
+      ddl-auto: update
     properties:
       hibernate:
         format_sql: true
