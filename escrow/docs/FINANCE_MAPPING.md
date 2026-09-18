@@ -95,6 +95,10 @@ Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemb
 
 2026-09-18 실호출에서 같은 `institutionTransactionUniqueNo`로 1원 이체 요청을 재전송하자 HTTP 400의 최상위 `responseCode=H1007`이 반환됐다. 보관계좌 출금과 수취 계좌 입금은 각각 한 번만 일어났다. 중복 오류는 첫 이체의 성공 여부나 거래번호를 돌려주지 않으므로, 결과 불명 상태는 거래내역 조회로 해소해야 한다.
 
+데모 보관계좌를 사용하기 전에 `inquireDemandDepositAccount`로 1회·1일 이체 한도를 확인한다. `R-PAY-11`보다 낮으면 보관계좌 소유자의 `userKey`로 `updateTransferLimit`을 호출하고 다시 조회한다. 요청의 `oneTimeTransferLimit`과 `dailyTransferLimit`은 숫자의 십진수 **문자열**로 전송한다. 확인 전에는 이 보관계좌에서 지급·환불을 시작하지 않는다. 회원 계좌에는 이 상향 절차를 적용하지 않는다.
+
+2026-09-18 테스트 보관계좌에서 1회 한도는 유지하고 1일 한도를 `R-PAY-11`로 변경했다. `updateTransferLimit`이 HTTP 200 / `H0000`을 반환했고, `inquireDemandDepositAccount` 재조회에서도 정책 한도가 확인됐다. 이는 테스트 계좌에 대한 변경이며 실제 운영 보관계좌의 설정 완료를 뜻하지 않는다.
+
 ---
 
 ## 3. 예치 (DEPOSIT)
@@ -236,5 +240,4 @@ Komit `EscrowDepositResponse.status`는 escrow의 상태를 번역한 값이다.
 | 항목 | 상태 |
 | --- | --- |
 | VA 활성 상한 (`E4065`) | 명세에 값 없음 = 동시 진행 계약 수 상한. 실호출 확인 |
-| 이체 한도 상향 | 기본 1회 1억/1일 5억. 집금 계좌는 `updateTransferLimit` 필요. 상향폭 미정 |
 | 운영 감사 기록 | UNKNOWN 해소·미결 처리 이력 테이블 미설계 |
