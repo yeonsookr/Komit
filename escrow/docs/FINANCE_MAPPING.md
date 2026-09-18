@@ -40,7 +40,7 @@ Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemb
 호출해 회원 계좌에 데모 자금을 한 번 입금한다. 요청에는 새 `userKey`를 Header에,
 발급된 계좌번호를 `accountNo`에, `R-PAY-10`의 데모 입금액을 십진수 문자열로
 변환해 `transactionBalance`에 담는다.
-`transactionSummary`에는 이 발급 업무를 식별할 수 있는 값을 넣는다. 응답의
+`transactionSummary`에는 `seed_request_reference`를 포함한 고유 표식을 넣는다. 응답의
 `transactionUniqueNo`를 기록하고 입금 성공이 확인된 뒤에만 `createMemberAccount`의
 기존 성공 응답을 반환한다. 이 입금은 회원 계좌 자금이며 계약 예치 원장에는 넣지 않는다.
 (`R-PAY-10`)
@@ -62,7 +62,7 @@ Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemb
 `V3.member_account_provisions`는 서비스·`userId`와 멱등키를 각각 유일하게 묶고,
 데모 입금액·상태·요청 식별자·금융망 거래번호를 기록한다. 입금 호출 전에
 `seed_request_reference`를 저장한다. 응답이 유실되면 `UNKNOWN`으로 두고
-거래내역 조회로 먼저 확인하며, 확인 전에는 같은 회원에게 재입금하지 않는다.
+회원 계좌의 입금 거래내역 목록에서 표식·금액을 대조해 먼저 확인하며, 확인 전에는 같은 회원에게 재입금하지 않는다.
 `COMPLETED`인 동일 `userId`의 재요청에는 기존 발급 결과를 돌려주고 입금은 반복하지
 않는다. 이 테이블에는 `userKey`, 은행코드, 계좌번호를 저장하지 않는다.
 
@@ -91,7 +91,9 @@ Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemb
 | `apiKey` | 에스크로 앱 키 | 환경변수 |
 | `userKey` | 자금 이동 주체의 신원 | 발급 요청에는 없음. 후속 요청에는 Komit이 전달한 회원 키 또는 에스크로 보관계좌 소유자 키 |
 
-**멱등 규칙:** `request_reference`를 외부 호출 **전에** 채번·저장(`requested_at`)하고 그 값을 `institutionTransactionUniqueNo`로 보낸다. 재시도는 `attempt_no`를 올리고 **새 `request_reference`**를 쓴다. 응답 유실 시 이 값으로 조회한다.
+**멱등 규칙:** `request_reference`를 외부 호출 **전에** 채번·저장(`requested_at`)하고 그 값을 `institutionTransactionUniqueNo`로 보낸다. SSAFY 거래내역 조회 응답에는 이 헤더 값이 없으므로, 자금 이동 요청의 거래 요약에도 동일한 요청 식별자를 포함해 조회용 표식으로 쓴다. 이체에서는 출금 계좌 쪽 `withdrawalTransactionSummary`에 넣는다. 응답을 잃으면 계좌 거래내역 목록에서 이 표식·금액·상대 계좌·시간을 대조하고, 찾은 거래의 `transactionUniqueNo`로 단건 조회한다. 목록에 없다는 사실만으로 실패를 확정하거나 새 번호로 재송금하지 않는다. 실패가 확정된 뒤에만 `attempt_no`를 올리고 새 `request_reference`를 쓴다.
+
+2026-09-18 실호출에서 같은 `institutionTransactionUniqueNo`로 1원 이체 요청을 재전송하자 HTTP 400의 최상위 `responseCode=H1007`이 반환됐다. 보관계좌 출금과 수취 계좌 입금은 각각 한 번만 일어났다. 중복 오류는 첫 이체의 성공 여부나 거래번호를 돌려주지 않으므로, 결과 불명 상태는 거래내역 조회로 해소해야 한다.
 
 ---
 
@@ -103,7 +105,7 @@ Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemb
 | deposit_step | attempts.step | SSAFY API | 응답 → 컬럼 |
 | --- | --- | --- | --- |
 | VA_CREATING→VA_CREATED | `VA_CREATE` | `createVirtualAccount`<br>req: `mainAccountNo`(보관계좌), `depositorName`, `expectedAmount`, `expiryDate`, `autoTransfer=false` | `virtualAccountId`→`virtual_account_id`<br>`virtualAccountNo`→`virtual_account_no` |
-| TRANSFER_SENDING→TRANSFERRED | `DEPOSIT_TRANSFER` | `updateDemandDepositAccountTransfer`<br>req: `depositAccountNo`(VA번호), `withdrawalAccountNo`(회원가입 때 발급한 의뢰인 계좌), `transactionBalance`(십진수 문자열), `depositTransactionSummary`(`createVirtualAccount.depositorName`과 동일한 값)<br>Header.userKey = Komit이 전달한 의뢰인 키 (`R-PAY-09`) | `source_bank_code`, `source_account_encrypted` |
+| TRANSFER_SENDING→TRANSFERRED | `DEPOSIT_TRANSFER` | `updateDemandDepositAccountTransfer`<br>req: `depositAccountNo`(VA번호), `withdrawalAccountNo`(회원가입 때 발급한 의뢰인 계좌), `transactionBalance`(십진수 문자열), `depositTransactionSummary`(`createVirtualAccount.depositorName`과 동일한 값), `withdrawalTransactionSummary`(요청 식별자 포함)<br>Header.userKey = Komit이 전달한 의뢰인 키 (`R-PAY-09`) | `source_bank_code`, `source_account_encrypted` |
 | VERIFIED | `DEPOSIT_VERIFY` | `inquireVirtualAccountDeposits`<br>req: `virtualAccountId` | `deposits[].depositAmount`→`verified_deposit_amount`<br>`nameMatched`→`depositor_name_matched`<br>→`deposit_verification_status` |
 | SETTLED | `VA_SETTLE` | `settleVirtualAccount`<br>req: `virtualAccountId` | `settledAmount`, `settledAt`→`completed_at` |
 | VA_CLOSED | `VA_CLOSE` | `closeVirtualAccount`<br>req: `virtualAccountId` | status=CLOSED→`virtual_account_closed_at` |
@@ -132,8 +134,8 @@ Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemb
 | attempts.step | SSAFY API | 매핑 |
 | --- | --- | --- |
 | `HOLDER_VERIFY` | `inquireDemandDepositAccountHolderName`<br>req: `accountNo`(수취), Header.userKey = 에스크로 보관계좌 소유자 키 | 응답 `userName` ↔ 요청한 수취 예금주명 대조. 다르면 이체 중단 |
-| `PAYOUT_TRANSFER` / `REFUND_TRANSFER` | `updateDemandDepositAccountTransfer`<br>req: `depositAccountNo`(수취), `withdrawalAccountNo`(보관계좌), `transactionBalance`(`amount`의 십진수 문자열)<br>Header.userKey = 에스크로 보관계좌 소유자 키 | 응답의 출금 거래 `transactionUniqueNo`→`financial_transaction_id` |
-| `RESULT_QUERY` | `inquireTransactionHistory`<br>req: `accountNo`(보관계좌), `transactionUniqueNo` | UNKNOWN 해소용. 성공·실패 확정 |
+| `PAYOUT_TRANSFER` / `REFUND_TRANSFER` | `updateDemandDepositAccountTransfer`<br>req: `depositAccountNo`(수취), `withdrawalAccountNo`(보관계좌), `transactionBalance`(`amount`의 십진수 문자열), `withdrawalTransactionSummary`(요청 식별자 포함)<br>Header.userKey = 에스크로 보관계좌 소유자 키 | 응답의 출금 거래 `transactionUniqueNo`→`financial_transaction_id` |
+| `RESULT_QUERY` | 먼저 `inquireTransactionHistoryList`<br>req: `accountNo`(보관계좌), `startDate`, `endDate`, `transactionType=D`<br>요약 표식·금액·수취 계좌를 대조하고, 찾은 거래의 `transactionUniqueNo`로 `inquireTransactionHistory` 단건 조회 | 일치하는 출금 거래를 확인하면 성공 확정. 목록에서 못 찾으면 `UNKNOWN` 유지 |
 
 - 지급·환불은 **같은 정산의 두 다리**다. `external_reference_id` = **`SETTLEMENT:<정산ID>`** 공유, `transaction_type`으로 구분
 - `amount`: RELEASE = 정상 완료 전액 또는 중도 종료 통과분 합계 (D-3)
@@ -142,6 +144,7 @@ Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemb
 - 2026-09-18 실호출에서 에스크로 보관계좌 소유자의 `userKey`로 다른 테스트 회원 계좌를 조회하자 `H0000`과 그 계좌의 `userName`이 반환됐다. 반대 방향 조회도 성공했다. 따라서 같은 SSAFY 앱에 등록된 다른 회원의 입출금 계좌는 지급·환불 직전에 예금주 조회가 가능하다. 다른 앱이나 외부 은행 계좌까지 확인한 결과는 아니다.
 - SSAFY 테스트 계좌의 `userName`은 회원 등록에 사용한 이메일의 `@` 앞부분이었다. Komit 프로필명과 같다고 가정하지 말고, 지급·환불 요청의 수취 예금주명에는 금융망 계좌의 실제 `userName`을 사용한다.
 - 같은 날 테스트 보관계좌의 3,000원 중 1,000원을 별도 작업자 테스트 계좌로 지급하고, 1,000원을 원래 의뢰인 테스트 계좌로 환불했다. 두 건 모두 수취 예금주 조회와 이체가 `H0000`이었고 이체 응답 `REC`는 출금·입금 거래 2건이었다. 지급 후 보관계좌 2,000원·작업자 계좌 1,000원, 환불 후 보관계좌 1,000원·의뢰인 계좌 1,000원 증가를 잔액 조회로 확인했다. 이는 금융망 이체 경로의 검증이며, 에스크로 애플리케이션의 지급·환불 상태 전이와 원장 기록은 아직 검증하지 않았다.
+- 같은 거래들을 보관계좌의 출금 내역 목록에서 거래 요약·금액·수취 계좌로 각각 한 건씩 찾았고, 목록의 `transactionUniqueNo`로 단건 조회했을 때 내역이 일치했다. 목록·단건 응답에는 `institutionTransactionUniqueNo`가 없었다. 응답을 실제로 유실시킨 시험은 아니므로, 목록 반영 지연 시간과 조회 실패 시 운영 처리는 별도로 검증해야 한다.
 
 ---
 
