@@ -131,7 +131,7 @@ Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemb
 
 | attempts.step | SSAFY API | 매핑 |
 | --- | --- | --- |
-| `HOLDER_VERIFY` | `inquireDemandDepositAccountHolderName`<br>req: `accountNo`(수취) | 응답 `userName` ↔ `recipient_name` 대조. 다르면 이체 중단 |
+| `HOLDER_VERIFY` | `inquireDemandDepositAccountHolderName`<br>req: `accountNo`(수취), Header.userKey = 에스크로 보관계좌 소유자 키 | 응답 `userName` ↔ 요청한 수취 예금주명 대조. 다르면 이체 중단 |
 | `PAYOUT_TRANSFER` / `REFUND_TRANSFER` | `updateDemandDepositAccountTransfer`<br>req: `depositAccountNo`(수취), `withdrawalAccountNo`(보관계좌), `transactionBalance`(`amount`) | 응답 `transactionUniqueNo`→`financial_transaction_id` |
 | `RESULT_QUERY` | `inquireTransactionHistory`<br>req: `accountNo`(보관계좌), `transactionUniqueNo` | UNKNOWN 해소용. 성공·실패 확정 |
 
@@ -139,6 +139,8 @@ Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemb
 - `amount`: RELEASE = 정상 완료 전액 또는 중도 종료 통과분 합계 (D-3)
 - 수취 계좌는 **호출자(be-api)가 지정**한다. 에스크로는 등록 계좌 원장을 강제하지 않는다
 - `escrows.hold_status`가 HELD면 지급·일반 환불을 막는다 (D-4)
+- 2026-09-18 실호출에서 에스크로 보관계좌 소유자의 `userKey`로 다른 테스트 회원 계좌를 조회하자 `H0000`과 그 계좌의 `userName`이 반환됐다. 반대 방향 조회도 성공했다. 따라서 같은 SSAFY 앱에 등록된 다른 회원의 입출금 계좌는 지급·환불 직전에 예금주 조회가 가능하다. 다른 앱이나 외부 은행 계좌까지 확인한 결과는 아니다.
+- SSAFY 테스트 계좌의 `userName`은 회원 등록에 사용한 이메일의 `@` 앞부분이었다. Komit 프로필명과 같다고 가정하지 말고, 지급·환불 요청의 수취 예금주명에는 금융망 계좌의 실제 `userName`을 사용한다.
 
 ---
 
@@ -229,7 +231,6 @@ Komit `EscrowDepositResponse.status`는 escrow의 상태를 번역한 값이다.
 
 | 항목 | 상태 |
 | --- | --- |
-| `HOLDER_VERIFY`가 타인 계좌도 조회되나 | 미확인. 안 되면 수취 검증을 등록 시점으로 이동 |
 | VA 활성 상한 (`E4065`) | 명세에 값 없음 = 동시 진행 계약 수 상한. 실호출 확인 |
 | 이체 한도 상향 | 기본 1회 1억/1일 5억. 집금 계좌는 `updateTransferLimit` 필요. 상향폭 미정 |
 | 운영 감사 기록 | UNKNOWN 해소·미결 처리 이력 테이블 미설계 |

@@ -1329,8 +1329,8 @@ class ReleaseEscrowRequest(BaseModel):
     )
     recipientName: str = Field(
         description=(
-            "작업자의 예금주명. 송금 전에 조회한 예금주와 대조하며 다르면 보내지 "
-            "않는다."
+            "작업자 수취 계좌의 금융망 예금주명. 송금 전에 조회한 이름과 대조하며 "
+            "다르면 보내지 않는다. Komit 프로필명과 다를 수 있다."
         ),
         examples=["이준"],
         min_length=1,
@@ -1388,8 +1388,8 @@ class RefundEscrowRequest(BaseModel):
     )
     refundHolderName: str = Field(
         description=(
-            "환불 받을 계좌의 예금주명. 자유 입력만으로 소유권을 인정하지 않고 조회한 "
-            "예금주와 대조한다."
+            "환불 받을 계좌의 금융망 예금주명. 자유 입력만으로 소유권을 인정하지 "
+            "않고 조회한 이름과 대조한다. Komit 프로필명과 다를 수 있다."
         ),
         examples=["김미미"],
         min_length=1,
