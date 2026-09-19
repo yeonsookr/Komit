@@ -1,8 +1,4 @@
 spring:
-  flyway:
-    # 기존 JPA 개발 DB를 Flyway 관리로 전환할 때만 V0 기준선을 자동 등록합니다.
-    baseline-on-migrate: true
-    baseline-version: 0
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/service}
     username: ${DB_USERNAME:service}
@@ -14,9 +10,6 @@ spring:
       port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
   jpa:
-    hibernate:
-      # 로컬 개발 DB는 JPA 엔티티 매핑을 기준으로 갱신합니다.
-      ddl-auto: update
     properties:
       hibernate:
         format_sql: true

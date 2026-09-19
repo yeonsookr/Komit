@@ -31,7 +31,7 @@ class ServiceApplicationTests {
     }
 
     @Test
-    void flywaySeedsAllDesignedStatusCodes() {
+    void seedsAllDesignedStatusCodes() {
         assertThat(count("system_enum_groups")).isEqualTo(26);
         assertThat(count("system_enums")).isEqualTo(87);
 

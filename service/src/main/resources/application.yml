@@ -3,13 +3,18 @@ spring:
     name: service
   profiles:
     default: local
-  flyway:
-    validate-migration-naming: true
+  sql:
+    init:
+      # 상태코드 시드(data.sql)만 실행합니다. 스키마는 JPA가 맡습니다.
+      mode: always
+      encoding: UTF-8
   jpa:
     open-in-view: false
+    # 시드를 JPA 스키마 생성 뒤에 실행합니다.
+    defer-datasource-initialization: true
     hibernate:
-      # 운영에서는 매핑과 스키마가 다르면 시작을 막습니다. local만 update로 스키마를 만듭니다.
-      ddl-auto: validate
+      # 스키마는 JPA 엔티티 매핑으로 만듭니다. Flyway는 쓰지 않습니다.
+      ddl-auto: update
     properties:
       hibernate:
         jdbc:
