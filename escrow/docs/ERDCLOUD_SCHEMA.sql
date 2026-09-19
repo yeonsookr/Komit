@@ -22,6 +22,7 @@ CREATE TABLE member_account_provisions (
     user_id VARCHAR(40) NOT NULL COMMENT '금융망 사용자 ID | SSAFY 회원 등록용 이메일 형식 ID',
     account_type_unique_no VARCHAR(20) NOT NULL COMMENT '계좌 상품 고유번호 | 에스크로 설정의 SSAFY 입출금 상품 (R-ACC-10)',
     idempotency_key VARCHAR(255) NOT NULL COMMENT '멱등 키 | 같은 발급 업무의 재요청 식별값',
+    request_fingerprint VARCHAR(64) NOT NULL COMMENT '요청 지문 | 사용자 ID를 포함한 최초 발급 요청의 SHA-256',
     provision_step VARCHAR(20) NOT NULL DEFAULT 'USER_REGISTER' COMMENT '발급 단계 | USER_REGISTER / ACCOUNT_OPEN / SEED_DEPOSIT / COMPLETED',
     provision_status VARCHAR(12) NOT NULL DEFAULT 'PENDING' COMMENT '발급 상태 | PENDING / UNKNOWN / COMPLETED',
     step_requested_at DATETIME(6) COMMENT '단계 요청 일시 | 외부 호출 직전 기록. 단계 변경 시 비움',
@@ -43,6 +44,7 @@ CREATE TABLE member_account_provisions (
     CONSTRAINT uq_member_account_provisions_service_idempotency UNIQUE (service_client_id, idempotency_key),
     CONSTRAINT uq_member_account_provisions_service_user_key_hash UNIQUE (service_client_id, user_key_lookup_hash),
     CONSTRAINT uq_member_account_provisions_seed_request_reference UNIQUE (seed_request_reference),
+    CONSTRAINT ck_member_account_provisions_fingerprint CHECK (request_fingerprint REGEXP '^[0-9a-f]{64}$'),
     CONSTRAINT ck_member_account_provisions_step
         CHECK (provision_step IN ('USER_REGISTER', 'ACCOUNT_OPEN', 'SEED_DEPOSIT', 'COMPLETED')),
     CONSTRAINT ck_member_account_provisions_status
@@ -204,7 +206,7 @@ CREATE TABLE settlements (
     CONSTRAINT fk_settlements_escrow FOREIGN KEY (escrow_id) REFERENCES escrows (id),
     CONSTRAINT uq_settlements_escrow_reference UNIQUE (escrow_id, external_reference_id),
     CONSTRAINT uq_settlements_id_escrow_reference UNIQUE (id, escrow_id, external_reference_id),
-    CONSTRAINT ck_settlements_reference CHECK (external_reference_id LIKE 'SETTLEMENT:%'),
+    CONSTRAINT ck_settlements_reference CHECK (external_reference_id LIKE 'SETTLEMENT:%' AND length(external_reference_id)>11),
     CONSTRAINT ck_settlements_amount CHECK (
         (approved_amount IS NOT NULL OR refund_amount IS NOT NULL)
         AND (approved_amount IS NULL OR approved_amount > 0)
@@ -217,6 +219,7 @@ CREATE TABLE settlements (
 
 CREATE TABLE escrow_transactions (
     id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '거래 ID | 논리 금융 거래 식별자',
+    service_client_id BIGINT NOT NULL COMMENT '이용 서비스 ID | 멱등키 범위와 계약 소유 서비스',
     escrow_id BIGINT NOT NULL COMMENT '에스크로 ID | 대상 계약',
     settlement_id BIGINT COMMENT '정산 ID | RELEASE / FEE / REFUND가 공유하는 정산 업무. DEPOSIT는 NULL',
     transaction_type VARCHAR(20) NOT NULL COMMENT '거래 유형 | DEPOSIT / RELEASE 순지급 / FEE 수수료 / REFUND',
@@ -243,11 +246,11 @@ CREATE TABLE escrow_transactions (
     created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성 일시 | 외부 호출 전 기록 시각',
     updated_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '수정 일시 | 애플리케이션이 갱신',
     completed_at DATETIME(6) COMMENT '완료 일시 | 자금 이동과 로컬 기록 모두 확정된 시각',
-    CONSTRAINT fk_escrow_transactions_escrow FOREIGN KEY (escrow_id) REFERENCES escrows (id),
+    CONSTRAINT fk_escrow_transactions_escrow FOREIGN KEY (escrow_id, service_client_id) REFERENCES escrows (id, service_client_id),
     CONSTRAINT fk_escrow_transactions_settlement
         FOREIGN KEY (settlement_id, escrow_id, external_reference_id)
         REFERENCES settlements (id, escrow_id, external_reference_id),
-    CONSTRAINT uq_escrow_transactions_idempotency_key UNIQUE (idempotency_key),
+    CONSTRAINT uq_escrow_transactions_idempotency_key UNIQUE (service_client_id, transaction_type, idempotency_key),
     CONSTRAINT uq_escrow_transactions_business_reference
         UNIQUE (escrow_id, external_reference_id, transaction_type),
     CONSTRAINT ck_escrow_transactions_type

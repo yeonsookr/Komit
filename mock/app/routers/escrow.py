@@ -591,7 +591,8 @@ class EscrowRequestHeader(BaseModel):
         default=None,
         description=(
             "업무 멱등키. 1원 인증 요청, 사용자·계좌 발급, 자금 이동, 취소·동결·해제 API에는 반드시 담고, "
-            "같은 업무를 다시 보낼 때는 같은 값을 유지한다. 조회 API에서는 쓰지 않는다. "
+            "같은 업무를 다시 보낼 때는 같은 값을 유지한다. 범위는 인증된 서비스와 API별이며 "
+            "같은 범위의 키로 다른 본문을 보내면 E5003이다. 조회 API에서는 쓰지 않는다. "
             "ERD account_auth_requests, member_account_provisions, escrow_transactions, escrow_state_commands의 "
             "idempotency_key에 각각 대응한다. "
             "conflict-idempotency-key는 본문이 처음과 달라 거절되는 사례의 "
@@ -1326,12 +1327,11 @@ ESCROW_ERRORS: dict = {
 
 
 class WithdrawalAccount(BaseModel):
-    """출금 계좌. 예치와 추가예치가 함께 쓴다."""
+    """출금 계좌. 최초 계약금 예치에 사용한다."""
 
     withdrawalBankCode: str = Field(
         description=(
-            "출금 은행코드 세 자리. ERD는 계좌를 지문으로만 보관하므로 이 값은 요청 "
-            "경계에서만 쓰이고 원문으로 저장되지 않는다."
+            "출금 은행코드 세 자리. 예치 거래의 source_bank_code에 보관한다."
         ),
         examples=["001"],
         pattern=BANK_CODE_PATTERN,
@@ -1456,7 +1456,7 @@ class ReleaseEscrowRequest(BaseModel):
         gt=0,
     )
     recipientBankCode: str = Field(
-        description="수취 은행코드 세 자리. 원문으로 저장하지 않는다.",
+        description="수취 은행코드 세 자리. 거래의 recipient_bank_code에 보관한다.",
         examples=["001"],
         pattern=BANK_CODE_PATTERN,
     )
@@ -1746,7 +1746,9 @@ def _mock_member_account(user_id: str) -> CreateMemberAccountRecord:
         "은행 `001`의 원화 수시입출금 상품은 에스크로 설정을 따른다 (`R-ACC-10`). "
         "같은 `userId`로 다시 요청하면 "
         "같은 사용자 키와 계좌 정보를 반환하며 데모 입금을 반복하지 않는다. "
-        "목 서버는 상태를 저장하지 않고 `userId`별 고정 테스트 값을 반환한다.\n\n"
+        "처리 중이거나 결과 불명인 발급은 503으로 알린다. pending-member-key로 재현하며 "
+        "동일한 userId와 멱등키를 유지해 다시 확인한다. "
+        "목 서버는 상태를 저장하지 않고 userId별 고정 테스트 값을 반환한다.\n\n"
         "- **200 / H0000**: 사용자·계좌 발급과 데모 입금이 완료됐거나, 같은 `userId`로 재요청했을 때\n"
         "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
         "- **400 / E5002**: `idempotencyKey`가 없을 때\n"
@@ -1774,6 +1776,8 @@ async def create_member_account(
     )
     if error:
         return _escrow_error(*error, payload.Header)
+    if payload.Header.idempotencyKey == "pending-member-key":
+        return _escrow_error(503, "Q1000", "회원 계좌 발급 결과를 확인 중입니다. 같은 멱등키로 다시 확인해 주세요.", payload.Header)
     return CreateMemberAccountResponse(
         Header=_escrow_response_header(
             "H0000", "정상처리 되었습니다.", payload.Header
@@ -2068,8 +2072,7 @@ async def release_escrow(
         "- **400 / E5008**: 요청 금액이 목의 예치 잔액을 초과할 때\n"
         "- **400 / E5010**: `escrowId` 43·44처럼 지급 정산이 진행 중이거나 "
         "결과 불명이라 환불에 사용할 수 없을 때. (R-PAY-12)\n"
-        "- **400 / E5009**: 예시 에스크로 42에서 환불 계좌가 예치 출금 계좌와 "
-        "다를 때. 실서버는 모든 계약에 이 검증을 적용한다\n"
+        "- **400 / E5009**: 환불 계좌가 예치 출금 계좌와 다를 때\n"
         "- **400 / E5003**: `idempotencyKey`가 `conflict-idempotency-key`일 때\n"
         "- **400 / Q1001**: 필수 속성이 없거나 형식이 맞지 않을 때\n"
         "- **500 / Q1000**: `clientApiKey`가 `server-error-client-api-key`일 때. "
