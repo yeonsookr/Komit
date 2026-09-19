@@ -29,6 +29,7 @@
 | D-9 | **예치 출금 계좌는 회원 발급 기록과 연결한다.** `Header.userKey`의 서비스별 HMAC 조회값으로 발급 기록을 찾고, 요청 계좌와 복호화한 발급 계좌를 비교한 뒤 계약에 기록 ID를 연결한다. | `R-ACC-09`, `R-PAY-09` |
 | D-10 | **결과 불명 해소와 수동 조치는 추가 전용 감사 사건으로 남긴다.** 작업 주체, 근거와 금융망 증빙 참조를 기록하고 원문 계좌·키는 넣지 않는다. | `proposal.md` §7 |
 | D-11 | **취소·동결·해제의 멱등 결과를 별도로 남긴다.** 세 API는 금융망 이체 없이 계약 상태를 바꾸므로 상태 변경과 멱등 기록을 같은 DB 트랜잭션에서 확정한다. | `cancelEscrow`·`holdEscrow`·`unholdEscrow` 계약, `R-RPT-05` |
+| D-12 | **금융망 호출은 DB에서 실행권을 얻은 Writer 하나만 수행한다.** 호출 직전에 `DISPATCHING`을 커밋하고, 그 뒤 장애가 나면 재전송 대신 `UNKNOWN` 조회·대사로 복구한다. | `HIGH_AVAILABILITY.md`, `R-PAY-08`, `R-PAY-12` |
 
 ---
 
@@ -142,6 +143,10 @@ HTTP 201 / `H0000`으로 **서로 다른 두 번째 계좌가 실제 생성**됐
 | `userKey` | 자금 이동 주체의 신원 | 발급 요청에는 없음. 후속 요청에는 Komit이 전달한 회원 키 또는 에스크로 보관계좌 소유자 키 |
 
 **멱등 규칙:** `request_reference`를 외부 호출 **전에** 채번·저장(`requested_at`)하고 그 값을 `institutionTransactionUniqueNo`로 보낸다. SSAFY 거래내역 조회 응답에는 이 헤더 값이 없으므로, 자금 이동 요청의 거래 요약에도 동일한 요청 식별자를 포함해 조회용 표식으로 쓴다. 이체에서는 출금 계좌 쪽 `withdrawalTransactionSummary`에 넣는다. 응답을 잃으면 계좌 거래내역 목록에서 이 표식·금액·상대 계좌·시간을 대조하고, 찾은 거래의 `transactionUniqueNo`로 단건 조회한다. 목록에 없다는 사실만으로 실패를 확정하거나 새 번호로 재송금하지 않는다. 실패가 확정된 뒤에만 `attempt_no`를 올리고 새 `request_reference`를 쓴다.
+
+**실행권 획득:** Writer는 외부 호출 전에 해당 시도를 `REQUESTED`에서 `DISPATCHING`으로 원자적으로 갱신하면서 `dispatched_by`와 `dispatched_at`을 기록하고 커밋한다. 갱신된 행이 1개인 실행자만 금융망을 호출한다. `dispatched_by`에는 재사용 가능한 역할명 대신 Pod UID처럼 실행 생명주기 동안 변하지 않는 인스턴스 식별자를 쓴다. `dispatched_at`은 실행권을 얻은 시각이며 요청이 금융망에 도달했다는 증거가 아니다. Writer가 `DISPATCHING` 뒤에 중단되면 새 Writer는 같은 요청을 바로 재전송하지 않고 `UNKNOWN`으로 전환한 다음 기존 `request_reference`와 거래 내역으로 결과를 확인한다.
+
+호출 상태 전이는 `REQUESTED → DISPATCHING → SUCCEEDED | FAILED | UNKNOWN`이다. `responded_at`에는 해당 호출의 직접 응답을 받은 시각만 기록한다. 응답 유실 후 조회로 성공·실패를 확정하더라도 원래 시도의 `responded_at`은 NULL을 유지하고 조회 시도와 감사 사건에 증빙을 남긴다. 같은 거래·단계에는 미확정 시도(`REQUESTED`, `DISPATCHING`, `UNKNOWN`)를 하나만 허용한다. 읽기 전용 조회 시도 자체가 실패한 경우에는 조회를 FAILED로 종결하고 다시 조회할 수 있지만, 원래 자금 이동의 UNKNOWN을 실패로 바꾸지는 않는다. 응답을 받지 못했거나 응답만으로 자금 이동 여부를 확정할 수 없으면 `UNKNOWN`으로 두며, 조회 호출도 별도의 시도 행으로 기록한다.
 
 2026-09-18 실호출에서 같은 `institutionTransactionUniqueNo`로 1원 이체 요청을 재전송하자 HTTP 400의 최상위 `responseCode=H1007`이 반환됐다. 보관계좌 출금과 수취 계좌 입금은 각각 한 번만 일어났다. 중복 오류는 첫 이체의 성공 여부나 거래번호를 돌려주지 않으므로, 결과 불명 상태는 거래내역 조회로 해소해야 한다.
 

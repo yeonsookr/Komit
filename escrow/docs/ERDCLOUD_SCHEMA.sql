@@ -251,11 +251,13 @@ CREATE TABLE financial_operation_attempts (
     step VARCHAR(30) NOT NULL COMMENT '호출 단계 | 가상계좌·이체·예금주 확인·결과 조회의 단계',
     attempt_no INT NOT NULL COMMENT '시도 번호 | 같은 거래와 단계 안에서 1부터 증가',
     request_reference VARCHAR(100) NOT NULL COMMENT '요청 식별자 | 외부 호출 전에 저장. 금융망 요구 형식 사용',
-    status VARCHAR(20) NOT NULL DEFAULT 'REQUESTED' COMMENT '호출 상태 | REQUESTED / SUCCEEDED / FAILED / UNKNOWN',
+    status VARCHAR(20) NOT NULL DEFAULT 'REQUESTED' COMMENT '호출 상태 | REQUESTED 준비 / DISPATCHING 실행권 획득 / SUCCEEDED 성공 / FAILED 확정 실패 / UNKNOWN 결과 불명',
+    dispatched_by VARCHAR(100) COMMENT '실행 인스턴스 | 금융망 호출 실행권을 획득한 불변 인스턴스 식별자',
+    dispatched_at DATETIME(6) COMMENT '실행권 획득 일시 | 금융망 도달을 증명하지 않으며 장애 복구 판단에 사용',
     external_transaction_id VARCHAR(100) COMMENT '외부 거래 ID | 해당 단계의 금융망 결과 식별자',
     response_code VARCHAR(50) COMMENT '응답 코드 | 금융망 응답 코드',
     requested_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '요청 기록 일시 | 실제 전송 여부를 증명하지 않는 준비 시각',
-    responded_at DATETIME(6) COMMENT '응답 수신 일시 | 응답 유실 시 NULL. 조회는 별도 시도',
+    responded_at DATETIME(6) COMMENT '응답 수신 일시 | 직접 응답 유실 시 NULL을 유지. 조회로 결과 확정 시 감사 기록으로 근거 연결',
     CONSTRAINT fk_financial_operation_attempts_transaction
         FOREIGN KEY (transaction_id) REFERENCES escrow_transactions (id),
     CONSTRAINT uq_financial_operation_attempts_attempt UNIQUE (transaction_id, step, attempt_no),
@@ -266,7 +268,19 @@ CREATE TABLE financial_operation_attempts (
         'HOLDER_VERIFY', 'PAYOUT_TRANSFER', 'FEE_TRANSFER', 'REFUND_TRANSFER', 'RESULT_QUERY'
     )),
     CONSTRAINT ck_financial_operation_attempts_status
-        CHECK (status IN ('REQUESTED', 'SUCCEEDED', 'FAILED', 'UNKNOWN'))
+        CHECK (status IN ('REQUESTED', 'DISPATCHING', 'SUCCEEDED', 'FAILED', 'UNKNOWN')),
+    CONSTRAINT ck_financial_operation_attempts_dispatch CHECK (
+        (status = 'REQUESTED' AND dispatched_by IS NULL AND dispatched_at IS NULL)
+        OR (status IN ('DISPATCHING', 'SUCCEEDED', 'FAILED', 'UNKNOWN')
+            AND dispatched_by IS NOT NULL AND length(trim(dispatched_by)) > 0
+            AND dispatched_at IS NOT NULL)
+    ),
+    CONSTRAINT ck_financial_operation_attempts_response CHECK (
+        (status IN ('REQUESTED', 'DISPATCHING') AND responded_at IS NULL)
+        OR status IN ('SUCCEEDED', 'FAILED', 'UNKNOWN')
+    ),
+    CONSTRAINT ck_financial_operation_attempts_response_time
+        CHECK (responded_at IS NULL OR responded_at >= dispatched_at)
 
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='금융망 호출 시도 | 거래의 외부 API 호출과 결과 조회 기록';
 
@@ -305,6 +319,9 @@ CREATE INDEX idx_escrow_transactions_settlement_status
 
 CREATE INDEX idx_financial_operation_attempts_status_requested_at
     ON financial_operation_attempts (status, requested_at);
+
+CREATE INDEX idx_financial_operation_attempts_status_dispatched_at
+    ON financial_operation_attempts (status, dispatched_at);
 
 CREATE INDEX idx_operation_audit_events_escrow_created_at
     ON operation_audit_events (escrow_id, created_at);
