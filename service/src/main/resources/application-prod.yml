@@ -15,6 +15,14 @@ spring:
 app:
   datasource:
     read-url: ${DB_READ_URL}
+  auth:
+    user-jwt-secret: ${KOMIT_USER_JWT_SECRET}
+    kakao-token-encryption-key: ${KAKAO_TOKEN_ENCRYPTION_KEY}
+  kakao:
+    client-id: ${KAKAO_CLIENT_ID}
+    client-secret: ${KAKAO_CLIENT_SECRET}
+    token-uri: ${KAKAO_TOKEN_URI:https://kauth.kakao.com/oauth/token}
+    user-info-uri: ${KAKAO_USER_INFO_URI:https://kapi.kakao.com/v2/user/me}
 
 server:
   # nginx가 /service/ 접두사를 떼고 X-Forwarded-Prefix·Proto·Host로 알려 줍니다.

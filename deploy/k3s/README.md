@@ -557,7 +557,7 @@ Standby 수는 Cluster의 `instances`로 조정합니다. 동기 복제 대상 �
 |---|---|
 | `@Transactional(readOnly = true)` | 읽기 풀 → `-ro` (Standby) |
 | `@Transactional`, 트랜잭션 없는 쿼리 | 쓰기 풀 → `-rw` (Primary) |
-| Flyway 마이그레이션, Hibernate 스키마 검증 | 쓰기 풀 → `-rw` (Primary) |
+| Hibernate 스키마 생성(`ddl-auto`) | 쓰기 풀 → `-rw` (Primary) |
 
 - `DB_READ_URL`이 없으면 쓰기 주소를 그대로 씁니다. `local` 프로필과 CI 테스트는 DB 하나로 동작합니다.
 - 조회 메서드에 `readOnly = true`를 붙여야 Standby로 갑니다. 쓰기 직후 최신값이 반드시 필요한 조회는 `readOnly`를 빼서 Primary에서 읽습니다.
@@ -565,4 +565,3 @@ Standby 수는 Cluster의 `instances`로 조정합니다. 동기 복제 대상 �
 ### 알려진 제약
 - **단일 노드:** 운영 EC2가 한 대라 Primary와 Standby가 같은 노드와 디스크(local-path)에 있습니다. Pod 장애는 견디지만 서버나 디스크 장애에는 앱과 DB가 함께 멈추고, 백업이 없어 데이터도 복구할 수 없습니다.
 - **Standby 전체 장애:** Standby가 모두 내려가 `-ro` Service에 대상이 없으면 `readOnly` 트랜잭션이 실패합니다. 쓰기 트랜잭션은 계속 동작합니다. Standby를 2대 이상 유지하는 이유입니다.
-- **Flyway 실행 위치:** Flyway는 앱 Pod가 시작할 때마다 실행됩니다. PostgreSQL advisory lock으로 동시 실행은 막히지만, 백엔드 컨벤션 6.7(마이그레이션은 배포 파이프라인의 한 단계에서 실행)과는 아직 다릅니다.

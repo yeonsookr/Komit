@@ -9,6 +9,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import HTMLResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 SWAGGER_DIST = "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5"
 
@@ -175,6 +176,7 @@ def create_app(
     routers: list[APIRouter],
     docs: list,
     validation_error_handler: Callable | None = None,
+    http_error_handler: Callable | None = None,
     openapi_tags: list[dict] | None = None,
 ) -> FastAPI:
     # 기본 문서 페이지는 끄고 아래에서 직접 만든다.
@@ -191,6 +193,12 @@ def create_app(
     # 넘기지 않으면 FastAPI 기본 422 응답을 그대로 쓴다.
     if validation_error_handler is not None:
         app.add_exception_handler(RequestValidationError, validation_error_handler)
+
+    # 본문을 읽다 난 오류 중에는 RequestValidationError 가 아니라 HTTPException 으로
+    # 오는 것이 있어 위 핸들러를 거치지 않는다. 그것까지 그 앱의 형식으로 바꿔야 하면
+    # 이 핸들러를 받는다. 넘기지 않으면 Starlette 기본 응답을 그대로 쓴다.
+    if http_error_handler is not None:
+        app.add_exception_handler(StarletteHTTPException, http_error_handler)
 
     app.add_middleware(
         CORSMiddleware,

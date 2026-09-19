@@ -107,6 +107,33 @@ ERD에 없어도 응답에 담을 수 있다.** ERD는 저장하는 데이터의
   쓰는데 OpenAPI는 `components/schemas`를 써서 참조가 깨진다.
 - 값을 보고 갈리는 오류(에스크로의 `H1001`~`H1010` 등)만 엔드포인트 안에서 판정한다.
 
+### 제약은 `json_schema_extra`가 아니라 실제 제약으로 적는다
+
+자릿수·길이·패턴은 `Field(pattern=...)`, `min_length`, `max_length`, `Literal` 로 적는다.
+`json_schema_extra={"pattern": ...}` 로 적지 않는다.
+
+```python
+accountNo: str = Field(pattern=r"^\d{16}$")                      # ○ 문서에도 실리고 검증도 된다
+accountNo: str = Field(json_schema_extra={"pattern": r"^\d{16}$"})  # ✗ 문서에만 실린다
+```
+
+**두 줄이 만드는 Swagger 스키마는 완전히 같다.** 다른 것은 잘못된 값이 들어왔을 때뿐이다.
+위는 거절하고 아래는 통과시킨다. 아래처럼 적으면 목이 받아들인 요청을 실서버가 거절하게
+되어 제1원칙이 깨지고, 명세에 적어 둔 검증 실패 응답(`Q1001`·422)이 실제로는 나오지 않는다.
+
+**예외 — 요청 Header.** 에스크로의 `CommonRequestHeader`·`EscrowRequestHeader`는
+`json_schema_extra`를 그대로 쓴다. Header 형식 오류는 `H1001`~`H1010`으로 갈라 내보내야
+하는데, Pydantic이 먼저 거절하면 그 코드들이 전부 `Q1001`로 뭉개져 영영 나오지 않는다.
+검증은 `_validate_escrow_header`가 손으로 하고, `json_schema_extra`는 그 규격을 문서에
+보여주는 역할만 한다.
+
+### 응답 Header에 요청 값을 되비출 때
+
+에스크로는 실패 응답 Header에 요청 Header를 되비춘다. 그런데 `H1001`~`H1010`을 낼 때는
+**요청 값 자체가 응답 Header 규격에 어긋나 있다.** 그대로 넣으면 응답을 만들다가 터진다.
+`_escrow_response_header`의 `_echo`가 규격에 맞을 때만 되비추고 어긋나면 명세 예시값으로
+대신하는 이유다. 응답 Header에 필드를 늘릴 때 같은 함정을 밟지 않도록 한다.
+
 ---
 
 ## 3. docs는 API 명세 페이지다

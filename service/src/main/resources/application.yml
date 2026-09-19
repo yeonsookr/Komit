@@ -3,17 +3,22 @@ spring:
     name: service
   profiles:
     default: local
+  sql:
+    init:
+      # 상태코드 시드(data.sql)만 실행합니다. 스키마는 JPA가 맡습니다.
+      mode: always
+      encoding: UTF-8
   jpa:
     open-in-view: false
+    # 시드를 JPA 스키마 생성 뒤에 실행합니다.
+    defer-datasource-initialization: true
     hibernate:
-      ddl-auto: validate
+      # 스키마는 JPA 엔티티 매핑으로 만듭니다. Flyway는 쓰지 않습니다.
+      ddl-auto: update
     properties:
       hibernate:
         jdbc:
           time_zone: UTC
-  flyway:
-    enabled: true
-    baseline-on-migrate: true
 
 server:
   port: ${SERVER_PORT:8080}
@@ -24,6 +29,9 @@ app:
   instance-role: ${APP_INSTANCE_ROLE}
   # 이 서버가 밖에서 보이는 주소. nginx 뒤에서는 경로 접두사까지 포함합니다. (예: https://komit.site/service)
   public-base-url: ${APP_PUBLIC_BASE_URL}
+  auth:
+    access-token-ttl: 15m
+    refresh-token-ttl: 14d
 
 management:
   endpoints:

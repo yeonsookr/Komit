@@ -13,7 +13,7 @@
 - DDD 스타일의 도메인 중심 패키지 구조
 - Controller, Service, Repository, Entity, DTO의 책임
 - `mock` 서버 Swagger를 단일 기준으로 하는 API 계약 관리 방식
-- PostgreSQL 스키마 변경과 Flyway 마이그레이션
+- PostgreSQL 스키마 관리 방식
 - 보안, 로깅, 테스트, 브랜치와 리뷰 기준
 
 별도 합의가 없다면 신규 코드와 수정 코드 모두 이 문서를 따릅니다. 기존 코드가 이 문서와 다를 때는 관련 작업 범위 안에서 점진적으로 정리하며, 무관한 대규모 리팩터링을 한 PR에 섞지 않습니다.
@@ -43,7 +43,6 @@ ERD에 없는 필드가 API 구현에 필요하면 임의로 추가하지 않습
 | 빌드 도구 | Gradle Wrapper | **9.7.1** |
 | 데이터베이스 | PostgreSQL | **18.x**, 최초 고정 이미지 **18.6** |
 | 동적 쿼리 | QueryDSL(jakarta) | **5.1.0** |
-| DB 마이그레이션 | Flyway | Spring Boot BOM 사용 |
 | 테스트 | JUnit 5, Spring Boot Test, Testcontainers | Spring Boot BOM 사용 |
 | 코드 보조 | Lombok | Spring Boot BOM 사용 |
 
@@ -92,8 +91,6 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
-    implementation 'org.flywaydb:flyway-core'
-    implementation 'org.flywaydb:flyway-database-postgresql'
 
     implementation 'com.querydsl:querydsl-jpa:5.1.0:jakarta'
     annotationProcessor 'com.querydsl:querydsl-apt:5.1.0:jakarta'
@@ -140,10 +137,13 @@ Komit 서버와 Escrow 서버는 논리적 모듈이 아니라 **서로 완전�
 Escrow가 금융 거래 상태의 원본을 소유한다면 Komit는 필요한 Escrow 식별자와 화면 표시용 최소 정보만 보관합니다. 어느 서버가 어떤 데이터의 원본인지 API별로 명확히 정하고 양쪽에서 같은 상태를 독립적으로 수정하지 않습니다.
 
 금융망 사용자 식별정보와 개인 계좌의 원본은 Komit Service가 소유합니다. 처음
-회원가입할 때 Service가 SSAFY 금융망 `userKey`를 발급받고 별도 계좌 생성 API로
-개인 계좌를 만든 뒤 두 값을 Service DB에 저장합니다. Service는 예치·지급·환불 등
-금융 업무에 필요한 `userKey`와 계좌번호를 Escrow 요청에 담고, Escrow는 이를 금융망
-호출에만 사용하며 자기 DB에 사용자 금융 식별정보나 개인 계좌 원장을 만들지 않습니다.
+회원가입할 때 Service가 Escrow의 회원 발급 API를 호출하고, Escrow가 SSAFY 금융망에서
+`userKey`를 발급받아 별도 계좌 생성 API로 개인 계좌를 만듭니다. Service는 발급 결과를
+자기 DB에 저장하고 예치·지급·환불 등 금융 요청마다 `userKey`와 계좌번호를 Escrow에
+전달합니다. Escrow는 응답 유실과 동일 회원 재요청을 복구하기 위한 발급 기록에
+`userKey`·계좌번호의 암호화 사본과 은행코드를 최소한으로 보관합니다. 이 사본은
+금융정보의 원본이나 개인 계좌 원장이 아니며, 평문을 로그에 남기지 않습니다.
+(`R-ACC-09`, `escrow/docs/FINANCE_MAPPING.md` §1)
 
 Escrow가 소유하는 것은 보관계좌, 계약별 가상계좌, 에스크로 상태와 거래 원장입니다.
 예치 상태는 입금 검증, 보관계좌 정산, 내부 기록이 모두 확정되기 전까지
@@ -228,7 +228,6 @@ Client / Frontend
 - Reader의 DB 계정에는 `INSERT`, `UPDATE`, `DELETE`, DDL 권한을 부여하지 않습니다.
 - `@Transactional(readOnly = true)`는 성능과 의도 표현을 위한 규칙이며 보안 경계로 신뢰하지 않습니다. 최종 쓰기 차단은 DB 권한으로 보장합니다.
 - write Service는 Writer 역할에서만 실행되도록 공통 guard를 적용합니다.
-- Flyway migration은 Reader가 실행하지 않습니다. 배포 파이프라인의 단일 migration 단계 또는 명시적으로 지정된 Writer 측에서만 수행합니다.
 - Reader가 실수로 write를 시도하면 정상 처리로 숨기지 않고 즉시 실패시키며 운영 경보를 발생시킵니다.
 
 ### 6.3 Writer 장애 전환과 split-brain 방지
@@ -286,7 +285,6 @@ Writer 장애 시 Reader를 새 Writer로 승격할 수 있지만, 두 인스턴
 - 종료 시 신규 요청 수신을 먼저 중단하고 진행 중 요청을 마칠 수 있도록 graceful shutdown을 사용합니다.
 - 모든 인스턴스가 같은 버전으로 한 번에 교체된다고 가정하지 않습니다. API와 DB migration은 롤링 배포 중 구버전·신버전이 잠시 공존해도 호환되어야 합니다.
 - 파괴적인 컬럼 삭제·이름 변경은 추가 → 양쪽 버전 전환 → 제거 순서의 expand/contract 방식으로 진행합니다.
-- Flyway migration은 배포 파이프라인의 통제된 한 단계에서 실행하는 것을 원칙으로 하고, 여러 인스턴스가 동시에 위험한 DDL을 수행하게 두지 않습니다.
 
 ### 6.8 서버 간 호출
 
@@ -367,7 +365,6 @@ domain/developer/
 | JSON 필드 | `camelCase` | `developerId`, `createdAt` |
 | API 경로 | `kebab-case`, 복수 리소스 | `/api/developer-profiles` |
 | 환경 변수 | `UPPER_SNAKE_CASE` | `DB_URL`, `JWT_SECRET` |
-| Flyway 파일 | `V{번호}__{설명}.sql` | `V3__create_contract_table.sql` |
 
 역할이 클래스명에 드러나야 합니다.
 
@@ -630,19 +627,9 @@ QueryDSL 쿼리는 필요한 정보만 가져오도록 작성합니다.
 
 ### 13.4 스키마 변경
 
-- 운영 스키마는 Flyway로만 변경합니다.
-- `spring.jpa.hibernate.ddl-auto`는 local/prod에서 `validate`를 사용합니다.
-- `update`, `create`, `create-drop`을 운영 설정에 사용하지 않습니다.
-- 이미 공유된 migration 파일은 수정하지 않고 새 버전 파일을 추가합니다.
-- 한 migration에는 하나의 설명 가능한 변경 단위를 담습니다.
-- 테이블·컬럼 변경은 ERD에도 함께 반영합니다.
-
-```text
-src/main/resources/db/migration/
-├── V1__create_user_tables.sql
-├── V2__create_developer_tables.sql
-└── V3__create_contract_tables.sql
-```
+- 스키마는 JPA 엔티티 매핑이 기준이며 `spring.jpa.hibernate.ddl-auto: update`로 만듭니다.
+- `create`, `create-drop`은 운영 설정에 사용하지 않습니다.
+- 테이블·컬럼 변경은 엔티티와 ERD에 함께 반영합니다.
 
 PostgreSQL의 `jsonb`, `timestamptz`, partial index 같은 기능은 실제 조회 요구가 있을 때 사용합니다. 특정 DB 기능 도입은 Repository 테스트로 동작을 검증하고 문서화합니다.
 
@@ -682,8 +669,8 @@ spring:
 
 - 각 서버는 자신의 Spring Security 설정을 독립적으로 관리합니다.
 - Komit 사용자 API는 `Authorization: Bearer <accessToken>`을 기준으로 인증합니다.
-- Escrow 금융망 API는 JSON `Header`의 `apiKey`와 `userKey` 및 서버 간 인증 정책을 기준으로 검증합니다. Komit의 사용자 인증 설정을 그대로 공유하지 않습니다.
-- 사용자 `userKey`와 개인 계좌번호는 Komit Service가 암호화해 보관하고, Escrow는 금융망 호출이 끝난 뒤 요청 범위를 넘어 보관하지 않습니다.
+- Komit → Escrow 업무 API는 JSON `Header`의 `clientApiKey`로 고객 서비스를 인증합니다. Escrow → SSAFY 금융망 호출에는 Escrow가 보관한 별도 `apiKey`를 씁니다. 계좌 관련 요청의 `userKey`도 검증하며 Komit의 사용자 인증 설정을 그대로 공유하지 않습니다.
+- 사용자 `userKey`와 개인 계좌번호의 원본은 Komit Service가 암호화해 보관합니다. Escrow는 회원가입 발급 재시도 복구에 필요한 암호화 사본만 `member_account_provisions`에 보관하고, 그 밖의 금융 요청에서 받은 평문은 요청 범위 이후 보관하지 않습니다.
 - 공개 엔드포인트를 명시하고 나머지는 기본적으로 인증을 요구합니다.
 - Controller에서 전달된 사용자 ID를 신뢰하지 않고 인증 컨텍스트의 사용자와 소유권을 대조합니다.
 - 비밀번호는 검증된 password encoder로 단방향 해시합니다.
@@ -811,7 +798,7 @@ PR 설명에는 다음을 포함합니다.
 
 - 변경한 사용자 동작과 도메인
 - API 계약 변경 여부와 목 Swagger 경로
-- ERD 또는 Flyway 변경 여부
+- ERD 또는 엔티티(스키마) 변경 여부
 - 인증·인가 영향
 - 테스트한 항목과 결과
 - SonarQube Quality Gate 결과와 남겨 둔 이슈
@@ -835,7 +822,7 @@ PR 설명에는 다음을 포함합니다.
 - [ ] 바닐라 JPA로 표현할 수 없는 조회를 문자열 SQL이 아니라 QueryDSL로 작성했는가?
 - [ ] QueryDSL 조회가 필요한 컬럼만 DTO로 가져오고 페이지 조건을 적용하는가?
 - [ ] PostgreSQL 기반 통합 테스트가 필요한 변경인가?
-- [ ] 스키마 변경이 새 Flyway migration으로 작성되었는가?
+- [ ] 스키마 변경이 엔티티와 ERD에 함께 반영되었는가?
 - [ ] 조회 요청을 어느 인스턴스가 받아도 동작하는 무상태 구현인가?
 - [ ] 조회 API는 Writer와 Reader 양쪽에서 실행 가능한가?
 - [ ] 쓰기 API와 상태 변경 작업은 Writer에서만 실행되는가?
@@ -859,7 +846,7 @@ PR 설명에는 다음을 포함합니다.
 4. 실제 Spring API가 목 계약과 일치합니다.
 5. 권한, 상태 전이, 동시성 및 멱등성 규칙이 Service에 구현되어 있습니다.
 6. 조회는 두 인스턴스에서 가능하고 쓰기는 현재 Writer 하나에서만 가능하도록 라우팅·애플리케이션 guard·DB 권한이 적용되어 있습니다.
-7. 필요 시 Flyway migration과 ERD가 함께 갱신되었습니다.
+7. 필요 시 엔티티와 ERD가 함께 갱신되었습니다.
 8. 단위·통합·Controller 테스트가 변경 위험에 맞게 작성되었습니다.
 9. `gradlew build`가 통과합니다.
 10. SonarQube 분석 결과를 확인했습니다. Quality Gate가 통과하고, 이번 변경으로 새로 생긴 이슈와 보안 핫스팟이 정리되어 있습니다.

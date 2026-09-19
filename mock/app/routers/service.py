@@ -13,7 +13,7 @@
 
 import copy
 import re
-
+from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
 
 from fastapi import (
@@ -27,9 +27,13 @@ from fastapi import (
     UploadFile,
 )
 from fastapi.encoders import jsonable_encoder
+from fastapi.exception_handlers import (
+    http_exception_handler as fastapi_http_exception_handler,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import scan_result
 
@@ -226,6 +230,32 @@ async def validation_exception_handler(
         ],
     )
     return JSONResponse(status_code=422, content=jsonable_encoder(body))
+
+
+async def http_exception_handler(
+    request: Request, exc: StarletteHTTPException
+) -> Response:
+    """본문을 읽다 난 400을 이 앱의 실패 응답 형식으로 바꾼다.
+
+    FastAPI는 본문이 UTF-8로 읽히지 않으면 `RequestValidationError`가 아니라
+    `HTTPException(400)`을 던진다. 그래서 `validation_exception_handler`를 거치지
+    않고 Starlette 기본 응답(`{"detail": ...}`)이 나간다. 같은 '본문을 못 읽겠다'인데
+    바이트 인코딩 하나로 응답 형식이 갈리므로, 깨진 JSON과 같은 422로 맞춘다.
+
+    404·405처럼 경로 단계에서 나는 것은 돌려줄 `code`가 정해져 있지 않다. 임의로
+    만들지 않고 기본 처리에 맡긴다.
+    """
+    if exc.status_code == 400:
+        code, message = INVALID_REQUEST
+        body = ValidationErrorResponse(
+            code=code,
+            message=message,
+            errors=[
+                FieldError(field="body", reason=_REASONS["json_invalid"]),
+            ],
+        )
+        return JSONResponse(status_code=422, content=jsonable_encoder(body))
+    return await fastapi_http_exception_handler(request, exc)
 
 
 # --------------------------------------------------------------------------- #
@@ -601,6 +631,9 @@ class LoginUserResponse(BaseModel):
     )
 
 
+ACCESS_TOKEN_EXPIRES_IN_SECONDS = 900  # R-AUTH-01
+
+
 class TokenResponse(BaseModel):
     """토큰 발급 응답. 재발급도 같은 형태를 쓴다."""
 
@@ -619,8 +652,8 @@ class TokenResponse(BaseModel):
         examples=["f8c1d2e3-4b5a-6789-abcd-ef0123456789"],
     )
     expiresIn: int = Field(
-        description="액세스 토큰이 유효한 시간. 초 단위다.",
-        examples=[3600],
+        description="액세스 토큰이 유효한 시간. 초 단위이며 R-AUTH-01을 따른다.",
+        examples=[ACCESS_TOKEN_EXPIRES_IN_SECONDS],
     )
 
 
@@ -806,7 +839,7 @@ LOGIN_USER = {
 LOGIN_EXAMPLE = {
     "accessToken": ACCESS_TOKEN,
     "refreshToken": REFRESH_TOKEN,
-    "expiresIn": 3600,
+    "expiresIn": ACCESS_TOKEN_EXPIRES_IN_SECONDS,
     "isNewUser": False,
     "user": LOGIN_USER,
 }
@@ -814,7 +847,7 @@ LOGIN_EXAMPLE = {
 TOKEN_EXAMPLE = {
     "accessToken": ACCESS_TOKEN,
     "refreshToken": REISSUED_REFRESH_TOKEN,
-    "expiresIn": 3600,
+    "expiresIn": ACCESS_TOKEN_EXPIRES_IN_SECONDS,
 }
 
 ME_EXAMPLE = {
@@ -968,8 +1001,9 @@ def get_featured_developers(
         "**화면 — `1_로그인` › 카카오로 시작하기**\n\n"
         "카카오 로그인 화면에서 받은 인가 코드로 로그인한다. 처음 들어온 사용자라면 "
         "이 요청으로 가입까지 끝나며, 별도의 가입 화면이나 약관 동의 화면은 없다.\n\n"
-        "처음 가입할 때는 SSAFY 금융망 `userKey`를 발급받고 별도 계좌 생성 API로 "
-        "개인 계좌도 만든 뒤, 두 값을 Komit Service DB에 저장한다. 이 금융 정보까지 "
+        "처음 가입할 때는 에스크로의 `createMemberAccount` API로 SSAFY 금융망 "
+        "`userKey`와 개인 계좌 발급을 요청한 뒤, 결과를 Komit Service DB에 저장한다. "
+        "이 금융 정보까지 "
         "준비되어야 가입이 완료된 것으로 처리한다. 기존 사용자의 로그인에서는 다시 "
         "발급하지 않는다.\n\n"
         "로그인 화면이 '계속하시면 아래 이용약관과 개인정보 처리방침에 동의하신 것으로 "
@@ -1000,7 +1034,7 @@ def login_with_kakao(request: KakaoLoginRequest) -> KakaoLoginResponse | JSONRes
     return KakaoLoginResponse(
         accessToken=ACCESS_TOKEN,
         refreshToken=REFRESH_TOKEN,
-        expiresIn=3600,
+        expiresIn=ACCESS_TOKEN_EXPIRES_IN_SECONDS,
         isNewUser=request.code == NEW_USER_CODE,
         user=LoginUserResponse(**LOGIN_USER),
     )
@@ -1051,7 +1085,7 @@ def refresh_access_token(request: RefreshTokenRequest) -> TokenResponse | JSONRe
     return TokenResponse(
         accessToken=ACCESS_TOKEN,
         refreshToken=REISSUED_REFRESH_TOKEN,
-        expiresIn=3600,
+        expiresIn=ACCESS_TOKEN_EXPIRES_IN_SECONDS,
     )
 
 
@@ -5888,8 +5922,8 @@ class EscrowDepositResponse(BaseModel):
     amount: int = Field(description="예치할 금액. 원 단위 정수다.", examples=[650000])
     status: Literal["PENDING", "DEPOSITED", "FAILED"] = Field(
         description=(
-            "예치 진행. PENDING은 결제창을 띄운 뒤 결과를 기다리는 상태, DEPOSITED는 "
-            "예치가 확인된 상태, FAILED는 실패한 상태다."
+            "예치 진행. PENDING은 입금 검증과 보관계좌 정산을 기다리는 상태, "
+            "DEPOSITED는 예치가 확인된 상태, FAILED는 실패한 상태다."
         ),
         examples=["DEPOSITED"],
     )
@@ -5902,14 +5936,13 @@ class EscrowDepositResponse(BaseModel):
 class DepositRequest(BaseModel):
     """예치 요청."""
 
-    paymentMethodId: int | None = Field(
+    paymentMethodId: int = Field(
         description=(
-            "쓸 결제 수단 식별자. 마이페이지에 등록해 둔 실시간 계좌이체 수단이다. "
-            "카드 결제는 쓰지 않는다. 목록은 결제 수단 조회로 받는다. **비우면 등록해 "
-            "두지 않은 계좌로 내는 것이라, 결제창에서 은행을 고르고 바로 이체한다.**"
+            "회원가입 때 발급한 SSAFY 출금 계좌의 결제 수단 식별자. "
+            "결제 수단 조회에서 받은 값을 보낸다. 별도 계좌 선택은 없다. (R-PAY-09)"
         ),
-        default=None,
         examples=[9],
+        gt=0,
     )
     idempotencyKey: str = Field(
         description=(
@@ -5980,7 +6013,6 @@ class WriteReviewRequest(BaseModel):
 MILESTONE_NOT_FOUND = ("MILESTONE_NOT_FOUND", "작업을 찾을 수 없습니다.")
 DEPOSIT_REQUIRED = ("DEPOSIT_REQUIRED", "예치가 끝나야 착수할 수 있습니다.")
 ALREADY_DEPOSITED = ("ALREADY_DEPOSITED", "이미 예치가 끝났습니다.")
-ACCOUNT_REQUIRED = ("ACCOUNT_REQUIRED", "예치에 쓸 결제 수단을 먼저 등록해 주세요.")
 QA_NOT_ALL_CHECKED = (
     "QA_NOT_ALL_CHECKED",
     "확인 문장을 모두 체크해야 통과시킬 수 있습니다.",
@@ -6027,7 +6059,6 @@ NOT_FOUND_MILESTONE_ID = 404
 CONFLICT_MILESTONE_ID = 409
 NOT_DEPOSITED_CONTRACT_ID = 402
 DEPOSITED_CONTRACT_ID = 409
-NO_ACCOUNT_CONTRACT_ID = 405
 
 MILESTONES = [
     {
@@ -6566,7 +6597,7 @@ def write_development_contract(
         201: {"content": {"application/json": {"example": DEPOSIT_EXAMPLE}}},
         409: {
             "model": ErrorResponse,
-            "description": "이미 예치됐거나 등록한 결제 수단이 없음",
+            "description": "이미 예치됨",
             "content": {
                 "application/json": {
                     "examples": {
@@ -6575,13 +6606,6 @@ def write_development_contract(
                             "value": {
                                 "code": ALREADY_DEPOSITED[0],
                                 "message": ALREADY_DEPOSITED[1],
-                            },
-                        },
-                        "ACCOUNT_REQUIRED": {
-                            "summary": "등록한 결제 수단 없음",
-                            "value": {
-                                "code": ACCOUNT_REQUIRED[0],
-                                "message": ACCOUNT_REQUIRED[1],
                             },
                         },
                     }
@@ -6603,17 +6627,17 @@ def write_development_contract(
         "**돈의 원장은 이 서버가 갖지 않는다.** 결제와 보관은 Escrow 서버가 맡고, 여기서는 "
         "예치를 걸고 그 결과를 확인만 한다. 같은 `idempotencyKey`로 다시 보내면 결제가 "
         "두 번 나가지 않는다.\n\n"
-        "**돈은 의뢰인이 등록해 둔 계좌에서 빠진다.** 카드 결제는 쓰지 않는다. 등록해 "
-        "둔 수단이 하나도 없으면 409로 막고, 화면은 결제 수단 등록으로 보낸다.\n\n"
+        "**돈은 회원가입 때 발급한 의뢰인의 SSAFY 계좌에서 빠진다.** Komit이 보관한 "
+        "`userKey`·은행코드·계좌번호를 Escrow의 `createEscrow` 요청에 전달한다. "
+        "`paymentMethodId`는 이 계좌를 가리키며 다른 계좌나 결제창은 제공하지 않는다. "
+        "(`R-PAY-09`)\n\n"
         "- **201**: 예치를 걸었을 때. 결제가 바로 확인되면 `DEPOSITED`, 결과를 기다리는 "
         "중이면 `PENDING`이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 계약의 의뢰인이 아닐 때. 예치는 의뢰인만 한다\n"
         "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때\n"
         "- **409 / ALREADY_DEPOSITED**: `contractId`가 409일 때\n"
-        "- **409 / ACCOUNT_REQUIRED**: `contractId`가 405일 때. 등록해 둔 결제 수단이 "
-        "없어 출금할 곳이 없다\n"
-        "- **422 / INVALID_REQUEST**: `idempotencyKey`가 없을 때\n"
+        "- **422 / INVALID_REQUEST**: `paymentMethodId`나 `idempotencyKey`가 없을 때\n"
         "- **500 / INTERNAL_ERROR**: 예치를 걸지 못했을 때"
     ),
 )
@@ -6621,10 +6645,7 @@ def deposit_contract(
     contractId: Annotated[
         int,
         Path(
-            description=(
-                "계약 식별자. 404는 없음, 409는 이미 예치됨, 405는 계좌 없음 "
-                "재현용 예약값이다."
-            ),
+            description="계약 식별자. 404는 없음, 409는 이미 예치됨 재현용 예약값이다.",
             examples=[DEV_CONTRACT_ID],
         ),
     ],
@@ -6634,8 +6655,6 @@ def deposit_contract(
         return _error_response(404, CONTRACT_NOT_FOUND)
     if contractId == DEPOSITED_CONTRACT_ID:
         return _error_response(409, ALREADY_DEPOSITED)
-    if contractId == NO_ACCOUNT_CONTRACT_ID:
-        return _error_response(409, ACCOUNT_REQUIRED)
     return EscrowDepositResponse(**DEPOSIT_EXAMPLE)
 
 
@@ -7450,8 +7469,7 @@ class ContractLedgerResponse(BaseModel):
 
 
 class AccountResponse(BaseModel):
-    """등록한 계좌. 의뢰인은 이 계좌로 예치금을 내고 환불을 받으며,
-    개발자는 이 계좌로 대금을 받는다. 사람마다 한 개다."""
+    """1원 인증으로 등록한 계좌. 예치 출금은 회원가입 때 발급한 SSAFY 계좌를 쓴다."""
 
     accountId: int = Field(description="계좌 식별자.", examples=[21])
     bankName: str = Field(description="은행 이름.", examples=["국민은행"])
@@ -7756,9 +7774,9 @@ def get_income() -> IncomeResponse:
 # 바꾼 뒤 삭제 시각을 적는다. 계약·정산 이력과 메시지, 리뷰가 상대 화면에도 있는
 # 기록이라 남겨야 하기 때문이다. 그래서 DELETE 가 아니라 POST 를 쓴다.
 #
-# 돈을 내는 수단과 받는 계좌는 다르다. 이 영역이 다루는 것은 받는 쪽인 accounts
-# 하나뿐이고 사람마다 한 개다. 의뢰인은 그 계좌로 환불을 받고 개발자는 대금을
-# 받는다. 내는 쪽은 여기서 다루지 않는다 — 예치할 때 영역 5 에서 고른다.
+# 예치 출금 계좌는 회원가입 때 발급한 SSAFY 계좌로 고정한다(R-PAY-09).
+# 이 영역의 accounts는 1원 인증으로 등록하는 계좌이고 사람마다 하나다.
+# 의뢰인은 환불을, 개발자는 대금을 이 계좌로 받는다.
 #
 # 계좌는 1원 인증으로만 등록한다. 계좌를 넣는 요청과 입금자명 뒤 네 자리를 내는
 # 요청이 나뉘며, 확인이 끝나는 순간에만 accounts 에 계좌가 남는다. 1원 이체와
@@ -7800,12 +7818,15 @@ class RequestAccountVerificationRequest(BaseModel):
     )
     accountNumber: str = Field(
         description=(
-            "계좌번호. 하이픈 없는 숫자만 받는다. 확인이 끝날 때까지만 두고 그 뒤에는 "
-            "가린 번호만 남는다."
+            "계좌번호. 하이픈 없는 숫자 16자리다. Komit은 원문을 암호화해 보관하고 "
+            "화면에는 가린 번호만 보낸다."
         ),
-        examples=["11012345678842"],
+        pattern=r"^\d{16}$",
+        examples=["0011012345678842"],
     )
-    accountHolder: str = Field(description="예금주.", examples=["이준"])
+    accountHolder: str = Field(
+        description="예금주.", min_length=1, examples=["이준"]
+    )
 
 
 class AccountVerificationResponse(BaseModel):
@@ -7836,8 +7857,8 @@ class ConfirmAccountVerificationRequest(BaseModel):
 
     authCode: str = Field(
         description="입금자명 뒤에 붙은 숫자 네 자리. 앞자리 0을 보존하는 문자열이다.",
+        pattern=r"^\d{4}$",
         examples=["1234"],
-        json_schema_extra={"pattern": r"^\d{4}$"},
     )
 
 AREA8_TAG = "8 계정 · 공통"
@@ -7882,7 +7903,7 @@ REVIEW_NOT_FOUND_EXAMPLE = {
 }
 
 # 목에서 실패 응답을 보고 싶을 때 쓰는 값.
-REJECTED_ACCOUNT_NUMBER = "00000000000000"
+REJECTED_ACCOUNT_NUMBER = "0000000000000000"
 NOT_FOUND_VERIFICATION_ID = 404
 NOT_FOUND_NOTIFICATION_ID = 404
 
@@ -7917,7 +7938,7 @@ class PaymentMethodResponse(BaseModel):
     )
     maskedNumber: str | None = Field(
         description="가린 계좌번호. 화면에 그대로 보여준다.",
-        examples=["우리은행 ···· 4412"],
+        examples=["한국은행 ···· 0123"],
     )
     isDefault: bool = Field(
         description="기본 수단인지. 예치 화면이 처음에 고르는 것이다.",
@@ -7926,10 +7947,10 @@ class PaymentMethodResponse(BaseModel):
 
 
 class PaymentMethodListResponse(BaseModel):
-    """등록해 둔 결제 수단 전부. 수가 적어 content만 담는다."""
+    """회원가입 때 발급한 출금 계좌 한 건을 content에 담는다."""
 
     content: list[PaymentMethodResponse] = Field(
-        description="등록한 수단. 하나도 없으면 빈 배열이다.",
+        description="회원가입 때 발급한 SSAFY 출금 계좌 한 건이다. (R-PAY-09)",
     )
 
 
@@ -7937,7 +7958,7 @@ PAYMENT_METHODS = [
     {
         "paymentMethodId": 9,
         "methodType": "REALTIME_TRANSFER",
-        "maskedNumber": "우리은행 ···· 4412",
+        "maskedNumber": "한국은행 ···· 0123",
         "isDefault": True,
     }
 ]
@@ -7955,11 +7976,10 @@ PAYMENT_METHODS = [
     summary="결제 수단 조회",
     description=(
         "**화면 — `5_의뢰인_계약예치` › 결제 수단**\n\n"
-        "예치에 쓸 수 있는 수단을 내려준다. **카드 결제는 쓰지 않으므로 실시간 계좌이체 "
-        "수단만 담긴다.** 예치 API가 받는 `paymentMethodId`가 여기서 나온다.\n\n"
-        "**빈 배열이면 아직 등록한 것이 없다는 뜻이다.** 그대로 예치를 걸면 409로 막히므로 "
-        "화면은 먼저 등록으로 보낸다.\n\n"
-        "- **200**: 읽었을 때. 등록한 것이 없으면 `content`가 빈 배열이다\n"
+        "회원가입 때 발급한 SSAFY 입출금 계좌를 유일한 예치 출금 수단으로 내려준다. "
+        "`paymentMethodId`는 예치 API에서 같은 계좌를 가리킨다. 다른 계좌 선택이나 "
+        "별도 결제창은 없다. (`R-PAY-09`)\n\n"
+        "- **200**: 발급 계좌 한 건을 `content`에 담아 반환\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **500 / INTERNAL_ERROR**: 목록을 읽지 못했을 때"
     ),
@@ -7993,8 +8013,9 @@ def get_payment_methods() -> PaymentMethodListResponse:
         "**화면 — `8_계좌등록` › 1원 보내기**\n\n"
         "**의뢰인과 개발자가 같은 API를 쓴다.** 의뢰인은 `8_마이페이지` › 계좌에서, "
         "개발자는 `7_개발자_소득내역` › 계좌 등록하기·계좌 변경하기에서 들어온다. "
-        "사람마다 계좌는 하나이고, 의뢰인은 그 계좌로 예치금을 내고 환불을 받으며 "
-        "개발자는 그 계좌로 대금을 받는다.\n\n"
+        "사람마다 등록 계좌는 하나이고, 의뢰인은 환불을, 개발자는 대금을 이 계좌로 "
+        "받는다. 예치 출금에는 회원가입 때 발급한 SSAFY 계좌를 쓴다. "
+        "(`R-PAY-09`)\n\n"
         "넣은 계좌로 1원을 보내 확인 건을 연다. 실제 이체는 Escrow 서버가 "
         "금융망에 요청한다. Komit Service는 확인을 끝낼 때 계좌를 저장할 수 있도록 "
         "확인 건과 계좌번호를 안전하게 보관하고, Escrow는 요청받은 `userKey`와 "
@@ -8017,7 +8038,7 @@ def get_payment_methods() -> PaymentMethodListResponse:
         "숫자가 아닌 글자가 섞였을 때\n"
         "- **500 / INTERNAL_ERROR**: 확인 건을 열지 못했을 때\n"
         "- **503 / ESCROW_UNAVAILABLE**: 에스크로 서버에 연결하지 못했을 때\n\n"
-        "`accountNumber`가 `00000000000000`이면 400 `ACCOUNT_REJECTED`를 준다."
+        "`accountNumber`가 `0000000000000000`이면 400 `ACCOUNT_REJECTED`를 준다."
     ),
 )
 def request_account_verification(
@@ -8031,7 +8052,10 @@ def request_account_verification(
         bankName="국민은행",
         maskedNumber="···· " + request.accountNumber[-4:],
         accountHolder=request.accountHolder,
-        expiresAt="2026-09-02T14:12:00+09:00",
+        # R-ACC-02: 확인 유효 시간은 요청 시점부터 10분이다.
+        expiresAt=(
+            datetime.now(timezone(timedelta(hours=9))) + timedelta(minutes=10)
+        ).isoformat(timespec="seconds"),
     )
 
 
@@ -8044,10 +8068,6 @@ def request_account_verification(
             "content": {
                 "application/json": {"example": INCOME_EXAMPLE["settlementAccount"]}
             }
-        },
-        400: {
-            "model": ErrorResponse,
-            "description": "확인 건이 만료됐거나 닫힘",
         },
         **AREA8_FORBIDDEN,
         404: {
@@ -8066,26 +8086,22 @@ def request_account_verification(
         "숫자 네 자리를 내면 확인 건이 끝나고 그 계좌가 등록된다. 등록한 계좌가 "
         "이미 있으면 이 시점에 대체된다.\n\n"
         "계좌번호는 암호화해 보관하고 응답에는 언제나 가려서 내보낸다.\n\n"
-        "**지금 단계에서는 네 자리를 실제로 검사하지 않는다.** 은행 앱을 쓸 수 없어 "
-        "입금자명에 찍힌 인증코드를 읽어올 방법이 없기 때문이다. 클라이언트가 형식에 "
-        "맞는 숫자 네 자리를 보내면, 에스크로 서버가 금융망에 맞는 값을 대신 건네 "
-        "확인을 끝낸다. 이는 실제 계좌 소유 인증이 아니다.\n\n"
-        "은행 앱을 쓸 수 있게 되면 클라이언트가 보낸 값을 그대로 금융망에 넘기도록 "
-        "바꾼다. **요청·응답 형식은 그대로이므로 클라이언트는 고칠 것이 없다.**\n\n"
+        "**R-ACC-02:** 데모에서는 은행 앱이 없어 실제 인증번호를 확인할 수 없다. "
+        "Komit이 네 자리 숫자를 에스크로의 `checkAuthCode` API에 보내면, "
+        "에스크로는 숫자의 값과 관계없이 확인 성공을 돌려준다.\n\n"
         "**확인 건의 주인이 토큰의 주인인지 검증한다.** `verificationId`의 확인 건을 "
         "연 사람이 `sub`와 같은지 확인한 뒤에 처리하고, 다르면 403으로 막는다. 남의 "
         "확인 건을 끝내 그 계좌를 내 계좌로 등록하는 일이 없어야 한다. 등록되는 계좌는 "
         "언제나 `sub`의 계좌다.\n\n"
-        "- **200**: 숫자 네 자리 형식이 맞아 계좌가 등록됐을 때\n"
-        "- **400 / VERIFICATION_EXPIRED**: `expiresAt`이 지났을 때\n"
-        "- **400 / VERIFICATION_CLOSED**: 여러 번 틀려 확인 건이 닫혔을 때. 계좌 "
-        "입력부터 다시 한다\n"
+        "- **200**: 네 자리 숫자로 계좌가 등록됐을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: `sub`가 연 확인 건이 아닐 때\n"
         "- **404 / VERIFICATION_NOT_FOUND**: `verificationId`에 해당하는 확인 건이 "
         "없을 때\n"
         "- **422 / INVALID_REQUEST**: `authCode`가 네 자리 숫자가 아닐 때\n"
-        "- **500 / INTERNAL_ERROR**: 계좌를 저장하지 못했을 때"
+        "- **500 / INTERNAL_ERROR**: 계좌를 저장하지 못했을 때\n\n"
+        "목 서버에서는 확인 건 상태를 저장하지 않는다. `verificationId`가 `404`인 "
+        "경우를 제외하면 유효한 네 자리 숫자는 모두 성공한다."
     ),
 )
 def confirm_account_verification(

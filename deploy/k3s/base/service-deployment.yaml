@@ -50,6 +50,10 @@ spec:
             # APP_PUBLIC_BASE_URL. 운영은 deploy.sh가 GitLab 변수로, 로컬은 local/apps가 만듭니다.
             - configMapRef:
                 name: service-config
+            # KOMIT_USER_JWT_SECRET, KAKAO_TOKEN_ENCRYPTION_KEY, KAKAO_CLIENT_ID, KAKAO_CLIENT_SECRET.
+            # 운영은 deploy.sh가 GitLab 변수로, 로컬은 local/database/secrets.yaml이 만듭니다.
+            - secretRef:
+                name: service-auth
           env:
             # 일반 트랜잭션은 Primary(-rw), readOnly 트랜잭션은 Standby(-ro)로 접속합니다.
             - name: DB_URL

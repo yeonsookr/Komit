@@ -19,6 +19,10 @@ ESCROW_API_BASE_URL=${ESCROW_API_BASE_URL:-}
 # 카카오 로그인. fe 의 인가 시작 Route Handler 가 실행 시점에 읽습니다. 없으면 로그인이 500 입니다.
 : "${KAKAO_CLIENT_ID:?KAKAO_CLIENT_ID is required}"
 : "${KAKAO_REDIRECT_URI:?KAKAO_REDIRECT_URI is required}"
+# service 인증. application-prod.yml 이 환경변수로만 받고 기본값이 없어, 없으면 service Pod 가 기동하지 않습니다.
+: "${KOMIT_USER_JWT_SECRET:?KOMIT_USER_JWT_SECRET is required}"
+: "${KAKAO_TOKEN_ENCRYPTION_KEY:?KAKAO_TOKEN_ENCRYPTION_KEY is required}"
+: "${KAKAO_CLIENT_SECRET:?KAKAO_CLIENT_SECRET is required}"
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 WORK_DIR=$(mktemp -d)
@@ -92,6 +96,13 @@ kubectl -n ot-operators wait --for=condition=Available deployment/redis-operator
 apply_basic_auth_secret service-db-app service "$SERVICE_DB_PASSWORD"
 apply_basic_auth_secret escrow-db-app escrow "$ESCROW_DB_PASSWORD"
 apply_password_secret service-redis-auth "$SERVICE_REDIS_PASSWORD"
+# service 인증 Secret. service Pod 가 envFrom 으로 그대로 환경변수로 읽습니다. 값이 바뀌면 service rollout restart 가 필요합니다.
+kubectl -n komit create secret generic service-auth \
+  --from-literal=KOMIT_USER_JWT_SECRET="$KOMIT_USER_JWT_SECRET" \
+  --from-literal=KAKAO_TOKEN_ENCRYPTION_KEY="$KAKAO_TOKEN_ENCRYPTION_KEY" \
+  --from-literal=KAKAO_CLIENT_ID="$KAKAO_CLIENT_ID" \
+  --from-literal=KAKAO_CLIENT_SECRET="$KAKAO_CLIENT_SECRET" \
+  --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -k "$SCRIPT_DIR/database"
 kubectl -n komit wait --for=condition=Ready cluster/service-db cluster/escrow-db --timeout=600s
 # Redis 노드가 모두 뜬 뒤 Sentinel이 Primary를 찾아 기동합니다.
