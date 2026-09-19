@@ -109,6 +109,7 @@ class EscrowContractTest(unittest.IsolatedAsyncioTestCase):
                 refundBankCode="001",
                 refundAccountNo=escrow.MOCK_ACCOUNT_NO,
                 refundHolderName="김미미",
+                referenceId="SETTLEMENT:9001",
             )
         )
 
@@ -124,10 +125,11 @@ class EscrowContractTest(unittest.IsolatedAsyncioTestCase):
                 refundBankCode="001",
                 refundAccountNo=escrow.MOCK_ACCOUNT_NO,
                 refundHolderName="김미미",
+                referenceId="SETTLEMENT:9001",
             )
         )
         self.assertEqual(exact_refund.REC.balance, 0)
-        self.assertEqual(exact_refund.REC.status, "REFUNDED")
+        self.assertEqual(exact_refund.REC.status, "COMPLETED")
 
     async def test_refund_to_other_account_is_rejected_for_example_escrow(self) -> None:
         result = await escrow.refund_escrow(
@@ -138,6 +140,7 @@ class EscrowContractTest(unittest.IsolatedAsyncioTestCase):
                 refundBankCode="001",
                 refundAccountNo="0019999999999999",
                 refundHolderName="김미미",
+                referenceId="SETTLEMENT:9001",
             )
         )
 

@@ -7,7 +7,7 @@
 | 항목 | 내용 |
 | --- | --- |
 | 대상 | `escrow`(be-escrow) 앱 전용 |
-| 스키마 | `V1`·`V2`·`V4`·`V5`: 자금 처리, `V3`: 회원·계좌 발급과 1회 데모 입금 기록 |
+| 스키마 | 배포 전 통합한 `V1__create_escrow_schema.sql`: 회원·계좌 발급, 예치, 정산, 감사 기록 |
 | 금융망 | SSAFY 교육용 금융망 API |
 
 ---
@@ -22,9 +22,14 @@
 | D-2 | **Model A — 자금 이동은 전부 에스크로가 실행한다.** 예치 이체도 에스크로가 한다. 출금 계좌는 회원가입 시 발급한 의뢰인의 SSAFY 계좌로 고정하고, Komit이 보관한 `userKey`·은행코드·계좌번호를 요청에 담아 보낸다. be-api는 금융망 이체 API를 부르지 않는다. | `proposal.md` §5·§7, `R-ACC-09`, `R-PAY-09` |
 | D-3 | **일괄 지급.** 마일스톤 분할 지급은 없다. 정상 완료는 전액, 중도 종료는 통과분 합계를 한 번에 지급하고 나머지는 환불한다. | `R-PAY-01`, `R-PAY-03`, `R-PAY-04` |
 | D-4 | **단일 동결.** 한 에스크로의 활성 동결은 최대 1개. `escrows.hold_status`로 가른다. | `R-RPT-05` |
-| D-5 | **회원 발급·계좌 확인은 에스크로가 금융망에 요청한다.** 발급 정보의 원본은 Komit이 보관하고 후속 금융 요청에 담는다. 에스크로는 응답 유실·재요청 복구를 위해 `V3`에 `userKey`·계좌번호의 암호화 사본과 은행코드를 보관한다. | `R-ACC-09`, `proposal.md` §7 |
+| D-5 | **회원 발급·계좌 확인은 에스크로가 금융망에 요청한다.** 발급 정보의 원본은 Komit이 보관하고 후속 금융 요청에 담는다. 에스크로는 응답 유실·재요청 복구를 위해 통합 `V1`에 `userKey`·계좌번호의 암호화 사본과 은행코드를 보관한다. | `R-ACC-09`, `proposal.md` §7 |
 | D-6 | **원장은 별도 테이블이 아니라 `escrow_transactions` 집계.** 잔액·보관총액은 저장 컬럼이 아니라 계산값이다. | `inquireReconciliation` 설계 |
 | D-7 | **중개 수수료는 확정 작업 대금에서 공제한다.** 계약 생성 때 요율을 고정한다. 보관계좌와 동일한 에스크로 SSAFY 사용자 명의의 별도 플랫폼 수익 계좌를 두고, 작업자 순지급과 수수료 이체를 각각 기록한다. 환불액에는 수수료를 부과하지 않는다. | `R-PAY-07` |
+| D-8 | **최종 정산은 `settlements` 한 행으로 묶는다.** 지급·수수료·환불은 각자 `escrow_transactions` 행을 갖고 같은 정산을 참조한다. 자금 유출 없는 `FAILED` 정산 외에는 계약당 새 정산을 만들 수 없다. 원장 집계는 여전히 D-6을 따른다. | `R-PAY-01`, `R-PAY-12` |
+| D-9 | **예치 출금 계좌는 회원 발급 기록과 연결한다.** `Header.userKey`의 서비스별 HMAC 조회값으로 발급 기록을 찾고, 요청 계좌와 복호화한 발급 계좌를 비교한 뒤 계약에 기록 ID를 연결한다. | `R-ACC-09`, `R-PAY-09` |
+| D-10 | **결과 불명 해소와 수동 조치는 추가 전용 감사 사건으로 남긴다.** 작업 주체, 근거와 금융망 증빙 참조를 기록하고 원문 계좌·키는 넣지 않는다. | `proposal.md` §7 |
+| D-11 | **취소·동결·해제의 멱등 결과를 별도로 남긴다.** 세 API는 금융망 이체 없이 계약 상태를 바꾸므로 상태 변경과 멱등 기록을 같은 DB 트랜잭션에서 확정한다. | `cancelEscrow`·`holdEscrow`·`unholdEscrow` 계약, `R-RPT-05` |
+| D-12 | **금융망 호출은 DB에서 실행권을 얻은 Writer 하나만 수행한다.** 호출 직전에 `DISPATCHING`을 커밋하고, 그 뒤 장애가 나면 재전송 대신 `UNKNOWN` 조회·대사로 복구한다. | `HIGH_AVAILABILITY.md`, `R-PAY-08`, `R-PAY-12` |
 
 ---
 
@@ -60,7 +65,9 @@ Komit이 회원가입 중 에스크로의 `POST /escrow/api/v1/escrow/createMemb
 
 2026-09-18 SSAFY 데모 환경에서 `createDemandDeposit` 성공 응답을 두 번 받았다. 두 상품 모두 `bankCode=001`, `accountTypeCode=1`, `accountType=DOMESTIC`, `accountName=Komit 데모 입출금`이다. **회원 계좌 개설에 사용할 상품 고유번호는 두 번째 응답의 `001-1-231ecb61d2554c`로 확정한다.** 같은 날 `inquireDemandDepositList` 응답에서도 이 번호와 상품 속성을 확인했다. 첫 번째 응답의 `001-1-c40bb57b2fc749`는 회원 계좌 개설에 사용하지 않는다. 이 고유번호는 해당 SSAFY 환경의 발급 결과다.
 
-`V3.member_account_provisions`는 서비스·`userId`와 멱등키를 각각 유일하게 묶는다.
+통합 `V1.member_account_provisions`는 서비스·`userId`와 멱등키를 각각 유일하게 묶는다.
+발급된 `userKey`는 암호문과 서비스별 HMAC-SHA-256 조회값을 함께 저장한다.
+HMAC 비밀키는 데이터베이스 밖에서 관리하고, 변경할 때 기존 조회값을 재계산하는 절차가 필요하다.
 `provision_step`은 `USER_REGISTER → ACCOUNT_OPEN → SEED_DEPOSIT → COMPLETED`로 진행한다.
 현재 단계의 `provision_status`는 `PENDING` 또는 `UNKNOWN`이고, 전체 발급이 끝나면
 `COMPLETED`다. 외부 생성·입금 API를 부르기 직전에 `step_requested_at`을 영속 저장하고,
@@ -137,6 +144,10 @@ HTTP 201 / `H0000`으로 **서로 다른 두 번째 계좌가 실제 생성**됐
 
 **멱등 규칙:** `request_reference`를 외부 호출 **전에** 채번·저장(`requested_at`)하고 그 값을 `institutionTransactionUniqueNo`로 보낸다. SSAFY 거래내역 조회 응답에는 이 헤더 값이 없으므로, 자금 이동 요청의 거래 요약에도 동일한 요청 식별자를 포함해 조회용 표식으로 쓴다. 이체에서는 출금 계좌 쪽 `withdrawalTransactionSummary`에 넣는다. 응답을 잃으면 계좌 거래내역 목록에서 이 표식·금액·상대 계좌·시간을 대조하고, 찾은 거래의 `transactionUniqueNo`로 단건 조회한다. 목록에 없다는 사실만으로 실패를 확정하거나 새 번호로 재송금하지 않는다. 실패가 확정된 뒤에만 `attempt_no`를 올리고 새 `request_reference`를 쓴다.
 
+**실행권 획득:** Writer는 외부 호출 전에 해당 시도를 `REQUESTED`에서 `DISPATCHING`으로 원자적으로 갱신하면서 `dispatched_by`와 `dispatched_at`을 기록하고 커밋한다. 갱신된 행이 1개인 실행자만 금융망을 호출한다. `dispatched_by`에는 재사용 가능한 역할명 대신 Pod UID처럼 실행 생명주기 동안 변하지 않는 인스턴스 식별자를 쓴다. `dispatched_at`은 실행권을 얻은 시각이며 요청이 금융망에 도달했다는 증거가 아니다. Writer가 `DISPATCHING` 뒤에 중단되면 새 Writer는 같은 요청을 바로 재전송하지 않고 `UNKNOWN`으로 전환한 다음 기존 `request_reference`와 거래 내역으로 결과를 확인한다.
+
+호출 상태 전이는 `REQUESTED → DISPATCHING → SUCCEEDED | FAILED | UNKNOWN`이다. `responded_at`에는 해당 호출의 직접 응답을 받은 시각만 기록한다. 응답 유실 후 조회로 성공·실패를 확정하더라도 원래 시도의 `responded_at`은 NULL을 유지하고 조회 시도와 감사 사건에 증빙을 남긴다. 같은 거래·단계에는 미확정 시도(`REQUESTED`, `DISPATCHING`, `UNKNOWN`)를 하나만 허용한다. 읽기 전용 조회 시도 자체가 실패한 경우에는 조회를 FAILED로 종결하고 다시 조회할 수 있지만, 원래 자금 이동의 UNKNOWN을 실패로 바꾸지는 않는다. 응답을 받지 못했거나 응답만으로 자금 이동 여부를 확정할 수 없으면 `UNKNOWN`으로 두며, 조회 호출도 별도의 시도 행으로 기록한다.
+
 2026-09-18 실호출에서 같은 `institutionTransactionUniqueNo`로 1원 이체 요청을 재전송하자 HTTP 400의 최상위 `responseCode=H1007`이 반환됐다. 보관계좌 출금과 수취 계좌 입금은 각각 한 번만 일어났다. 중복 오류는 첫 이체의 성공 여부나 거래번호를 돌려주지 않으므로, 결과 불명 상태는 거래내역 조회로 해소해야 한다.
 
 데모 보관계좌를 사용하기 전에 `inquireDemandDepositAccount`로 1회·1일 이체 한도를 확인한다. `R-PAY-11`보다 낮으면 보관계좌 소유자의 `userKey`로 `updateTransferLimit`을 호출하고 다시 조회한다. 요청의 `oneTimeTransferLimit`과 `dailyTransferLimit`은 숫자의 십진수 **문자열**로 전송한다. 확인 전에는 이 보관계좌에서 지급·환불을 시작하지 않는다. 회원 계좌에는 이 상향 절차를 적용하지 않는다.
@@ -159,6 +170,8 @@ HTTP 201 / `H0000`으로 **서로 다른 두 번째 계좌가 실제 생성**됐
 | VA_CLOSED | `VA_CLOSE` | `closeVirtualAccount`<br>req: `virtualAccountId` | status=CLOSED→`virtual_account_closed_at` |
 
 - `external_reference_id` = **`INITIAL`** (예치 고정)
+- `createEscrow.depositorName`은 예치 거래를 생성할 때 `depositor_name_encrypted`에 암호화 봉투로 저장한다. 금융망 호출 전 기록을 확정하고, VA 생성과 예치 이체의 `depositTransactionSummary`에는 저장한 값을 복호화해 동일하게 사용한다. 서버 재시작·응답 유실 후에도 요청 지문만으로 원문을 추정하거나 새 입금자명을 만들지 않는다. 평문은 로그와 일반 조회 응답에 남기지 않는다.
+- `createEscrow`는 `Header.userKey`의 HMAC 조회값으로 같은 이용 서비스의 발급 기록을 찾는다. 요청한 출금 은행코드·계좌번호를 해당 발급 기록의 복호화한 값과 비교하고, 일치한 `member_account_provisions.id`를 `escrows.payer_provision_id`에 저장한다. 일치하는 발급 기록이 없으면 이체를 시작하지 않는다. (`R-PAY-09`, D-9)
 - `deposit_verification_status`: `verified_deposit_amount` == `escrows.expected_amount` → MATCHED, 다르면 MISMATCHED(부분·초과), 미확인 UNKNOWN
 - **VA 입금은 출처 계좌를 응답에 주지 않는다.** `source_*`는 be-api가 넘긴 참고값이지 금융망 확인값이 아니다.
 - 활성 가상계좌 수는 에스크로에서 숫자로 추정하거나 고정하지 않는다. SSAFY의 [`createVirtualAccount` 명세](https://project.ssafy.com/mkdocs/ssafy-finance/api-virtual-account.html#2141)에 따라 `E4065`(활성 가상계좌 수 초과)가 반환되면 발급 실패로 처리하고, 해당 계약의 이체·정산을 시작하지 않는다. 명세에는 최대 개수가 적혀 있지 않다.
@@ -187,6 +200,7 @@ HTTP 201 / `H0000`으로 **서로 다른 두 번째 계좌가 실제 생성**됐
 | `RESULT_QUERY` | 먼저 `inquireTransactionHistoryList`<br>req: `accountNo`(보관계좌), `startDate`, `endDate`, `transactionType=D`<br>요약 표식·금액·수취 계좌를 대조하고, 찾은 거래의 `transactionUniqueNo`로 `inquireTransactionHistory` 단건 조회 | 일치하는 출금 거래를 확인하면 성공 확정. 목록에서 못 찾으면 `UNKNOWN` 유지 |
 
 - 작업자 순지급·수수료·환불은 **같은 정산의 독립된 거래**다. `external_reference_id` = **`SETTLEMENT:<정산ID>`** 공유, `transaction_type`으로 구분한다. 각 이체는 자체 `financial_operation_attempts` 및 금융망 요청 식별자를 가지므로 결과 불명 시 해당 다리만 조회·복구한다.
+- `settlements`가 같은 정산의 승인 총액·환불액·업무 상태를 기록하고 각 거래는 `settlement_id`로 연결된다. `releaseEscrow`와 `refundEscrow`의 서로 다른 요청 멱등키는 개별 거래에서 관리한다. 계약 행을 잠그고 기존 정산과 잔액을 검사한 뒤 부모 정산과 해당 거래들을 한 DB 트랜잭션에서 생성한다. 수수료 거래는 요청 멱등키에서 파생한 별도의 고유 키를 사용한다. 자금 유출이 전혀 없다고 확인된 `FAILED` 정산 뒤에만 새 정산 식별자를 허용한다. (`R-PAY-12`, D-8)
 - `releaseEscrow.amount`는 수수료 공제 전 승인 총액이다. `escrows.fee_rate_bps`는 계약 생성 때 설정된 값을 고정한다. 수수료는 `floor(승인 총액 × fee_rate_bps / 10000)`원, 작업자 순지급액은 승인 총액에서 수수료를 뺀 금액이다. `escrow_transactions.amount`는 `RELEASE`에 순지급액, `FEE`에 수수료액을 저장한다. 수수료가 0원이면 FEE 거래·이체를 생략한다. `REFUND`는 별도로 남은 금액 전액이며 수수료 계산 대상이 아니다. (D-3, D-7)
 - FEE 수취 계좌는 보관계좌와 **같은 에스크로 SSAFY `userKey` 명의로 개설한 별도 입출금 계좌**다. 두 계좌번호는 달라야 한다. 수익 계좌번호는 에스크로 운영 설정으로 고정하고 Komit 요청으로 받지 않는다. 이체 당시 수취 계좌는 FEE 거래에 암호화해 기록한다. 수익 계좌는 배포 전에 한 번 개설하고 계좌번호를 확인해 설정한다. 기동할 때마다 계좌 개설을 재호출하지 않는다. 같은 상품으로 개설을 재호출하면 두 번째 계좌가 만들어진 실호출 결과가 있기 때문이다. 보관계좌에서 수익 계좌로의 이체·예금주 조회는 아직 검증하지 않았으므로 실제 수수료 이체 전에 소액 실호출로 확인해야 한다.
 - `releaseEscrow`는 요청을 정상 처리했으면 HTTP 200 / `H0000`과 현재 정산 `status`를 돌려준다. `H0000`만으로 지급 완료를 판단하지 않는다. `releasedAmount`는 이번 정산에서 완료가 확인된 RELEASE+FEE의 합계, `feeAmount`는 완료된 FEE, `netAmount`는 완료된 RELEASE다. `balance`는 완료된 DEPOSIT−RELEASE−FEE−REFUND이며, 진행 중인 이체는 차감하지 않는다. 승인 총액은 요청의 `amount`와 같은 정산의 거래 예정액으로 보관한다. (`R-PAY-12`)
@@ -201,23 +215,33 @@ HTTP 201 / `H0000`으로 **서로 다른 두 번째 계좌가 실제 생성**됐
 - 같은 날 테스트 보관계좌의 3,000원 중 1,000원을 별도 작업자 테스트 계좌로 지급하고, 1,000원을 원래 의뢰인 테스트 계좌로 환불했다. 두 건 모두 수취 예금주 조회와 이체가 `H0000`이었고 이체 응답 `REC`는 출금·입금 거래 2건이었다. 지급 후 보관계좌 2,000원·작업자 계좌 1,000원, 환불 후 보관계좌 1,000원·의뢰인 계좌 1,000원 증가를 잔액 조회로 확인했다. 이는 금융망 이체 경로의 검증이며, 에스크로 애플리케이션의 지급·환불 상태 전이와 원장 기록은 아직 검증하지 않았다.
 - 같은 거래들을 보관계좌의 출금 내역 목록에서 거래 요약·금액·수취 계좌로 각각 한 건씩 찾았고, 목록의 `transactionUniqueNo`로 단건 조회했을 때 내역이 일치했다. 목록·단건 응답에는 `institutionTransactionUniqueNo`가 없었다. 응답을 실제로 유실시킨 시험은 아니므로, 목록 반영 지연 시간과 조회 실패 시 운영 처리는 별도로 검증해야 한다.
 
+### 취소·동결·해제의 멱등 처리
+
+`cancelEscrow`·`holdEscrow`·`unholdEscrow`의 성공 요청은 `escrow_state_commands`에 남긴다. 멱등 키 범위는 `(service_client_id, api_name, idempotency_key)`다. 요청 지문은 API 이름, `escrowId`, 동결·해제의 `reportId`를 정규화해 계산하며 매 호출마다 달라지는 전송 시각과 `institutionTransactionUniqueNo`는 제외한다. 인증된 서비스 ID는 요청 Header 값 대신 검증된 API 키에서 얻는다.
+
+계약 행을 잠그고 상태 전이와 명령 기록을 한 DB 트랜잭션에서 확정한다. 같은 키·같은 지문으로 다시 오면 상태를 재변경하지 않고 기록된 `result_state`로 당시 성공 응답의 `REC`를 재구성한다. 같은 키·다른 지문이면 `E5003`을 반환한다. 응답 Header의 전송 추적값은 이번 요청에 맞춰 만든다. 검증에 실패해 상태가 바뀌지 않은 요청은 이 테이블에 기록하지 않는다. 이후 현재 상태가 필요하면 `inquireEscrow`로 조회한다. 이 기록만으로 서로 다른 신고 사건의 도착 순서를 판정하지는 않는다.
+
 ---
 
 ## 5. 계좌 확인 (1원 인증)
 
-Komit이 회원가입 때 보관한 `userKey`와 계좌번호를 에스크로에 전달한다. 에스크로는 SSAFY 계좌 확인 API를 중계하고 `authText`를 주입한다. 인증 결과와 사용 계좌는 Komit이 보관한다. 에스크로 `V3`에는 회원별 계좌 확인 테이블을 두지 않는다.
+Komit이 회원가입 때 보관한 `userKey`와 계좌번호를 에스크로에 전달한다. 에스크로는 SSAFY 계좌 확인 API를 중계하고 `authText`를 주입한다. 인증 결과와 사용 계좌는 Komit이 보관한다. 통합 V1의 `account_auth_requests`는 1원 송금의 멱등 키·요청 지문·암호화한 사용자 키와 계좌·최초 만료 시각을 저장한다. 등록 계좌의 원본과 사용자 화면의 인증 세션은 Komit이 관리한다.
 
 | 단계 | 에스크로 API·금융망 처리 | Komit으로 전달할 결과 |
 | --- | --- | --- |
 | 인증 요청 | `openAccountAuth`<br>req: `accountNo`, `authText`(에스크로 설정값) | `transactionUniqueNo`, `accountNo`, `expiresAt` |
-| 인증 검증 | 에스크로 `checkAuthCode`<br>req: `accountNo`, `authCode`(4자리 숫자). 은행 앱이 없는 데모이므로 실제 코드 일치 검사는 하지 않는다 | `status=SUCCESS`, `transactionUniqueNo`, `accountNo` |
+| 인증 검증 | 에스크로 `checkAuthCode`<br>req: `transactionUniqueNo`, `accountNo`, `authCode`(4자리 숫자). 은행 앱이 없는 데모이므로 실제 코드 일치 검사는 하지 않는다 | `status=SUCCESS`, `transactionUniqueNo`, `accountNo` |
 
 - **be-api는 `Header.userKey`와 `accountNo`를 넘기고, `authText`는 에스크로가 채운다.** (목의 요청에 `authText`가 없는 이유)
 - `R-ACC-02`: 유효 시간 안에 네 자리 숫자를 입력하면 어떤 값이든 성공한다. `expiresAt`은 에스크로 응답을 Komit이 인증 세션과 함께 관리한다.
 - `R-ACC-11`: 이 성공 결과는 실제 계좌 소유 증명이 아니다.
-- `R-ACC-04`: Komit 회원당 유효 계좌 1개. 이 제약을 에스크로 `V3`의 party 테이블에 의존하지 않는다.
+- `R-ACC-04`: Komit 회원당 유효 계좌 1개. 이 제약을 에스크로 통합 `V1`의 party 테이블에 의존하지 않는다.
 
 ---
+
+1원 인증 요청도 Writer가 `REQUESTED → DISPATCHING` 조건부 갱신을 커밋한 뒤 호출한다. 같은 서비스·멱등키의 재요청은 사용자 키·계좌번호를 포함한 요청 지문을 대조하며, 성공한 요청은 동일한 거래번호와 `expires_at`을 반환한다. 처리 중이거나 결과 불명이면 503으로 알리고 원래 키를 유지한다. 금융망이 1원 인증 거래번호를 확실히 복구할 조회 수단을 제공하지 않으면 UNKNOWN을 유지하고 운영 확인으로 넘긴다. 임의의 새 송금이나 만료 연장은 하지 않는다.
+
+`checkAuthCode`는 `transactionUniqueNo`가 같은 서비스·사용자·계좌의 성공 요청인지와 `expires_at`을 먼저 확인한다. 만료는 E5011, 존재하지 않거나 소유 정보가 다른 요청은 E5012다. 네 자리 숫자 무조건 성공은 이 조건을 만족한 데모 요청에만 적용한다. 이 API는 상태를 변경하지 않으므로 반복 호출이 가능하다. 동일 키로 만료된 성공 요청을 다시 열어도 최초 결과를 반환하며 새 인증은 새 키를 사용한다.
 
 ## 6. 대사 (Reconciliation)
 
@@ -300,7 +324,7 @@ Service는 `releaseEscrow`의 HTTP 200 / `H0000`을 정산 요청의 처리 결�
 | --- | --- |
 | `verificationId` (int) | 상관키는 `accountNo`. Komit이 자체 세션 ID를 발급하고 `accountNo` 원문을 암호화해 보관하며 화면에는 가린 값만 전달 |
 | `expiresAt` | `openAccountAuth` 응답의 `expiresAt`. Komit이 인증 세션과 함께 관리하고 FE에 전달한다 |
-| (검증 요청) | `checkAuthCode` req: `accountNo`, `authCode`(4자리 숫자). 실제 코드 일치 여부는 검사하지 않는다 (`R-ACC-02`) |
+| (검증 요청) | `checkAuthCode` req: `transactionUniqueNo`, `accountNo`, `authCode`(4자리 숫자). 실제 코드 일치 여부는 검사하지 않는다 (`R-ACC-02`) |
 
 ---
 
@@ -310,7 +334,7 @@ Service는 `releaseEscrow`의 HTTP 200 / `H0000`을 정산 요청의 처리 결�
 
 | 항목 | 상태 |
 | --- | --- |
-| 운영 감사 기록 | UNKNOWN 해소·미결 처리 이력 테이블 미설계 |
+| 운영 감사 기록 | 통합 V1에 추가 전용 `operation_audit_events` 테이블을 정의했다. UNKNOWN 해소·미결 처리 때 작업 주체·근거·증빙 참조를 실제 서버가 기록하고 운영자 권한을 검증하는 구현은 아직 필요하다 |
 | 가입 발급 결과 복구 | 2026-09-18 실호출로 회원 조회·계좌 목록·입금내역 조회를 확인했다. 같은 상품의 계좌 개설 재호출은 새 계좌를 생성한다. 계좌 목록에 상품 고유번호가 없어 후보가 여러 개면 자동 복구할 수 없으므로 `UNKNOWN`을 유지한다. 실제 통신 단절·조회 지연 때의 동작은 미검증 |
 | Service Mock 환불 계좌 설명 | `mock/app/routers/service.py`는 별도 등록 계좌를 의뢰인 환불 계좌로 설명한다. Service 담당자가 `R-PAY-04`에 맞춰 회원가입 발급 계좌로 설명을 수정해야 한다 |
 | 플랫폼 수익 계좌 준비 | 보관계좌와 같은 에스크로 SSAFY 사용자 명의의 별도 계좌로 결정했다. 계좌 개설·운영 설정과 같은 사용자 명의 두 계좌 간 소액 실이체·예금주 조회는 아직 하지 않았다. 확인 전에는 실제 수수료 이체를 시작할 수 없다 |
