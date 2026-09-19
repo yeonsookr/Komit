@@ -28,4 +28,12 @@ public class ServiceClientRepository {
                 .stream()
                 .findFirst();
     }
+
+    public String findOneWonAuthMessage(long serviceClientId) {
+        return jdbcTemplate.queryForObject("""
+                SELECT COALESCE(one_won_auth_message, name)
+                FROM service_clients
+                WHERE id=:serviceClientId AND status='ACTIVE'
+                """, Map.of("serviceClientId", serviceClientId), String.class);
+    }
 }

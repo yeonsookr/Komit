@@ -24,6 +24,13 @@ app:
     encryption-key-base64: ${FIELD_ENCRYPTION_KEY_BASE64}
     encryption-key-version: ${FIELD_ENCRYPTION_KEY_VERSION:1}
     operator-api-key: ${OPERATOR_CLIENT_API_KEY}
+  finance:
+    enabled: ${SSAFY_FINANCE_ENABLED:true}
+    base-url: ${SSAFY_FINANCE_BASE_URL:https://finopenapi.ssafy.io/ssafy}
+    api-key: ${SSAFY_FINANCE_API_KEY}
+    time-zone: ${SSAFY_FINANCE_TIME_ZONE:Asia/Seoul}
+    # R-ACC-10: 사전에 등록하고 검증한 단일 원화 수시입출금 상품.
+    account-type-unique-no: ${SSAFY_DEMAND_DEPOSIT_PRODUCT_NO}
 
 management:
   endpoints:
