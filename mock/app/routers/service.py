@@ -19,7 +19,6 @@ from typing import Annotated, Literal
 from fastapi import (
     APIRouter,
     File,
-    Form,
     Path,
     Query,
     Request,
@@ -7298,6 +7297,25 @@ def write_review(
 # =========================================================================== #
 
 
+class CreateReportRequest(BaseModel):
+    """문제 신고 접수 요청."""
+
+    reason: str = Field(
+        min_length=1,
+        max_length=255,
+        description="적어 낼 내용. 255자까지 받는다.",
+        examples=["8월 31일에 작업 진행 상황을 문의했지만 답변을 받지 못했습니다."],
+    )
+    fileId: int | None = Field(
+        default=None,
+        description=(
+            "증거 파일 식별자. `POST /api/uploads`에 `purpose`를 `REPORT_EVIDENCE`로 "
+            "올려 받는다. 없으면 null이다."
+        ),
+        examples=[81],
+    )
+
+
 class ReportResponse(BaseModel):
     """접수된 신고 한 건. 문제 신고와 이의 제기가 같은 모양을 쓴다."""
 
@@ -7411,7 +7429,10 @@ AREA6_TAG = "6 문제 신고 · 이의 제기"
         "확인 중인 신고가 있는 계약은 **작업이 3일 만에 자동 통과되지 않는다.** 답이 "
         "없어 자동으로 넘어가는 일을 막기 위해서다. 종결되면 연결된 Escrow의 동결을 "
         "해제한다.\n\n"
-        "증거 파일은 하나까지 올릴 수 있고 없어도 된다.\n\n"
+        "증거 파일은 하나까지 올릴 수 있고 없어도 된다. **다른 첨부와 같은 업로드 "
+        "3단계를 쓴다.** `POST /api/uploads`에 `purpose`를 `REPORT_EVIDENCE`로 올려 "
+        "받은 `fileId`를 담아 보낸다. 파일 자체는 이 API를 지나가지 않으므로 형식과 "
+        "크기는 업로드 단계에서 걸러진다.\n\n"
         "- **201**: 신고 저장과 Escrow 동결이 끝났을 때. 상태는 `OPEN`이고 종결 시각은 "
         "null이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
@@ -7433,32 +7454,20 @@ def create_report(
             examples=[DEV_CONTRACT_ID],
         ),
     ],
-    reason: Annotated[
-        str,
-        Form(
-            min_length=1,
-            max_length=255,
-            description="적어 낼 내용. 255자까지 받는다.",
-            examples=["8월 31일에 작업 진행 상황을 문의했지만 답변을 받지 못했습니다."],
-        ),
-    ],
-    file: Annotated[
-        UploadFile | None,
-        File(description="증거로 올릴 파일. 없어도 된다."),
-    ] = None,
+    request: CreateReportRequest,
 ) -> ReportResponse | JSONResponse:
     if contractId == NOT_FOUND_REPORT_CONTRACT_ID:
         return _error_response(404, CONTRACT_NOT_FOUND)
     if contractId == OPEN_REPORT_CONTRACT_ID:
         return _error_response(409, REPORT_ALREADY_OPEN)
-    if not reason.strip():
+    if not request.reason.strip():
         return _field_error("reason", "내용을 입력해 주세요.")
     return ReportResponse(
         **{
             **REPORT_EXAMPLE,
             "contractId": contractId,
-            "reason": reason,
-            "fileId": 81 if file is not None else None,
+            "reason": request.reason,
+            "fileId": request.fileId,
         }
     )
 
