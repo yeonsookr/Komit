@@ -4587,6 +4587,37 @@ class ReservationResponse(BaseModel):
     )
 
 
+class SessionRecordingResponse(BaseModel):
+    """세션 녹음 한 건.
+
+    참가자마다 자기 마이크만 녹음해 각자 올린다. 두 사람 소리를 한 파일로 합치지
+    않는다. 파일이 곧 화자라 나중에 누가 말했는지 가리는 데 따로 손이 들지 않는다.
+    """
+
+    recordingId: int = Field(description="녹음 식별자.", examples=[71])
+    speaker: Literal["CLIENT", "DEVELOPER"] = Field(
+        description="이 녹음을 올린 사람의 이 계약에서의 역할. 인증 정보로 정한다.",
+        examples=["CLIENT"],
+    )
+    fileId: int = Field(description="올린 파일 식별자.", examples=[612])
+    uploadedAt: str = Field(
+        description="올린 시각.",
+        examples=["2026-08-29T15:12:00+09:00"],
+    )
+
+
+class CreateSessionRecordingRequest(BaseModel):
+    """세션 녹음 올리기 요청."""
+
+    fileId: int = Field(
+        description=(
+            "`POST /api/uploads`에 `purpose`를 `SESSION_RECORDING`으로 올려 받은 "
+            "파일 식별자."
+        ),
+        examples=[612],
+    )
+
+
 class ConsultingSessionResponse(BaseModel):
     """컨설팅 세션 하나."""
 
@@ -4916,6 +4947,11 @@ SESSION_NOT_OPEN = (
 )
 SESSION_NOT_ENDED = ("SESSION_NOT_ENDED", "세션이 아직 끝나지 않았습니다.")
 SUMMARY_NOT_READY = ("SUMMARY_NOT_READY", "요약을 아직 만드는 중입니다.")
+SESSION_NOT_ENDED = ("SESSION_NOT_ENDED", "아직 끝나지 않은 세션입니다.")
+RECORDING_ALREADY_UPLOADED = (
+    "RECORDING_ALREADY_UPLOADED",
+    "이미 녹음을 올렸습니다.",
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -4935,6 +4971,8 @@ SIGNED_CONTRACT_ID = 409
 NOT_FOUND_SESSION_ID = 404
 NOT_OPEN_SESSION_ID = 409
 NO_SUMMARY_SESSION_ID = 202
+NOT_ENDED_SESSION_ID = 400
+RECORDED_SESSION_ID = 410
 
 SESSION_EXAMPLE = {
     "sessionId": SESSION_ID,
@@ -5021,6 +5059,13 @@ SESSION_SUMMARY_EXAMPLE = {
         },
     ],
     "updatedAt": "2026-08-29T14:35:00+09:00",
+}
+
+SESSION_RECORDING_EXAMPLE = {
+    "recordingId": 71,
+    "speaker": "CLIENT",
+    "fileId": 612,
+    "uploadedAt": "2026-08-29T15:12:00+09:00",
 }
 
 CONTRACT_NOT_FOUND_EXAMPLE = {
@@ -5600,6 +5645,86 @@ def apply_summary_changes(
         for c in SESSION_SUMMARY_EXAMPLE["changes"]
     ]
     return SessionSummaryResponse(**{**SESSION_SUMMARY_EXAMPLE, "changes": applied})
+
+
+@router.post(
+    "/consulting-sessions/{sessionId}/recordings",
+    response_model=SessionRecordingResponse,
+    status_code=201,
+    tags=[AREA4_TAG],
+    responses={
+        201: {
+            "content": {"application/json": {"example": SESSION_RECORDING_EXAMPLE}}
+        },
+        400: {
+            "model": ErrorResponse,
+            "description": "아직 끝나지 않은 세션",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": SESSION_NOT_ENDED[0],
+                        "message": SESSION_NOT_ENDED[1],
+                    }
+                }
+            },
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "이미 올린 녹음",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": RECORDING_ALREADY_UPLOADED[0],
+                        "message": RECORDING_ALREADY_UPLOADED[1],
+                    }
+                }
+            },
+        },
+        **SESSION_ERRORS,
+    },
+    summary="세션 녹음 올리기",
+    description=(
+        "세션이 끝난 뒤 자기 마이크로 녹음한 파일을 올린다.\n\n"
+        "**참가자마다 자기 트랙만 올린다.** 두 사람 소리를 한 파일로 합치지 않는다. "
+        "파일이 곧 화자라서 나중에 누가 말했는지 가리는 데 따로 손이 들지 않는다. "
+        "누가 올렸는지는 인증 정보로 정하므로 요청에 담지 않는다.\n\n"
+        "파일은 `POST /api/uploads`에 `purpose`를 `SESSION_RECORDING`으로 올려 받은 "
+        "`fileId`로 넘긴다. 파일 자체는 이 API를 지나가지 않는다.\n\n"
+        "두 트랙이 모두 올라오면 전사와 요약이 시작된다. 한쪽이 창을 그냥 닫아 올라오지 "
+        "않을 수 있으므로, 정해진 시간이 지나면 올라온 트랙만으로 진행한다. 기다리기만 "
+        "하면 요약이 영영 만들어지지 않는다.\n\n"
+        "- **201**: 올렸을 때\n"
+        "- **400 / SESSION_NOT_ENDED**: `sessionId`가 400일 때. 아직 끝나지 않은 "
+        "세션이다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **404 / SESSION_NOT_FOUND**: `sessionId`가 404일 때\n"
+        "- **409 / RECORDING_ALREADY_UPLOADED**: `sessionId`가 410일 때. 이 참가자는 "
+        "이미 올렸다\n"
+        "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
+    ),
+)
+def upload_session_recording(
+    sessionId: Annotated[
+        int,
+        Path(
+            description=(
+                "컨설팅 세션 식별자. 404는 없음, 400은 종료 전, 410은 이미 올림 "
+                "재현용 예약값이다."
+            ),
+            examples=[SESSION_ID],
+        ),
+    ],
+    request: CreateSessionRecordingRequest,
+) -> SessionRecordingResponse | JSONResponse:
+    if sessionId == NOT_FOUND_SESSION_ID:
+        return _error_response(404, SESSION_NOT_FOUND)
+    if sessionId == NOT_ENDED_SESSION_ID:
+        return _error_response(400, SESSION_NOT_ENDED)
+    if sessionId == RECORDED_SESSION_ID:
+        return _error_response(409, RECORDING_ALREADY_UPLOADED)
+    return SessionRecordingResponse(
+        **{**SESSION_RECORDING_EXAMPLE, "fileId": request.fileId}
+    )
 
 
 # =========================================================================== #
@@ -8685,6 +8810,8 @@ class CreateUploadRequest(BaseModel):
         "PORTFOLIO_IMAGE",
         "SIGNATURE",
         "DELIVERABLE",
+        "SESSION_RECORDING",
+        "REPORT_EVIDENCE",
     ] = Field(
         description=(
             "이 파일을 어디에 쓸지. 쓰임에 따라 받는 형식과 크기가 다르고 보관 기간도 "
