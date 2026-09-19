@@ -32,6 +32,9 @@ app:
   auth:
     access-token-ttl: 15m
     refresh-token-ttl: 14d
+  logging:
+    # 이 시간을 넘긴 컨트롤러·서비스 호출은 WARN으로 남깁니다. (common/logging/LoggingAspect)
+    slow-call-threshold: 1s
 
 management:
   endpoints:

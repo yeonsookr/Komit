@@ -220,6 +220,10 @@ RETURNING id, request_reference;
 - **완료 조건:** 정상 흐름뿐 아니라 멱등 재요청, 소유권 위반, 동시 요청, 응답 유실의 기대 결과.
 - **검증 증거:** 자동화 테스트 이름과 실행 결과, 실제 금융 환경이 필요해 미검증으로 남은 조건.
 - **문서 영향:** Mock, V1, `FINANCE_MAPPING.md`, `HIGH_AVAILABILITY.md`, Service 연동 문서의 변경 여부.
+- **배포 환경변수:** `application.yml`에 운영 환경변수를 추가했다면 GitLab CI/CD 변수 등록뿐 아니라
+  `.gitlab-ci.yml`의 검사·SSH 전달, `deploy/k3s/deploy.sh`의 Secret/ConfigMap 생성,
+  Deployment의 Pod 주입까지 같은 Story/MR에서 반영했는지 확인한다. 변수만 등록한 뒤 과거 배포
+  Job을 Retry해도 이전 파이프라인 정의에는 전달되지 않으므로 변경이 포함된 새 파이프라인으로 검증한다.
 
 Task는 가능하면 하나의 검증 가능한 결과와 하나의 기능 커밋으로 끝낸다. Controller·Service·Repository를 각각 별도 Task로 잘라 서로 작동하지 않는 중간 상태를 만들지 않는다. 예를 들어 `createEscrow Controller 작성` 대신 `계약 생성 멱등 처리 및 소유권 검증`을 Task로 만들고 DTO·업무 Service·SQL·테스트를 함께 포함한다. 금융 호출 실패·UNKNOWN·동시 요청 검증 Task는 정상 흐름 Task와 같은 Story 안에서 반드시 완료한다.
 

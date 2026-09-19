@@ -23,6 +23,26 @@ ESCROW_API_BASE_URL=${ESCROW_API_BASE_URL:-}
 : "${KOMIT_USER_JWT_SECRET:?KOMIT_USER_JWT_SECRET is required}"
 : "${KAKAO_TOKEN_ENCRYPTION_KEY:?KAKAO_TOKEN_ENCRYPTION_KEY is required}"
 : "${KAKAO_CLIENT_SECRET:?KAKAO_CLIENT_SECRET is required}"
+# escrow 보안 설정. 운영에서는 application-local.yml의 개발 기본값을 사용하지 않습니다.
+: "${CLIENT_API_KEY_HMAC_SECRET:?CLIENT_API_KEY_HMAC_SECRET is required}"
+: "${SENSITIVE_DATA_HMAC_SECRET:?SENSITIVE_DATA_HMAC_SECRET is required}"
+: "${FIELD_ENCRYPTION_KEY_BASE64:?FIELD_ENCRYPTION_KEY_BASE64 is required}"
+: "${OPERATOR_CLIENT_API_KEY:?OPERATOR_CLIENT_API_KEY is required}"
+: "${SSAFY_FINANCE_API_KEY:?SSAFY_FINANCE_API_KEY is required}"
+: "${SSAFY_DEMAND_DEPOSIT_PRODUCT_NO:?SSAFY_DEMAND_DEPOSIT_PRODUCT_NO is required}"
+
+for NAME in CLIENT_API_KEY_HMAC_SECRET SENSITIVE_DATA_HMAC_SECRET OPERATOR_CLIENT_API_KEY; do
+  eval "VALUE=\${$NAME}"
+  if [ "${#VALUE}" -lt 32 ]; then
+    echo "$NAME must contain at least 32 characters" >&2
+    exit 1
+  fi
+done
+ENCRYPTION_KEY_BYTES=$(printf '%s' "$FIELD_ENCRYPTION_KEY_BASE64" | base64 -d 2>/dev/null | wc -c | tr -d ' ')
+if [ "$ENCRYPTION_KEY_BYTES" != 32 ]; then
+  echo "FIELD_ENCRYPTION_KEY_BASE64 must encode exactly 32 bytes" >&2
+  exit 1
+fi
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 WORK_DIR=$(mktemp -d)
@@ -148,6 +168,14 @@ EOF
   config_literal APP_PUBLIC_BASE_URL "$SERVICE_PUBLIC_BASE_URL"
   printf '  - name: escrow-config\n    namespace: komit\n    literals:\n'
   config_literal APP_PUBLIC_BASE_URL "$ESCROW_PUBLIC_BASE_URL"
+  config_literal SSAFY_DEMAND_DEPOSIT_PRODUCT_NO "$SSAFY_DEMAND_DEPOSIT_PRODUCT_NO"
+  # Secret 값이 바뀌면 이름 해시와 Pod template이 함께 바뀌어 Escrow가 자동 재시작됩니다.
+  printf 'secretGenerator:\n  - name: escrow-security\n    namespace: komit\n    literals:\n'
+  config_literal CLIENT_API_KEY_HMAC_SECRET "$CLIENT_API_KEY_HMAC_SECRET"
+  config_literal SENSITIVE_DATA_HMAC_SECRET "$SENSITIVE_DATA_HMAC_SECRET"
+  config_literal FIELD_ENCRYPTION_KEY_BASE64 "$FIELD_ENCRYPTION_KEY_BASE64"
+  config_literal OPERATOR_CLIENT_API_KEY "$OPERATOR_CLIENT_API_KEY"
+  config_literal SSAFY_FINANCE_API_KEY "$SSAFY_FINANCE_API_KEY"
 } >> "$WORK_DIR/apps/kustomization.yaml"
 kubectl apply -k "$WORK_DIR/apps"
 kubectl -n komit rollout status deployment/service --timeout=300s

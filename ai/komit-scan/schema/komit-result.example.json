@@ -1,5 +1,6 @@
 {
-  "scanVersion": "1.0.0",
+  "diagnosisId": 31,
+  "scanVersion": "0.1.0",
   "scannedAt": "2026-08-17T09:12:00+09:00",
   "readinessScore": 23,
   "techCategories": ["Next.js", "Supabase"],

@@ -159,3 +159,14 @@ SET code_name = EXCLUDED.code_name,
     sort_order = EXCLUDED.sort_order,
     is_deprecated = EXCLUDED.is_deprecated,
     meta_json = EXCLUDED.meta_json;
+
+-- 기준(default) API 예시 레코드. domain/defaults 참고.
+-- 목이 id=1 에서 200 을 돌려주는 것과 같은 결과가 실서버에서도 나오도록 한 건만 심는다.
+-- ERD 에 없는 본보기 전용 테이블이며 화면 기능은 이 테이블을 쓰지 않는다.
+-- created_at·updated_at 은 DB 기본값(CURRENT_TIMESTAMP), is_deleted 는 기본값(false) 을 쓴다.
+INSERT INTO defaults (id, message, record_status, record_status_group)
+VALUES (1, 'default', 'ACTIVE', 'RECORD_STATUS')
+ON CONFLICT (id) DO NOTHING;
+
+-- id 를 직접 넣었으므로 identity 시퀀스를 그 뒤로 옮긴다. 옮기지 않으면 다음 JPA 저장이 id=1 과 충돌한다.
+SELECT setval(pg_get_serial_sequence('defaults', 'id'), (SELECT MAX(id) FROM defaults));

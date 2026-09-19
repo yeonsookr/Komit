@@ -5,6 +5,7 @@
   "description": "의뢰인의 AI 코딩 도구가 만들어 Komit에 올리는 파일. 필드 이름은 서버의 결함·설문 모델을 따른다. 규칙은 docs/RULES.md 1절 사전점검을 본다.",
   "type": "object",
   "required": [
+    "diagnosisId",
     "scanVersion",
     "scannedAt",
     "readinessScore",
@@ -17,6 +18,13 @@
   "additionalProperties": false,
 
   "properties": {
+    "diagnosisId": {
+      "description": "검사 파일의 진단 번호를 그대로 옮긴 값. 서버가 검사 지시문과 결과 파일의 짝을 맞춘다. (R-SCAN-03)",
+      "type": "integer",
+      "minimum": 1,
+      "examples": [31]
+    },
+
     "scanVersion": {
       "description": "이 결과를 만든 검사 지시문의 판. 검사 파일에 적힌 값을 그대로 옮긴다. 서버가 지난 판을 걸러낸다. (R-SCAN-04)",
       "type": "string",
@@ -83,7 +91,7 @@
   "$defs": {
     "issue": {
       "type": "object",
-      "required": ["title", "location", "category", "severity", "isInput"],
+      "required": ["title", "location", "category", "severity", "isInput", "fingerprint"],
       "additionalProperties": false,
       "properties": {
         "title": {
@@ -150,7 +158,7 @@
         },
 
         "fingerprint": {
-          "description": "회차를 넘어 같은 문제를 알아보기 위한 값. 코드를 고치면 줄 번호가 바뀌므로 위치로는 이을 수 없다. 분류와 문제 유형, 대상을 조합해 만든다. 서버가 회차를 잇는 기준으로 쓸지는 논의 중이다.",
+          "description": "재진단 회차를 넘어 같은 문제를 알아보기 위한 값. 분류와 문제 유형, 대상을 조합하며 줄 번호는 넣지 않는다. 서버가 회차의 같은 문제를 잇는 기준으로 쓴다. (R-SCAN-20)",
           "type": "string",
           "minLength": 1,
           "maxLength": 120,
