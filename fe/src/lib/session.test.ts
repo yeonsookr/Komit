@@ -19,7 +19,6 @@ function session(overrides: Partial<ConsultingSession> = {}): ConsultingSession 
     startedAt: null,
     endedAt: null,
     chatRefId: "session-55-chat",
-    recordingFileId: null,
     ...overrides,
   };
 }

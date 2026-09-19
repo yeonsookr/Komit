@@ -4712,10 +4712,6 @@ class ConsultingSessionResponse(BaseModel):
         ),
         examples=["session-55-chat"],
     )
-    recordingFileId: int | None = Field(
-        description="세션 녹음 파일 식별자. 녹음 전이면 null이다.",
-        examples=[None],
-    )
 
 
 class SignatureResponse(BaseModel):
@@ -5053,6 +5049,7 @@ NOT_COMPLETED_CONTRACT_ID = 400
 SIGNED_CONTRACT_ID = 409
 NOT_FOUND_SESSION_ID = 404
 NOT_OPEN_SESSION_ID = 409
+PENDING_CONSENT_SESSION_ID = 203
 NO_SUMMARY_SESSION_ID = 202
 NOT_ENDED_SESSION_ID = 400
 RECORDED_SESSION_ID = 410
@@ -5070,7 +5067,6 @@ SESSION_EXAMPLE = {
     "startedAt": None,
     "endedAt": None,
     "chatRefId": "session-55-chat",
-    "recordingFileId": None,
 }
 
 CONSULTING_CONTRACT_EXAMPLE = {
@@ -5535,7 +5531,9 @@ def get_consulting_session(
 ) -> ConsultingSessionResponse | JSONResponse:
     if sessionId == NOT_FOUND_SESSION_ID:
         return _error_response(404, SESSION_NOT_FOUND)
-    return ConsultingSessionResponse(**SESSION_EXAMPLE)
+    # 물어본 식별자를 그대로 돌려준다. 화면은 이 값으로 입장·종료를 부르므로, 고정값을
+    # 주면 203 같은 재현용 식별자로 들어와도 55의 흐름이 나와 재현이 되지 않는다.
+    return ConsultingSessionResponse(**{**SESSION_EXAMPLE, "sessionId": sessionId})
 
 
 @router.post(
@@ -5553,6 +5551,10 @@ def get_consulting_session(
                     }
                 }
             }
+        },
+        202: {
+            "description": "내 동의는 기록됐고 상대방 동의를 기다리는 중",
+            "content": {"application/json": {"example": SESSION_EXAMPLE}},
         },
         409: {
             "model": ErrorResponse,
@@ -5573,10 +5575,16 @@ def get_consulting_session(
     summary="세션 입장",
     description=(
         "**화면 — `4_의뢰인_입장전` › 입장**\n\n"
-        "세션에 들어간다. 들어간 시각이 참여 기록으로 남고, 먼저 들어온 사람이 있으면 "
-        "그때 세션이 시작된 것으로 본다.\n\n"
+        "이 요청 자체가 녹음·전사·요약 동의와 입장 요청을 겸한다. 화면은 요청 전에 그 "
+        "내용을 안내해야 한다. 의뢰인과 개발자 양쪽의 요청이 모두 모이기 전에는 실제 "
+        "입장시키지 않는다. 먼저 요청한 참가자에게는 202를 돌려 상대 동의를 기다리게 "
+        "한다. 같은 참가자가 기다리는 동안 다시 요청해도 동의는 한 번만 기록한다. "
+        "(R-CON-13)\n\n"
+        "양쪽 동의가 모인 뒤 실제로 들어간 시각이 참여 기록으로 남고, 최초 입장 시각을 "
+        "세션 시작 시각으로 기록한다. (R-CON-09)\n\n"
         "화상 연결 자체는 이 API가 하지 않는다. 들어갈 수 있는지 판정하고 기록만 남긴다.\n\n"
-        "- **201**: 들어갔을 때. 세션이 이때 시작되면 `startedAt`이 채워진다\n"
+        "- **201**: 양쪽이 동의했고 실제로 들어갔을 때. 최초 입장이면 `startedAt`이 채워진다\n"
+        "- **202**: 내 동의는 기록됐지만 상대방 동의를 기다릴 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / SESSION_NOT_FOUND**: `sessionId`가 404일 때\n"
         "- **409 / SESSION_NOT_OPEN**: `sessionId`가 409일 때. 아직 이른 시각이거나 이미 "
@@ -5589,7 +5597,8 @@ def join_consulting_session(
         int,
         Path(
             description=(
-                "컨설팅 세션 식별자. 404는 없음, 409는 입장 불가 재현용 예약값이다."
+                "컨설팅 세션 식별자. 404는 없음, 409는 입장 불가, 203은 상대 동의 "
+                "대기 재현용 예약값이다."
             ),
             examples=[SESSION_ID],
         ),
@@ -5599,6 +5608,8 @@ def join_consulting_session(
         return _error_response(404, SESSION_NOT_FOUND)
     if sessionId == NOT_OPEN_SESSION_ID:
         return _error_response(409, SESSION_NOT_OPEN)
+    if sessionId == PENDING_CONSENT_SESSION_ID:
+        return JSONResponse(status_code=202, content=SESSION_EXAMPLE)
     return ConsultingSessionResponse(
         **{**SESSION_EXAMPLE, "startedAt": "2026-08-29T14:00:00+09:00"}
     )
@@ -5616,7 +5627,6 @@ def join_consulting_session(
                         **SESSION_EXAMPLE,
                         "startedAt": "2026-08-29T14:00:00+09:00",
                         "endedAt": "2026-08-29T14:32:00+09:00",
-                        "recordingFileId": 62,
                     }
                 }
             }
@@ -5626,9 +5636,12 @@ def join_consulting_session(
     summary="세션 종료",
     description=(
         "**화면 — `4_의뢰인_세션중` › 세션 종료**\n\n"
-        "세션을 마친다. 끝난 시각이 기록되고 요약 만들기가 시작된다. 같은 요청을 다시 "
-        "보내도 결과가 같다.\n\n"
-        "- **200**: 마쳤을 때. 녹음이 있으면 `recordingFileId`가 채워진다\n"
+        "세션을 마치고 끝난 시각을 기록한다. 같은 요청을 다시 보내도 최초 종료 시각과 "
+        "같은 결과가 돌아온다. (R-CON-11)\n\n"
+        "종료 뒤 참가자들이 각자 녹음을 올린다. 전사와 요약은 양쪽 녹음이 준비되거나 "
+        "녹음 누락 대기 조건을 충족한 뒤 시작하므로 종료 응답에 단일 녹음 파일을 싣지 "
+        "않는다. (R-CON-10, R-CON-12)\n\n"
+        "- **200**: 세션 종료가 확정됐을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / SESSION_NOT_FOUND**: `sessionId`가 404일 때\n"
         "- **500 / INTERNAL_ERROR**: 마치지 못했을 때"
@@ -5650,7 +5663,6 @@ def end_consulting_session(
             **SESSION_EXAMPLE,
             "startedAt": "2026-08-29T14:00:00+09:00",
             "endedAt": "2026-08-29T14:32:00+09:00",
-            "recordingFileId": 62,
         }
     )
 
@@ -5798,12 +5810,12 @@ def apply_summary_changes(
         "세션이 끝난 뒤 자기 마이크로 녹음한 파일을 올린다.\n\n"
         "**참가자마다 자기 트랙만 올린다.** 두 사람 소리를 한 파일로 합치지 않는다. "
         "파일이 곧 화자라서 나중에 누가 말했는지 가리는 데 따로 손이 들지 않는다. "
-        "누가 올렸는지는 인증 정보로 정하므로 요청에 담지 않는다.\n\n"
+        "누가 올렸는지는 인증 정보로 정하므로 요청에 담지 않는다. (R-CON-10)\n\n"
         "파일은 `POST /api/uploads`에 `purpose`를 `SESSION_RECORDING`으로 올려 받은 "
         "`fileId`로 넘긴다. 파일 자체는 이 API를 지나가지 않는다.\n\n"
         "두 트랙이 모두 올라오면 전사와 요약이 시작된다. 한쪽이 창을 그냥 닫아 올라오지 "
         "않을 수 있으므로, 정해진 시간이 지나면 올라온 트랙만으로 진행한다. 기다리기만 "
-        "하면 요약이 영영 만들어지지 않는다.\n\n"
+        "하면 요약이 영영 만들어지지 않는다. (R-CON-12)\n\n"
         "- **201**: 올렸을 때\n"
         "- **400 / SESSION_NOT_ENDED**: `sessionId`가 400일 때. 아직 끝나지 않은 "
         "세션이다\n"

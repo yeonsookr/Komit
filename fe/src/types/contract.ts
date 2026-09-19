@@ -137,7 +137,6 @@ export interface ConsultingSession {
   endedAt: string | null;
   /** 세션 중 실시간 채팅 참조 키. 메시지와 화상은 이 API 가 다루지 않습니다. */
   chatRefId: string;
-  recordingFileId: number | null;
 }
 
 /** 컨설팅 계약에만 있는 내용. 개발 계약이면 null 입니다. */
