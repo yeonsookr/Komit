@@ -207,7 +207,7 @@ fe-build:
   extends: .gradle-job
   stage: test
   services:
-    - name: postgres:16-alpine
+    - name: postgres:18.6-alpine
       alias: postgres
   variables:
     POSTGRES_DB: komit
@@ -225,7 +225,7 @@ fe-build:
 service-test:
   extends: .gradle-test
   services:
-    - name: postgres:16-alpine
+    - name: postgres:18.6-alpine
       alias: postgres
     - name: docker:29.6.2-dind
       alias: docker

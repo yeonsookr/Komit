@@ -9,6 +9,7 @@ import com.a501.escrow.domain.common.Money;
 import com.a501.escrow.domain.escrow.repository.EscrowRepository;
 import com.a501.escrow.domain.finance.repository.FinancialOperationAttemptRepository;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -18,28 +19,53 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
-@Testcontainers
 @SpringBootTest(properties = {
         "app.instance-role=WRITER",
         "app.public-base-url=http://localhost:8081"
 })
 class DataAccessIntegrationTests {
 
-    @Container
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>(
-            DockerImageName.parse("postgres:18.6"));
+    static PostgreSQLContainer postgres;
 
     @DynamicPropertySource
     static void databaseProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        registry.add("spring.datasource.username", POSTGRES::getUsername);
-        registry.add("spring.datasource.password", POSTGRES::getPassword);
-        registry.add("app.datasource.read-url", POSTGRES::getJdbcUrl);
+        if (System.getenv("CI") != null) {
+            String database = environmentOrDefault("POSTGRES_DB", "escrow");
+            String url = environmentOrDefault(
+                    "DB_URL", "jdbc:postgresql://postgres:5432/" + database);
+            String username = environmentOrDefault(
+                    "DB_USERNAME", environmentOrDefault("POSTGRES_USER", "escrow"));
+            String password = environmentOrDefault(
+                    "DB_PASSWORD", environmentOrDefault("POSTGRES_PASSWORD", "escrow"));
+
+            registry.add("spring.datasource.url", () -> url);
+            registry.add("spring.datasource.username", () -> username);
+            registry.add("spring.datasource.password", () -> password);
+            registry.add("app.datasource.read-url", () -> url);
+            return;
+        }
+
+        postgres = new PostgreSQLContainer(DockerImageName.parse("postgres:18.6"));
+        postgres.start();
+        registry.add("spring.datasource.url", postgres::getJdbcUrl);
+        registry.add("spring.datasource.username", postgres::getUsername);
+        registry.add("spring.datasource.password", postgres::getPassword);
+        registry.add("app.datasource.read-url", postgres::getJdbcUrl);
+    }
+
+    @AfterAll
+    static void stopLocalPostgres() {
+        if (postgres != null) {
+            postgres.stop();
+        }
+    }
+
+    private static String environmentOrDefault(String name, String defaultValue) {
+        String value = System.getenv(name);
+        return value == null || value.isBlank() ? defaultValue : value;
     }
 
     @Autowired
