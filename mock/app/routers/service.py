@@ -1609,7 +1609,7 @@ Claude Code 를 쓰신다면 아래 한 줄이면 됩니다.
 
 ## 검사가 끝나면
 
-`komit-result.json` 이 만들어집니다. 그 파일만 Komit 에 올려 주세요.
+`komit-result.md` 가 만들어집니다. 그 파일만 Komit 에 올려 주세요.
 파일을 열어 무엇이 담겼는지 먼저 보셔도 됩니다.
 
 ## 무엇을 검사하나요
@@ -1664,11 +1664,13 @@ DIAGNOSIS_EXAMPLE = {
     "version": 2,
     "project": PROJECT_EXAMPLE,
     "userInput": "결제 버튼을 누르면 가끔 아무 반응이 없어요",
-    "readinessScore": 52,
+    # ISSUES 의 미해결 결함이 높음 3 · 보통 3 · 낮음 2 이므로
+    # 49 - (3 x 3) - (3 x 1) = 37 이다. (R-SCAN-18)
+    "readinessScore": 37,
     "scannedAt": SCANNED_AT,
-    "unresolvedIssueCount": 9,
-    "totalIssueCount": 11,
-    "resolvedSinceLastVersionCount": 3,
+    "unresolvedIssueCount": 8,
+    "totalIssueCount": 9,
+    "resolvedSinceLastVersionCount": 1,
 }
 
 # 막 시작한 진단. 검사를 돌린 적이 없어 점수와 검사 시각이 비어 있다.
@@ -1773,7 +1775,7 @@ INSPECTION_DONE_EXAMPLE = {
     "inspectionId": 27,
     "diagnosisVersion": 2,
     "status": "DONE",
-    "readinessScore": 52,
+    "readinessScore": 37,
     "scannedAt": SCANNED_AT,
 }
 
@@ -4602,6 +4604,37 @@ class ReservationResponse(BaseModel):
     )
 
 
+class SessionRecordingResponse(BaseModel):
+    """세션 녹음 한 건.
+
+    참가자마다 자기 마이크만 녹음해 각자 올린다. 두 사람 소리를 한 파일로 합치지
+    않는다. 파일이 곧 화자라 나중에 누가 말했는지 가리는 데 따로 손이 들지 않는다.
+    """
+
+    recordingId: int = Field(description="녹음 식별자.", examples=[71])
+    speaker: Literal["CLIENT", "DEVELOPER"] = Field(
+        description="이 녹음을 올린 사람의 이 계약에서의 역할. 인증 정보로 정한다.",
+        examples=["CLIENT"],
+    )
+    fileId: int = Field(description="올린 파일 식별자.", examples=[612])
+    uploadedAt: str = Field(
+        description="올린 시각.",
+        examples=["2026-08-29T15:12:00+09:00"],
+    )
+
+
+class CreateSessionRecordingRequest(BaseModel):
+    """세션 녹음 올리기 요청."""
+
+    fileId: int = Field(
+        description=(
+            "`POST /api/uploads`에 `purpose`를 `SESSION_RECORDING`으로 올려 받은 "
+            "파일 식별자."
+        ),
+        examples=[612],
+    )
+
+
 class ConsultingSessionResponse(BaseModel):
     """컨설팅 세션 하나."""
 
@@ -4684,7 +4717,10 @@ class ConsultingAgreementResponse(BaseModel):
     ] = Field(
         description=(
             "컨설팅 진행. SIGNED는 체결됨, DEPOSITED는 예치됨, IN_PROGRESS는 진행중, "
-            "COMPLETED는 완료됨, TERMINATED는 파기됨이다."
+            "COMPLETED는 완료됨, TERMINATED는 파기됨이다.\n\n"
+            "**체결 여부는 바깥 계약의 `status`로만 판단한다.** 이 값은 체결 이후의 "
+            "진행을 나타내므로, 바깥이 `NEGOTIATING`인 동안에는 의미가 없다. 협의 중에는 "
+            "언제든 내용이 바뀔 수 있어 갈래에 따로 상태를 두지 않는다. (`R-CON-01`)"
         ),
         examples=["SIGNED"],
     )
@@ -4952,6 +4988,11 @@ SESSION_NOT_OPEN = (
 )
 SESSION_NOT_ENDED = ("SESSION_NOT_ENDED", "세션이 아직 끝나지 않았습니다.")
 SUMMARY_NOT_READY = ("SUMMARY_NOT_READY", "요약을 아직 만드는 중입니다.")
+SESSION_NOT_ENDED = ("SESSION_NOT_ENDED", "아직 끝나지 않은 세션입니다.")
+RECORDING_ALREADY_UPLOADED = (
+    "RECORDING_ALREADY_UPLOADED",
+    "이미 녹음을 올렸습니다.",
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -4971,6 +5012,8 @@ SIGNED_CONTRACT_ID = 409
 NOT_FOUND_SESSION_ID = 404
 NOT_OPEN_SESSION_ID = 409
 NO_SUMMARY_SESSION_ID = 202
+NOT_ENDED_SESSION_ID = 400
+RECORDED_SESSION_ID = 410
 
 SESSION_EXAMPLE = {
     "sessionId": SESSION_ID,
@@ -4994,6 +5037,8 @@ CONSULTING_CONTRACT_EXAMPLE = {
     "contractType": "CONSULTING",
     "status": "NEGOTIATING",
     "consulting": {
+        # 바깥이 NEGOTIATING 이므로 이 값은 아직 의미가 없다. 체결 여부는
+        # 바깥 status 로만 판단한다.
         "status": "SIGNED",
         "totalAmount": 50000,
         "topic": "회원탈퇴 경로와 결제 간헐 실패를 함께 봅니다",
@@ -5058,6 +5103,13 @@ SESSION_SUMMARY_EXAMPLE = {
         },
     ],
     "updatedAt": "2026-08-29T14:35:00+09:00",
+}
+
+SESSION_RECORDING_EXAMPLE = {
+    "recordingId": 71,
+    "speaker": "CLIENT",
+    "fileId": 612,
+    "uploadedAt": "2026-08-29T15:12:00+09:00",
 }
 
 CONTRACT_NOT_FOUND_EXAMPLE = {
@@ -5279,7 +5331,9 @@ def amend_contract(
                 "application/json": {
                     "example": {
                         **CONSULTING_CONTRACT_EXAMPLE,
-                        "status": "SIGNED",
+                        # 의뢰인만 서명한 상태다. 개발자 서명이 남아 있으므로
+                        # 계약은 아직 체결되지 않았다. (R-CON-01)
+                        "status": "NEGOTIATING",
                         "clientSignature": {
                             "userId": 12,
                             "isSigned": True,
@@ -5342,7 +5396,8 @@ def sign_contract(
     return ContractResponse(
         **{
             **CONSULTING_CONTRACT_EXAMPLE,
-            "status": "SIGNED",
+            # 의뢰인만 서명했으므로 아직 협의중이다. (R-CON-01)
+            "status": "NEGOTIATING",
             "clientSignature": {
                 "userId": 12,
                 "isSigned": True,
@@ -5659,6 +5714,86 @@ def apply_summary_changes(
         for c in SESSION_SUMMARY_EXAMPLE["changes"]
     ]
     return SessionSummaryResponse(**{**SESSION_SUMMARY_EXAMPLE, "changes": applied})
+
+
+@router.post(
+    "/consulting-sessions/{sessionId}/recordings",
+    response_model=SessionRecordingResponse,
+    status_code=201,
+    tags=[AREA4_TAG],
+    responses={
+        201: {
+            "content": {"application/json": {"example": SESSION_RECORDING_EXAMPLE}}
+        },
+        400: {
+            "model": ErrorResponse,
+            "description": "아직 끝나지 않은 세션",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": SESSION_NOT_ENDED[0],
+                        "message": SESSION_NOT_ENDED[1],
+                    }
+                }
+            },
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "이미 올린 녹음",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": RECORDING_ALREADY_UPLOADED[0],
+                        "message": RECORDING_ALREADY_UPLOADED[1],
+                    }
+                }
+            },
+        },
+        **SESSION_ERRORS,
+    },
+    summary="세션 녹음 올리기",
+    description=(
+        "세션이 끝난 뒤 자기 마이크로 녹음한 파일을 올린다.\n\n"
+        "**참가자마다 자기 트랙만 올린다.** 두 사람 소리를 한 파일로 합치지 않는다. "
+        "파일이 곧 화자라서 나중에 누가 말했는지 가리는 데 따로 손이 들지 않는다. "
+        "누가 올렸는지는 인증 정보로 정하므로 요청에 담지 않는다.\n\n"
+        "파일은 `POST /api/uploads`에 `purpose`를 `SESSION_RECORDING`으로 올려 받은 "
+        "`fileId`로 넘긴다. 파일 자체는 이 API를 지나가지 않는다.\n\n"
+        "두 트랙이 모두 올라오면 전사와 요약이 시작된다. 한쪽이 창을 그냥 닫아 올라오지 "
+        "않을 수 있으므로, 정해진 시간이 지나면 올라온 트랙만으로 진행한다. 기다리기만 "
+        "하면 요약이 영영 만들어지지 않는다.\n\n"
+        "- **201**: 올렸을 때\n"
+        "- **400 / SESSION_NOT_ENDED**: `sessionId`가 400일 때. 아직 끝나지 않은 "
+        "세션이다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **404 / SESSION_NOT_FOUND**: `sessionId`가 404일 때\n"
+        "- **409 / RECORDING_ALREADY_UPLOADED**: `sessionId`가 410일 때. 이 참가자는 "
+        "이미 올렸다\n"
+        "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
+    ),
+)
+def upload_session_recording(
+    sessionId: Annotated[
+        int,
+        Path(
+            description=(
+                "컨설팅 세션 식별자. 404는 없음, 400은 종료 전, 410은 이미 올림 "
+                "재현용 예약값이다."
+            ),
+            examples=[SESSION_ID],
+        ),
+    ],
+    request: CreateSessionRecordingRequest,
+) -> SessionRecordingResponse | JSONResponse:
+    if sessionId == NOT_FOUND_SESSION_ID:
+        return _error_response(404, SESSION_NOT_FOUND)
+    if sessionId == NOT_ENDED_SESSION_ID:
+        return _error_response(400, SESSION_NOT_ENDED)
+    if sessionId == RECORDED_SESSION_ID:
+        return _error_response(409, RECORDING_ALREADY_UPLOADED)
+    return SessionRecordingResponse(
+        **{**SESSION_RECORDING_EXAMPLE, "fileId": request.fileId}
+    )
 
 
 # =========================================================================== #
@@ -7775,8 +7910,9 @@ def get_income() -> IncomeResponse:
 # 기록이라 남겨야 하기 때문이다. 그래서 DELETE 가 아니라 POST 를 쓴다.
 #
 # 예치 출금 계좌는 회원가입 때 발급한 SSAFY 계좌로 고정한다(R-PAY-09).
+# 환불도 그 계좌로 나간다. 별도로 등록·교체한 계좌로 환불하지 않는다(R-PAY-04).
 # 이 영역의 accounts는 1원 인증으로 등록하는 계좌이고 사람마다 하나다.
-# 의뢰인은 환불을, 개발자는 대금을 이 계좌로 받는다.
+# 개발자가 대금을 받는 데에만 쓴다.
 #
 # 계좌는 1원 인증으로만 등록한다. 계좌를 넣는 요청과 입금자명 뒤 네 자리를 내는
 # 요청이 나뉘며, 확인이 끝나는 순간에만 accounts 에 계좌가 남는다. 1원 이체와
@@ -8013,9 +8149,9 @@ def get_payment_methods() -> PaymentMethodListResponse:
         "**화면 — `8_계좌등록` › 1원 보내기**\n\n"
         "**의뢰인과 개발자가 같은 API를 쓴다.** 의뢰인은 `8_마이페이지` › 계좌에서, "
         "개발자는 `7_개발자_소득내역` › 계좌 등록하기·계좌 변경하기에서 들어온다. "
-        "사람마다 등록 계좌는 하나이고, 의뢰인은 환불을, 개발자는 대금을 이 계좌로 "
-        "받는다. 예치 출금에는 회원가입 때 발급한 SSAFY 계좌를 쓴다. "
-        "(`R-PAY-09`)\n\n"
+        "사람마다 등록 계좌는 하나이고 개발자가 대금을 받는 데에 쓴다. 예치 출금과 "
+        "환불에는 회원가입 때 발급한 SSAFY 계좌를 쓰며, 여기서 등록·교체한 계좌로는 "
+        "환불하지 않는다. (`R-PAY-09`, `R-PAY-04`)\n\n"
         "넣은 계좌로 1원을 보내 확인 건을 연다. 실제 이체는 Escrow 서버가 "
         "금융망에 요청한다. Komit Service는 확인을 끝낼 때 계좌를 저장할 수 있도록 "
         "확인 건과 계좌번호를 안전하게 보관하고, Escrow는 요청받은 `userKey`와 "
@@ -8203,7 +8339,10 @@ class MyPageResponse(BaseModel):
 
     account: MyAccountResponse = Field(description="계정 칸.")
     settlementAccount: AccountResponse | None = Field(
-        description="환불과 대금을 받는 계좌. 등록하지 않았으면 null이다.",
+        description=(
+            "개발자가 대금을 받는 계좌. 등록하지 않았으면 null이다. 환불은 회원가입 "
+            "때 발급한 SSAFY 계좌로 나가므로 이 계좌를 쓰지 않는다. (`R-PAY-04`)"
+        ),
     )
     projects: list[MyProjectResponse] = Field(
         description="내가 등록한 프로젝트. 없으면 빈 배열이다.",
@@ -8752,6 +8891,8 @@ class CreateUploadRequest(BaseModel):
         "PORTFOLIO_IMAGE",
         "SIGNATURE",
         "DELIVERABLE",
+        "SESSION_RECORDING",
+        "REPORT_EVIDENCE",
     ] = Field(
         description=(
             "이 파일을 어디에 쓸지. 쓰임에 따라 받는 형식과 크기가 다르고 보관 기간도 "
@@ -8952,10 +9093,11 @@ NOTIFICATION_LIST_EXAMPLE = {
             "notificationId": 940,
             "type": "공지",
             "title": "9월 1일부터 정산 지급 주기가 바뀝니다",
+            # 본문에 적는 영업일 수는 R-PAY-02 를 따른다. 단축안은 아직 적용
+            # 시점이 정해지지 않아 공지로 내보내지 않는다.
             "content": (
-                "작업 전 건이 통과 확정되면 3영업일 이내에 지급하던 것을 2영업일 "
-                "이내로 앞당깁니다. 8월 31일까지 체결된 계약에도 동일하게 "
-                "적용됩니다."
+                "작업 전 건이 통과 확정되면 3영업일 이내에 지급합니다. 통과한 작업의 "
+                "대금도 계약이 끝날 때까지 예치금에 남아 있다가 한 번에 나갑니다."
             ),
             "targetType": "ANNOUNCEMENT",
             "targetId": 7,
@@ -11587,8 +11729,9 @@ SERVICE_TAGS = [
             "화면에도 있는 기록이라 남겨야 하며, 그래서 `DELETE`가 아니라 `POST`다.\n\n"
             "**계좌는 1원 인증으로만 등록한다.** 계좌를 넣는 요청과 입금자명 뒤 네 "
             "자리를 내는 요청이 나뉘고, 확인이 끝나는 순간에만 계좌가 남는다. 사람마다 "
-            "한 개이며 의뢰인은 환불을, 개발자는 대금을 그 계좌로 받는다. 계좌번호 "
-            "원문은 보관하지 않고 응답에는 언제나 가려서 나간다.\n\n"
+            "한 개이며 개발자가 대금을 받는 데에 쓴다. 환불은 회원가입 때 발급한 SSAFY "
+            "계좌로 나간다(`R-PAY-04`). 계좌번호 원문은 보관하지 않고 응답에는 언제나 "
+            "가려서 나간다.\n\n"
             "**에스크로 서버는 SSAFY 금융망과 코밋 사이의 프록시다.** 클라이언트는 위 "
             "API들의 간소화된 형식만 쓰고, 코밋이 에스크로에 보낼 때 SSAFY 금융망 "
             "형식(`Header`/`REC`)으로 바꾼다. 금융망 응답코드는 코밋의 `code`로 옮겨져 "
