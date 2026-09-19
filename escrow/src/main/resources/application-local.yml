@@ -14,6 +14,12 @@ app:
     encryption-key-base64: ${FIELD_ENCRYPTION_KEY_BASE64:ZGV2LW9ubHktMzItYnl0ZS1hZXMta2V5LTAwMDAwMDA=}
     encryption-key-version: ${FIELD_ENCRYPTION_KEY_VERSION:1}
     operator-api-key: ${OPERATOR_CLIENT_API_KEY:dev-only-operator-client-api-key}
+  finance:
+    enabled: ${SSAFY_FINANCE_ENABLED:false}
+    base-url: ${SSAFY_FINANCE_BASE_URL:https://finopenapi.ssafy.io/ssafy}
+    api-key: ${SSAFY_FINANCE_API_KEY:disabled-local-api-key}
+    time-zone: ${SSAFY_FINANCE_TIME_ZONE:Asia/Seoul}
+    account-type-unique-no: ${SSAFY_DEMAND_DEPOSIT_PRODUCT_NO:001-1-231ecb61d2554c}
 
 logging:
   level:

@@ -478,6 +478,14 @@ fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
 | `CLIENT_API_KEY_HMAC_SECRET`, `SENSITIVE_DATA_HMAC_SECRET` | Masked, Protected | Escrow 내부 API 키와 민감정보 조회값을 위한 HMAC 비밀키. 각각 32자 이상이어야 합니다 |
 | `FIELD_ENCRYPTION_KEY_BASE64` | Masked, Protected | Escrow 복구용 민감정보 AES-256 키. 정확히 32바이트인 키의 Base64 값이어야 합니다 |
 | `OPERATOR_CLIENT_API_KEY` | Masked, Protected | Escrow 운영자 API 키. 32자 이상이어야 합니다 |
+| `SSAFY_FINANCE_API_KEY` | Masked, Protected | Escrow가 SSAFY 교육용 금융망을 호출할 때 사용하는 앱 관리자 API Key |
+| `SSAFY_DEMAND_DEPOSIT_PRODUCT_NO` | Visible, Protected | R-ACC-10에 따라 해당 SSAFY 환경에 미리 등록한 입출금 상품 고유번호 |
+
+> GitLab에 CI/CD 변수를 등록하는 것만으로는 Pod에 전달되지 않습니다. 애플리케이션에 운영 환경변수를
+> 추가할 때는 같은 MR에서 `.gitlab-ci.yml`의 필수 변수 검사와 SSH 전달 목록, `deploy/k3s/deploy.sh`의
+> 입력 검증 및 Secret/ConfigMap 생성, Deployment의 `envFrom` 또는 `env` 연결을 모두 확인해야 합니다.
+> 민감값은 `secretGenerator`, 공개 설정값은 `configMapGenerator`를 사용합니다. 새 설정으로 배포를
+> 검증할 때는 과거 Job을 Retry하지 말고 해당 변경이 포함된 새 파이프라인을 실행합니다.
 
 - 이번 파이프라인에서 빌드되지 않은 모듈은 서버에서 돌고 있는 이미지를 유지합니다. `deploy/k3s/`만 바뀌면 이미지 교체 없이 설정만 반영합니다.
 - 비밀번호는 SSH 명령줄 인자가 아니라 표준입력으로 전달해 서버 프로세스 목록에 남기지 않습니다.
@@ -501,6 +509,8 @@ export CLIENT_API_KEY_HMAC_SECRET=<32자 이상 비밀값>
 export SENSITIVE_DATA_HMAC_SECRET=<32자 이상 비밀값>
 export FIELD_ENCRYPTION_KEY_BASE64=<32바이트 AES 키의 Base64 값>
 export OPERATOR_CLIENT_API_KEY=<32자 이상 운영자 키>
+export SSAFY_FINANCE_API_KEY=<SSAFY 금융망 앱 관리자 API Key>
+export SSAFY_DEMAND_DEPOSIT_PRODUCT_NO=<SSAFY 입출금 상품 고유번호>
 
 # 이번에 바뀐 모듈만 넘깁니다. 클러스터에 아직 없는 모듈은 반드시 넘깁니다.
 export SERVICE_IMAGE=docker.io/<account>/komit-service:<commit-sha>
@@ -522,6 +532,8 @@ chmod +x deploy/k3s/deploy.sh
 | `CLIENT_API_KEY_HMAC_SECRET`, `SENSITIVE_DATA_HMAC_SECRET` | 예 | Escrow HMAC 비밀키. 각각 32자 이상이며 `escrow-security` Secret으로 주입됩니다. |
 | `FIELD_ENCRYPTION_KEY_BASE64` | 예 | Escrow AES-256 암호화 키. Base64 디코딩 결과가 정확히 32바이트여야 합니다. |
 | `OPERATOR_CLIENT_API_KEY` | 예 | Escrow 운영자 API 키. 32자 이상이며 `escrow-security` Secret으로 주입됩니다. |
+| `SSAFY_FINANCE_API_KEY` | 예 | SSAFY 금융망 앱 관리자 API Key. `escrow-security` Secret으로 주입되며 저장소나 ConfigMap에 기록하지 않습니다. |
+| `SSAFY_DEMAND_DEPOSIT_PRODUCT_NO` | 예 | R-ACC-10 입출금 상품 고유번호. `escrow-config` ConfigMap으로 주입됩니다. |
 | `SERVICE_IMAGE`, `ESCROW_IMAGE`, `FE_IMAGE` | 아니요 | 비어 있으면 클러스터에서 돌고 있는 이미지를 유지합니다. 바뀌지 않은 모듈은 재시작하지 않습니다. 클러스터에 아직 없는 모듈은 필수입니다. |
 
 스크립트는 배포할 이미지 태그를 임시 디렉터리의 Kustomize overlay에 고정해 적용하고, 각 단계의 준비 완료를 기다린 뒤 다음 단계로 넘어갑니다. DB·Redis 주소는 클러스터 내부 DNS 이름으로 고정되어 있어 주입하지 않습니다.

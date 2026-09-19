@@ -18,4 +18,11 @@ public class SensitiveDataHasher {
                 "user-key:" + serviceClientId,
                 userKey);
     }
+
+    public String accountAuthFingerprint(long serviceClientId, String userKey, String accountNo) {
+        return HmacSha256.hex(
+                properties.sensitiveDataHmacSecret(),
+                "account-auth:" + serviceClientId,
+                userKey + "\u0000" + accountNo);
+    }
 }
