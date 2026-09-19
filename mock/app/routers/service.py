@@ -1609,7 +1609,7 @@ Claude Code 를 쓰신다면 아래 한 줄이면 됩니다.
 
 ## 검사가 끝나면
 
-`komit-result.json` 이 만들어집니다. 그 파일만 Komit 에 올려 주세요.
+`komit-result.md` 가 만들어집니다. 그 파일만 Komit 에 올려 주세요.
 파일을 열어 무엇이 담겼는지 먼저 보셔도 됩니다.
 
 ## 무엇을 검사하나요
@@ -1664,11 +1664,13 @@ DIAGNOSIS_EXAMPLE = {
     "version": 2,
     "project": PROJECT_EXAMPLE,
     "userInput": "결제 버튼을 누르면 가끔 아무 반응이 없어요",
-    "readinessScore": 52,
+    # ISSUES 의 미해결 결함이 높음 3 · 보통 3 · 낮음 2 이므로
+    # 49 - (3 x 3) - (3 x 1) = 37 이다. (R-SCAN-18)
+    "readinessScore": 37,
     "scannedAt": SCANNED_AT,
-    "unresolvedIssueCount": 9,
-    "totalIssueCount": 11,
-    "resolvedSinceLastVersionCount": 3,
+    "unresolvedIssueCount": 8,
+    "totalIssueCount": 9,
+    "resolvedSinceLastVersionCount": 1,
 }
 
 # 막 시작한 진단. 검사를 돌린 적이 없어 점수와 검사 시각이 비어 있다.
@@ -1773,7 +1775,7 @@ INSPECTION_DONE_EXAMPLE = {
     "inspectionId": 27,
     "diagnosisVersion": 2,
     "status": "DONE",
-    "readinessScore": 52,
+    "readinessScore": 37,
     "scannedAt": SCANNED_AT,
 }
 
@@ -4692,7 +4694,10 @@ class ConsultingAgreementResponse(BaseModel):
     ] = Field(
         description=(
             "컨설팅 진행. SIGNED는 체결됨, DEPOSITED는 예치됨, IN_PROGRESS는 진행중, "
-            "COMPLETED는 완료됨, TERMINATED는 파기됨이다."
+            "COMPLETED는 완료됨, TERMINATED는 파기됨이다.\n\n"
+            "**체결 여부는 바깥 계약의 `status`로만 판단한다.** 이 값은 체결 이후의 "
+            "진행을 나타내므로, 바깥이 `NEGOTIATING`인 동안에는 의미가 없다. 협의 중에는 "
+            "언제든 내용이 바뀔 수 있어 갈래에 따로 상태를 두지 않는다. (`R-CON-01`)"
         ),
         examples=["SIGNED"],
     )
@@ -4995,6 +5000,8 @@ CONSULTING_CONTRACT_EXAMPLE = {
     "contractType": "CONSULTING",
     "status": "NEGOTIATING",
     "consulting": {
+        # 바깥이 NEGOTIATING 이므로 이 값은 아직 의미가 없다. 체결 여부는
+        # 바깥 status 로만 판단한다.
         "status": "SIGNED",
         "totalAmount": 50000,
         "sessions": [SESSION_EXAMPLE],
@@ -5265,7 +5272,9 @@ def amend_contract(
                 "application/json": {
                     "example": {
                         **CONSULTING_CONTRACT_EXAMPLE,
-                        "status": "SIGNED",
+                        # 의뢰인만 서명한 상태다. 개발자 서명이 남아 있으므로
+                        # 계약은 아직 체결되지 않았다. (R-CON-01)
+                        "status": "NEGOTIATING",
                         "clientSignature": {
                             "userId": 12,
                             "isSigned": True,
@@ -5328,7 +5337,8 @@ def sign_contract(
     return ContractResponse(
         **{
             **CONSULTING_CONTRACT_EXAMPLE,
-            "status": "SIGNED",
+            # 의뢰인만 서명했으므로 아직 협의중이다. (R-CON-01)
+            "status": "NEGOTIATING",
             "clientSignature": {
                 "userId": 12,
                 "isSigned": True,
@@ -9016,10 +9026,11 @@ NOTIFICATION_LIST_EXAMPLE = {
             "notificationId": 940,
             "type": "공지",
             "title": "9월 1일부터 정산 지급 주기가 바뀝니다",
+            # 본문에 적는 영업일 수는 R-PAY-02 를 따른다. 단축안은 아직 적용
+            # 시점이 정해지지 않아 공지로 내보내지 않는다.
             "content": (
-                "작업 전 건이 통과 확정되면 3영업일 이내에 지급하던 것을 2영업일 "
-                "이내로 앞당깁니다. 8월 31일까지 체결된 계약에도 동일하게 "
-                "적용됩니다."
+                "작업 전 건이 통과 확정되면 3영업일 이내에 지급합니다. 통과한 작업의 "
+                "대금도 계약이 끝날 때까지 예치금에 남아 있다가 한 번에 나갑니다."
             ),
             "targetType": "ANNOUNCEMENT",
             "targetId": 7,
