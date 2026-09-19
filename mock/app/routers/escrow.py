@@ -590,9 +590,9 @@ class EscrowRequestHeader(BaseModel):
     idempotencyKey: str | None = Field(
         default=None,
         description=(
-            "업무 멱등키. 사용자·계좌 발급, 자금 이동, 취소·동결·해제 API에는 반드시 담고, "
+            "업무 멱등키. 1원 인증 요청, 사용자·계좌 발급, 자금 이동, 취소·동결·해제 API에는 반드시 담고, "
             "같은 업무를 다시 보낼 때는 같은 값을 유지한다. 조회 API에서는 쓰지 않는다. "
-            "ERD member_account_provisions, escrow_transactions, escrow_state_commands의 "
+            "ERD account_auth_requests, member_account_provisions, escrow_transactions, escrow_state_commands의 "
             "idempotency_key에 각각 대응한다. "
             "conflict-idempotency-key는 본문이 처음과 달라 거절되는 사례의 "
             "재현용 예약값이다."
@@ -730,8 +730,8 @@ def _validate_escrow_header(
 # --------------------------------------------------------------------------- #
 # 계좌 등록 (1원 인증) — 패스스루
 #
-# 에스크로는 결과를 저장하지 않고 SSAFY로 중계만 한다. 인증에 성공한 계좌는 komit이
-# 자기 DB에 보관했다가 예치할 때 다시 실어 보낸다. 아래 요청·응답 필드는 에스크로
+# 에스크로는 1원 송금의 멱등·복구 기록을 보관한다. 등록 계좌는 Komit이 관리하며
+# 예치 출금은 R-PAY-09에 따라 회원가입 발급 계좌를 사용한다. 아래 요청·응답 필드는 에스크로
 # ERD가 아니라 SSAFY 금융망 규격을 그대로 따른다.
 # --------------------------------------------------------------------------- #
 
@@ -763,8 +763,7 @@ class OpenAccountAuthRequest(BaseModel):
     )
     accountNo: str = Field(
         description=(
-            "인증할 원화 수시입출금 계좌번호 16자리. 에스크로는 이 값을 저장하지 않고 "
-            "SSAFY로 넘긴다. ERD에는 없으며 SSAFY 금융망 요청에 대응하는 필드다. "
+            "인증할 원화 수시입출금 계좌번호 16자리. ERD account_auth_requests에 암호화해 보관한다. "
             "0000000000000000은 계좌번호 오류 재현용 예약값이다."
         ),
         examples=[MOCK_ACCOUNT_NO],
@@ -790,7 +789,7 @@ class OpenAccountAuthRecord(BaseModel):
         description=(
             "이 시각이 지나면 인증이 만료된다. 화면의 남은 시간이 이 값에서 나온다. "
             "유효 시간은 R-ACC-02다. 에스크로가 계산해 내려주고 Komit은 그대로 "
-            "전달한다. 에스크로 ERD에는 회원별 인증 세션을 저장하지 않는다."
+            "전달한다. ERD account_auth_requests.expires_at이며 같은 요청의 재시도로 연장되지 않는다."
         ),
         examples=["2026-09-09T12:10:00+09:00"],
     )
@@ -877,6 +876,11 @@ class InquireTransactionHistoryListResponse(BaseModel):
 class CheckAuthCodeRequest(BaseModel):
     """인증번호 검증 요청."""
 
+    transactionUniqueNo: str = Field(
+        description="openAccountAuth가 반환한 인증 거래번호. 같은 서비스·사용자·계좌의 성공 요청만 확인한다. 1000000408은 만료, 1000000404는 없음 또는 소유자 불일치 사례다.",
+        min_length=1, max_length=100, examples=["1000000001"],
+    )
+
     Header: EscrowRequestHeader = Field(
         description="JSON Body 안에 담는 공통 요청 Header."
     )
@@ -912,6 +916,7 @@ class CheckAuthCodeResponse(BaseModel):
 
 def _account_header_example(api_name: str) -> dict:
     return {
+        **({"idempotencyKey": "auth-request-1"} if api_name == "openAccountAuth" else {}),
         "apiName": api_name,
         "transmissionDate": "20260909",
         "transmissionTime": "120000",
@@ -971,8 +976,10 @@ def _success_header_example(api_name: str) -> dict:
         "인증할 계좌에 1원을 입금하고 거래내역에 기업명과 네 자리 인증번호를 남긴다. "
         "원화 수시입출금 계좌만 쓸 수 있다.\n\n"
         "기업명은 에스크로가 고객사 설정에서 꺼내 채우므로 요청 본문에 담지 않는다. "
-        "에스크로는 계좌번호 원문과 회원별 인증 세션을 보관하지 않는다. "
-        "`expiresAt`은 계산해 내려주고 고객사가 인증 세션을 관리한다.\n\n"
+        "같은 멱등키와 같은 사용자·계좌 요청은 최초 결과와 만료 시각을 반환하며 재송금하지 않는다. "
+        "만료 후 새 인증은 새 멱등키로 요청한다. 결과 확인 중에는 503을 반환하며 "
+        "pending-auth-key로 재현한다. 성공 예시는 고정 인증 시각을 사용한다.\n\n"
+        "- **400 / E5002·E5003**: 멱등키 누락 또는 같은 키의 요청 내용 충돌\n"
         "- **200 / H0000**: 1원을 보냈을 때\n"
         "- **400 / A1003**: `accountNo`가 `0000000000000000`일 때. 계좌번호가 "
         "유효하지 않다\n"
@@ -997,7 +1004,7 @@ async def open_account_auth(
     ],
 ) -> OpenAccountAuthResponse | JSONResponse:
     error = _validate_escrow_header(
-        payload.Header, "openAccountAuth", needs_user_key=True
+        payload.Header, "openAccountAuth", needs_user_key=True, needs_idempotency_key=True
     )
     if error:
         return _escrow_error(*error, payload.Header)
@@ -1006,6 +1013,9 @@ async def open_account_auth(
             400, "A1003", "계좌번호가 유효하지 않습니다.", payload.Header
         )
 
+    if payload.Header.idempotencyKey == "pending-auth-key":
+        return _escrow_error(503, "Q1000", "인증 요청 결과를 확인 중입니다. 같은 멱등키로 다시 확인해 주세요.", payload.Header)
+
     return OpenAccountAuthResponse(
         Header=_escrow_response_header(
             "H0000", "정상처리 되었습니다.", payload.Header
@@ -1013,10 +1023,8 @@ async def open_account_auth(
         REC=OpenAccountAuthRecord(
             transactionUniqueNo="1000000001",
             accountNo=payload.accountNo,
-            # R-ACC-02: 목 서버는 상태를 저장하지 않고 호출 시각 기준 만료값만 돌려준다.
-            expiresAt=(
-                datetime.now(timezone(timedelta(hours=9))) + timedelta(minutes=10)
-            ).isoformat(timespec="seconds"),
+            # R-ACC-02: 고정 사례의 최초 성공 시각 기준. 재전송에도 만료 시각 유지.
+            expiresAt="2026-09-09T12:10:00+09:00",
         ),
     )
 
@@ -1133,7 +1141,7 @@ async def inquire_transaction_history_list(
             "checkAuthCode",
             {
                 "status": "SUCCESS",
-                "transactionUniqueNo": "1000000002",
+                "transactionUniqueNo": "1000000001",
                 "accountNo": MOCK_ACCOUNT_NO,
             },
         ),
@@ -1143,9 +1151,11 @@ async def inquire_transaction_history_list(
     description=(
         "은행 앱이 없는 데모이므로 사용자가 네 자리 숫자를 입력하면 실제 인증번호와 "
         "대조하지 않고 성공으로 처리한다. `9999`도 성공한다. (`R-ACC-02`)\n\n"
-        "성공하면 고객사가 그 계좌를 인증됨으로 표시하고 보관한다. 에스크로는 계좌를 "
-        "저장하지 않는다.\n\n"
-        "- **200 / H0000**: `authCode`가 네 자리 숫자일 때\n"
+        "성공하면 고객사가 그 계좌를 인증됨으로 표시하고 보관한다. 에스크로는 "
+        "복구 기록으로 인증 거래와 사용자·계좌를 대조한다. 인증 확인은 읽기 전용이며 반복해도 송금하지 않는다.\n\n"
+        "- **200 / H0000**: 해당 서비스·사용자·계좌의 만료 전 성공 요청이며 authCode가 네 자리 숫자일 때\n"
+        "- **400 / E5011**: 인증 요청이 만료된 경우\n"
+        "- **400 / E5012**: 인증 거래가 없거나 요청 소유자·계좌가 불일치한 경우\n"
         "- **400 / A1003**: `accountNo`가 `0000000000000000`일 때\n"
         "- **400 / H1009**: `userKey`가 없거나 `invalid-user-key`일 때\n"
         "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
@@ -1163,6 +1173,7 @@ async def check_auth_code(
                     "Header": _account_header_example("checkAuthCode"),
                     "accountNo": MOCK_ACCOUNT_NO,
                     "authCode": "1234",
+                    "transactionUniqueNo": "1000000001",
                 }
             ]
         ),
@@ -1177,13 +1188,18 @@ async def check_auth_code(
         return _escrow_error(
             400, "A1003", "계좌번호가 유효하지 않습니다.", payload.Header
         )
+    if payload.transactionUniqueNo == "1000000408":
+        return _escrow_error(400, "E5011", "인증 요청이 만료되었습니다.", payload.Header)
+    if (payload.transactionUniqueNo != "1000000001" or payload.accountNo != MOCK_ACCOUNT_NO
+            or payload.Header.userKey != "mock-user-key" or payload.Header.clientApiKey != "mock-client-api-key"):
+        return _escrow_error(400, "E5012", "인증 요청을 찾을 수 없습니다.", payload.Header)
     return CheckAuthCodeResponse(
         Header=_escrow_response_header(
             "H0000", "정상처리 되었습니다.", payload.Header
         ),
         REC=CheckAuthCodeRecord(
             status="SUCCESS",
-            transactionUniqueNo="1000000002",
+            transactionUniqueNo=payload.transactionUniqueNo,
             accountNo=payload.accountNo,
         ),
     )

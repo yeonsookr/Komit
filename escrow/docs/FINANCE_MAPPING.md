@@ -225,12 +225,12 @@ HTTP 201 / `H0000`으로 **서로 다른 두 번째 계좌가 실제 생성**됐
 
 ## 5. 계좌 확인 (1원 인증)
 
-Komit이 회원가입 때 보관한 `userKey`와 계좌번호를 에스크로에 전달한다. 에스크로는 SSAFY 계좌 확인 API를 중계하고 `authText`를 주입한다. 인증 결과와 사용 계좌는 Komit이 보관한다. 에스크로 통합 `V1`에는 회원별 계좌 확인 테이블을 두지 않는다.
+Komit이 회원가입 때 보관한 `userKey`와 계좌번호를 에스크로에 전달한다. 에스크로는 SSAFY 계좌 확인 API를 중계하고 `authText`를 주입한다. 인증 결과와 사용 계좌는 Komit이 보관한다. 통합 V1의 `account_auth_requests`는 1원 송금의 멱등 키·요청 지문·암호화한 사용자 키와 계좌·최초 만료 시각을 저장한다. 등록 계좌의 원본과 사용자 화면의 인증 세션은 Komit이 관리한다.
 
 | 단계 | 에스크로 API·금융망 처리 | Komit으로 전달할 결과 |
 | --- | --- | --- |
 | 인증 요청 | `openAccountAuth`<br>req: `accountNo`, `authText`(에스크로 설정값) | `transactionUniqueNo`, `accountNo`, `expiresAt` |
-| 인증 검증 | 에스크로 `checkAuthCode`<br>req: `accountNo`, `authCode`(4자리 숫자). 은행 앱이 없는 데모이므로 실제 코드 일치 검사는 하지 않는다 | `status=SUCCESS`, `transactionUniqueNo`, `accountNo` |
+| 인증 검증 | 에스크로 `checkAuthCode`<br>req: `transactionUniqueNo`, `accountNo`, `authCode`(4자리 숫자). 은행 앱이 없는 데모이므로 실제 코드 일치 검사는 하지 않는다 | `status=SUCCESS`, `transactionUniqueNo`, `accountNo` |
 
 - **be-api는 `Header.userKey`와 `accountNo`를 넘기고, `authText`는 에스크로가 채운다.** (목의 요청에 `authText`가 없는 이유)
 - `R-ACC-02`: 유효 시간 안에 네 자리 숫자를 입력하면 어떤 값이든 성공한다. `expiresAt`은 에스크로 응답을 Komit이 인증 세션과 함께 관리한다.
@@ -238,6 +238,10 @@ Komit이 회원가입 때 보관한 `userKey`와 계좌번호를 에스크로에
 - `R-ACC-04`: Komit 회원당 유효 계좌 1개. 이 제약을 에스크로 통합 `V1`의 party 테이블에 의존하지 않는다.
 
 ---
+
+1원 인증 요청도 Writer가 `REQUESTED → DISPATCHING` 조건부 갱신을 커밋한 뒤 호출한다. 같은 서비스·멱등키의 재요청은 사용자 키·계좌번호를 포함한 요청 지문을 대조하며, 성공한 요청은 동일한 거래번호와 `expires_at`을 반환한다. 처리 중이거나 결과 불명이면 503으로 알리고 원래 키를 유지한다. 금융망이 1원 인증 거래번호를 확실히 복구할 조회 수단을 제공하지 않으면 UNKNOWN을 유지하고 운영 확인으로 넘긴다. 임의의 새 송금이나 만료 연장은 하지 않는다.
+
+`checkAuthCode`는 `transactionUniqueNo`가 같은 서비스·사용자·계좌의 성공 요청인지와 `expires_at`을 먼저 확인한다. 만료는 E5011, 존재하지 않거나 소유 정보가 다른 요청은 E5012다. 네 자리 숫자 무조건 성공은 이 조건을 만족한 데모 요청에만 적용한다. 이 API는 상태를 변경하지 않으므로 반복 호출이 가능하다. 동일 키로 만료된 성공 요청을 다시 열어도 최초 결과를 반환하며 새 인증은 새 키를 사용한다.
 
 ## 6. 대사 (Reconciliation)
 
@@ -320,7 +324,7 @@ Service는 `releaseEscrow`의 HTTP 200 / `H0000`을 정산 요청의 처리 결�
 | --- | --- |
 | `verificationId` (int) | 상관키는 `accountNo`. Komit이 자체 세션 ID를 발급하고 `accountNo` 원문을 암호화해 보관하며 화면에는 가린 값만 전달 |
 | `expiresAt` | `openAccountAuth` 응답의 `expiresAt`. Komit이 인증 세션과 함께 관리하고 FE에 전달한다 |
-| (검증 요청) | `checkAuthCode` req: `accountNo`, `authCode`(4자리 숫자). 실제 코드 일치 여부는 검사하지 않는다 (`R-ACC-02`) |
+| (검증 요청) | `checkAuthCode` req: `transactionUniqueNo`, `accountNo`, `authCode`(4자리 숫자). 실제 코드 일치 여부는 검사하지 않는다 (`R-ACC-02`) |
 
 ---
 

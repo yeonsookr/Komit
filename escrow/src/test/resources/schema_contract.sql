@@ -1,6 +1,25 @@
 -- 빈 DB에 V1 적용 후 psql -v ON_ERROR_STOP=1 -f 로 실행한다. 테스트 데이터는 롤백한다.
 BEGIN;
 INSERT INTO service_clients (id, name, api_key_hash) VALUES (900001, '검증 서비스', 'schema-test');
+INSERT INTO account_auth_requests
+    (id, service_client_id, idempotency_key, request_fingerprint, user_key_lookup_hash,
+     user_key_encrypted, account_no_encrypted, auth_text, request_reference)
+VALUES (900001,900001,'auth-test',repeat('b',64),repeat('c',64),'encrypted-key','encrypted-account','KOMIT','auth-ref');
+DO $$
+BEGIN
+    BEGIN
+        UPDATE account_auth_requests SET status='SUCCEEDED' WHERE id=900001;
+        RAISE EXCEPTION '실행 정보와 인증 결과 없는 성공이 허용됨';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+END $$;
+UPDATE account_auth_requests SET status='DISPATCHING', dispatched_by='pod-test', dispatched_at=clock_timestamp()
+WHERE id=900001 AND status='REQUESTED';
+UPDATE account_auth_requests SET status='UNKNOWN' WHERE id=900001;
+INSERT INTO operation_audit_events (account_auth_request_id, actor_type, actor_id, action, reason)
+VALUES (900001,'OPERATOR','test','인증 결과 확인','금융망 증빙 확인');
+UPDATE account_auth_requests SET status='SUCCEEDED', transaction_unique_no='auth-bank-id',
+expires_at=clock_timestamp()+interval '10 minutes' WHERE id=900001;
 INSERT INTO member_account_provisions
     (id, service_client_id, user_id, account_type_unique_no, idempotency_key, seed_amount)
 VALUES (900001, 900001, 'schema@example.com', 'product', 'provision-test', 1);

@@ -86,6 +86,40 @@ CREATE TABLE member_account_provisions (
 
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='회원 계좌 발급 기록 | SSAFY 사용자·계좌 발급 및 1회 데모 입금의 복구 기록 (R-ACC-09, R-PAY-10)';
 
+CREATE TABLE account_auth_requests (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '인증 요청 ID | 내부 복구 기록 식별자',
+    service_client_id BIGINT NOT NULL COMMENT '이용 서비스 ID | 인증 요청 소유 서비스',
+    idempotency_key VARCHAR(255) NOT NULL COMMENT '멱등 키 | 동일 인증 요청의 재전송 식별자',
+    request_fingerprint VARCHAR(64) NOT NULL COMMENT '요청 지문 | 사용자 키와 계좌번호를 포함한 정규화 업무 요청의 HMAC-SHA-256',
+    user_key_lookup_hash VARCHAR(64) NOT NULL COMMENT '사용자 키 조회 해시 | 서비스별 HMAC-SHA-256',
+    user_key_encrypted TEXT NOT NULL COMMENT '사용자 키 암호문 | 장애 복구용 암호화 봉투',
+    account_no_encrypted TEXT NOT NULL COMMENT '인증 계좌 암호문 | 요청 대조와 복구용 암호화 봉투',
+    auth_text VARCHAR(100) NOT NULL COMMENT '인증 문구 | 요청 당시 서비스 설정을 고정',
+    request_reference VARCHAR(100) NOT NULL UNIQUE COMMENT '금융망 요청 식별자 | 실행 전 저장하고 재송금 판단 근거로 사용',
+    status VARCHAR(20) NOT NULL DEFAULT 'REQUESTED' COMMENT '호출 상태 | REQUESTED 준비 / DISPATCHING 실행권 획득 / SUCCEEDED 성공 / FAILED 확정 실패 / UNKNOWN 결과 불명',
+    dispatched_by VARCHAR(100) COMMENT '실행 인스턴스 | 호출 실행권을 획득한 인스턴스 식별자',
+    dispatched_at DATETIME(6) COMMENT '실행권 획득 일시 | 실제 금융망 도달을 보장하지 않음',
+    transaction_unique_no VARCHAR(100) COMMENT '인증 거래번호 | 금융망 성공 결과. 인증 확인 요청과 연결',
+    expires_at DATETIME(6) COMMENT '인증 만료 일시 | R-ACC-02 적용. 재요청으로 연장하지 않음',
+    created_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '생성 일시 | 최초 요청 접수 시각',
+    FOREIGN KEY (service_client_id) REFERENCES service_clients (id),
+    CONSTRAINT uq_account_auth_requests_key UNIQUE (service_client_id, idempotency_key),
+    CONSTRAINT uq_account_auth_requests_transaction UNIQUE (service_client_id, transaction_unique_no),
+    CONSTRAINT ck_account_auth_requests_key CHECK (length(trim(idempotency_key)) > 0),
+    CONSTRAINT ck_account_auth_requests_fingerprint CHECK (request_fingerprint REGEXP '^[0-9a-f]{64}$'),
+    CONSTRAINT ck_account_auth_requests_user_hash CHECK (user_key_lookup_hash REGEXP '^[0-9a-f]{64}$'),
+    CONSTRAINT ck_account_auth_requests_status CHECK (status IN ('REQUESTED','DISPATCHING','SUCCEEDED','FAILED','UNKNOWN')),
+    CONSTRAINT ck_account_auth_requests_dispatch CHECK (
+        (status='REQUESTED' AND dispatched_by IS NULL AND dispatched_at IS NULL)
+        OR (status<>'REQUESTED' AND dispatched_by IS NOT NULL
+            AND length(trim(dispatched_by))>0 AND dispatched_at IS NOT NULL)
+    ),
+    CONSTRAINT ck_account_auth_requests_result CHECK (
+        (status='SUCCEEDED' AND transaction_unique_no IS NOT NULL AND expires_at IS NOT NULL)
+        OR (status<>'SUCCEEDED' AND transaction_unique_no IS NULL AND expires_at IS NULL)
+    )
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='계좌 인증 요청 | 1원 송금의 멱등 처리와 응답 유실 복구 기록';
+
 CREATE TABLE escrows (
     id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '에스크로 ID | 서버에서 생성한 식별자',
     service_client_id BIGINT NOT NULL COMMENT '이용 서비스 ID | 계약을 소유한 서비스',
@@ -289,6 +323,7 @@ CREATE TABLE operation_audit_events (
     escrow_id BIGINT COMMENT '에스크로 ID | 관련 계약',
     transaction_id BIGINT COMMENT '거래 ID | 관련 자금 거래',
     member_provision_id BIGINT COMMENT '발급 기록 ID | 관련 회원 계좌 발급',
+    account_auth_request_id BIGINT COMMENT '인증 요청 ID | 1원 인증 결과 불명 해소의 대상',
     actor_type VARCHAR(20) NOT NULL COMMENT '처리 주체 유형 | SYSTEM / OPERATOR',
     actor_id VARCHAR(100) NOT NULL COMMENT '처리 주체 ID | 작업자 또는 시스템 작업 식별자',
     action VARCHAR(100) NOT NULL COMMENT '조치 유형 | 조회 확인·결과 확정·수동 복구 등',
@@ -302,9 +337,10 @@ CREATE TABLE operation_audit_events (
         FOREIGN KEY (transaction_id) REFERENCES escrow_transactions (id),
     CONSTRAINT fk_operation_audit_events_member_provision
         FOREIGN KEY (member_provision_id) REFERENCES member_account_provisions (id),
+    FOREIGN KEY (account_auth_request_id) REFERENCES account_auth_requests (id),
     CONSTRAINT ck_operation_audit_events_actor_type CHECK (actor_type IN ('SYSTEM', 'OPERATOR')),
     CONSTRAINT ck_operation_audit_events_target
-        CHECK (escrow_id IS NOT NULL OR transaction_id IS NOT NULL OR member_provision_id IS NOT NULL),
+        CHECK (escrow_id IS NOT NULL OR transaction_id IS NOT NULL OR member_provision_id IS NOT NULL OR account_auth_request_id IS NOT NULL),
     CONSTRAINT ck_operation_audit_events_actor_id CHECK (length(trim(actor_id)) > 0),
     CONSTRAINT ck_operation_audit_events_action CHECK (length(trim(action)) > 0),
     CONSTRAINT ck_operation_audit_events_reason CHECK (length(trim(reason)) > 0)
