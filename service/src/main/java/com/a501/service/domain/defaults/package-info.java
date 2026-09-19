@@ -6,7 +6,7 @@
  *
  * <pre>
  * domain/defaults/
- * ├── controller/   DefaultController, DefaultSortConverter
+ * ├── controller/   DefaultController, DefaultSortEditor
  * ├── service/      DefaultService
  * ├── repository/   DefaultRepository (+ Custom, Impl = QueryDSL)
  * ├── entity/       Default

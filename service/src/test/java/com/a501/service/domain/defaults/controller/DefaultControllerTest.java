@@ -160,6 +160,31 @@ class DefaultControllerTest {
         verify(defaultService, never()).getDefaults(anyInt(), anyInt(), any());
     }
 
+    @Test
+    @DisplayName("enum 상수 이름(ID_ASC)과 공백 섞인 값은 계약 값이 아니므로 목과 같이 422다")
+    void enumConstantNameIsNotAContractValue() throws Exception {
+        for (String value : List.of("ID_ASC", "ID_DESC", "id,asc ", " id,asc", "Id,Asc")) {
+            mockMvc.perform(authenticated(get("/api/defaults")).param("sort", value))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.errors.length()").value(1))
+                    .andExpect(jsonPath("$.errors[0].field").value("sort"))
+                    .andExpect(jsonPath("$.errors[0].reason").value("'id,asc' or 'id,desc' 중 하나여야 합니다."));
+        }
+
+        verify(defaultService, never()).getDefaults(anyInt(), anyInt(), any());
+    }
+
+    @Test
+    @DisplayName("값이 빈 파라미터는 기본값으로 처리한다. 목은 422이며 BACKEND_CONVENTIONS 12.1에 적어 둔 차이다")
+    void emptyParameterFallsBackToDefault() throws Exception {
+        when(defaultService.getDefaults(anyInt(), anyInt(), any())).thenReturn(emptyPage(1, 20));
+
+        mockMvc.perform(authenticated(get("/api/defaults")).param("page", "").param("size", "").param("sort", ""))
+                .andExpect(status().isOk());
+
+        verify(defaultService).getDefaults(1, 20, DefaultSort.ID_ASC);
+    }
+
     private static DefaultListResponse emptyPage(int page, int size) {
         return new DefaultListResponse(List.of(), page, size, 0, 0);
     }

@@ -8,7 +8,8 @@ import org.springframework.data.domain.Sort;
  * 목록 조회 {@code sort} 파라미터. 목 명세 {@code Literal["id,asc", "id,desc"]}에 대응합니다.
  *
  * <p>계약 값에 쉼표가 있어 자바 enum 상수 이름으로 쓸 수 없으므로 상수 이름과 계약 값을 분리하고,
- * 문자열 → enum 변환은 {@link com.a501.service.domain.defaults.controller.DefaultSortConverter}가 맡습니다.
+ * 문자열 → enum 변환은 {@link com.a501.service.domain.defaults.controller.DefaultSortEditor}가 맡습니다.
+ * 상수 이름({@code ID_ASC})은 계약 값이 아니므로 요청으로 받지 않습니다.
  *
  * <p>{@link #toString()}이 계약 값을 돌려주는 것은 계약의 일부입니다. 허용되지 않은 값이 오면 전역 예외 처리기가
  * enum 상수의 {@code toString()}을 나열해 {@code 'id,asc' or 'id,desc' 중 하나여야 합니다.}라는 목과 같은 문구를 만듭니다.
@@ -35,7 +36,7 @@ public enum DefaultSort {
      *
      * @param value 요청에 온 문자열. {@code "id,asc"} 또는 {@code "id,desc"}
      * @return 대응하는 상수
-     * @throws IllegalArgumentException 허용되지 않은 값. 변환기가 이 예외를 타입 불일치로 넘겨 422가 됩니다.
+     * @throws IllegalArgumentException 허용되지 않은 값. 에디터가 이 예외를 타입 불일치로 넘겨 422가 됩니다.
      */
     public static DefaultSort fromValue(String value) {
         return Arrays.stream(values())

@@ -26,24 +26,30 @@ import org.springframework.stereotype.Component;
  * <p>메서드 인자와 반환값은 어느 수준에서도 남기지 않습니다. 토큰·계좌번호·본문이 섞일 수 있고, 값 노출은 로그 규칙 위반입니다.
  * 리포지토리 계층은 여기서 다루지 않습니다. SQL은 {@code org.hibernate.SQL} 로거가 맡습니다.
  *
- * <p>프록시 기반이므로 같은 빈 안에서 자기 메서드를 부르는 내부 호출은 기록되지 않습니다.
+ * <p>프록시 기반이므로 같은 빈 안에서 자기 메서드를 부르는 내부 호출은 기록되지 않습니다. 컨트롤러의 {@code @InitBinder}·
+ * {@code @ModelAttribute} 메서드는 요청마다 프레임워크가 부르는 준비 작업이라 핸들러 로그와 섞이지 않도록 제외합니다.
  */
 @Slf4j
 @Aspect
 @Component
 @RequiredArgsConstructor
 public class LoggingAspect {
+    /** 도메인 패키지의 {@code @RestController} 빈에 선언된 핸들러 메서드. 바인더·모델 준비 메서드는 제외합니다. */
+    static final String CONTROLLER_POINTCUT = "within(com.a501.service.domain..controller..*)"
+            + " && @within(org.springframework.web.bind.annotation.RestController)"
+            + " && !@annotation(org.springframework.web.bind.annotation.InitBinder)"
+            + " && !@annotation(org.springframework.web.bind.annotation.ModelAttribute)";
+    /** 도메인 패키지의 {@code @Service} 빈에 선언된 모든 메서드. */
+    static final String SERVICE_POINTCUT = "within(com.a501.service.domain..service..*)"
+            + " && @within(org.springframework.stereotype.Service)";
+
     private final LoggingProperties properties;
 
-    /** 도메인 패키지의 {@code @RestController} 빈에 선언된 모든 메서드. */
-    @Pointcut("within(com.a501.service.domain..controller..*) "
-            + "&& @within(org.springframework.web.bind.annotation.RestController)")
+    @Pointcut(CONTROLLER_POINTCUT)
     void controllerLayer() {
     }
 
-    /** 도메인 패키지의 {@code @Service} 빈에 선언된 모든 메서드. */
-    @Pointcut("within(com.a501.service.domain..service..*) "
-            + "&& @within(org.springframework.stereotype.Service)")
+    @Pointcut(SERVICE_POINTCUT)
     void serviceLayer() {
     }
 

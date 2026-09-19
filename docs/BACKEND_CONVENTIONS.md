@@ -1,7 +1,7 @@
 # Komit 백엔드 개발 컨벤션
 
 > 팀원이 같은 기준으로 설계·구현·리뷰하기 위한 백엔드 공통 규칙입니다.  
-> 기준일: 2026-09-11
+> 기준일: 2026-09-19
 
 ## 1. 문서 목적과 적용 범위
 
@@ -48,6 +48,12 @@ ERD에 없는 필드가 API 구현에 필요하면 임의로 추가하지 않습
 
 Spring Boot 4.1.1은 Java 17 이상과 Gradle 8.14 이상 또는 9.x를 지원하므로 Java 21과 Gradle 9.7.1 조합을 사용합니다. Spring Boot가 관리하는 라이브러리는 특별한 사유가 없는 한 버전을 개별 지정하지 않습니다.
 
+Spring Boot 4는 모듈 이름이 3.x와 다릅니다. 아래는 4.1.1 BOM(Maven Central)에서 확인한 것입니다.
+
+- AOP 스타터는 `spring-boot-starter-aop`가 아니라 **`spring-boot-starter-aspectj`**입니다. `AopAutoConfiguration`은 그대로 `spring-boot-autoconfigure`에 있습니다.
+- 테스트 슬라이스는 기술별 스타터를 각각 넣어야 합니다. `@WebMvcTest`는 `spring-boot-starter-webmvc-test`, `@DataJpaTest`는 `spring-boot-starter-data-jpa-test`, `@DataRedisTest`는 `spring-boot-starter-data-redis-test`입니다.
+- 슬라이스 애너테이션의 패키지도 `org.springframework.boot.<기술>.test.autoconfigure`로 바뀌었습니다. 예: `org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest`, `org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase`.
+
 PostgreSQL은 메이저 버전을 18로 고정하고, 보안 및 버그 수정이 포함된 최신 마이너 버전으로 정기 갱신합니다. 운영 이미지의 태그를 변경할 때는 마이그레이션과 회귀 테스트를 통과해야 합니다.
 
 참고 문서:
@@ -66,6 +72,7 @@ PostgreSQL은 메이저 버전을 18로 고정하고, 보안 및 버그 수정�
 ```groovy
 plugins {
     id 'java'
+    id 'jacoco'                                        // SonarQube 커버리지 리포트
     id 'org.springframework.boot' version '4.1.1'
     id 'io.spring.dependency-management' version '1.1.7'
 }
@@ -85,10 +92,13 @@ repositories {
 
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-aspectj'        // AOP 로깅 (18.3). Boot 4에서 starter-aop의 새 이름
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-data-redis'     // refresh token 저장 (6.4)
     implementation 'org.springframework.boot:spring-boot-starter-security'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    implementation 'com.auth0:java-jwt:4.5.0'                                    // 액세스 토큰 서명·검증 (15)
 
     implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
 
@@ -103,15 +113,31 @@ dependencies {
     annotationProcessor 'org.projectlombok:lombok'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'      // @WebMvcTest
+    testImplementation 'org.springframework.security:spring-security-test'
+    testImplementation 'org.springframework.boot:spring-boot-starter-data-redis-test'  // @DataRedisTest
+    testImplementation 'org.springframework.boot:spring-boot-starter-data-jpa-test'    // @DataJpaTest
     testImplementation 'org.springframework.boot:spring-boot-testcontainers'
     testImplementation 'org.testcontainers:testcontainers-postgresql'
+    testImplementation 'org.testcontainers:testcontainers-junit-jupiter'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 tasks.named('test') {
     useJUnitPlatform()
+    finalizedBy tasks.named('jacocoTestReport')
+}
+
+tasks.named('jacocoTestReport') {
+    dependsOn tasks.named('test')
+    reports {
+        xml.required = true      // SonarQube는 XML만 읽습니다
+        html.required = false
+    }
 }
 ```
+
+이 스니펫은 `service/build.gradle`을 옮긴 것입니다. 서버마다 쓰지 않는 의존성(Escrow의 Redis·JWT 등)은 뺍니다.
 
 버전 변경은 개인 브랜치에서 임의로 하지 않습니다. 변경 이유, 호환성 확인 결과, 마이그레이션 영향을 PR에 기록하고 팀 리뷰를 받습니다. 버전 재현성을 위해 시스템에 설치된 Gradle이 아니라 저장소의 `gradlew`/`gradlew.bat`를 사용합니다.
 
@@ -300,15 +326,16 @@ Writer 장애 시 Reader를 새 Writer로 승격할 수 있지만, 두 인스턴
 기능을 전체 `controller`, 전체 `service`처럼 계층부터 나누지 않습니다. 최상위는 비즈니스 도메인으로 나누고, 각 도메인 안에서 필요한 계층만 만듭니다.
 
 ```text
-com.a501.backend
-├── BackendApplication.java
+com.a501.service
+├── ServiceApplication.java
 ├── common/
-│   ├── exception/          # GlobalExceptionHandler, ErrorResponse, ErrorCode
-│   ├── response/           # 공통 목록 응답 등
-│   ├── security/           # 인증 사용자 표현, 공통 보안 지원 코드
-│   └── util/               # 둘 이상의 도메인이 실제로 쓰는 범용 코드
-├── config/                 # SecurityConfig, OpenApiConfig, JpaConfig 등
+│   ├── exception/          # GlobalExceptionHandler, ErrorResponse, ErrorCode, BusinessException
+│   ├── logging/            # TraceIdFilter, LoggingAspect, LoggingProperties (18)
+│   ├── persistence/        # 엔티티 기반 클래스: CreatedAtEntity, AuditedEntity, SoftDeleteEntity, CreatedSoftDeleteEntity
+│   └── security/           # AuthenticatedUser, JwtAuthenticationFilter, JwtTokenProvider, SecurityErrorWriter
+├── config/                 # SecurityConfig, OpenApiConfig, JpaConfig, DataSourceRoutingConfig 등
 └── domain/
+    ├── defaults/           # 기준 API 참조 구현. 새 도메인이 그대로 따라 쓰는 본보기 (아래 설명)
     ├── auth/               # 로그인, 토큰 발급·재발급, 로그아웃
     ├── user/               # 계정과 공통 사용자 정보
     ├── developer/          # 개발자 프로필, 기술, 요금, 경력, 포트폴리오, 리뷰 조회
@@ -327,6 +354,8 @@ com.a501.backend
 ```
 
 패키지는 실제 기능을 구현할 때 생성합니다. 비어 있는 패키지를 전체 목록대로 미리 만들지 않습니다. 도메인 이름은 단수형 소문자를 사용합니다.
+
+`domain/defaults`는 화면 기능이 아니라 **참조 구현**입니다. 목의 기준 API(`GET /api/default/{id}`, `GET /api/defaults`)를 이 문서의 규칙대로 끝까지 구현해 둔 것이라, 새 도메인은 이 패키지의 파일 구성·계층 책임·DTO 변환·QueryDSL 목록 조회·문서화·테스트 구성을 그대로 따릅니다. 패키지 이름이 단수형 규칙과 달리 `defaults`인 것은 `default`가 자바 예약어이기 때문이며, 이 예외는 여기 하나뿐입니다. 목이 예약값(`id`=2·3·4, `page`=99)으로 재현하는 실패는 실서버가 흉내 내지 않고 실제 상태(행 존재·삭제 여부)로 응답하며, 재현할 수 없는 사례(403)는 코드가 아니라 Javadoc에 남깁니다.
 
 각 도메인의 내부 기본 구조는 다음과 같습니다.
 
@@ -378,7 +407,7 @@ DeveloperDetailResponse
 DeveloperErrorCode
 ```
 
-약어도 일반 단어처럼 표기합니다. `APIController`, `DTOMapper`보다 `ApiController`, `DtoMapper`를 사용합니다. 기본 패키지는 Java 관례에 따라 `com.a501.backend`처럼 모두 소문자로 작성합니다.
+약어도 일반 단어처럼 표기합니다. `APIController`, `DTOMapper`보다 `ApiController`, `DtoMapper`를 사용합니다. 기본 패키지는 Java 관례에 따라 `com.a501.service`처럼 모두 소문자로 작성합니다.
 
 ## 9. 계층별 책임
 
@@ -388,7 +417,11 @@ DeveloperErrorCode
 - 인증 사용자와 path/query/body 값을 Service에 전달합니다.
 - HTTP 상태와 응답 DTO를 반환합니다.
 - 비즈니스 판단, JPA Entity 변경, Repository 호출을 하지 않습니다.
-- `@Tag`, `@Operation`으로 실제 구현 문서를 작성합니다.
+- `@Tag`, `@Operation`으로 실제 구현 문서를 작성합니다. (17.2)
+- 핸들러 메서드는 패키지 프라이빗으로 둡니다. 프레임워크만 호출하므로 `public`으로 열 이유가 없고, 저장소의 모든 컨트롤러가 이 형태입니다. `@Bean` 메서드도 같습니다.
+- 경로 변수 id는 `Integer`처럼 래퍼 타입으로 받습니다. 기본형이면 타입 불일치 문구가 목과 달라집니다.
+- 인증 사용자(`@AuthenticationPrincipal AuthenticatedUser`)는 소유권·역할 판단에 실제로 쓸 때만 받습니다. 받아서 쓰지 않는 파라미터를 두지 않습니다.
+- **클래스에 `@Validated`를 붙이지 않습니다.** Spring MVC는 `@Validated` 없이 파라미터 제약(`@Min`·`@Max` 등)을 검증해 `HandlerMethodValidationException`을 던지고 전역 처리기가 422로 바꿉니다. `@Validated`를 붙이면 이 내장 검증이 꺼지고 AOP 메서드 검증의 `ConstraintViolationException`이 되어 처리기가 모르는 예외가 되므로 500으로 나갑니다. (실측: `DefaultController`에 붙였을 때 `page=0`이 500)
 
 ### Service
 
@@ -397,6 +430,7 @@ DeveloperErrorCode
 - 데이터를 변경하는 메서드에만 `@Transactional`을 다시 적용합니다.
 - Controller 전용 객체인 `HttpServletRequest`, `ResponseEntity`에 의존하지 않습니다.
 - 구현체가 하나라면 인터페이스를 만들지 않고 `@Service` 클래스를 직접 사용합니다.
+- 호출 시작·종료·소요 시간 로그는 `common/logging/LoggingAspect`가 남기므로 서비스에서 같은 내용을 다시 찍지 않습니다. (18.3)
 
 ### Repository
 
@@ -404,6 +438,8 @@ DeveloperErrorCode
 - 복잡한 조회는 쿼리 메서드, `@EntityGraph`, JPQL `@Query` 순서로 해결합니다.
 - 위 방법으로 표현할 수 없는 동적 조건, 복합 검색, 통계성 조회는 QueryDSL로 작성합니다. 기준은 13.3입니다.
 - Controller가 Repository를 직접 호출하지 않습니다.
+- QueryDSL 구현은 `XxxRepositoryCustom`(선언) + `XxxRepositoryImpl`(구현) 프래그먼트로 두고 `JpaRepository`가 `Custom`을 함께 상속합니다. `JPAQueryFactory`는 `config/JpaConfig` 빈을 생성자로 주입받습니다.
+- 프래그먼트 안에서 던진 `IllegalArgumentException`은 Spring Data 프록시의 예외 변환 때문에 호출 측에 `InvalidDataAccessApiUsageException`으로 보입니다. `@throws`와 테스트는 그 타입으로 적습니다.
 
 ### Entity
 
@@ -411,6 +447,8 @@ DeveloperErrorCode
 - 무분별한 `setter`를 금지합니다.
 - 상태 변경은 `acceptContract()`, `completeConsulting()`처럼 의도가 드러나는 메서드로 표현합니다.
 - 외부 응답으로 직접 반환하지 않습니다.
+- 공통 컬럼은 `common/persistence`의 기반 클래스를 상속해 받습니다. `CreatedAtEntity`(created_at) → `AuditedEntity`(+updated_at) → `SoftDeleteEntity`(+deleted_at·record_status·is_deleted). 감사 컬럼 없이 소프트 삭제만 있으면 `CreatedSoftDeleteEntity`입니다.
+- 소프트 삭제는 기반 클래스의 `markDeleted(deletedAt)`를 `withdraw()`·`delete()` 같은 의도가 드러나는 메서드로 감싸 호출합니다. 세 컬럼을 따로 바꾸지 않습니다.
 
 ### DTO
 
@@ -463,12 +501,15 @@ public record DeveloperSummaryResponse(
 | `max_length=10` (목록) | `@Size(max = 10, message = "{komit.maxItems}")` | `10개 이하여야 합니다.` |
 | `pattern=` | `@Pattern(regexp = ...)` | `형식이 올바르지 않습니다.` |
 | `Literal["A", "B"]` | enum 타입 (애너테이션 없음) | `'A' or 'B' 중 하나여야 합니다.` |
+| `Literal` 값이 enum 상수 이름이 될 수 없을 때 (`"id,asc"`) | 상수 이름과 계약 값을 분리한 enum + `@InitBinder`로 등록한 `PropertyEditor` | `'id,asc' or 'id,desc' 중 하나여야 합니다.` |
 | `int` / `str` / `bool` 타입 | `Integer`·`Long` / `String` / `Boolean` (래퍼 타입) | `정수여야 합니다.` / `문자열이어야 합니다.` / `true 또는 false여야 합니다.` |
 | 쿼리·경로 파라미터 제약 | `@RequestParam @Min(1) int page` 처럼 파라미터에 직접 | 본문과 같은 문구 |
 
 - `@NotBlank`는 쓰지 않습니다. 목은 빈 문자열을 받아들이므로, 빈 문자열을 막아야 하면 목 명세에 `min_length=1`이 있는지 확인하고 `@Size(min = 1, message = "{komit.minLength}")`를 씁니다.
 - 필수 숫자 필드는 `int`가 아니라 `Integer`에 `@NotNull`을 씁니다. 기본형은 누락 시 "필수 항목입니다." 대신 타입 오류로 나갑니다.
 - 문자열 필드에 숫자·불리언이 오면 Jackson이 거절합니다(`config/JacksonConfig`). 목과 같은 동작이므로 끄지 않습니다.
+- 계약 값에 쉼표·공백처럼 상수 이름에 쓸 수 없는 문자가 있으면 enum의 `toString()`이 계약 값을 돌려주게 합니다. 전역 처리기가 상수의 `toString()`을 나열해 허용 목록 문구를 만들기 때문입니다. 문자열→enum 변환은 컨트롤러의 `@InitBinder`에서 `PropertyEditor`로 등록합니다. **`Converter` 빈으로 하지 않습니다.** 변환이 실패하면 Spring이 `Enum.valueOf(상수 이름)`으로 한 번 더 시도해 `sort=ID_ASC`가 통과하고, 에디터가 등록되어 있으면 그 폴백이 실행되지 않습니다. 값을 다듬지(trim) 않습니다. 목이 공백 섞인 값을 거절하므로 실서버도 같아야 합니다. 예시: `domain/defaults/controller/DefaultSortEditor`, `dto/request/DefaultSort`.
+- 파라미터 검증을 위해 컨트롤러에 `@Validated`를 붙이지 않습니다. (9. Controller)
 
 ## 11. API 규격과 mock 서버
 
@@ -498,6 +539,8 @@ Komit와 Escrow는 요청·응답 형식이 서로 다릅니다. Komit는 리소
 - 일시는 서버 내부에서 `Instant` 또는 `OffsetDateTime`으로 다루고 API 경계에서 명확한 offset을 제공합니다.
 - Komit의 데이터 형식 검증 실패와 비즈니스 규칙 위반은 서로 다른 상태 코드로 구분합니다. 구체적인 코드는 목 명세를 따릅니다.
 - 로그에 token, API key, user key, 비밀번호, 계좌번호 전체를 남기지 않습니다.
+- 목록의 `page`는 1부터 시작합니다. Spring Data의 0부터 시작하는 번호로의 변환(`PageRequest.of(page - 1, size, sort)`)은 서비스에서 한 번만 하고, 응답에는 요청한 번호를 되돌립니다. 목록 응답은 `XxxListResponse.of(Page<T>, page)`처럼 `Page`를 계약 형태로 바꾸는 정적 팩토리 한 곳에서 만들며, `totalPages`는 항목이 없으면 0입니다. 마지막 페이지를 넘어선 요청은 오류가 아니라 빈 `content`이고 나머지 페이지 정보는 채웁니다.
+- 인증이 필요한 API는 목 명세에 401이 없어도 공통 401 `UNAUTHORIZED`가 나갑니다. 목은 인증을 확인하지 않기 때문이며, 컨트롤러 문서(`@Operation`)에 401을 함께 적습니다.
 
 ## 12. 예외 처리
 
@@ -573,6 +616,7 @@ Komit 에러 응답은 노출 범위를 통제합니다.
 - 필수 필드에 명시적 `null`: 목은 타입 문구(`문자열이어야 합니다.`), 실서버는 `필수 항목입니다.`입니다. `@NotNull`은 누락과 `null`을 구분하지 않습니다.
 - 한 본문에 타입 오류가 여럿: 목은 전부 나열하고 실서버는 첫 필드만 냅니다. Jackson이 첫 타입 오류에서 멈추기 때문입니다. 제약 위반(누락·범위·길이)이 여럿인 경우는 양쪽 모두 전부 나열합니다.
 - 목은 인증을 확인하지 않고 카카오도 호출하지 않으므로 401 응답은 명세 예시로만 맞춥니다.
+- 값이 빈 파라미터(`?page=`, `?size=`, `?sort=`): 목은 422(`정수여야 합니다.` / 허용 목록 문구), 실서버는 `@RequestParam(defaultValue)` 규칙대로 기본값을 적용해 200입니다. Spring MVC가 빈 문자열을 "없음"으로 보기 때문이며, 기본값이 있는 모든 목록 API에 같은 차이가 있습니다. FE가 빈 값을 보내지 않으므로 그대로 두고, 컨트롤러 테스트에 이 동작을 고정해 둡니다(`DefaultControllerTest.emptyParameterFallsBackToDefault`).
 
 
 ### 12.2 Escrow 예외 처리
@@ -634,6 +678,7 @@ public class Contract {
 - 양방향 연관관계는 꼭 필요한 경우에만 사용합니다.
 - 컬렉션과 연관 Entity를 JSON으로 직접 직렬화하지 않습니다.
 - N+1 가능성이 있는 조회는 fetch join 또는 `@EntityGraph`로 명시적으로 해결하고 쿼리 수를 확인합니다.
+- 공통 컬럼과 소프트 삭제는 `common/persistence` 기반 클래스와 `markDeleted()`로 처리합니다. (9. Entity) 예시: `domain/defaults/entity/Default`.
 
 ### 13.3 QueryDSL 사용 기준
 
@@ -675,6 +720,14 @@ QueryDSL 쿼리는 필요한 정보만 가져오도록 작성합니다.
 - 반복 실행되는 조회는 `EXPLAIN`으로 실행 계획과 쿼리 수를 확인하고 결과를 PR에 적습니다.
 
 `JPAQueryFactory`는 `config`에서 빈으로 등록해 주입받아 사용하고, 구현체마다 새로 생성하지 않습니다. 생성된 Q 클래스는 빌드 산출물이므로 커밋하지 않습니다.
+
+참조 구현은 `domain/defaults/repository/DefaultRepositoryImpl`입니다. 위 규칙을 코드로 옮기면 다음과 같습니다.
+
+- DTO 조회는 `Projections.constructor(XxxResponse.class, 컬럼...)`으로 record 생성자를 직접 부릅니다. record 필드 순서를 바꾸면 구현체도 함께 고칩니다.
+- count는 `PageableExecutionUtils.getPage(content, pageable, countSupplier)`로 넘겨 필요할 때만 실행합니다. 첫 페이지가 크기보다 적게 차면 count 쿼리가 나가지 않고, 마지막 페이지를 넘어선 빈 결과에서는 실행됩니다.
+- 조건은 `notDeleted()`처럼 `BooleanExpression`을 돌려주는 메서드로 표현합니다.
+- 정렬은 `Sort`를 `OrderSpecifier`로 바꾸는 메서드 한 곳에서 처리하고, 정렬이 없으면 id 오름차순으로 고정해 페이지 경계가 흔들리지 않게 합니다. 지원하지 않는 속성은 컨트롤러가 이미 걸렀으므로 코드 오류로 보고 `IllegalArgumentException`을 던집니다.
+- 엔티티 이름이 예약어와 겹치면 Q클래스의 정적 인스턴스 이름이 `default1`처럼 바뀝니다. `new QDefault("d")`로 별칭을 직접 만듭니다.
 
 ### 13.4 스키마 변경
 
@@ -720,6 +773,11 @@ spring:
           time_zone: UTC
 ```
 
+로깅 설정은 두 곳입니다.
+
+- `app.logging.slow-call-threshold` (기본 `1s`): 이 시간을 넘긴 컨트롤러·서비스 호출을 WARN으로 남기는 기준입니다. `common/logging/LoggingProperties`가 바인딩하며 0 이하면 기동에 실패합니다.
+- `src/main/resources/logback-spring.xml`: 로그 한 줄의 형식(18.1). 앱 이름은 `spring.application.name`, 인스턴스는 `HOSTNAME`(k3s 파드 이름, 없으면 `local`), 배포 버전은 `APP_VERSION`(없으면 `dev`) 환경변수로 채웁니다. 배포 파이프라인이 `APP_VERSION`을 넣어야 로그로 버전을 구분할 수 있습니다.
+
 ## 15. 보안 규칙
 
 - 각 서버는 자신의 Spring Security 설정을 독립적으로 관리합니다.
@@ -763,63 +821,124 @@ Komit은 `/service/docs`, Escrow는 `/escrow/docs`를 사용합니다. 응답 �
 ### 17.2 실제 Spring API
 
 ```java
-@Tag(name = "Developer", description = "개발자 검색 및 프로필 API")
+@Tag(name = "default", description = "코밋 서비스 API의 응답 규약을 정하는 기준 API")
 @RestController
-@RequestMapping("/api/developers")
+@RequestMapping("/api")
 @RequiredArgsConstructor
-public class DeveloperController {
+public class DefaultController {
+    private final DefaultService defaultService;
 
-    @Operation(summary = "개발자 상세 조회")
-    @GetMapping("/{developerId}")
-    public DeveloperDetailResponse getDeveloper(
-            @PathVariable Long developerId
-    ) {
-        return developerService.getDeveloper(developerId);
+    @Operation(
+            summary = "기본 응답 단건 조회",
+            description = "목 명세의 설명을 그대로 옮기고, 200·404·422·500이 어떤 상황에 나오는지 케이스로 적는다. "
+                    + "실서버에만 있는 401도 덧붙인다.",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "404", description = "리소스 없음",
+                    content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/default/{id}")
+    DefaultResponse getDefault(@PathVariable Integer id) {
+        return defaultService.getDefault(id);
     }
 }
 ```
 
-- Controller에 `@Tag`, 각 엔드포인트에 `@Operation`을 작성합니다.
+- Controller에 `@Tag`, 각 엔드포인트에 `@Operation`과 `@ApiResponses`를 작성합니다. `@Operation.description`에는 목 명세의 케이스 목록("이 응답은 이럴 때 나온다")을 그대로 옮기고 실서버에만 있는 401을 덧붙입니다.
+- 인증이 필요한 엔드포인트는 `security = @SecurityRequirement(name = "bearerAuth")`를 붙입니다. 스킴 정의는 `config/OpenApiConfig` 한 곳에 있고 컨트롤러는 이름만 인용합니다.
+- 실패 응답은 `@ApiResponse(content = @Content(schema = @Schema(implementation = ErrorResponse.class)))`로 공통 본문을 가리킵니다.
+- 계약 값 enum 파라미터는 `@Parameter(schema = @Schema(type = "string", allowableValues = {...}, defaultValue = ...))`로 적어 상수 이름이 아니라 계약 값이 문서에 나오게 합니다.
+- 핸들러 메서드는 패키지 프라이빗입니다. (9. Controller)
 - 실제 springdoc의 schema와 예시는 목 Swagger와 같아야 합니다.
 - API 변경 PR에는 목 명세 변경과 실제 구현 변경을 함께 연결합니다.
 - 불일치는 실제 서버 구현에 맞춰 프런트엔드를 임의 수정하지 말고, 먼저 합의된 계약이 무엇인지 확인합니다.
 
 ## 18. 로깅과 관측성
 
-- 로깅은 Lombok `@Slf4j`와 parameterized logging을 사용합니다.
+구현은 `common/logging`에 있고 형식은 `src/main/resources/logback-spring.xml`이 정합니다. 계층 시작·종료 로그는 애스펙트가 남기므로 도메인 코드에서 직접 찍지 않습니다.
+
+### 18.1 로그 한 줄의 형식
+
+```text
+2026-09-19T13:17:02.553Z  INFO [service,b3c1acfeea75,dev] [33e72818903148cea9831ccdab1b1551] c.a.s.common.logging.LoggingAspect : CONTROLLER done DefaultController.getDefault(..) elapsedMs=346
+```
+
+| 자리 | 값 | 목적 |
+| --- | --- | --- |
+| 시각 | UTC, ISO-8601 | 인스턴스 간 시각 비교 |
+| `[앱,인스턴스,버전]` | `spring.application.name`, `HOSTNAME`(k3s 파드 이름, 없으면 `local`), `APP_VERSION`(없으면 `dev`) | 이중화 환경에서 어느 인스턴스·어느 배포가 처리했는지 구분 |
+| `[traceId]` | 요청마다 새로 만든 32자리 16진수. 요청 밖(기동·스케줄러)에서는 비어 있음 | 한 요청의 로그를 묶어 보기 |
+
+- `logback-spring.xml`은 Boot의 `defaults.xml`을 include하지 않으므로 Boot 전용 변환어(`%wEx`)를 쓸 수 없습니다. 예외 출력은 표준 `%ex`입니다. `%wEx`를 쓰면 모든 스프링 테스트 컨텍스트가 `Logback configuration error`로 실패합니다.
+- 로그 레벨은 XML이 아니라 `application*.yml`의 `logging.level`이 정합니다. 운영은 `com.a501: INFO`, 로컬은 `DEBUG`와 `org.hibernate.SQL: DEBUG`입니다.
+
+### 18.2 traceId
+
+- `TraceIdFilter`가 가장 앞 순서(`Ordered.HIGHEST_PRECEDENCE`)에서 UUID를 만들어 MDC `traceId`와 응답 헤더 `X-Trace-Id`에 넣고, 요청이 끝나면 `finally`에서 MDC를 지웁니다. 보안 필터가 쓰는 401·403과 전역 처리기의 500에도 같은 값이 남습니다.
+- 클라이언트가 보낸 헤더 값을 받지 않습니다. 로그에 임의 문자열이 섞이는 것(로그 인젝션)과 다른 요청 사칭을 막기 위해 서버가 항상 새로 만듭니다.
+- 응답 본문 계약(`{code, message}`)에는 넣지 않습니다. 문의 추적은 헤더 값으로 합니다.
+- MDC 키 이름은 `MdcKeys`에만 둡니다. XML 패턴의 `%X{traceId}`와 글자가 같아야 하기 때문입니다.
+
+### 18.3 계층 로깅(AOP)
+
+`LoggingAspect`가 `domain..controller` 패키지의 `@RestController`와 `domain..service` 패키지의 `@Service` 빈을 `@Around`로 감쌉니다.
+
+| 상황 | 레벨 | 내용 |
+| --- | --- | --- |
+| 컨트롤러 완료 | INFO | `CONTROLLER done Class.method(..) elapsedMs=` — 요청 하나에 한 줄. 트래픽과 응답 시간의 기준 |
+| 서비스 시작·완료 | DEBUG | 운영에서는 꺼지고 로컬에서만 보임 |
+| 느린 호출 | WARN | `app.logging.slow-call-threshold`(기본 1s) 이상이면 계층 무관 |
+| `BusinessException` | INFO | `rejected ... code=` 코드만. 계약된 실패라 스택 없음 |
+| 그 밖의 예외 | DEBUG | 예외 클래스 이름만. 스택은 전역 처리기가 한 번 기록 |
+
+- 메서드 인자와 반환값은 어느 레벨에서도 남기지 않습니다. 토큰·계좌번호·본문이 섞일 수 있습니다.
+- 컨트롤러의 `@InitBinder`·`@ModelAttribute` 메서드는 요청마다 프레임워크가 부르는 준비 작업이라 제외합니다.
+- 리포지토리 계층은 다루지 않습니다. Spring Data 프록시의 타깃이 `SimpleJpaRepository`라 포인트컷이 일관되게 걸리지 않고, SQL은 `org.hibernate.SQL` 로거가 맡습니다.
+- 프록시 기반이므로 같은 빈 안에서 자기 메서드를 부르는 내부 호출은 기록되지 않습니다.
+- 핸들러가 패키지 프라이빗이어도 CGLIB 프록시가 같은 패키지에 생성되어 정상적으로 가로챕니다.
+
+### 18.4 직접 남기는 로그
+
+- 로깅은 Lombok `@Slf4j`와 parameterized logging을 사용합니다. `log.info("id=" + id)` 같은 문자열 연결은 쓰지 않습니다.
 - 정상 흐름을 `error`로 기록하지 않습니다.
 - 예외는 전역 처리기에서 한 번만 기록하고 같은 stack trace를 여러 계층에서 중복 출력하지 않습니다.
-- 요청 추적용 `traceId`를 로그 컨텍스트에 넣고, 500 응답에도 같은 값을 선택적으로 제공합니다.
-- `instanceId`, 애플리케이션명, 배포 버전을 로그 필드로 남겨 이중화 환경에서 어느 인스턴스가 처리했는지 확인할 수 있게 합니다.
-- 운영 로그에 요청·응답 body 전체를 기본 출력하지 않습니다.
+- token, API key, user key, 비밀번호, 계좌번호 전체 값, 요청·응답 body 전체는 남기지 않습니다. 값 대신 "어느 항목이 비었는지"처럼 판정 결과만 남깁니다. (`KakaoOauthClient`의 경고 로그 참고)
 - Actuator health endpoint는 인프라 확인용으로 사용하되 민감한 상세 정보는 외부에 공개하지 않습니다.
 
 ```java
 log.info("Contract accepted. contractId={}, actorId={}", contractId, actorId);
 ```
 
-문자열 연결 방식인 `log.info("id=" + id)`는 사용하지 않습니다.
-
 ## 19. 테스트 규칙
+
+참조 구현은 `domain/defaults`와 `common/logging`의 테스트입니다. 새 도메인은 같은 구성으로 씁니다.
 
 ### 단위 테스트
 
-- 도메인 상태 전이와 비즈니스 규칙을 빠르게 검증합니다.
-- 외부 시스템이나 DB 없이 실행합니다.
+- 도메인 상태 전이와 비즈니스 규칙을 빠르게 검증합니다. 외부 시스템이나 DB 없이 실행합니다.
+- 서비스는 Mockito로 리포지토리를 대체하고, 1-based → 0-based 페이지 변환·정렬 전달·404 조건처럼 서비스가 책임지는 규칙을 검증합니다. (`DefaultServiceTest`)
 - 정상 사례뿐 아니라 경계값과 실패 사례를 함께 작성합니다.
 
 ### Repository 통합 테스트
 
-- Testcontainers PostgreSQL 18 계열을 사용합니다.
-- unique constraint, enum, timestamp, fetch join 등 PostgreSQL 실제 동작을 검증합니다.
-- H2 기반 테스트로 대체하지 않습니다.
+- `@DataJpaTest` + `@AutoConfigureTestDatabase(replace = NONE)` + `@ServiceConnection`이 붙은 `PostgreSQLContainer("postgres:18.6-alpine")`을 쓰고, `@Import(JpaConfig.class)`로 `JPAQueryFactory`와 감사 시각 주입을 올립니다. (`DefaultRepositoryTest`)
+- `data.sql` 시드가 결과에 섞이지 않도록 테스트마다 대상 테이블을 비우고 시작합니다. 각 테스트는 트랜잭션 안에서 돌고 롤백됩니다.
+- unique constraint, 소프트 삭제 제외, 정렬, 페이지 경계와 count 동작, enum, timestamp, fetch join 등 PostgreSQL 실제 동작을 검증합니다. H2 기반 테스트로 대체하지 않습니다.
 
 ### Controller와 계약 테스트
 
-- `MockMvc`로 method, URL, 인증, validation, 상태 코드와 JSON schema를 검증합니다.
-- 각 서버의 성공·실패 응답이 해당 서버의 목 Swagger와 같은 상태 코드, 응답 코드, JSON 구조인지 확인합니다.
-- Escrow는 실패 응답에 `REC`가 포함되지 않는지 확인합니다.
+- `@WebMvcSecurityTest(XxxController.class)`로 보안 체인까지 태우고 서비스는 `@MockitoBean`으로 대체합니다. (`DefaultControllerTest`, `AuthControllerTest`)
+- 성공·실패 본문은 목 Swagger의 예시를 `content().json(..., true)`(strict)로 비교해 상태 코드, 응답 코드, 필드, 문구, `errors` 순서가 같은지 확인합니다.
+- 토큰 없음·만료 401과, 실패 시 서비스가 불리지 않는 것(`verify(..., never())`)을 함께 검증합니다.
+- 파라미터 기본값이 목과 같은지, 범위 위반이 필드별로 나열되는지, 계약 값 enum이 상수 이름(`ID_ASC`)과 공백 섞인 값에서 422인지 확인합니다.
 - 타인의 민감한 리소스 접근이 404로 가려지는지 확인합니다.
+- Escrow는 실패 응답에 `REC`가 포함되지 않는지 확인합니다.
+
+### 공통 코드 테스트
+
+- 애스펙트는 스프링 컨텍스트 없이 `AspectJProxyFactory`로 실제 서비스를 감고 Logback `ListAppender`로 로그 줄·레벨·인자 미노출을 검증합니다. 포인트컷 식은 `AspectJExpressionPointcut.matches`로 걸리는 메서드와 빠지는 메서드를 함께 확인합니다. (`LoggingAspectTest`)
+- 필터는 `MockHttpServletRequest`와 `FilterChain` 람다로 MDC 설정·정리와 응답 헤더를 검증합니다. (`TraceIdFilterTest`)
 
 ### 이중화 역할 테스트
 
@@ -837,6 +956,17 @@ log.info("Contract accepted. contractId={}, actorId={}", contractId, actorId);
 ```
 
 Windows에서는 각각 `gradlew.bat test`, `gradlew.bat build`를 사용합니다. PR을 열기 전에 최소한 변경 도메인의 테스트와 전체 build를 통과시킵니다.
+
+JDK 21이 없는 PC에서는 CI·Dockerfile과 같은 이미지로 컨테이너 안에서 실행합니다. Testcontainers 테스트가 호스트의 Docker를 쓰도록 소켓을 마운트하고 호스트 주소를 알려 줍니다. 저장소 경로에 한글·공백이 있으면 볼륨 마운트가 깨지므로 ASCII 경로에 `service/`를 복사해 마운트합니다.
+
+```shell
+docker run --rm -v <ascii-path>/service:/w -w /w -v komit-gradle-cache:/root/.gradle \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -e TESTCONTAINERS_HOST_OVERRIDE=host.docker.internal -e TESTCONTAINERS_RYUK_DISABLED=true \
+  eclipse-temurin:21-jdk-noble sh -c "sed -i 's/\r$//' gradlew && chmod +x gradlew && ./gradlew build --no-daemon"
+```
+
+실제 서버 응답을 목과 대조할 때는 `deploy/local/docker-compose.yml`로 스택을 올리고 같은 요청을 `https://komit.site/mock/service`와 로컬에 보내 상태·`code`·`message`·`errors` 순서까지 비교합니다.
 
 ## 20. 협업과 Git 규칙
 
@@ -888,6 +1018,10 @@ PR 설명에는 다음을 포함합니다.
 - [ ] 롤링 배포 중 구버전과 신버전이 공존할 수 있는 변경인가?
 - [ ] secret 또는 개인정보가 코드·설정·로그에 포함되지 않았는가?
 - [ ] 정상·실패·권한 테스트가 작성되었는가?
+- [ ] 컨트롤러 클래스에 `@Validated`가 없는가? (있으면 검증 실패가 500으로 나감)
+- [ ] 계약 값 enum 파라미터가 상수 이름(`ID_ASC`)으로는 통과하지 않는가?
+- [ ] 로그에 메서드 인자·반환값·요청 본문이 찍히지 않는가?
+- [ ] 실패 응답을 목 서버에 같은 요청을 보내 상태·`code`·`message`·`errors` 순서까지 대조했는가?
 - [ ] SonarQube에서 이번 변경으로 새로 생긴 이슈와 보안 핫스팟을 확인했는가?
 - [ ] 남겨 둔 이슈에 대해 남기는 이유가 설명되어 있는가?
 

@@ -16,7 +16,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
+import org.springframework.web.bind.WebDataBinder;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.InitBinder;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -35,6 +37,11 @@ import org.springframework.web.bind.annotation.RestController;
  *
  * <p>페이지 파라미터의 범위 제약({@code @Min}·{@code @Max})은 본문 DTO와 달리 파라미터에 직접 붙입니다. Spring MVC가
  * 메서드 검증을 수행해 위반을 422로 넘깁니다. 기본값은 목과 같습니다. (BACKEND_CONVENTIONS 10.1)
+ * 클래스에 {@code @Validated}를 붙이지 않습니다. 붙이면 이 내장 검증이 꺼지고 AOP 메서드 검증의
+ * {@code ConstraintViolationException}이 되어 처리기가 500으로 내보냅니다.
+ *
+ * <p>{@code sort}처럼 계약 값이 enum 상수 이름이 될 수 없는 파라미터는 {@link #registerDefaultSortEditor(WebDataBinder)}가
+ * 등록하는 {@link DefaultSortEditor}로 받습니다. {@code Converter} 빈을 쓰지 않는 이유는 그 클래스에 있습니다.
  */
 @Tag(name = "default", description = "코밋 서비스 API의 응답 규약을 정하는 기준 API. 단건은 리소스를 그대로, 목록은 content와 페이지 정보로 감싼다.")
 @RestController
@@ -42,6 +49,16 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class DefaultController {
     private final DefaultService defaultService;
+
+    /**
+     * 요청마다 {@link DefaultSort} 바인딩 에디터를 등록합니다. 핸들러가 아니므로 로깅 애스펙트 대상에서 빠집니다.
+     *
+     * @param binder 현재 요청의 데이터 바인더
+     */
+    @InitBinder
+    void registerDefaultSortEditor(WebDataBinder binder) {
+        binder.registerCustomEditor(DefaultSort.class, new DefaultSortEditor());
+    }
 
     /**
      * 기본 응답 단건 조회.

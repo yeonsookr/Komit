@@ -15,6 +15,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.a501.service.common.exception.BusinessException;
+import com.a501.service.domain.defaults.controller.DefaultController;
 import com.a501.service.domain.defaults.dto.response.DefaultResponse;
 import com.a501.service.domain.defaults.entity.Default;
 import com.a501.service.domain.defaults.repository.DefaultRepository;
@@ -24,8 +25,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.slf4j.LoggerFactory;
+import org.springframework.aop.aspectj.AspectJExpressionPointcut;
 import org.springframework.aop.aspectj.annotation.AspectJProxyFactory;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.bind.WebDataBinder;
 
 /**
  * 스프링 컨텍스트 없이 AspectJ 프록시로 애스펙트를 감아, 포인트컷이 도메인 서비스에 걸리고 반환값·예외를 그대로 통과시키며
@@ -116,6 +119,22 @@ class LoggingAspectTest {
         assertThat(slow.getLevel()).isEqualTo(Level.WARN);
         assertThat(slow.getFormattedMessage()).startsWith("SERVICE slow DefaultService.getDefault(..) elapsedMs=");
         assertThat(slow.getFormattedMessage()).endsWith("thresholdMs=1");
+    }
+
+    @Test
+    @DisplayName("컨트롤러 포인트컷은 핸들러에만 걸리고 @InitBinder 준비 메서드와 서비스는 제외한다")
+    void controllerPointcutMatchesHandlersOnly() throws Exception {
+        AspectJExpressionPointcut controller = new AspectJExpressionPointcut();
+        controller.setExpression(LoggingAspect.CONTROLLER_POINTCUT);
+        AspectJExpressionPointcut service = new AspectJExpressionPointcut();
+        service.setExpression(LoggingAspect.SERVICE_POINTCUT);
+
+        assertThat(controller.matches(DefaultController.class.getDeclaredMethod("getDefault", Integer.class),
+                DefaultController.class)).isTrue();
+        assertThat(controller.matches(DefaultController.class.getDeclaredMethod("registerDefaultSortEditor", WebDataBinder.class),
+                DefaultController.class)).isFalse();
+        assertThat(controller.matches(DefaultService.class.getMethod("getDefault", Integer.class), DefaultService.class)).isFalse();
+        assertThat(service.matches(DefaultService.class.getMethod("getDefault", Integer.class), DefaultService.class)).isTrue();
     }
 
     private DefaultService proxy(Duration slowCallThreshold) {
