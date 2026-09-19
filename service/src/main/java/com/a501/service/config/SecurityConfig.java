@@ -2,6 +2,7 @@ package com.a501.service.config;
 
 import com.a501.service.common.security.JwtAuthenticationFilter;
 import com.a501.service.common.security.SecurityErrorWriter;
+import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -20,10 +21,14 @@ public class SecurityConfig {
         http
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(
-                        (request, response, exception) -> errorWriter.unauthorized(response)))
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint((request, response, exception) -> errorWriter.unauthorized(response))
+                        .accessDeniedHandler((request, response, exception) -> errorWriter.forbidden(response)))
                 .authorizeHttpRequests(authorize -> authorize
-                        .requestMatchers(HttpMethod.POST, "/api/auth/kakao", "/api/auth/token/refresh").permitAll()
+                        // 컨테이너가 sendError로 넘긴 오류 디스패치(/error)에 인증을 요구하면 모든 400·404가 401로 바뀝니다.
+                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                        // 로그인·재발급 경로는 메서드를 가리지 않고 공개해, 잘못된 메서드가 목과 같이 405로 나가게 합니다.
+                        .requestMatchers("/api/auth/kakao", "/api/auth/token/refresh").permitAll()
                         .requestMatchers(HttpMethod.GET,
                                 "/api/landing/**",
                                 "/api/codes/**",

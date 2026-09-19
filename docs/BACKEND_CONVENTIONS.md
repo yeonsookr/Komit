@@ -444,10 +444,31 @@ public record DeveloperSummaryResponse(
 }
 ```
 
-- Controller의 body DTO에는 반드시 `@Valid`를 붙입니다.
+- Controller의 body DTO에는 반드시 `@Valid`를 붙입니다. 중첩 객체와 목록 항목에도 `@Valid`를 붙여야 안쪽까지 검증됩니다. (`List<@Valid MilestoneRequest> milestones`)
 - 필수 여부, 문자열 길이, 숫자 범위는 Bean Validation으로 검증합니다.
 - 데이터 형식 검증 실패와 이미 유효한 값을 이용한 비즈니스 규칙 위반을 구분해 처리합니다. 각 서버가 반환할 상태 코드와 응답 코드는 목 명세를 따릅니다.
 - 검증 에러에는 사용자가 입력한 실제 값을 되돌려주지 않습니다.
+
+#### 10.1 Komit 제약 애너테이션 대응표
+
+검증 실패 문구는 `src/main/resources/messages.properties`가 목 서버 문구로 정해 둡니다. DTO에 `message=`를 직접 쓰지 않고 아래 표대로 애너테이션만 붙이면 목과 같은 422 응답이 나갑니다.
+
+| 목 명세(Pydantic) | 자바 DTO | 실패 문구 |
+| --- | --- | --- |
+| 필수 필드 | `@NotNull` | `필수 항목입니다.` |
+| `ge=1`, `le=5` | `@Min(1)`, `@Max(5)` | `1 이상이어야 합니다.`, `5 이하여야 합니다.` |
+| `max_length=20` (문자열) | `@Size(max = 20)` | `20자 이하여야 합니다.` |
+| `min_length=1` (문자열) | `@Size(min = 1, message = "{komit.minLength}")` | `1자 이상이어야 합니다.` |
+| `min_length=1` (목록) | `@Size(min = 1, message = "{komit.minItems}")` | `1개 이상이어야 합니다.` |
+| `max_length=10` (목록) | `@Size(max = 10, message = "{komit.maxItems}")` | `10개 이하여야 합니다.` |
+| `pattern=` | `@Pattern(regexp = ...)` | `형식이 올바르지 않습니다.` |
+| `Literal["A", "B"]` | enum 타입 (애너테이션 없음) | `'A' or 'B' 중 하나여야 합니다.` |
+| `int` / `str` / `bool` 타입 | `Integer`·`Long` / `String` / `Boolean` (래퍼 타입) | `정수여야 합니다.` / `문자열이어야 합니다.` / `true 또는 false여야 합니다.` |
+| 쿼리·경로 파라미터 제약 | `@RequestParam @Min(1) int page` 처럼 파라미터에 직접 | 본문과 같은 문구 |
+
+- `@NotBlank`는 쓰지 않습니다. 목은 빈 문자열을 받아들이므로, 빈 문자열을 막아야 하면 목 명세에 `min_length=1`이 있는지 확인하고 `@Size(min = 1, message = "{komit.minLength}")`를 씁니다.
+- 필수 숫자 필드는 `int`가 아니라 `Integer`에 `@NotNull`을 씁니다. 기본형은 누락 시 "필수 항목입니다." 대신 타입 오류로 나갑니다.
+- 문자열 필드에 숫자·불리언이 오면 Jackson이 거절합니다(`config/JacksonConfig`). 목과 같은 동작이므로 끄지 않습니다.
 
 ## 11. API 규격과 mock 서버
 
@@ -488,11 +509,34 @@ Komit와 Escrow는 요청·응답 형식이 서로 다릅니다. Komit는 리소
 
 ```text
 common/exception/
-├── BusinessException.java
-├── ErrorCode.java
-├── ErrorResponse.java
-└── GlobalExceptionHandler.java
+├── BusinessException.java        도메인 실패를 던질 때 쓰는 유일한 예외
+├── ErrorCode.java                status·code·message 인터페이스
+├── CommonErrorCode.java          INVALID_REQUEST, UNAUTHORIZED, FORBIDDEN, FILE_TOO_LARGE, INTERNAL_ERROR
+├── ErrorResponse.java            {code, message, errors[]} 응답 본문
+└── GlobalExceptionHandler.java   ResponseEntityExceptionHandler 상속. 모든 컨트롤러에 자동 적용
 ```
+
+`GlobalExceptionHandler`는 `@RestControllerAdvice`라 컨트롤러마다 따로 적용할 것이 없습니다. 새 API를 붙일 때 할 일은 두 가지입니다.
+
+1. 도메인 실패는 아래처럼 `ErrorCode` enum을 만들고 `BusinessException`으로 던집니다. 상태·코드·문구는 목 명세의 해당 API 설명을 그대로 옮깁니다.
+2. 요청 DTO에는 10.1 대응표대로 제약 애너테이션을 붙입니다.
+
+나머지는 처리기가 맡습니다. 처리기가 만드는 응답은 다음과 같습니다.
+
+| 상황 | 응답 |
+| --- | --- |
+| `BusinessException` | 에러 코드의 status와 `{code, message}` |
+| DTO·파라미터 검증 실패, 본문 누락, 깨진 JSON, 타입 불일치, JSON이 아닌 Content-Type | 422 `INVALID_REQUEST` + `errors[{field, reason}]`. 본문 자체의 문제는 `field: "body"` |
+| 없는 경로 / 허용되지 않는 메서드 | 404 `{"detail":"Not Found"}` / 405 `{"detail":"Method Not Allowed"}` + `Allow` 헤더. 목 명세가 코드를 정하지 않아 목(Starlette) 기본 본문과 같게 맞춘 것입니다 |
+| 토큰 없음·만료 / 권한 없음 | 401 `UNAUTHORIZED` / 403 `FORBIDDEN` (보안 필터 단계는 `common/security/SecurityErrorWriter`가 같은 JSON을 씁니다) |
+| 멀티파트 용량 초과 | 400 `FILE_TOO_LARGE` |
+| 그 밖의 모든 예외 | 500 `INTERNAL_ERROR` 고정 문구. 원인은 로그에만 남습니다 |
+
+다음은 금지합니다.
+
+- `ResponseStatusException`, `IllegalArgumentException`, `IllegalStateException`으로 클라이언트 오류를 표현하는 것. 404·405를 제외하면 모두 500으로 나갑니다.
+- 컨트롤러에 `@ExceptionHandler`를 따로 두는 것. 응답 형식이 갈립니다.
+- `CommonErrorCode`에 도메인 코드를 추가하는 것. 도메인 코드는 해당 도메인 패키지에 둡니다.
 
 도메인별 에러 코드는 해당 도메인에 둡니다.
 
@@ -522,6 +566,13 @@ Komit 에러 응답은 노출 범위를 통제합니다.
 - 다른 사용자의 요청서, 계약, 정산, 채팅처럼 존재 자체가 민감한 리소스는 접근 권한이 없어도 404를 반환합니다. 공개 프로필과 공개 목록처럼 존재가 이미 공개된 리소스만 403을 사용합니다. 리소스의 당사자(계약의 의뢰인·개발자 등)가 자기 역할에 맞지 않는 동작을 요청한 경우는 존재가 이미 알려져 있으므로 403을 사용합니다.
 - 검증 에러 목록에는 필드명과 사유만 넣고 사용자가 입력한 실제 값을 넣지 않습니다.
 - 에러 코드는 `USER_TABLE_FK_VIOLATION` 같은 구현 용어가 아니라 `CONTRACT_ALREADY_ACCEPTED` 같은 도메인 용어를 사용합니다.
+
+목 서버와 알고 있는 차이입니다. 구현할 때 이 차이를 좁히려고 처리기를 고치지 않습니다.
+
+- 깨진 JSON의 `field`: 목은 문자 위치(`"9"`)를, 실서버는 `"body"`를 냅니다. 목의 `_field_name`이 FastAPI의 오류 위치를 그대로 필드명으로 쓰는 버그이며 목 쪽에서 고칠 문제입니다.
+- 필수 필드에 명시적 `null`: 목은 타입 문구(`문자열이어야 합니다.`), 실서버는 `필수 항목입니다.`입니다. `@NotNull`은 누락과 `null`을 구분하지 않습니다.
+- 한 본문에 타입 오류가 여럿: 목은 전부 나열하고 실서버는 첫 필드만 냅니다. Jackson이 첫 타입 오류에서 멈추기 때문입니다. 제약 위반(누락·범위·길이)이 여럿인 경우는 양쪽 모두 전부 나열합니다.
+- 목은 인증을 확인하지 않고 카카오도 호출하지 않으므로 401 응답은 명세 예시로만 맞춥니다.
 
 
 ### 12.2 Escrow 예외 처리

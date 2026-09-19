@@ -99,7 +99,7 @@ private static final int AUTO_PASS_DAYS = 3;
 | 경로 | 파트 | 스택 | 자체 규칙 |
 | --- | --- | --- | --- |
 | `fe/` | `fe` — 플랫폼 웹 프론트엔드 | Next.js | `fe/AGENTS.md` |
-| `service/` | `be-api` — 회원·매칭·요청서·알림 | Gradle | — |
+| `service/` | `be-api` — 회원·매칭·요청서·알림 | Gradle | `service/AGENTS.md` |
 | `escrow/` | `be-escrow` — 예치·지급·원장·대사 | Gradle | — |
 | `mock/` | 목 서버 | Python | `mock/AGENTS.md` |
 | `deploy/` | `infra` — 배포, CI/CD | docker-compose | — |
