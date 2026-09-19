@@ -357,6 +357,8 @@ CREATE TABLE operation_audit_events (
 
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='운영 감사 사건 | 결과 불명 해소·수동 조치의 근거와 주체를 추가 전용으로 기록';
 
+CREATE INDEX idx_account_auth_requests_recovery ON account_auth_requests (status, dispatched_at);
+
 CREATE INDEX idx_escrow_transactions_escrow_status
     ON escrow_transactions (escrow_id, status);
 

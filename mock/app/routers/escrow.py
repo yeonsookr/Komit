@@ -337,11 +337,15 @@ def _validate_request_header(
 
     try:
         datetime.strptime(header.transmissionDate, "%Y%m%d")
+        if not re.fullmatch(r"[0-9]{8}", header.transmissionDate):
+            raise ValueError("date width")
     except ValueError:
         return "H1002", "전송일자 형식이 유효하지 않습니다."
 
     try:
         datetime.strptime(header.transmissionTime, "%H%M%S")
+        if not re.fullmatch(r"[0-9]{6}", header.transmissionTime):
+            raise ValueError("time width")
     except ValueError:
         return "H1003", "전송시각 형식이 유효하지 않습니다."
 
@@ -680,11 +684,15 @@ def _validate_escrow_header(
 
     try:
         datetime.strptime(header.transmissionDate, "%Y%m%d")
+        if not re.fullmatch(r"[0-9]{8}", header.transmissionDate):
+            raise ValueError("date width")
     except ValueError:
         return 400, "H1002", "전송일자 형식이 유효하지 않습니다."
 
     try:
         datetime.strptime(header.transmissionTime, "%H%M%S")
+        if not re.fullmatch(r"[0-9]{6}", header.transmissionTime):
+            raise ValueError("time width")
     except ValueError:
         return 400, "H1003", "전송시각 형식이 유효하지 않습니다."
 
@@ -699,7 +707,7 @@ def _validate_escrow_header(
     if not re.fullmatch(r"\d{20}", header.institutionTransactionUniqueNo):
         return 400, "H1010", "기관거래고유번호가 유효하지 않습니다."
     if (
-        not header.clientApiKey.strip()
+        not header.clientApiKey.strip() or len(header.clientApiKey) > 255
         or header.clientApiKey == INVALID_CLIENT_API_KEY
     ):
         return 400, "E5001", "CLIENT API KEY가 유효하지 않습니다."
@@ -709,14 +717,14 @@ def _validate_escrow_header(
     ):
         return 400, "E5001", "운영 키는 이 API에 사용할 수 없습니다."
     if needs_idempotency_key:
-        if not (header.idempotencyKey or "").strip():
+        if not (header.idempotencyKey or "").strip() or len(header.idempotencyKey) > 255:
             return 400, "E5002", "멱등키가 필요합니다."
         # 조회는 멱등 기록을 남기지 않으므로 이 오류가 날 수 없다. 선언한 오류는
         # 실제로 낼 수 있어야 하므로 쓰기 API에서만 본다.
         if header.idempotencyKey == CONFLICT_IDEMPOTENCY_KEY:
             return 400, "E5003", "같은 멱등키로 다른 요청이 접수되었습니다."
     if needs_user_key and (
-        not (header.userKey or "").strip() or header.userKey == "invalid-user-key"
+        not (header.userKey or "").strip() or len(header.userKey) > 40 or header.userKey == "invalid-user-key"
     ):
         return 400, "H1009", "USER KEY가 유효하지 않습니다."
     # 분류되지 않은 서버 오류. 업무 API는 userKey를 늘 받지 않으므로 기준 API의
@@ -1384,7 +1392,7 @@ class CreateEscrowRequest(WithdrawalAccount):
             "예치할 총액. 원 단위 양수다. ERD escrows.expected_amount로 고정된다."
         ),
         examples=[650000],
-        gt=0,
+        gt=0, le=9999999999999999999, strict=True,
     )
 
 
@@ -1453,7 +1461,7 @@ class ReleaseEscrowRequest(BaseModel):
             "합계다. 마일스톤 단위로 나눠 지급하지 않는다. (R-PAY-07)"
         ),
         examples=[400000],
-        gt=0,
+        gt=0, le=9999999999999999999, strict=True,
     )
     recipientBankCode: str = Field(
         description="수취 은행코드 세 자리. 거래의 recipient_bank_code에 보관한다.",
@@ -1538,7 +1546,7 @@ class RefundEscrowRequest(BaseModel):
     amount: int = Field(
         description="최종 정산에서 남은 금액 전액. 부분 환불은 허용하지 않는다.",
         examples=[250000],
-        gt=0,
+        gt=0, le=9999999999999999999, strict=True,
     )
     refundBankCode: str = Field(
         description=(
@@ -1806,6 +1814,8 @@ async def create_member_account(
     },
     summary="에스크로 생성과 계약금 예치",
     description=(
+        "E5017은 출금 계좌가 해당 회원의 가입 발급 계좌와 다른 경우다. "
+        "Mock은 은행코드가 001이 아니거나 계좌번호가 0019999999999999일 때 이 오류를 재현한다.\n\n"
         "계약이 맺어진 직후 한 번 부른다. 에스크로를 만들고 의뢰인 계좌에서 계약금 "
         "전액을 받아 금액과 입금자명을 확인한 뒤 원장에 기록한다.\n\n"
         "출금 계좌는 회원가입 때 발급한 의뢰인의 SSAFY 입출금 계좌로 고정한다. "
@@ -1857,6 +1867,9 @@ async def create_escrow(
     if error:
         return _escrow_error(*error, payload.Header)
 
+    if payload.withdrawalBankCode != '001' or payload.withdrawalAccountNo == '0019999999999999':
+        return _escrow_error(400, 'E5017', '회원가입 발급 계좌와 일치하지 않습니다.', payload.Header)
+
     # 입금이 아직 확인되지 않은 경우. 예치액은 0이고 고객사는 ACTIVE를 조회로 기다린다.
     if payload.contractId == PENDING_CONTRACT_ID or payload.contractId in DEPOSIT_FIXTURE_CONTRACT_IDS.values():
         return CreateEscrowResponse(
@@ -1871,6 +1884,17 @@ async def create_escrow(
                 transactionId=PENDING_DEPOSIT_TRANSACTION_ID,
             ),
         )
+
+    fixture_id = _mock_escrow_id(payload.contractId)
+    if fixture_id in SETTLEMENT_FIXTURE_CONTRACT_IDS:
+        if payload.amount != 650000:
+            return _escrow_error(400, 'E5003', '기존 계약의 예치 요청과 다릅니다.', payload.Header)
+        return CreateEscrowResponse(
+            Header=_escrow_response_header('H0000', '정상처리 되었습니다.', payload.Header),
+            REC=EscrowAmountRecord(escrowId=fixture_id,
+                status='COMPLETED' if fixture_id == 46 else 'ACTIVE',
+                depositedAmount=650000, balance=_mock_escrow_balance(fixture_id),
+                transactionId=fixture_id*100+1))
 
     return CreateEscrowResponse(
         Header=_escrow_response_header(
@@ -1907,6 +1931,7 @@ async def create_escrow(
     },
     summary="작업 대금 지급",
     description=(
+        "수취 예금주명 invalid-holder-name은 금융망 예금주 불일치 E5016 사례다.\n\n"
         "전 작업이 통과 확정된 뒤 계약 대금을 한 번에 정산할 때 부른다. 요청 금액은 "
         "수수료 공제 전 승인 총액이며 작업자 순지급액과 플랫폼 수수료를 구분한다 "
         "(R-PAY-07). 보내기 직전에 "
@@ -1966,6 +1991,8 @@ async def release_escrow(
     )
     if error:
         return _escrow_error(*error, payload.Header)
+    if payload.recipientName == 'invalid-holder-name':
+        return _escrow_error(400, 'E5016', '금융망 예금주명과 일치하지 않습니다.', payload.Header)
     state_error = _escrow_state_error(payload.escrowId, payload.Header)
     if state_error:
         return state_error
@@ -2052,6 +2079,7 @@ async def release_escrow(
     },
     summary="잔액 환불",
     description=(
+        "수취 예금주명 invalid-holder-name은 금융망 예금주 불일치 E5016 사례다.\n\n"
         "중도 종료로 통과분을 지급한 뒤 남은 잔액을 의뢰인에게 돌려줄 때 부른다. 절차는 "
         "지급과 같다. 환불 계좌는 해당 계약의 예치에 사용한 회원가입 발급 계좌로 "
         "고정한다. 요청의 은행코드·계좌번호를 예치 출금 계좌와 대조하고, 금융망 "
@@ -2103,6 +2131,8 @@ async def refund_escrow(
     )
     if error:
         return _escrow_error(*error, payload.Header)
+    if payload.refundHolderName == 'invalid-holder-name':
+        return _escrow_error(400, 'E5016', '금융망 예금주명과 일치하지 않습니다.', payload.Header)
     state_error = _escrow_state_error(payload.escrowId, payload.Header)
     if state_error:
         return state_error

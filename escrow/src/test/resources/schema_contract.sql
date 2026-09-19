@@ -25,6 +25,14 @@ INSERT INTO member_account_provisions
 VALUES (900001, 900001, 'schema@example.com', 'product', 'provision-test', repeat('a',64), 1);
 INSERT INTO escrows (id, service_client_id, payer_provision_id, external_contract_id, contract_type, expected_amount)
 VALUES (900001, 900001, 900001, 'schema-test', 'DEVELOPMENT', 100);
+DO $$
+BEGIN
+    BEGIN
+        UPDATE escrows SET hold_status='RELEASED' WHERE id=900001;
+        RAISE EXCEPTION '신고와 동결 기록 없는 해제 허용';
+    EXCEPTION WHEN check_violation THEN NULL;
+    END;
+END $$;
 INSERT INTO escrow_transactions
     (id, service_client_id, escrow_id, transaction_type, amount, external_reference_id, idempotency_key,
      request_fingerprint, depositor_name_encrypted)

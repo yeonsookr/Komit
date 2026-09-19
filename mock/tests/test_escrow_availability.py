@@ -1,5 +1,6 @@
 import unittest
 import json
+from typing import get_type_hints
 
 from fastapi import FastAPI
 
@@ -7,6 +8,21 @@ from app.routers import escrow
 
 
 class AvailabilityContractTest(unittest.IsolatedAsyncioTestCase):
+    async def test_every_documented_request_example_can_be_called(self):
+        app = FastAPI()
+        app.include_router(escrow.router)
+        specification = app.openapi()
+        for route in escrow.router.routes:
+            if not getattr(route, 'body_field', None):
+                continue
+            examples = specification['paths'][route.path]['post']['requestBody']['content']['application/json']['schema']['examples']
+            for example in examples:
+                with self.subTest(path=route.path, example=example):
+                    payload = get_type_hints(route.endpoint)['payload'].model_validate(example)
+                    result = await route.endpoint(payload)
+                    self.assertIsInstance(result, route.response_model)
+                    self.assertEqual(result.Header.responseCode, 'H0000')
+
     async def test_every_documented_post_returns_503_without_rec(self):
         app = FastAPI()
         app.include_router(escrow.router)

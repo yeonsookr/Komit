@@ -34,3 +34,10 @@ class RefundContractTest(unittest.IsolatedAsyncioTestCase):
         request.referenceId = 'SETTLEMENT:other'
         result = await escrow.refund_escrow(request)
         self.assertEqual(json.loads(result.body)['Header']['responseCode'], 'E5010')
+
+    async def test_mismatched_holder_does_not_report_transfer_success(self):
+        request = self.request(46)
+        request.refundHolderName = 'invalid-holder-name'
+        result = await escrow.refund_escrow(request)
+        self.assertEqual(json.loads(result.body)['Header']['responseCode'], 'E5016')
+        self.assertNotIn('REC', json.loads(result.body))
