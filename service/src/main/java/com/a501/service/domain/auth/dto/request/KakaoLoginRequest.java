@@ -1,8 +1,8 @@
 package com.a501.service.domain.auth.dto.request;
 
-import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 
 public record KakaoLoginRequest(
-        @NotBlank String code,
-        @NotBlank String redirectUri) {
+        @NotNull String code,
+        @NotNull String redirectUri) {
 }
