@@ -3,10 +3,6 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/escrow}
     username: ${DB_USERNAME:escrow}
     password: ${DB_PASSWORD:escrow}
-  jpa:
-    properties:
-      hibernate:
-        format_sql: true
 
 app:
   instance-role: ${APP_INSTANCE_ROLE:WRITER}
@@ -15,4 +11,3 @@ app:
 logging:
   level:
     com.a501: DEBUG
-    org.hibernate.SQL: DEBUG
