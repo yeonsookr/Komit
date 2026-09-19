@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createReport } from "@/lib/api/services";
+import { createReport, uploadFile } from "@/lib/api/services";
 import { parseNumericParam, toErrorResponse } from "@/lib/api/route";
 
 const INVALID_REQUEST = { code: "INVALID_REQUEST", message: "요청 값을 확인해 주세요." };
@@ -26,12 +26,11 @@ export async function POST(
     return NextResponse.json(INVALID_REQUEST, { status: 422 });
   }
 
-  const body = new FormData();
-  body.set("reason", reason.trim());
-  const file = input.get("file");
-  if (file instanceof File && file.size > 0) body.set("file", file, file.name);
-
   try {
+    const file = input.get("file");
+    const uploaded =
+      file instanceof File && file.size > 0 ? await uploadFile(file, "REPORT_EVIDENCE") : null;
+    const body = { reason: reason.trim(), fileId: uploaded?.fileId ?? null };
     return NextResponse.json(await createReport(id, body), { status: 201 });
   } catch (error) {
     return toErrorResponse(error);

@@ -14,7 +14,9 @@ export type UploadPurpose =
   | "CAREER_EVIDENCE"
   | "PORTFOLIO_IMAGE"
   | "SIGNATURE"
-  | "DELIVERABLE";
+  | "DELIVERABLE"
+  | "SESSION_RECORDING"
+  | "REPORT_EVIDENCE";
 
 /** 올리기 시작 요청. 형식과 크기는 이 단계에서 걸러집니다. */
 export interface CreateUploadRequest {
