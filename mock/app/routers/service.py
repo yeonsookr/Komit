@@ -1578,10 +1578,19 @@ SCAN_FILE_INVALID = (
     "SCAN_FILE_INVALID",
     "검사 결과 파일을 읽지 못했습니다. 받은 파일 그대로 올려주세요.",
 )
+DIAGNOSIS_MISMATCH = (
+    "DIAGNOSIS_MISMATCH",
+    "다른 진단의 결과 파일입니다. 이 진단에서 받은 검사 파일로 다시 검사해 주세요.",
+)
+SCAN_VERSION_OUTDATED = (
+    "SCAN_VERSION_OUTDATED",
+    "검사 방법이 업데이트되었습니다. 새 검사 파일을 내려받아 다시 검사해 주세요.",
+)
+SCAN_VERSION = "0.1.0"
 SCAN_FILE_NAME = "komit-scan.md"
 # 내려주는 검사 파일. 실제 서버는 진단마다 설문 답을 채워 내려주지만,
 # 목에서는 고정 문구로 둔다. 검사 기준 본문은 ai/komit-scan/skills 에 있다.
-SCAN_FILE_BODY = """# Komit 검사 파일
+SCAN_FILE_BODY = f"""# Komit 검사 파일
 
 이 파일을 쓰시는 AI 코딩 도구에 읽히면 프로젝트를 검사해 결과 파일을 만듭니다.
 소스 코드는 컴퓨터 밖으로 나가지 않습니다.
@@ -1589,7 +1598,7 @@ SCAN_FILE_BODY = """# Komit 검사 파일
 ## 진단 정보
 
 - 진단 번호: 31
-- 검사 지시문 판: 0.1.0
+- 검사 지시문 판: {SCAN_VERSION}
 - 프로젝트: 수제 비누 가게
 
 ## 의뢰인이 적은 증상
@@ -1619,6 +1628,14 @@ Claude Code 를 쓰신다면 아래 한 줄이면 됩니다.
 SCAN_FILE_INVALID_EXAMPLE = {
     "code": SCAN_FILE_INVALID[0],
     "message": SCAN_FILE_INVALID[1],
+}
+DIAGNOSIS_MISMATCH_EXAMPLE = {
+    "code": DIAGNOSIS_MISMATCH[0],
+    "message": DIAGNOSIS_MISMATCH[1],
+}
+SCAN_VERSION_OUTDATED_EXAMPLE = {
+    "code": SCAN_VERSION_OUTDATED[0],
+    "message": SCAN_VERSION_OUTDATED[1],
 }
 
 
@@ -2260,8 +2277,25 @@ def complete_survey(
         },
         400: {
             "model": ErrorResponse,
-            "description": "검사 결과 파일을 읽지 못함",
-            "content": {"application/json": {"example": SCAN_FILE_INVALID_EXAMPLE}},
+            "description": "검사 결과 파일 형식·진단 번호·검사 버전이 맞지 않음",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "scanFileInvalid": {
+                            "summary": "결과 파일 형식 오류",
+                            "value": SCAN_FILE_INVALID_EXAMPLE,
+                        },
+                        "diagnosisMismatch": {
+                            "summary": "진단 번호 불일치",
+                            "value": DIAGNOSIS_MISMATCH_EXAMPLE,
+                        },
+                        "scanVersionOutdated": {
+                            "summary": "검사 버전 불일치",
+                            "value": SCAN_VERSION_OUTDATED_EXAMPLE,
+                        },
+                    }
+                }
+            },
         },
         409: {
             "model": ErrorResponse,
@@ -2287,6 +2321,10 @@ def complete_survey(
         "- **201**: 파일을 받아 검사가 열렸을 때. 이어서 설문 조회로 설문4 문항을 받는다\n"
         "- **400 / SCAN_FILE_INVALID**: 받은 형식이 아닌 파일을 올렸을 때. 내려받은 파일을 "
         "그대로 올리도록 안내한다\n"
+        "- **400 / DIAGNOSIS_MISMATCH**: 파일 내용의 진단 번호가 URL의 `diagnosisId`와 "
+        "다를 때. 이 진단에서 받은 검사 파일로 다시 검사하도록 안내한다\n"
+        "- **400 / SCAN_VERSION_OUTDATED**: 파일 내용의 검사 버전이 현재 지원하는 버전과 "
+        "다를 때. 새 검사 파일을 내려받아 다시 검사하도록 안내한다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / DIAGNOSIS_NOT_FOUND**: `diagnosisId`가 404일 때\n"
         "- **409 / INSPECTION_ALREADY_RUNNING**: `diagnosisId`가 409일 때. 이 회차에 이미 "
@@ -2324,6 +2362,10 @@ def upload_scan_result(
     parsed = scan_result.parse(file.file.read())
     if parsed is None:
         return _error_response(400, SCAN_FILE_INVALID)
+    if parsed.get("diagnosisId") != diagnosisId:
+        return _error_response(400, DIAGNOSIS_MISMATCH)
+    if parsed.get("scanVersion") != SCAN_VERSION:
+        return _error_response(400, SCAN_VERSION_OUTDATED)
 
     scan_result.remember(diagnosisId, parsed)
     return InspectionResponse(**INSPECTION_RUNNING_EXAMPLE)
