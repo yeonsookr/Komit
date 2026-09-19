@@ -1622,7 +1622,7 @@ Claude Code 를 쓰신다면 아래 한 줄이면 됩니다.
 
 ## 무엇을 검사하나요
 
-준법 · 보안 · 결제 · 데이터 · 비용 · 인계 · AI 잔재 · 기타 여덟 가지를 봅니다.
+위법 · 보안 · 결제 · 데이터 · 비용 · 인계 · AI 잔재 · 기타 여덟 가지를 봅니다.
 검사 기준 전문은 누구나 열어 볼 수 있게 공개되어 있습니다.
 """.encode()
 SCAN_FILE_INVALID_EXAMPLE = {
@@ -4125,7 +4125,8 @@ def get_developer_reviews(
     description=(
         "**화면 — `2_요구사항선택` › 상담 요청하기. 결과는 `3_의뢰인_개발자추천`에 나온다**\n\n"
         "고른 요구사항을 근거로 맞는 개발자를 찾아 추천 회차를 만든다. 이 회차의 결과가 "
-        "추천 화면에 순위대로 나온다.\n\n"
+        "추천 화면에 순위대로 나온다. 추천은 정해진 규칙으로 점수를 계산하며, 서버는 "
+        "추천 회차의 알고리즘 판과 항목별 점수 근거를 보관한다. (R-MATCH-05)\n\n"
         "**직접 찾아 고른 개발자는 이 API를 거치지 않는다.** 그 길은 프로젝트 상담 요청 "
         "API가 맡고, 회차 없이 방이 바로 열린다.\n\n"
         "같은 프로젝트에서 다시 찾으면 회차 번호가 1 오른다. 이전 회차는 지우지 않고 "
@@ -7670,8 +7671,8 @@ class IncomeResponse(BaseModel):
     """개발자가 받을 돈."""
 
     expectedAmount: int = Field(
-        description="계약이 끝나면 받을 돈의 합.",
-        examples=[650000],
+        description="계약이 끝나면 수수료를 빼고 받을 돈의 합. (R-PAY-07)",
+        examples=[643500],
     )
     awaitingAmount: int = Field(
         description="아직 확인이 남은 작업의 금액 합.",
@@ -7782,7 +7783,7 @@ LEDGER_EXAMPLE = {
 }
 
 INCOME_EXAMPLE = {
-    "expectedAmount": 650000,
+    "expectedAmount": 643500,
     "awaitingAmount": 250000,
     "awaitingCount": 2,
     "items": [
