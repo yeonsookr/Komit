@@ -1,6 +1,7 @@
 import "server-only";
 
 import { bearerHeaders } from "@/lib/auth/session";
+import { SESSION_PENDING_CONSENT_STATUS } from "@/lib/session";
 import type {
   ApplySummaryChangesRequest,
   ConsultingSession,
@@ -29,18 +30,37 @@ export async function getConsultingSession(sessionId: number): Promise<Consultin
   return data;
 }
 
+/** 세션 입장 요청의 결과. */
+export interface SessionJoinResult {
+  /** 양쪽 동의가 모여 실제로 들어갔으면 참. 상대를 기다리는 중이면 거짓입니다. */
+  entered: boolean;
+  session: ConsultingSession;
+}
+
 /**
  * 세션 입장.
  *
- * 아직 열리지 않은 세션이면 409 입니다 — 시작 시각보다 한참 전에는 들어갈 수 없습니다.
+ * **이 요청 하나가 동의와 입장을 겸합니다** (`R-CON-13`). 먼저 보낸 쪽은 아직 들어간
+ * 것이 아니라 상대의 동의를 기다립니다. 양쪽이 모이면 그때 실제로 들어갑니다.
+ *
+ * 같은 사람이 기다리는 동안 다시 보내도 동의는 한 번만 기록되므로, 화면은 이 요청을
+ * 되풀이해 201 로 바뀌는 때를 알 수 있습니다.
+ *
+ * 아직 열리지 않았거나 이미 끝난 세션이면 409 입니다.
  */
-export async function joinConsultingSession(sessionId: number): Promise<ConsultingSession> {
-  const { data } = await backendApi().post<ConsultingSession>(
+export async function joinConsultingSession(sessionId: number): Promise<SessionJoinResult> {
+  const response = await backendApi().post<ConsultingSession>(
     BACKEND.SESSION_PARTICIPATIONS(sessionId),
     undefined,
     await bearerHeaders(),
   );
-  return data;
+
+  // 202 만 대기로 봅니다. 그 밖의 2xx 는 들어간 것으로 다룹니다 — 이미 들어와 있는
+  // 사람을 못 들어온 것으로 잘못 보면 세션 내내 대기 화면에 갇힙니다.
+  return {
+    entered: response.status !== SESSION_PENDING_CONSENT_STATUS,
+    session: response.data,
+  };
 }
 
 /**

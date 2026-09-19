@@ -5488,7 +5488,9 @@ def get_consulting_session(
 ) -> ConsultingSessionResponse | JSONResponse:
     if sessionId == NOT_FOUND_SESSION_ID:
         return _error_response(404, SESSION_NOT_FOUND)
-    return ConsultingSessionResponse(**SESSION_EXAMPLE)
+    # 물어본 식별자를 그대로 돌려준다. 화면은 이 값으로 입장·종료를 부르므로, 고정값을
+    # 주면 203 같은 재현용 식별자로 들어와도 55의 흐름이 나와 재현이 되지 않는다.
+    return ConsultingSessionResponse(**{**SESSION_EXAMPLE, "sessionId": sessionId})
 
 
 @router.post(

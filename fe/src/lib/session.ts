@@ -6,6 +6,18 @@ import type { ConsultingSession, Contract } from "@/types/contract";
 /** R-CON-08: 컨설팅 세션은 시작 전 정해진 시간부터 들어갈 수 있다. */
 export const SESSION_OPEN_BEFORE_MINUTES = 10;
 
+/**
+ * 입장 요청이 「상대 동의를 기다리는 중」으로 돌아올 때의 상태 코드.
+ *
+ * R-CON-13: 양쪽이 모두 동의해야 실제로 들어갑니다. 먼저 보낸 쪽은 201 이 아니라
+ * 이 값을 받습니다. **2xx 라서 오류로 잡히지 않으므로** 값을 잃으면 들어가지 못한
+ * 사람에게 세션 화면이 그대로 열립니다.
+ *
+ * 서버가 읽는 곳(`api/services/consultingSessions.ts`)과 브라우저가 읽는
+ * 곳(`SessionStage`)이 같은 값을 봐야 해서 `server-only` 가 아닌 여기 둡니다.
+ */
+export const SESSION_PENDING_CONSENT_STATUS = 202;
+
 const MINUTE = 60 * 1000;
 
 /**

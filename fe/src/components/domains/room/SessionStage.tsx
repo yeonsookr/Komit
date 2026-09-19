@@ -8,11 +8,12 @@ import {
   ChatMessage as ChatBubble,
   ChatRoom,
 } from "@/components/domains/chat";
-import { Modal, ModalBody, ModalFooter, ModalHeader, useToast } from "@/components/feedback";
+import { Callout, Modal, ModalBody, ModalFooter, ModalHeader, useToast } from "@/components/feedback";
 import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
 import { formatTime } from "@/lib/format";
 import { ROUTES } from "@/lib/routes";
+import { SESSION_PENDING_CONSENT_STATUS } from "@/lib/session";
 import { ApiError } from "@/types/api";
 import type { ChatMessage } from "@/types/chat";
 
@@ -27,6 +28,37 @@ import type { ChatMessage } from "@/types/chat";
 const DEVICE_CONTROLS = ["마이크", "카메라", "화면 공유"] as const;
 
 const NOT_CONNECTED_TITLE = "화상 연결이 아직 붙지 않았습니다";
+
+/**
+ * 입장이 어디까지 왔는지.
+ *
+ * - `JOINING` — 동의와 입장을 보내는 중
+ * - `PENDING` — 내 동의는 남았고 상대를 기다리는 중 (`R-CON-13`)
+ * - `ENTERED` — 양쪽이 모여 실제로 들어옴
+ * - `FAILED` — 들어가지 못함
+ */
+type EntryState = "JOINING" | "PENDING" | "ENTERED" | "FAILED";
+
+/** 상대가 들어왔는지 다시 묻는 주기. 실시간 채널이 붙으면 지웁니다. */
+const PENDING_RECHECK_MS = 5_000;
+
+/** 아직 무대를 열 수 없는 때에 적는 말. */
+const ENTRY_NOTICE: Record<Exclude<EntryState, "ENTERED">, { title: string; body: string }> = {
+  JOINING: {
+    title: "세션에 들어가는 중입니다",
+    body: "잠시만 기다려 주세요.",
+  },
+  PENDING: {
+    title: "상대방의 동의를 기다리고 있습니다",
+    body:
+      "이 세션은 녹음해 글로 옮긴 뒤 요약을 만듭니다. 양쪽이 모두 동의해야 시작하며, " +
+      "상대가 들어오면 화면이 저절로 바뀝니다.",
+  },
+  FAILED: {
+    title: "세션에 들어가지 못했습니다",
+    body: "잠시 후 다시 시도해 주세요. 이미 끝난 세션이거나 아직 이른 시각일 수 있습니다.",
+  },
+};
 
 export interface SessionStageProps {
   sessionId: number;
@@ -47,8 +79,11 @@ export interface SessionStageProps {
  * 화상이 붙기 전까지 무대는 비어 있습니다. **비어 있다는 사실을 화면에 적습니다** —
  * 검은 칸만 두면 연결이 끊긴 것인지 아직 만들지 않은 것인지 구분되지 않습니다.
  *
- * 실제로 동작하는 것은 둘입니다. 들어온 기록(`participations`)을 붙자마자 남기고,
- * 「세션 종료」로 세션을 마칩니다. 마치면 되돌릴 수 없어 한 번 확인합니다.
+ * **무대 앞에 관문이 하나 있습니다.** 양쪽이 모두 동의해야 세션이 시작되므로
+ * (`R-CON-13`), 먼저 들어온 사람에게는 무대 대신 기다리는 안내를 보여줍니다.
+ *
+ * 실제로 동작하는 것은 둘입니다. 동의하고 들어가는 것(`participations`)과
+ * 「세션 종료」로 마치는 것. 마치면 되돌릴 수 없어 한 번 확인합니다.
  */
 export function SessionStage({
   sessionId,
@@ -64,21 +99,61 @@ export function SessionStage({
   const [asking, setAsking] = React.useState(false);
   const [ending, setEnding] = React.useState(false);
   const bottomRef = React.useRef<HTMLDivElement>(null);
-  const joined = React.useRef(false);
+  const [entry, setEntry] = React.useState<EntryState>("JOINING");
 
   /*
-    들어온 기록을 남깁니다. 먼저 들어온 사람이 있으면 그때 세션이 시작된 것으로
-    보므로(목 명세 영역 4), 화면이 열리는 것과 같은 때에 보냅니다.
+    동의하고 들어갑니다.
 
-    ref 로 한 번만 보냅니다 — 개발 모드에서는 effect 가 두 번 돕니다.
-    실패해도 화면을 막지 않습니다. 들어갈 수 있는지는 서버가 이미 판정해 이 화면을
-    내려보냈고, 기록이 빠진 것 때문에 상대를 기다리는 사람을 내쫓을 일은 아닙니다.
+    **이 요청은 기록이 아니라 관문입니다.** 같은 요청 하나가 녹음·전사·요약 동의와
+    입장을 겸하고, 양쪽이 모두 보내야 실제로 들어갑니다 (`R-CON-13`). 먼저 보낸 쪽은
+    201 이 아니라 202 를 받고 상대를 기다립니다.
+
+    202 는 2xx 라 오류로 잡히지 않습니다. 결과를 버리면 들어가지도 않은 사람에게
+    무대가 그대로 열리므로 여기서 기다려 갈라야 합니다.
+  */
+  const join = React.useCallback(async () => {
+    try {
+      const { status } = await clientApi.post(INTERNAL.SESSION_PARTICIPATIONS(sessionId));
+      return status === SESSION_PENDING_CONSENT_STATUS ? "PENDING" : "ENTERED";
+    } catch {
+      return "FAILED";
+    }
+  }, [sessionId]);
+
+  React.useEffect(() => {
+    let alive = true;
+    void join().then((next) => {
+      if (alive) setEntry(next);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [join]);
+
+  /*
+    기다리는 동안 같은 요청을 되풀이해 201 로 바뀌는 때를 봅니다. 동의는 한 번만
+    기록되므로 여러 번 보내도 덧나지 않습니다.
+
+    ⚠️ 임시입니다. 상대가 들어온 것은 원래 실시간 채널이 알려줄 일이고, 그것이 붙으면
+    이 되풀이를 지웁니다. 그때까지 이것이 없으면 먼저 동의한 사람은 상대가 들어왔는지
+    영영 알 수 없습니다.
+    간격은 정책 값이 아니라 화면이 다시 묻는 주기라 `RULES.md` 에 두지 않습니다.
   */
   React.useEffect(() => {
-    if (joined.current) return;
-    joined.current = true;
-    clientApi.post(INTERNAL.SESSION_PARTICIPATIONS(sessionId)).catch(() => {});
-  }, [sessionId]);
+    if (entry !== "PENDING") return;
+
+    let alive = true;
+    const timer = setInterval(() => {
+      void join().then((next) => {
+        if (alive) setEntry(next);
+      });
+    }, PENDING_RECHECK_MS);
+
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, [entry, join]);
 
   React.useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
@@ -125,6 +200,29 @@ export function SessionStage({
       setEnding(false);
     }
   };
+
+  /*
+    들어가기 전에는 무대를 그리지 않습니다. 대화도 컨트롤도 아직 내 것이 아니고,
+    무엇보다 카메라·마이크는 양쪽이 동의한 뒤에만 켭니다 (`R-CON-13`).
+  */
+  if (entry !== "ENTERED") {
+    return (
+      <Callout
+        className="mt-4"
+        tone={entry === "FAILED" ? "danger" : "info"}
+        title={ENTRY_NOTICE[entry].title}
+        action={
+          entry === "FAILED" ? (
+            <Button variant="outline" onClick={() => window.location.reload()}>
+              다시 시도
+            </Button>
+          ) : undefined
+        }
+      >
+        {ENTRY_NOTICE[entry].body}
+      </Callout>
+    );
+  }
 
   return (
     <>
