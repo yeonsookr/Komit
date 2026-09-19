@@ -214,6 +214,21 @@ class ErrorResponse(BaseModel):
     )
 
 
+UNAVAILABLE_DESCRIPTION = (
+    "일시적으로 요청을 처리할 수 없습니다. HTTP 503 / Q1000이며 REC는 없습니다. "
+    "500·503·타임아웃·연결 종료만으로 업무의 성공 또는 실패를 확정하지 않습니다. "
+    "멱등키가 필요한 쓰기 요청은 최초 idempotencyKey와 업무 본문을 유지해 재요청합니다. "
+    "전송 시각과 institutionTransactionUniqueNo는 새로 생성합니다. "
+    "조회는 재시도할 수 있습니다. 프록시 장애 응답에는 JSON Header가 없을 수 있습니다. "
+    "Mock은 default의 userKey=unavailable-user-key, 업무 API의 "
+    "clientApiKey=unavailable-client-api-key로 재현합니다."
+)
+UNAVAILABLE_RESPONSE = {
+    "model": ErrorResponse,
+    "description": UNAVAILABLE_DESCRIPTION,
+}
+
+
 REQUEST_EXAMPLE = {
     "Header": {
         "apiName": "default",
@@ -417,6 +432,7 @@ async def http_exception_handler(
             "description": "공통 요청 Header 또는 요청 본문 검증 오류",
             "content": {"application/json": {"example": HEADER_ERROR_EXAMPLE}},
         },
+        503: UNAVAILABLE_RESPONSE,
         500: {
             "model": ErrorResponse,
             "description": "Q1000 코드와 공통 Header를 포함한 서버 오류 응답",
@@ -460,6 +476,9 @@ async def get_default(
         )
         return _error_response(400, *header_error, echoable_header)
 
+    if payload.Header.userKey == "unavailable-user-key":
+        return _error_response(503, "Q1000", "서비스를 일시적으로 사용할 수 없습니다.", payload.Header)
+
     if payload.Header.userKey == "server-error-user-key":
         return _error_response(
             500,
@@ -486,6 +505,7 @@ async def get_default(
 
 INVALID_CLIENT_API_KEY = "invalid-client-api-key"
 SERVER_ERROR_CLIENT_API_KEY = "server-error-client-api-key"
+UNAVAILABLE_CLIENT_API_KEY = "unavailable-client-api-key"
 MOCK_OPERATOR_CLIENT_API_KEY = "mock-operator-client-api-key"
 CONFLICT_IDEMPOTENCY_KEY = "conflict-idempotency-key"
 
@@ -563,6 +583,7 @@ class EscrowRequestHeader(BaseModel):
             MOCK_OPERATOR_CLIENT_API_KEY,
             INVALID_CLIENT_API_KEY,
             SERVER_ERROR_CLIENT_API_KEY,
+            UNAVAILABLE_CLIENT_API_KEY,
         ],
         json_schema_extra={"minLength": 1, "maxLength": 255},
     )
@@ -699,6 +720,8 @@ def _validate_escrow_header(
         return 400, "H1009", "USER KEY가 유효하지 않습니다."
     # 분류되지 않은 서버 오류. 업무 API는 userKey를 늘 받지 않으므로 기준 API의
     # server-error-user-key 대신 모든 업무 API가 함께 받는 clientApiKey로 고른다.
+    if header.clientApiKey == UNAVAILABLE_CLIENT_API_KEY:
+        return 503, "Q1000", "서비스를 일시적으로 사용할 수 없습니다."
     if header.clientApiKey == SERVER_ERROR_CLIENT_API_KEY:
         return 500, "Q1000", "그 이외에 에러 메시지"
     return None
@@ -718,8 +741,9 @@ MOCK_ACCOUNT_NO = "0011234567890123"
 INVALID_ACCOUNT_NO = "0000000000000000"
 
 # SSAFY 금융망 형식은 오류를 본문의 responseCode로 전한다. HTTP 상태코드는 기준 API와
-# 같이 400과 500만 쓰고, 어떤 오류인지는 responseCode로 가른다.
+# 같이 400·500·503을 쓰고, 업무 오류는 responseCode로 가른다.
 ACCOUNT_ERRORS: dict = {
+    503: UNAVAILABLE_RESPONSE,
     400: {
         "model": EscrowErrorResponse,
         "description": "공통 Header 또는 업무 값 오류",
@@ -1254,6 +1278,7 @@ def _mock_escrow_balance(escrow_id: int) -> int:
 BANK_CODE_PATTERN = r"^\d{3}$"
 
 ESCROW_ERRORS: dict = {
+    503: UNAVAILABLE_RESPONSE,
     400: {
         "model": EscrowErrorResponse,
         "description": (
@@ -1767,7 +1792,9 @@ async def create_member_account(
         "- **500 / Q1000**: `clientApiKey`가 `server-error-client-api-key`일 때. "
         "분류되지 않은 서버 오류다\n\n"
         "잔액 부족이나 이체한도 초과는 다시 보내도 결과가 같으므로 재시도하지 않는다. "
-        "응답을 받지 못했으면 같은 멱등키로 다시 부르거나 조회로 결과를 확인한다."
+        "응답을 받지 못했으면 같은 멱등키로 다시 부르거나 조회로 결과를 확인한다. "
+        "escrowId를 받지 못했다면 inquireEscrowList에 contractIds를 전달해 찾는다. "
+        "조회 결과가 없다는 사실만으로 새 멱등키를 발급하지 않는다."
     ),
 )
 async def create_escrow(
@@ -2280,8 +2307,9 @@ async def hold_escrow(
     description=(
         "신고가 끝나면 걸려 있던 동결을 푼다. 에스크로당 활성 동결은 하나이므로 "
         "풀면 바로 잠금이 해제된다.\n\n"
-        "늦게 도착한 동결·해제가 뒤바뀌지 않도록 걸린 시각과 풀린 시각으로 순서를 "
-        "가린다.\n\n"
+        "같은 신고의 동결 완료를 확인한 뒤에만 해제를 요청한다. 동결·해제 요청을 "
+        "재전송할 때는 각각 처음 사용한 `idempotencyKey`를 유지한다. 수신 시각만으로 "
+        "서로 다른 신고의 사건 순서를 판정하지 않는다.\n\n"
         "- **200 / H0000**: 풀었을 때. `isHeld`가 거짓이면 다시 지급과 환불을 할 수 "
         "있다\n"
         "- **400 / E5002**: `idempotencyKey`가 없을 때\n"
