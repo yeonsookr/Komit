@@ -7,6 +7,13 @@ spring:
 app:
   instance-role: ${APP_INSTANCE_ROLE:WRITER}
   public-base-url: ${APP_PUBLIC_BASE_URL:http://localhost:8081}
+  security:
+    # 로컬 전용 예시값. 운영에서는 반드시 Secret으로 교체합니다.
+    client-api-key-hmac-secret: ${CLIENT_API_KEY_HMAC_SECRET:dev-only-client-api-key-hmac-secret}
+    sensitive-data-hmac-secret: ${SENSITIVE_DATA_HMAC_SECRET:dev-only-sensitive-data-hmac-secret}
+    encryption-key-base64: ${FIELD_ENCRYPTION_KEY_BASE64:ZGV2LW9ubHktMzItYnl0ZS1hZXMta2V5LTAwMDAwMDA=}
+    encryption-key-version: ${FIELD_ENCRYPTION_KEY_VERSION:1}
+    operator-api-key: ${OPERATOR_CLIENT_API_KEY:dev-only-operator-client-api-key}
 
 logging:
   level:

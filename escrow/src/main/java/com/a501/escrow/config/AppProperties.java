@@ -15,5 +15,5 @@ import org.springframework.validation.annotation.Validated;
  */
 @Validated
 @ConfigurationProperties(prefix = "app")
-public record AppProperties(@NotNull URI publicBaseUrl) {
+public record AppProperties(@NotNull URI publicBaseUrl, @NotNull InstanceRole instanceRole) {
 }
