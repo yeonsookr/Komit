@@ -3,11 +3,13 @@ import "server-only";
 import { backendApi } from "../server";
 import { BACKEND } from "../endpoints";
 import type {
+  AmendConsultingContractRequest,
   Contract,
   DepositRequest,
   EscrowDeposit,
   PaymentMethod,
   SignContractRequest,
+  WriteConsultingContractRequest,
   WriteDevelopmentContractRequest,
   WriteReviewRequest,
 } from "@/types/contract";
@@ -123,4 +125,35 @@ export async function writeReview(
   body: WriteReviewRequest,
 ): Promise<void> {
   await backendApi().post(BACKEND.CONTRACT_REVIEW(contractId), body);
+}
+
+/**
+ * 컨설팅 계약서 작성 (`4_개발자_계약서작성`).
+ *
+ * 개발 계약과 달리 작업을 쪼개지 않습니다. 한 번 만나서 무엇을 다룰지, 언제 얼마나,
+ * 얼마에 하는지가 전부라 세션 하나가 곧 계약입니다.
+ */
+export async function writeConsultingContract(
+  roomId: number,
+  body: WriteConsultingContractRequest,
+): Promise<Contract> {
+  const { data } = await backendApi().post<Contract>(
+    BACKEND.CONSULTING_CONTRACTS(roomId),
+    body,
+  );
+  return data;
+}
+
+/**
+ * 컨설팅 계약서 수정 제안.
+ *
+ * **보낸 항목만 바뀝니다.** 서명 전에만 고칠 수 있고, 한쪽이라도 서명한 뒤에는
+ * 서버가 막습니다 (R-CON-02).
+ */
+export async function amendConsultingContract(
+  contractId: number,
+  body: AmendConsultingContractRequest,
+): Promise<Contract> {
+  const { data } = await backendApi().patch<Contract>(BACKEND.CONTRACT(contractId), body);
+  return data;
 }

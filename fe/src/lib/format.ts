@@ -125,3 +125,14 @@ export function formatDateTimeLabel(isoString: string): string {
   const date = new Date(isoString);
   return `${dateLabelFormat.format(date)} ${timeFormat.format(date)}`;
 }
+
+/**
+ * "8월 29일 (토) 14:00" — 컨설팅 계약서에 적는 세션 일시.
+ *
+ * 요일에 괄호를 둘러 날짜와 시각 사이에서 눈에 걸리게 합니다. 언제 만나는지가
+ * 컨설팅 계약의 핵심 조건이라 계약서에서 가장 먼저 읽혀야 합니다.
+ */
+export function formatSessionSchedule(isoString: string): string {
+  const date = new Date(isoString);
+  return `${dateLabelFormat.format(date)} (${weekdayFormat.format(date)}) ${timeFormat.format(date)}`;
+}

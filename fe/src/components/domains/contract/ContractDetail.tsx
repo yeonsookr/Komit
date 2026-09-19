@@ -11,6 +11,7 @@ import {
 import { formatDateTimeLabel, formatDayWithWeekday } from "@/lib/format";
 import { ROUTES } from "@/lib/routes";
 import type { Contract } from "@/types/contract";
+import { ConsultingContractDetail } from "./ConsultingContractDetail";
 import { MilestoneList } from "./MilestoneList";
 import { SignContractButton } from "./SignContractButton";
 
@@ -75,12 +76,16 @@ export function ContractDetail({
   const development = contract.development;
   const signed = isSignedByBoth(contract);
 
-  // 컨설팅 계약서는 세션 일정이 본문이라 이 화면이 다룰 내용과 다릅니다.
+  // 컨설팅은 세션 하나가 계약의 전부라 읽는 방식이 다릅니다. 그쪽 화면에 넘깁니다.
   if (development === null) {
     return (
-      <EmptyState
-        title="컨설팅 계약서입니다"
-        description="이 화면은 개발 계약서를 보여줍니다."
+      <ConsultingContractDetail
+        roomId={roomId}
+        roomTitle={roomTitle}
+        counterpartName={counterpartName}
+        contract={contract}
+        received={received}
+        myUserId={myUserId}
       />
     );
   }

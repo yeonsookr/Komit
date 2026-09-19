@@ -13,11 +13,22 @@ export interface NativeSelectProps extends Omit<React.SelectHTMLAttributes<HTMLS
   tone?: "surface" | "outline";
   invalid?: boolean;
   placeholder?: string;
+  /**
+   * 감싸는 칸의 폭. 기본은 부모를 가득 채웁니다.
+   *
+   * 셀렉트는 화살표를 얹으려고 `relative` 컨테이너에 싸여 있어, `className` 으로 폭을
+   * 줄여도 그 컨테이너는 그대로 넓습니다. 한 줄에 여럿을 늘어놓을 때(예: `14 시 00 분`)
+   * 폭을 여기서 줍니다. `Input` 의 같은 이름 prop 과 쓰임이 같습니다.
+   */
+  containerClassName?: string;
 }
 
 export const NativeSelect = React.forwardRef<HTMLSelectElement, NativeSelectProps>(
-  ({ size = "md", tone = "surface", invalid, placeholder, className, children, ...props }, ref) => (
-    <div className="relative w-full">
+  (
+    { size = "md", tone = "surface", invalid, placeholder, className, containerClassName, children, ...props },
+    ref,
+  ) => (
+    <div className={cn("relative w-full", containerClassName)}>
       <select
         ref={ref}
         aria-invalid={invalid || undefined}

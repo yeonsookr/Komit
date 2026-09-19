@@ -1,3 +1,5 @@
+export * from "./ConsultingContractDetail";
+export * from "./ConsultingContractForm";
 export * from "./ContractDetail";
 export * from "./ContractEditor";
 export * from "./DeliverableFiles";

@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/layouts";
-import { RoomConversation, RoomHeader } from "@/components/domains/room";
+import { RoomConversation, RoomHeader, SessionBanner } from "@/components/domains/room";
 import { getChatMessages, getContract, getMe, getRoom } from "@/lib/api/services";
 import { isReceived, ROOM_TYPE_LABEL } from "@/lib/rooms";
+import { confirmedSession, sessionPhase } from "@/lib/session";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
 import type { Contract } from "@/types/contract";
@@ -51,6 +52,13 @@ export default async function RoomPage({ params }: { params: Promise<{ roomId: s
   const contract: Contract | null =
     room.contractId === null ? null : await getContract(room.contractId);
 
+  /*
+    컨설팅 방에서는 대화 위에 세션 배너가 붙습니다. 세션은 탭이 아니라 여기서
+    들어갑니다 — 잡힌 시각에만 들어가는 것이라 탭으로 두면 그 밖의 때에 갈 곳이 없습니다.
+    어느 때인지는 서버가 그릴 때 정합니다(`lib/session.ts`).
+  */
+  const session = confirmedSession(contract);
+
   return (
     <Container className="py-8 sm:py-10">
       <RoomHeader room={room} me={me} contract={contract} />
@@ -61,6 +69,15 @@ export default async function RoomPage({ params }: { params: Promise<{ roomId: s
         initialMessages={messages}
         myName={me.name}
         canConvert={!isReceived(room, me)}
+        banner={
+          session === null ? undefined : (
+            <SessionBanner
+              session={session}
+              phase={sessionPhase(session)}
+              roomId={room.roomId}
+            />
+          )
+        }
       />
     </Container>
   );

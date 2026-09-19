@@ -63,6 +63,18 @@ export const BACKEND = {
   SETTLEMENT_INCOME: "/api/settlements/income",
   SETTLEMENT_DEPOSITS: "/api/settlements/deposits",
   DEVELOPMENT_CONTRACTS: (roomId: number) => `/api/rooms/${roomId}/development-contracts`,
+  /**
+   * 컨설팅(영역 4). 개발 계약과 달리 한 번 만나는 세션이 계약의 전부라,
+   * 계약서는 방에서 만들고 그 뒤는 세션 식별자로 다룹니다.
+   */
+  CONSULTING_CONTRACTS: (roomId: number) => `/api/rooms/${roomId}/consulting-contracts`,
+  CONSULTING_SESSION: (sessionId: number) => `/api/consulting-sessions/${sessionId}`,
+  SESSION_PARTICIPATIONS: (sessionId: number) =>
+    `/api/consulting-sessions/${sessionId}/participations`,
+  SESSION_END: (sessionId: number) => `/api/consulting-sessions/${sessionId}/end`,
+  SESSION_SUMMARY: (sessionId: number) => `/api/consulting-sessions/${sessionId}/summary`,
+  SESSION_SUMMARY_CHANGES: (sessionId: number) =>
+    `/api/consulting-sessions/${sessionId}/summary/applied-changes`,
   MILESTONE_SUBMISSION: (milestoneId: number) => `/api/milestones/${milestoneId}/submission`,
   MILESTONE_QA_RESULTS: (milestoneId: number) => `/api/milestones/${milestoneId}/qa-results`,
   MILESTONE_CONFIRMATION: (milestoneId: number) =>
@@ -134,6 +146,20 @@ export const INTERNAL = {
   CONTRACT_REVIEW: (contractId: number) => `/api/contracts/${contractId}/review`,
   CONTRACT_REPORTS: (contractId: number) => `/api/contracts/${contractId}/reports`,
   DEVELOPMENT_CONTRACTS: (roomId: number) => `/api/rooms/${roomId}/development-contracts`,
+  /**
+   * 컨설팅(영역 4). 개발 계약과 달리 한 번 만나는 세션이 계약의 전부라,
+   * 계약서는 방에서 만들고 그 뒤는 세션 식별자로 다룹니다.
+   */
+  /** 계약서 한 건. 컨설팅 계약서를 고칠 때 PATCH 로 부릅니다. */
+  CONTRACT: (contractId: number) => `/api/contracts/${contractId}`,
+  CONSULTING_CONTRACTS: (roomId: number) => `/api/rooms/${roomId}/consulting-contracts`,
+  CONSULTING_SESSION: (sessionId: number) => `/api/consulting-sessions/${sessionId}`,
+  SESSION_PARTICIPATIONS: (sessionId: number) =>
+    `/api/consulting-sessions/${sessionId}/participations`,
+  SESSION_END: (sessionId: number) => `/api/consulting-sessions/${sessionId}/end`,
+  SESSION_SUMMARY: (sessionId: number) => `/api/consulting-sessions/${sessionId}/summary`,
+  SESSION_SUMMARY_CHANGES: (sessionId: number) =>
+    `/api/consulting-sessions/${sessionId}/summary/applied-changes`,
   MILESTONE_SUBMISSION: (milestoneId: number) => `/api/milestones/${milestoneId}/submission`,
   MILESTONE_QA_RESULTS: (milestoneId: number) => `/api/milestones/${milestoneId}/qa-results`,
   MILESTONE_CONFIRMATION: (milestoneId: number) =>

@@ -3,6 +3,7 @@ import {
   formatDateLabel,
   formatDateWithWeekday,
   formatRelativeTime,
+  formatSessionSchedule,
   formatFullDate,
   formatShortDate,
   formatShortDateTime,
@@ -24,6 +25,11 @@ describe('날짜·시각 포맷터', () => {
 
   it('예약 날짜는 요일을 함께 표시한다', () => {
     expect(formatDateWithWeekday('2026-08-22T15:00:00+09:00')).toBe('8월 22일 토');
+  });
+
+  it('컨설팅 세션 일시는 요일을 괄호로 묶고 시각까지 적는다', () => {
+    // 와이어프레임 `4_의뢰인_계약서상세` 의 「8월 29일 (토) 14:00」 표기입니다.
+    expect(formatSessionSchedule('2026-08-29T14:00:00+09:00')).toBe('8월 29일 (토) 14:00');
   });
 
   it('같은 날 메시지는 같은 키를 갖는다', () => {

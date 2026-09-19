@@ -27,9 +27,11 @@ export interface RoomChatPanelProps {
   initialMessages: ChatMessage[];
   /** 내 표시 이름. 보낸 말의 작성자로 씁니다. */
   myName: string;
+  /** 대화 위에 붙는 안내. 컨설팅 방의 세션 배너가 여기 옵니다. */
+  banner?: React.ReactNode;
 }
 
-export function RoomChatPanel({ room, initialMessages, myName }: RoomChatPanelProps) {
+export function RoomChatPanel({ room, initialMessages, myName, banner }: RoomChatPanelProps) {
   const router = useRouter();
   const [messages, setMessages] = React.useState(initialMessages);
   const bottomRef = React.useRef<HTMLDivElement>(null);
@@ -85,7 +87,7 @@ export function RoomChatPanel({ room, initialMessages, myName }: RoomChatPanelPr
   );
 
   return (
-    <ChatRoom footer={footer} bodyClassName="max-h-[520px]">
+    <ChatRoom banner={banner} footer={footer} bodyClassName="max-h-[520px]">
       {messages.length === 0 ? (
         <p className="py-8 text-center text-sm text-fg-muted">아직 주고받은 말이 없습니다.</p>
       ) : (

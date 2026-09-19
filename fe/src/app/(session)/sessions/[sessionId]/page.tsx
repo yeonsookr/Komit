@@ -1,0 +1,110 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
+import { SessionStage } from "@/components/domains/room";
+import { Callout } from "@/components/feedback";
+import { Container } from "@/components/layouts";
+import { getChatMessages, getConsultingSession, getContract, getMe, getRoom } from "@/lib/api/services";
+import { formatSessionSchedule } from "@/lib/format";
+import { isReceived } from "@/lib/rooms";
+import { ROUTES } from "@/lib/routes";
+import { SESSION_OPEN_BEFORE_MINUTES, sessionPhase } from "@/lib/session";
+import { ApiError } from "@/types/api";
+
+/**
+ * 세션 화면에 필요한 것들.
+ *
+ * 세션 → 계약 → 방 순으로 한 번씩 물어야 합니다. 세션 응답에는 `contractId` 만 있고
+ * 방이 없습니다 — 세션은 계약에 달리고 계약이 방에 달리기 때문입니다. 방까지 가는
+ * 것은 화면 머리에 적을 프로젝트 이름과 상대 이름 때문이고, 나가는 길(「컨설팅 방」)도
+ * 여기서 나옵니다.
+ */
+async function loadSession(sessionId: number) {
+  try {
+    const session = await getConsultingSession(sessionId);
+    const contract = await getContract(session.contractId);
+    const [room, me] = await Promise.all([getRoom(contract.roomId), getMe()]);
+    return { session, room, me };
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) notFound();
+    if (error instanceof ApiError && error.status === 401) redirect(ROUTES.login);
+    throw error;
+  }
+}
+
+function parseSessionId(value: string): number {
+  const id = Number(value);
+  if (!Number.isInteger(id) || id <= 0) notFound();
+  return id;
+}
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ sessionId: string }>;
+}): Promise<Metadata> {
+  const { sessionId } = await params;
+  const id = Number(sessionId);
+  if (!Number.isInteger(id)) return { title: "세션을 찾을 수 없습니다 | Komit" };
+
+  const { room } = await loadSession(id);
+  return {
+    title: `${room.counterpartName}님과의 컨설팅 세션 | Komit`,
+    description: `${room.projectName} 컨설팅 세션입니다.`,
+  };
+}
+
+export default async function SessionPage({
+  params,
+}: {
+  params: Promise<{ sessionId: string }>;
+}) {
+  const { sessionId } = await params;
+  const id = parseSessionId(sessionId);
+
+  const { session, room, me } = await loadSession(id);
+  const phase = sessionPhase(session);
+
+  /*
+    끝난 세션은 이 화면에 머물 이유가 없습니다. 무대는 비어 있고 컨트롤은 누를 것이
+    없으니, 볼 것이 있는 곳(요약)으로 곧장 보냅니다.
+  */
+  if (phase === "ENDED") redirect(ROUTES.roomSummary(room.roomId));
+
+  const counterpart = isReceived(room, me)
+    ? room.counterpartName
+    : `${room.counterpartName} 개발자`;
+  const schedule = formatSessionSchedule(session.reservation.scheduledAt);
+
+  return (
+    <Container width="full" className="py-6">
+      <Link
+        href={ROUTES.room(room.roomId)}
+        className="inline-flex rounded-sm text-[13px] font-semibold text-fg-subtle hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+      >
+        ← 컨설팅 방
+      </Link>
+
+      <h1 className="mt-3 text-base font-bold text-fg">컨설팅 · {counterpart}</h1>
+      <p className="mt-0.5 text-[13px] text-fg-subtle">
+        {room.projectName} · {session.durationMinutes}분 세션 · {schedule}
+      </p>
+
+      {phase === "BEFORE" ? (
+        <Callout className="mt-4" tone="info" title="아직 들어갈 수 없습니다">
+          {schedule}에 시작합니다. 시작 {SESSION_OPEN_BEFORE_MINUTES}분 전부터 들어갈 수
+          있습니다. 그때가 되면 컨설팅 방에서 다시 들어와 주세요.
+        </Callout>
+      ) : (
+        <SessionStage
+          sessionId={session.sessionId}
+          roomId={room.roomId}
+          counterpartName={room.counterpartName}
+          myName={me.name}
+          chatRefId={session.chatRefId}
+          initialMessages={await getChatMessages(session.chatRefId)}
+        />
+      )}
+    </Container>
+  );
+}

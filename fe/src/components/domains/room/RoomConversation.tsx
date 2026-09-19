@@ -27,6 +27,8 @@ export interface RoomConversationProps {
    * 않습니다(백엔드도 403 으로 막습니다).
    */
   canConvert: boolean;
+  /** 대화 위에 붙는 안내. 컨설팅 방의 세션 배너가 여기 옵니다. */
+  banner?: React.ReactNode;
 }
 
 /**
@@ -40,6 +42,7 @@ export function RoomConversation({
   initialMessages,
   myName,
   canConvert,
+  banner,
 }: Readonly<RoomConversationProps>) {
   const router = useRouter();
   const showToast = useToast();
@@ -117,7 +120,12 @@ export function RoomConversation({
       <section className="mt-10">
         <h2 className="text-xl font-bold text-fg">채팅</h2>
         <div className="mt-4">
-          <RoomChatPanel room={room} initialMessages={initialMessages} myName={myName} />
+          <RoomChatPanel
+            room={room}
+            initialMessages={initialMessages}
+            myName={myName}
+            banner={banner}
+          />
         </div>
       </section>
 
