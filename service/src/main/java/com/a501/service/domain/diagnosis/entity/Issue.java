@@ -56,4 +56,7 @@ public class Issue extends CreatedSoftDeleteEntity {
 
     @Column(name = "origin_issue_id")
     private Integer originIssueId;
+
+    @Column(name = "fingerprint", length = 120)
+    private String fingerprint;
 }
