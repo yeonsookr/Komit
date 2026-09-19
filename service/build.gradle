@@ -20,6 +20,7 @@ repositories {
 
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+    implementation 'org.springframework.boot:spring-boot-starter-websocket'
     // AOP 로깅(common/logging/LoggingAspect). Boot 4에서 starter-aop가 starter-aspectj로 이름이 바뀌었습니다.
     // aspectjweaver는 data-jpa -> spring-aspects 로도 전이되지만, 직접 쓰는 의존성은 직접 선언합니다.
     implementation 'org.springframework.boot:spring-boot-starter-aspectj'
