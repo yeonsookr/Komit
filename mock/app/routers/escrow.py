@@ -1217,10 +1217,13 @@ ESCROW_ID = 42
 SETTLEMENT_PROCESSING_ESCROW_ID = 43
 SETTLEMENT_UNKNOWN_ESCROW_ID = 44
 SETTLEMENT_FAILED_ESCROW_ID = 45
+REFUND_FIXTURE_STATUSES = {46: 'COMPLETED', 47: 'PROCESSING', 48: 'UNKNOWN', 49: 'FAILED'}
+REFUND_FIXTURE_CONTRACT_IDS = {key: f'CONTRACT-REFUND-{value}' for key, value in REFUND_FIXTURE_STATUSES.items()}
 SETTLEMENT_FIXTURE_CONTRACT_IDS = {
     SETTLEMENT_PROCESSING_ESCROW_ID: "CONTRACT-SETTLEMENT-PROCESSING",
     SETTLEMENT_UNKNOWN_ESCROW_ID: "CONTRACT-SETTLEMENT-UNKNOWN",
     SETTLEMENT_FAILED_ESCROW_ID: "CONTRACT-SETTLEMENT-FAILED",
+    **REFUND_FIXTURE_CONTRACT_IDS,
 }
 SETTLEMENT_FIXTURE_ESCROW_IDS = {
     contract_id: escrow_id
@@ -1282,6 +1285,8 @@ def _mock_contract_id(escrow_id: int) -> str | None:
 
 
 def _mock_escrow_balance(escrow_id: int) -> int:
+    if escrow_id in REFUND_FIXTURE_STATUSES:
+        return 0 if REFUND_FIXTURE_STATUSES[escrow_id] == 'COMPLETED' else 250000
     if escrow_id == DEPOSIT_PENDING_ESCROW_ID:
         return 0
     if escrow_id in (
@@ -1428,7 +1433,7 @@ class ReleaseEscrowRequest(BaseModel):
             "escrow_transactions.external_reference_id에 대응한다."
         ),
         examples=["SETTLEMENT:9001"],
-        min_length=1,
+        min_length=12, pattern=r"^SETTLEMENT:.+$",
         max_length=100,
     )
     amount: int = Field(
@@ -1520,7 +1525,7 @@ class RefundEscrowRequest(BaseModel):
         examples=[ESCROW_ID],
     )
     amount: int = Field(
-        description="환불할 금액. 아직 지급되지 않은 가용 잔액을 넘을 수 없다.",
+        description="최종 정산에서 남은 금액 전액. 부분 환불은 허용하지 않는다.",
         examples=[250000],
         gt=0,
     )
@@ -1550,8 +1555,8 @@ class RefundEscrowRequest(BaseModel):
         min_length=1,
         max_length=20,
     )
-    referenceId: str | None = Field(
-        default=None,
+    referenceId: str = Field(
+        min_length=12, pattern=r"^SETTLEMENT:.+$",
         description=(
             "정산 식별자. 같은 정산의 지급과 같은 `SETTLEMENT:정산ID`를 쓰고 거래 "
             "유형으로 구분한다. ERD escrow_transactions.external_reference_id에 "
@@ -1567,13 +1572,13 @@ class RefundEscrowRecord(BaseModel):
         description="환불 원장 거래 식별자.", examples=[1003]
     )
     refundedAmount: int = Field(description="이번에 환불한 금액.", examples=[250000])
-    balance: int = Field(description="환불 뒤 남은 가용 잔액.", examples=[400000])
+    balance: int = Field(description="환불 뒤 남은 가용 잔액.", examples=[0])
     status: str = Field(
         description=(
-            "환불 뒤 에스크로 상태. 잔액이 남아 있으면 ACTIVE, 다 빠지면 REFUNDED다. "
-            "ERD escrows.status에 대응한다."
+            "환불 거래 상태. PROCESSING / UNKNOWN / COMPLETED / FAILED. "
+            "ERD escrow_transactions.status에 대응한다. 계약 상태는 inquireEscrow로 확인한다."
         ),
-        examples=["ACTIVE"],
+        examples=["COMPLETED"],
     )
 
 
@@ -1949,6 +1954,16 @@ async def release_escrow(
     state_error = _escrow_state_error(payload.escrowId, payload.Header)
     if state_error:
         return state_error
+    if payload.escrowId in REFUND_FIXTURE_STATUSES:
+        if payload.referenceId != SETTLEMENT_FIXTURE_REFERENCE_ID:
+            return _escrow_error(400, 'E5010', '기존 정산이 있습니다.', payload.Header)
+        if payload.amount != 400000:
+            return _escrow_error(400, 'E5003', '기존 지급 요청과 다릅니다.', payload.Header)
+        return ReleaseEscrowResponse(
+            Header=_escrow_response_header('H0000', '정상처리 되었습니다.', payload.Header),
+            REC=ReleaseEscrowRecord(transactionId=payload.escrowId*100+2,
+                releasedAmount=400000, feeAmount=4000, netAmount=396000,
+                balance=_mock_escrow_balance(payload.escrowId), status='COMPLETED'))
     if payload.escrowId in SETTLEMENT_FIXTURE_STATUSES:
         fixture_status = SETTLEMENT_FIXTURE_STATUSES[payload.escrowId]
         if payload.referenceId != SETTLEMENT_FIXTURE_REFERENCE_ID:
@@ -2014,8 +2029,8 @@ async def release_escrow(
             {
                 "transactionId": 1003,
                 "refundedAmount": 250000,
-                "balance": 400000,
-                "status": "ACTIVE",
+                "balance": 0,
+                "status": "COMPLETED",
             },
         ),
         **ESCROW_ERRORS,
@@ -2027,9 +2042,13 @@ async def release_escrow(
         "고정한다. 요청의 은행코드·계좌번호를 예치 출금 계좌와 대조하고, 금융망 "
         "예금주를 확인한 뒤 송금한다. 별도로 등록·교체한 계좌로는 환불하지 않는다. "
         "(R-PAY-04)\n\n"
-        "한 에스크로에서 여러 번 나눠 환불할 수 있다.\n\n"
-        "- **200 / H0000**: 돌려줬을 때. 잔액이 남아 있으면 `status`가 ACTIVE, 모두 "
-        "빠지면 REFUNDED다\n"
+        "환불은 같은 최종 정산의 남은 금액 전액을 한 거래로 처리한다. 같은 referenceId와 "
+        "멱등키의 재요청은 확인된 환불을 반복하지 않고 현재 결과를 반환한다. "
+        "escrowId 46은 지급 400000원 후 250000원 환불 완료, 47은 처리 중, "
+        "48은 결과 불명, 49는 환불 이체 확정 실패 사례다.\n\n"
+        "- **200 / H0000**: 현재 환불 거래 상태를 반환한다. COMPLETED만 환불 완료이며 "
+        "PROCESSING·UNKNOWN·FAILED에서는 refundedAmount가 0이다\n"
+        "- **400 / E5013**: 남은 금액 전액과 환불 요청 금액이 다를 때\n"
         "- **400 / E5002**: `idempotencyKey`가 없을 때\n"
         "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
         "- **400 / E5004**: `escrowId`가 404일 때\n"
@@ -2054,7 +2073,7 @@ async def refund_escrow(
             examples=[
                 {
                     "Header": _escrow_header_example("refundEscrow"),
-                    "escrowId": ESCROW_ID,
+                    "escrowId": 46,
                     "amount": 250000,
                     "refundBankCode": "001",
                     "refundAccountNo": MOCK_ACCOUNT_NO,
@@ -2081,7 +2100,7 @@ async def refund_escrow(
             400, "E5010", "진행 중인 정산이 있어 환불할 수 없습니다.", payload.Header
         )
     # 무상태 목은 42번 예시 계약의 예치 출금 계좌만 알고 있다 (R-PAY-04).
-    if payload.escrowId == ESCROW_ID and (
+    if (
         payload.refundBankCode != "001"
         or payload.refundAccountNo != MOCK_ACCOUNT_NO
     ):
@@ -2093,16 +2112,23 @@ async def refund_escrow(
             400, "E5008", "에스크로 잔액이 부족합니다.", payload.Header
         )
 
-    remaining = 650000 - payload.amount
+    fixture_status = REFUND_FIXTURE_STATUSES.get(payload.escrowId, 'COMPLETED')
+    expected_refund = 250000 if payload.escrowId in REFUND_FIXTURE_STATUSES else 650000
+    if payload.escrowId in REFUND_FIXTURE_STATUSES and payload.referenceId != SETTLEMENT_FIXTURE_REFERENCE_ID:
+        return _escrow_error(400, 'E5010', '기존 정산 식별자로 요청해야 합니다.', payload.Header)
+    if payload.amount != expected_refund:
+        return _escrow_error(400, 'E5013', '남은 금액 전액을 환불해야 합니다.', payload.Header)
+    confirmed = fixture_status == 'COMPLETED'
+    remaining = 0 if confirmed else expected_refund
     return RefundEscrowResponse(
         Header=_escrow_response_header(
             "H0000", "정상처리 되었습니다.", payload.Header
         ),
         REC=RefundEscrowRecord(
-            transactionId=1003,
-            refundedAmount=payload.amount,
+            transactionId=payload.escrowId*100+4,
+            refundedAmount=payload.amount if confirmed else 0,
             balance=remaining,
-            status="ACTIVE" if remaining else "REFUNDED",
+            status=fixture_status,
         ),
     )
 
@@ -2563,7 +2589,8 @@ INQUIRE_ERRORS: dict = dict(ESCROW_ERRORS)
         "- **200 / H0000**: 조회했을 때. `escrowId` 202는 "
         "`CONTRACT-PENDING`의 DEPOSIT_PENDING과 예치액 0을, 42는 ACTIVE를 돌려준다. "
         "43·44는 작업자 지급 완료 후 수수료 이체 진행 중·결과 불명, 45는 "
-        "출금 전 확정 실패 원장을 돌려준다. "
+        "출금 전 확정 실패 원장을 돌려준다. 46~49는 작업자 지급과 수수료 완료 후 "
+        "환불 완료·처리 중·결과 불명·확정 실패 사례다. "
         "Komit의 숫자 계약 ID도 생성·조회에서 같은 계약을 가리킨다. "
         "문자형 계약 ID는 `contractId`를 함께 보내 조회할 수 있다\n"
         "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
@@ -2637,6 +2664,26 @@ async def inquire_escrow(
                         referenceId="INITIAL",
                     )
                 ],
+            ),
+        )
+
+    if payload.escrowId in REFUND_FIXTURE_STATUSES:
+        state = REFUND_FIXTURE_STATUSES[payload.escrowId]
+        completed = state == 'COMPLETED'
+        return InquireEscrowResponse(
+            Header=_escrow_response_header('H0000', '정상처리 되었습니다.', payload.Header),
+            REC=InquireEscrowRecord(
+                escrowId=payload.escrowId, contractId=contract_id,
+                status='COMPLETED' if completed else 'ACTIVE', depositedAmount=650000,
+                releasedAmount=400000, feeAmount=4000, refundedAmount=250000 if completed else 0,
+                balance=0 if completed else 250000, isHeld=False,
+                transactions=[EscrowTransactionItem(transactionId=payload.escrowId*100+i,
+                    transactionType=kind, amount=amount, status=tx_status, referenceId=ref)
+                    for i, kind, amount, tx_status, ref in [
+                        (1,'DEPOSIT',650000,'COMPLETED','INITIAL'),
+                        (2,'RELEASE',396000,'COMPLETED',SETTLEMENT_FIXTURE_REFERENCE_ID),
+                        (3,'FEE',4000,'COMPLETED',SETTLEMENT_FIXTURE_REFERENCE_ID),
+                        (4,'REFUND',250000,state,SETTLEMENT_FIXTURE_REFERENCE_ID)]],
             ),
         )
 
@@ -2803,7 +2850,8 @@ async def inquire_escrow_list(
             EscrowSummaryItem(
                 escrowId=_mock_escrow_id(contract_id),
                 contractId=contract_id,
-                status="DEPOSIT_PENDING" if contract_id == PENDING_CONTRACT_ID else "ACTIVE",
+                status=("DEPOSIT_PENDING" if contract_id == PENDING_CONTRACT_ID else
+                        "COMPLETED" if _mock_escrow_id(contract_id) == 46 else "ACTIVE"),
                 balance=_mock_escrow_balance(_mock_escrow_id(contract_id)),
                 isHeld=False,
             )
