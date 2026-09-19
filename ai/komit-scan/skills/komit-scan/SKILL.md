@@ -31,7 +31,7 @@ description: Komit 사전점검. 프로젝트를 검사해 출시 준비 상태�
 
 ### 3. 분류는 여덟 개뿐이다
 
-`준법` `보안` `결제` `데이터` `비용` `인계` `AI 잔재` `기타`
+`위법` `보안` `결제` `데이터` `비용` `인계` `AI 잔재` `기타`
 
 새로 만들지 않는다. 애매하면 `기타`에 넣는다.
 
@@ -95,7 +95,7 @@ description: Komit 사전점검. 프로젝트를 검사해 출시 준비 상태�
 | 차례 | 분류 | 읽을 파일 |
 | --- | --- | --- |
 | 1 | 보안 | `references/security.md` |
-| 2 | 준법 | `references/compliance.md` |
+| 2 | 위법 | `references/compliance.md` |
 | 3 | 결제 · 데이터 | `references/payment-data.md` |
 | 4 | 비용 · 인계 · AI 잔재 · 기타 | `references/hygiene.md` |
 
@@ -355,7 +355,7 @@ Python  pip-audit --format=json
 
 ### 분류별
 
-보안 10건 · 준법 6건 · 결제 4건 · 데이터 4건 · 비용 3건 · 인계 1건 · AI 잔재 1건 · 기타 3건
+보안 10건 · 위법 6건 · 결제 4건 · 데이터 4건 · 비용 3건 · 인계 1건 · AI 잔재 1건 · 기타 3건
 
 ### 확인하지 못한 것
 
