@@ -41,7 +41,8 @@ import org.testcontainers.utility.DockerImageName;
 
 @SpringBootTest(properties = {
         "app.instance-role=WRITER",
-        "app.public-base-url=http://localhost:8081"
+        "app.public-base-url=http://localhost:8081",
+        "app.security.operator-api-key=dev-only-operator-client-api-key"
 })
 class DataAccessIntegrationTests {
 
