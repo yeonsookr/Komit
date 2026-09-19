@@ -152,12 +152,19 @@ CREATE TABLE escrows (
     ),
     CONSTRAINT ck_escrows_cancelled_at CHECK ((status = 'CANCELLED') = (cancelled_at IS NOT NULL)),
     CONSTRAINT ck_escrows_hold_details CHECK (
-        hold_status <> 'HELD' OR
-        (external_report_id IS NOT NULL AND held_at IS NOT NULL AND released_at IS NULL)
+        (hold_status='NONE' AND external_report_id IS NULL AND held_at IS NULL AND released_at IS NULL)
+        OR (hold_status='HELD' AND external_report_id IS NOT NULL
+            AND length(trim(external_report_id))>0 AND held_at IS NOT NULL AND released_at IS NULL)
+        OR (hold_status='RELEASED' AND external_report_id IS NOT NULL
+            AND length(trim(external_report_id))>0 AND held_at IS NOT NULL AND released_at IS NOT NULL
+            AND released_at >= held_at)
     )
 
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='에스크로 | 계약 1건의 예치와 최종 정산';
 
+-- 취소·동결·해제는 계약 행 잠금 아래 수행한다. 예치 송금 시작도 같은 잠금을 사용한다.
+-- 취소는 진행 중·결과 불명 자금 이동이 없고 미입금이 확인된 경우에만 허용한다.
+-- 신고 해제는 현재 신고 식별자와 대조하며, 같은 멱등키는 당시 성공 결과를 반환한다.
 CREATE TABLE escrow_state_commands (
     id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '상태 명령 ID | 서버에서 생성한 식별자',
     service_client_id BIGINT NOT NULL COMMENT '이용 서비스 ID | 명령을 보낸 서비스',

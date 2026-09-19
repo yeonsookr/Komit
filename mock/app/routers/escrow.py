@@ -1245,6 +1245,8 @@ SETTLEMENT_FIXTURE_NET_AMOUNT = (
 NOT_FOUND_ESCROW_ID = 404
 HELD_ESCROW_ID = 409
 DEPOSIT_PENDING_ESCROW_ID = 202
+DEPOSIT_FIXTURE_STATUSES = {202: 'PENDING', 203: 'PROCESSING', 204: 'UNKNOWN', 205: 'FAILED'}
+DEPOSIT_FIXTURE_CONTRACT_IDS = {203: 'CONTRACT-DEPOSIT-PROCESSING', 204: 'CONTRACT-DEPOSIT-UNKNOWN', 205: 'CONTRACT-DEPOSIT-FAILED'}
 PENDING_DEPOSIT_TRANSACTION_ID = 1004
 # createEscrow에서 이 contractId로 부르면 입금이 아직 확인되지 않은 DEPOSIT_PENDING을
 # 돌려준다. 별도 속성을 늘리지 않고 실제 필드(contractId) 값으로 분기한다.
@@ -1258,6 +1260,11 @@ def _mock_escrow_id(contract_id: str) -> int:
     """무상태 목에서 같은 계약에 같은 BIGINT 범위의 식별자를 준다."""
     if contract_id == PENDING_CONTRACT_ID:
         return DEPOSIT_PENDING_ESCROW_ID
+    for key, value in DEPOSIT_FIXTURE_CONTRACT_IDS.items():
+        if value == contract_id:
+            return key
+    if contract_id == "CONTRACT-HELD":
+        return HELD_ESCROW_ID
     if contract_id == "CONTRACT-999":
         return ESCROW_ID
     if contract_id in SETTLEMENT_FIXTURE_ESCROW_IDS:
@@ -1275,9 +1282,13 @@ def _mock_escrow_id(contract_id: str) -> int:
 def _mock_contract_id(escrow_id: int) -> str | None:
     if escrow_id == ESCROW_ID:
         return "CONTRACT-999"
+    if escrow_id in DEPOSIT_FIXTURE_CONTRACT_IDS:
+        return DEPOSIT_FIXTURE_CONTRACT_IDS[escrow_id]
+    if escrow_id == HELD_ESCROW_ID:
+        return "CONTRACT-HELD"
     if escrow_id in SETTLEMENT_FIXTURE_CONTRACT_IDS:
         return SETTLEMENT_FIXTURE_CONTRACT_IDS[escrow_id]
-    if escrow_id == DEPOSIT_PENDING_ESCROW_ID:
+    if escrow_id in DEPOSIT_FIXTURE_STATUSES:
         return PENDING_CONTRACT_ID
     if NUMERIC_CONTRACT_ESCROW_OFFSET <= escrow_id < HASHED_CONTRACT_ESCROW_START:
         return str(escrow_id - NUMERIC_CONTRACT_ESCROW_OFFSET)
@@ -1287,7 +1298,7 @@ def _mock_contract_id(escrow_id: int) -> str | None:
 def _mock_escrow_balance(escrow_id: int) -> int:
     if escrow_id in REFUND_FIXTURE_STATUSES:
         return 0 if REFUND_FIXTURE_STATUSES[escrow_id] == 'COMPLETED' else 250000
-    if escrow_id == DEPOSIT_PENDING_ESCROW_ID:
+    if escrow_id in DEPOSIT_FIXTURE_STATUSES:
         return 0
     if escrow_id in (
         SETTLEMENT_PROCESSING_ESCROW_ID,
@@ -1595,7 +1606,7 @@ class CancelEscrowRequest(BaseModel):
     )
     escrowId: int = Field(
         description=(
-            "취소할 에스크로. CREATED 또는 DEPOSIT_PENDING만 취소할 수 있다. 404는 "
+            "취소할 에스크로. CREATED 또는 DEPOSIT_PENDING이며 자금 이동이 없다고 확정된 경우만 가능하다. 203·204는 송금 진행·결과 불명, 205는 무출금 확정 실패다. 404는 "
             "없음, 42와 409는 이미 ACTIVE 재현용 예약값이다."
         ),
         examples=[DEPOSIT_PENDING_ESCROW_ID],
@@ -1642,7 +1653,7 @@ def _escrow_state_error(
         return _escrow_error(
             400, "E5005", "동결 중에는 자금을 옮길 수 없습니다.", header
         )
-    if escrow_id == DEPOSIT_PENDING_ESCROW_ID:
+    if escrow_id in DEPOSIT_FIXTURE_STATUSES:
         return _escrow_error(
             400, "E5007", "예치가 완료되기 전에는 자금을 옮길 수 없습니다.", header
         )
@@ -1843,13 +1854,13 @@ async def create_escrow(
         return _escrow_error(*error, payload.Header)
 
     # 입금이 아직 확인되지 않은 경우. 예치액은 0이고 고객사는 ACTIVE를 조회로 기다린다.
-    if payload.contractId == PENDING_CONTRACT_ID:
+    if payload.contractId == PENDING_CONTRACT_ID or payload.contractId in DEPOSIT_FIXTURE_CONTRACT_IDS.values():
         return CreateEscrowResponse(
             Header=_escrow_response_header(
                 "H0000", "정상처리 되었습니다.", payload.Header
             ),
             REC=EscrowAmountRecord(
-                escrowId=DEPOSIT_PENDING_ESCROW_ID,
+                escrowId=_mock_escrow_id(payload.contractId),
                 status="DEPOSIT_PENDING",
                 depositedAmount=0,
                 balance=0,
@@ -2143,6 +2154,8 @@ async def refund_escrow(
     },
     summary="예치 전 에스크로 취소",
     description=(
+        "예치 송금이 진행 중이거나 결과가 불명확하면 E5015로 거절한다. "
+        "DEPOSIT_PENDING 상태만으로 취소 가능 여부를 판단하지 않는다.\n\n"
         "아직 예치가 끝나지 않은 에스크로를 닫는다. 돈이 움직이기 전이면 받을 자리만 "
         "닫고 끝낸다.\n\n"
         "이미 돈이 들어왔으면 취소가 아니라 환불로 처리한다. ACTIVE가 된 뒤에는 취소할 "
@@ -2182,7 +2195,9 @@ async def cancel_escrow(
         return _escrow_error(
             400, "E5004", "에스크로를 찾을 수 없습니다.", payload.Header
         )
-    if payload.escrowId != DEPOSIT_PENDING_ESCROW_ID:
+    if payload.escrowId in (203, 204):
+        return _escrow_error(400, 'E5015', '예치 송금 결과를 확인하기 전에는 취소할 수 없습니다.', payload.Header)
+    if payload.escrowId not in (DEPOSIT_PENDING_ESCROW_ID, 205):
         return _escrow_error(
             400, "E5006", "이미 예치가 끝나 취소할 수 없습니다.", payload.Header
         )
@@ -2229,7 +2244,7 @@ class HoldRecord(BaseModel):
     escrowId: int = Field(description="대상 에스크로.", examples=[ESCROW_ID])
     isHeld: bool = Field(
         description=(
-            "잠겨 있는지. ERD escrows.hold_status가 HELD이면 참이다. "
+            "해당 명령 성공 당시의 동결 여부. 같은 멱등키 재요청은 당시 결과를 반환한다. 현재 상태는 inquireEscrow로 확인한다. "
             "잠긴 동안은 지급과 일반 환불이 막힌다."
         ),
         examples=[True],
@@ -2284,6 +2299,8 @@ class UnholdEscrowResponse(BaseModel):
     },
     summary="신고 접수로 자금 동결",
     description=(
+        "E5014는 신고 식별자 충돌, E5007은 예치 전 또는 종료된 계약의 상태 변경 거절이다. "
+        "409번 계약은 REPORT-7로 동결된 고정 사례다.\n\n"
         "고객사에 신고가 접수되면 자동으로 건다. 관리자가 버튼을 눌러 거는 것이 "
         "아니다.\n\n"
         "동결 중에는 지급도 환불도 거절된다. 에스크로당 활성 동결은 하나이며, 같은 "
@@ -2322,6 +2339,10 @@ async def hold_escrow(
             400, "E5004", "에스크로를 찾을 수 없습니다.", payload.Header
         )
 
+    if payload.escrowId in DEPOSIT_FIXTURE_STATUSES or payload.escrowId == 46:
+        return _escrow_error(400, 'E5007', '동결 상태를 변경할 수 없는 계약입니다.', payload.Header)
+    if payload.escrowId == HELD_ESCROW_ID and payload.reportId != 'REPORT-7':
+        return _escrow_error(400, 'E5014', '현재 동결의 신고 식별자와 다릅니다.', payload.Header)
     return HoldEscrowResponse(
         Header=_escrow_response_header(
             "H0000", "정상처리 되었습니다.", payload.Header
@@ -2347,13 +2368,14 @@ async def hold_escrow(
     },
     summary="신고 종료로 동결 해제",
     description=(
+        "E5014는 신고 식별자 충돌, E5007은 예치 전 또는 종료된 계약의 상태 변경 거절이다. "
+        "409번 계약은 REPORT-7로 동결된 고정 사례다.\n\n"
         "신고가 끝나면 걸려 있던 동결을 푼다. 에스크로당 활성 동결은 하나이므로 "
         "풀면 바로 잠금이 해제된다.\n\n"
         "같은 신고의 동결 완료를 확인한 뒤에만 해제를 요청한다. 동결·해제 요청을 "
         "재전송할 때는 각각 처음 사용한 `idempotencyKey`를 유지한다. 수신 시각만으로 "
         "서로 다른 신고의 사건 순서를 판정하지 않는다.\n\n"
-        "- **200 / H0000**: 풀었을 때. `isHeld`가 거짓이면 다시 지급과 환불을 할 수 "
-        "있다\n"
+        "- **200 / H0000**: 해당 해제 명령의 성공 결과. 이후 새 신고로 다시 동결될 수 있으므로 현재 상태는 조회한다\n"
         "- **400 / E5002**: `idempotencyKey`가 없을 때\n"
         "- **400 / E5001**: `clientApiKey`가 유효하지 않을 때\n"
         "- **400 / E5004**: `escrowId`가 404일 때\n"
@@ -2387,6 +2409,12 @@ async def unhold_escrow(
             400, "E5004", "에스크로를 찾을 수 없습니다.", payload.Header
         )
 
+    if payload.escrowId in DEPOSIT_FIXTURE_STATUSES or payload.escrowId == 46:
+        return _escrow_error(400, 'E5007', '동결 상태를 변경할 수 없는 계약입니다.', payload.Header)
+    if payload.escrowId == HELD_ESCROW_ID and payload.reportId != 'REPORT-7':
+        return _escrow_error(400, 'E5014', '현재 동결의 신고 식별자와 다릅니다.', payload.Header)
+    if payload.reportId != 'REPORT-7':
+        return _escrow_error(400, 'E5014', '해제할 신고가 일치하지 않습니다.', payload.Header)
     return UnholdEscrowResponse(
         Header=_escrow_response_header(
             "H0000", "정상처리 되었습니다.", payload.Header
@@ -2640,14 +2668,14 @@ async def inquire_escrow(
         )
 
     # 목은 상태를 저장하지 않으므로 예치 대기와 완료를 각각 고정 사례로 제공한다.
-    if payload.escrowId == DEPOSIT_PENDING_ESCROW_ID:
+    if payload.escrowId in DEPOSIT_FIXTURE_STATUSES:
         return InquireEscrowResponse(
             Header=_escrow_response_header(
                 "H0000", "정상처리 되었습니다.", payload.Header
             ),
             REC=InquireEscrowRecord(
-                escrowId=DEPOSIT_PENDING_ESCROW_ID,
-                contractId=PENDING_CONTRACT_ID,
+                escrowId=payload.escrowId,
+                contractId=contract_id,
                 status="DEPOSIT_PENDING",
                 depositedAmount=0,
                 releasedAmount=0,
@@ -2660,7 +2688,7 @@ async def inquire_escrow(
                         transactionId=PENDING_DEPOSIT_TRANSACTION_ID,
                         transactionType="DEPOSIT",
                         amount=650000,
-                        status="PENDING",
+                        status=DEPOSIT_FIXTURE_STATUSES[payload.escrowId],
                         referenceId="INITIAL",
                     )
                 ],
@@ -2748,7 +2776,7 @@ async def inquire_escrow(
             feeAmount=0,
             refundedAmount=0,
             balance=650000,
-            isHeld=False,
+            isHeld=payload.escrowId == HELD_ESCROW_ID,
             transactions=[
                 EscrowTransactionItem(
                     transactionId=1001,
@@ -2850,10 +2878,10 @@ async def inquire_escrow_list(
             EscrowSummaryItem(
                 escrowId=_mock_escrow_id(contract_id),
                 contractId=contract_id,
-                status=("DEPOSIT_PENDING" if contract_id == PENDING_CONTRACT_ID else
+                status=("DEPOSIT_PENDING" if _mock_escrow_id(contract_id) in DEPOSIT_FIXTURE_STATUSES else
                         "COMPLETED" if _mock_escrow_id(contract_id) == 46 else "ACTIVE"),
                 balance=_mock_escrow_balance(_mock_escrow_id(contract_id)),
-                isHeld=False,
+                isHeld=_mock_escrow_id(contract_id) == HELD_ESCROW_ID,
             )
             for contract_id in dict.fromkeys(payload.contractIds)
             if contract_id
