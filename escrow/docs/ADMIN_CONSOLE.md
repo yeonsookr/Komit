@@ -43,6 +43,8 @@ ESCROW_ADMIN_PASSWORD_HASH={bcrypt}<BCrypt 해시>
 - `/api/**`는 기존 JSON Header 기반 `clientApiKey` 인증을 유지한다.
 - 계좌번호는 앞·뒤 네 자리만 표시하고 `userKey`, API Key와 암호화 원문은 표시하지 않는다.
 - 로그아웃 시 서버 세션을 폐기하고 `JSESSIONID`를 제거한다.
+- 운영 리다이렉트는 `APP_PUBLIC_BASE_URL`의 `/escrow` 경로를 사용하므로 Komit의 `/admin/login`과 섞이지 않는다.
+- 운영 세션 쿠키는 `ESCROWSESSION`, Path는 `/escrow`로 제한하여 Komit 서비스의 세션 쿠키와 분리한다.
 - 세션 기본 만료 시간은 30분이며 `ESCROW_ADMIN_SESSION_TIMEOUT`으로 변경할 수 있다.
 
 ## 운영 확인

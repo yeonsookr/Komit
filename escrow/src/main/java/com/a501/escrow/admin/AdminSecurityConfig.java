@@ -1,5 +1,6 @@
 package com.a501.escrow.admin;
 
+import com.a501.escrow.config.AppProperties;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -26,7 +27,8 @@ public class AdminSecurityConfig {
 
     @Bean
     @Order(1)
-    SecurityFilterChain adminSecurity(HttpSecurity http) throws Exception {
+    SecurityFilterChain adminSecurity(HttpSecurity http, AppProperties properties) throws Exception {
+        String externalPrefix = normalizedPath(properties.publicBaseUrl().getPath());
         return http
                 .securityMatcher("/admin/**")
                 .authorizeHttpRequests(auth -> auth
@@ -35,16 +37,29 @@ public class AdminSecurityConfig {
                 .formLogin(form -> form
                         .loginPage("/admin/login")
                         .loginProcessingUrl("/admin/login")
-                        .defaultSuccessUrl("/admin", true)
-                        .failureUrl("/admin/login?error")
+                        .successHandler((request, response, authentication) ->
+                                response.sendRedirect(externalPrefix + "/admin"))
+                        .failureHandler((request, response, exception) ->
+                                response.sendRedirect(externalPrefix + "/admin/login?error"))
                         .permitAll())
+                .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(
+                        (request, response, exception) ->
+                                response.sendRedirect(externalPrefix + "/admin/login")))
                 .logout(logout -> logout
                         .logoutUrl("/admin/logout")
-                        .logoutSuccessUrl("/admin/login?logout")
+                        .logoutSuccessHandler((request, response, authentication) ->
+                                response.sendRedirect(externalPrefix + "/admin/login?logout"))
                         .invalidateHttpSession(true)
-                        .deleteCookies("JSESSIONID"))
+                        .deleteCookies("JSESSIONID", "ESCROWSESSION"))
                 .headers(headers -> headers.cacheControl(cache -> {}))
                 .build();
+    }
+
+    private static String normalizedPath(String path) {
+        if (path == null || path.isBlank() || "/".equals(path)) {
+            return "";
+        }
+        return path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
     }
 
     @Bean
