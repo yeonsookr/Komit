@@ -1,6 +1,7 @@
 package com.a501.escrow.domain.escrow.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -39,6 +40,14 @@ class EscrowSettlementControllerTest {
 
         assertThat(controller.release(releaseRequest).record()).isEqualTo(releaseRecord);
         assertThat(controller.refund(refundRequest).record()).isEqualTo(refundRecord);
+    }
+
+    @Test
+    void rejectsAmountsOutsideNumericNineteenDigitRange() {
+        assertThatThrownBy(() -> new com.a501.escrow.domain.escrow.dto.EscrowDtos.CreateRequest(
+                header("createEscrow", "create-key"), "CONTRACT-1", "DEVELOPMENT", "payer",
+                new BigInteger("10000000000000000000"), "001", "0011111111111111"))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     private static EscrowRequestHeader header(String apiName, String key) {

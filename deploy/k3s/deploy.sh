@@ -15,7 +15,11 @@ FE_IMAGE=${FE_IMAGE:-}
 # fe 서버가 백엔드를 호출할 주소입니다. 이미지 빌드와 같은 GitLab CI/CD 변수 값을 실행 환경에도 넣습니다.
 : "${BACKEND_API_BASE_URL:?BACKEND_API_BASE_URL is required}"
 : "${AI_API_BASE_URL:?AI_API_BASE_URL is required}"
-ESCROW_API_BASE_URL=${ESCROW_API_BASE_URL:-}
+: "${ESCROW_API_BASE_URL:?ESCROW_API_BASE_URL is required}"
+: "${ESCROW_CLIENT_API_KEY:?ESCROW_CLIENT_API_KEY is required}"
+: "${ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE:?ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE is required}"
+: "${ESCROW_ADMIN_USERNAME:?ESCROW_ADMIN_USERNAME is required}"
+: "${ESCROW_ADMIN_PASSWORD_HASH:?ESCROW_ADMIN_PASSWORD_HASH is required}"
 # 카카오 로그인. fe 의 인가 시작 Route Handler 가 실행 시점에 읽습니다. 없으면 로그인이 500 입니다.
 : "${KAKAO_CLIENT_ID:?KAKAO_CLIENT_ID is required}"
 : "${KAKAO_REDIRECT_URI:?KAKAO_REDIRECT_URI is required}"
@@ -57,6 +61,14 @@ for NAME in CLIENT_API_KEY_HMAC_SECRET SENSITIVE_DATA_HMAC_SECRET OPERATOR_CLIEN
     exit 1
   fi
 done
+if [ "${#ESCROW_CLIENT_API_KEY}" -lt 32 ]; then
+  echo "ESCROW_CLIENT_API_KEY must contain at least 32 characters" >&2
+  exit 1
+fi
+if [ "${#ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE}" -gt 100 ]; then
+  echo "ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE must not exceed 100 characters" >&2
+  exit 1
+fi
 ENCRYPTION_KEY_BYTES=$(printf '%s' "$FIELD_ENCRYPTION_KEY_BASE64" | base64 -d 2>/dev/null | wc -c | tr -d ' ')
 if [ "$ENCRYPTION_KEY_BYTES" != 32 ]; then
   echo "FIELD_ENCRYPTION_KEY_BASE64 must encode exactly 32 bytes" >&2
@@ -141,6 +153,7 @@ kubectl -n komit create secret generic service-auth \
   --from-literal=KAKAO_TOKEN_ENCRYPTION_KEY="$KAKAO_TOKEN_ENCRYPTION_KEY" \
   --from-literal=KAKAO_CLIENT_ID="$KAKAO_CLIENT_ID" \
   --from-literal=KAKAO_CLIENT_SECRET="$KAKAO_CLIENT_SECRET" \
+  --from-literal=ESCROW_CLIENT_API_KEY="$ESCROW_CLIENT_API_KEY" \
   --dry-run=client -o yaml | kubectl apply -f -
 kubectl apply -k "$SCRIPT_DIR/database"
 kubectl -n komit wait --for=condition=Ready cluster/service-db cluster/escrow-db --timeout=600s
@@ -177,24 +190,27 @@ EOF
 {
   config_literal BACKEND_API_BASE_URL "$BACKEND_API_BASE_URL"
   config_literal AI_API_BASE_URL "$AI_API_BASE_URL"
-  if [ -n "$ESCROW_API_BASE_URL" ]; then
-    config_literal ESCROW_API_BASE_URL "$ESCROW_API_BASE_URL"
-  fi
+  config_literal ESCROW_API_BASE_URL "$ESCROW_API_BASE_URL"
   config_literal KAKAO_CLIENT_ID "$KAKAO_CLIENT_ID"
   config_literal KAKAO_REDIRECT_URI "$KAKAO_REDIRECT_URI"
   # 백엔드가 자기 공개 주소를 알도록 넣습니다. 값이 바뀌면 해당 Pod만 새 값으로 다시 뜹니다.
   printf '  - name: service-config\n    namespace: komit\n    literals:\n'
   config_literal APP_PUBLIC_BASE_URL "$SERVICE_PUBLIC_BASE_URL"
+  config_literal ESCROW_API_BASE_URL "$ESCROW_API_BASE_URL"
   printf '  - name: escrow-config\n    namespace: komit\n    literals:\n'
   config_literal APP_PUBLIC_BASE_URL "$ESCROW_PUBLIC_BASE_URL"
   config_literal SSAFY_DEMAND_DEPOSIT_PRODUCT_NO "$SSAFY_DEMAND_DEPOSIT_PRODUCT_NO"
   config_literal SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS "$SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS"
+  config_literal ESCROW_ADMIN_USERNAME "$ESCROW_ADMIN_USERNAME"
   # Secret 값이 바뀌면 이름 해시와 Pod template이 함께 바뀌어 Escrow가 자동 재시작됩니다.
   printf 'secretGenerator:\n  - name: escrow-security\n    namespace: komit\n    literals:\n'
   config_literal CLIENT_API_KEY_HMAC_SECRET "$CLIENT_API_KEY_HMAC_SECRET"
   config_literal SENSITIVE_DATA_HMAC_SECRET "$SENSITIVE_DATA_HMAC_SECRET"
   config_literal FIELD_ENCRYPTION_KEY_BASE64 "$FIELD_ENCRYPTION_KEY_BASE64"
   config_literal OPERATOR_CLIENT_API_KEY "$OPERATOR_CLIENT_API_KEY"
+  config_literal ESCROW_BOOTSTRAP_CLIENT_API_KEY "$ESCROW_CLIENT_API_KEY"
+  config_literal ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE "$ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE"
+  config_literal ESCROW_ADMIN_PASSWORD_HASH "$ESCROW_ADMIN_PASSWORD_HASH"
   config_literal SSAFY_FINANCE_API_KEY "$SSAFY_FINANCE_API_KEY"
   config_literal SSAFY_ESCROW_USER_KEY "$SSAFY_ESCROW_USER_KEY"
   config_literal SSAFY_ESCROW_ACCOUNT_NO "$SSAFY_ESCROW_ACCOUNT_NO"

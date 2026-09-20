@@ -176,6 +176,11 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # 슬래시 없는 /escrow가 위의 FE location으로 빠지지 않도록 정규화합니다.
+    location = /escrow {
+        return 308 /escrow/;
+    }
+
     location /escrow/ {
         proxy_pass http://komit_escrow/;
         proxy_http_version 1.1;
@@ -538,11 +543,16 @@ fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
 | `SERVICE_DB_PASSWORD`, `ESCROW_DB_PASSWORD` | Masked, Protected | DB 계정 Secret |
 | `SERVICE_REDIS_PASSWORD` | Masked, Protected | Redis·Sentinel 비밀번호 Secret(`service-redis-auth`) |
 | `SERVICE_PUBLIC_BASE_URL`, `ESCROW_PUBLIC_BASE_URL` | Visible | 각 백엔드의 공개 주소(`https://komit.site/service`, `https://komit.site/escrow`). `service-config`, `escrow-config` ConfigMap의 `APP_PUBLIC_BASE_URL`이 됩니다 |
-| `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` | FE 이미지 빌드와 공용 | fe 실행 환경(`fe-config`). `ESCROW_API_BASE_URL`은 등록되어 있을 때만 넣습니다 |
+| `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` | FE 이미지 빌드와 공용 | fe 실행 환경(`fe-config`) |
 | `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI` | Masked | 카카오 로그인. fe 실행 환경(`fe-config`). Redirect URI 는 카카오 콘솔에 등록한 배포 주소(`https://komit.site/api/auth/kakao/callback`)와 글자까지 같아야 합니다 |
 | `CLIENT_API_KEY_HMAC_SECRET`, `SENSITIVE_DATA_HMAC_SECRET` | Masked, Protected | Escrow 내부 API 키와 민감정보 조회값을 위한 HMAC 비밀키. 각각 32자 이상이어야 합니다 |
 | `FIELD_ENCRYPTION_KEY_BASE64` | Masked, Protected | Escrow 복구용 민감정보 AES-256 키. 정확히 32바이트인 키의 Base64 값이어야 합니다 |
 | `OPERATOR_CLIENT_API_KEY` | Masked, Protected | Escrow 운영자 API 키. 32자 이상이어야 합니다 |
+| `ESCROW_API_BASE_URL` | Visible, Protected | Backend가 호출할 Escrow 계약 서버 주소. 현재 개발 배포는 Mock 주소를 사용하고 실제 통합 시 `http://escrow:8081/api`로 교체합니다 |
+| `ESCROW_CLIENT_API_KEY` | Masked, Protected | Backend의 Escrow 내부 API 인증키. 32자 이상이며 Escrow 시작 시 HMAC 해시만 `service_clients`에 등록됩니다 |
+| `ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE` | Visible, Protected | 해당 API 키의 `service_clients.one_won_auth_message`에 저장할 1원 인증 문구. 현재 권장값은 `KOMIT`입니다 |
+| `ESCROW_ADMIN_USERNAME` | Visible, Protected | Escrow 조회 전용 운영 페이지 로그인 아이디 |
+| `ESCROW_ADMIN_PASSWORD_HASH` | Masked, Protected | 운영 페이지 비밀번호의 `{bcrypt}...` 해시. 원문 비밀번호는 저장하지 않습니다 |
 | `SSAFY_FINANCE_API_KEY` | Masked, Protected | Escrow가 SSAFY 교육용 금융망을 호출할 때 사용하는 앱 관리자 API Key |
 | `SSAFY_DEMAND_DEPOSIT_PRODUCT_NO` | Visible, Protected | R-ACC-10에 따라 해당 SSAFY 환경에 미리 등록한 입출금 상품 고유번호 |
 | `SSAFY_ESCROW_USER_KEY`, `SSAFY_ESCROW_ACCOUNT_NO` | Masked, Protected | 계약별 가상계좌의 모계좌가 되는 Escrow 보관 주체의 금융망 사용자 키와 16자리 보관계좌 번호 |
@@ -599,7 +609,7 @@ chmod +x deploy/k3s/deploy.sh
 | `SERVICE_REDIS_PASSWORD` | 예 | Redis `requirepass`·`masterauth`와 Sentinel 접속 비밀번호. `service-redis-auth` Secret이 되어 오퍼레이터와 Spring이 함께 읽습니다. |
 | `SERVICE_PUBLIC_BASE_URL`, `ESCROW_PUBLIC_BASE_URL` | 예 | 각 백엔드가 밖에서 보이는 주소(nginx 경로 접두사 포함). Spring의 `app.public-base-url`이 되고, 없으면 앱이 기동하지 않습니다. 값이 바뀌면 해당 Pod만 다시 뜹니다. |
 | `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` | 예 | fe 서버가 백엔드·AI를 호출할 주소. GitLab CI/CD 변수와 같은 값을 넣습니다. 값이 바뀌면 fe Pod가 새 값으로 다시 뜹니다. |
-| `ESCROW_API_BASE_URL` | 아니요 | 값이 있을 때만 fe 실행 환경에 넣습니다. |
+| `ESCROW_API_BASE_URL` | 예 | GitLab CI/CD 값이 `service-config`에 주입됩니다. 현재 개발 배포에서는 Mock 주소를 사용합니다. |
 | `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI` | 예 | 카카오 로그인 REST API 키와 콜백 주소. fe 의 `/api/auth/kakao` 가 실행 시점에 읽습니다. 없으면 로그인만 500 으로 실패하고 다른 화면은 영향이 없습니다. |
 | `CLIENT_API_KEY_HMAC_SECRET`, `SENSITIVE_DATA_HMAC_SECRET` | 예 | Escrow HMAC 비밀키. 각각 32자 이상이며 `escrow-security` Secret으로 주입됩니다. |
 | `FIELD_ENCRYPTION_KEY_BASE64` | 예 | Escrow AES-256 암호화 키. Base64 디코딩 결과가 정확히 32바이트여야 합니다. |

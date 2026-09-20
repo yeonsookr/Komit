@@ -12,6 +12,13 @@ spring:
 server:
   port: ${SERVER_PORT:8081}
   shutdown: graceful
+  servlet:
+    session:
+      timeout: ${ESCROW_ADMIN_SESSION_TIMEOUT:30m}
+      cookie:
+        http-only: true
+        same-site: strict
+        secure: ${ESCROW_ADMIN_COOKIE_SECURE:true}
 
 app:
   # WRITER | READER. 배포 환경 값으로만 주입하며 프로필과 섞지 않습니다.
@@ -24,6 +31,9 @@ app:
     encryption-key-base64: ${FIELD_ENCRYPTION_KEY_BASE64}
     encryption-key-version: ${FIELD_ENCRYPTION_KEY_VERSION:1}
     operator-api-key: ${OPERATOR_CLIENT_API_KEY}
+    # Backend 호출용 원문 키는 시작 시 HMAC으로 변환해 service_clients에 등록하고 DB에는 저장하지 않습니다.
+    bootstrap-client-api-key: ${ESCROW_BOOTSTRAP_CLIENT_API_KEY:}
+    bootstrap-client-one-won-auth-message: ${ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE:}
   finance:
     enabled: ${SSAFY_FINANCE_ENABLED:true}
     base-url: ${SSAFY_FINANCE_BASE_URL:https://finopenapi.ssafy.io/ssafy}
@@ -35,6 +45,9 @@ app:
     escrow-account-no: ${SSAFY_ESCROW_ACCOUNT_NO}
     fee-account-no: ${SSAFY_FEE_ACCOUNT_NO}
     virtual-account-validity-days: ${SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS}
+  admin:
+    username: ${ESCROW_ADMIN_USERNAME}
+    password-hash: ${ESCROW_ADMIN_PASSWORD_HASH}
 
 management:
   endpoints:
