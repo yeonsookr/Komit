@@ -89,6 +89,8 @@ ESCROW_CLIENT_API_KEY=mock-client-api-key
 
 `ESCROW_CLIENT_API_KEY` 변수는 Mock 개발 중에도 필요하다. Backend는 환경과 관계없이 이 값을 요청 JSON의 `Header.clientApiKey`에 넣는다. Mock에서는 Mock이 인식하는 고정값 `mock-client-api-key`를 사용하고, 실제 Escrow에서는 별도로 발급한 `komit_be_...` 키를 사용한다.
 
+Mock 고정 키에는 32자 길이 조건을 적용하지 않는다. 배포 검증은 `ESCROW_API_BASE_URL`이 `/mock/escrow`일 때 `mock-client-api-key`를 허용하고, 실제 Escrow 주소일 때만 Client API Key가 32자 이상인지 검사한다.
+
 실제 Escrow 통합 단계에서는 환경변수만 다음과 같이 교체한다.
 
 ```dotenv
