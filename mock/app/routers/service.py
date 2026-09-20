@@ -1488,6 +1488,34 @@ class WriteQaCriterionRequest(BaseModel):
     )
 
 
+class QaSuggestionResponse(BaseModel):
+    """저장 전 확인 문장 후보. testCase는 qa_criteria.test_case에 대응한다."""
+
+    testCase: str = Field(
+        min_length=1,
+        max_length=500,
+        description=(
+            "직접 실행해 통과 여부를 판단할 문장. 후보 반환만으로 요청서에 저장되지 않는다. "
+            "(R-REQ-04)"
+        ),
+        examples=["로그인하지 않고 관리자 주소로 들어가면 로그인 화면이 나타난다."],
+    )
+
+
+class QaSuggestionListResponse(BaseModel):
+    """확인 문장 후보 목록. default API의 페이지 형식을 따른다."""
+
+    content: list[QaSuggestionResponse] = Field(
+        min_length=3,
+        max_length=3,
+        description="저장 전 확인 문장 후보 세 건. (R-REQ-04)",
+    )
+    page: int = Field(description="현재 페이지 번호. 후보는 한 페이지만 반환한다.", examples=[1])
+    size: int = Field(description="한 페이지의 후보 개수.", examples=[3])
+    totalElements: int = Field(description="전체 후보 개수.", examples=[3])
+    totalPages: int = Field(description="전체 페이지 수.", examples=[1])
+
+
 class WriteRequirementRequest(BaseModel):
     """저장할 요구사항 하나."""
 
@@ -1558,6 +1586,14 @@ class CreateIssueRequest(BaseModel):
 
 DIAGNOSIS_NOT_FOUND = ("DIAGNOSIS_NOT_FOUND", "진단을 찾을 수 없습니다.")
 ISSUE_NOT_FOUND = ("ISSUE_NOT_FOUND", "요구사항을 찾을 수 없습니다.")
+AI_RESPONSE_INVALID = (
+    "AI_RESPONSE_INVALID",
+    "확인 문장을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.",
+)
+AI_SERVICE_UNAVAILABLE = (
+    "AI_SERVICE_UNAVAILABLE",
+    "확인 문장 생성 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+)
 INSPECTION_NOT_DONE = (
     "INSPECTION_NOT_DONE",
     "검사가 아직 끝나지 않았습니다.",
@@ -1995,6 +2031,18 @@ ISSUE_LIST_EXAMPLE = {
     "page": 1,
     "size": 20,
     "totalElements": 11,
+    "totalPages": 1,
+}
+
+QA_SUGGESTION_LIST_EXAMPLE = {
+    "content": [
+        {"testCase": "로그인하지 않고 관리자 주소로 들어가면 로그인 화면이 나타난다."},
+        {"testCase": "일반 회원으로 관리자 주소에 들어가면 접근할 수 없다는 안내가 나타난다."},
+        {"testCase": "관리자로 로그인하고 관리자 주소에 들어가면 관리 화면이 열린다."},
+    ],
+    "page": 1,
+    "size": 3,
+    "totalElements": 3,
     "totalPages": 1,
 }
 
@@ -2489,6 +2537,84 @@ def get_issues(
         totalElements=total,
         totalPages=(total + size - 1) // size,
     )
+
+
+@router.post(
+    "/issues/{issueId}/qa-suggestions",
+    response_model=QaSuggestionListResponse,
+    tags=[AREA2_TAG],
+    responses={
+        200: {
+            "content": {"application/json": {"example": QA_SUGGESTION_LIST_EXAMPLE}}
+        },
+        404: {
+            "model": ErrorResponse,
+            "description": "요구사항이 없거나 내 것이 아님",
+            "content": {"application/json": {"example": ISSUE_NOT_FOUND_EXAMPLE}},
+        },
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요구사항 식별자 형식 오류",
+        },
+        502: {
+            "model": ErrorResponse,
+            "description": "AI가 계약에 맞는 후보를 만들지 못함",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": AI_RESPONSE_INVALID[0],
+                        "message": AI_RESPONSE_INVALID[1],
+                    }
+                }
+            },
+        },
+        503: {
+            "model": ErrorResponse,
+            "description": "확인 문장 생성 서비스에 연결할 수 없음",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": AI_SERVICE_UNAVAILABLE[0],
+                        "message": AI_SERVICE_UNAVAILABLE[1],
+                    }
+                }
+            },
+        },
+        **AREA1_UNAUTHORIZED,
+        **AREA1_ERRORS,
+    },
+    summary="확인 문장 후보 생성",
+    description=(
+        "요구사항 하나의 확인 문장 후보를 세 건 반환한다. 의뢰인은 후보를 보고 채택하거나 "
+        "문구를 수정할 수 있다. 후보를 보여주는 것만으로는 저장되지 않으며, 확정한 "
+        "문장은 기존 요청서 저장 API로 저장한다. "
+        "(R-REQ-01, R-REQ-04)\n\n"
+        "응답은 default API의 목록 형식이다. `content[].testCase`는 서비스 ERD의 "
+        "`qa_criteria.test_case`에 대응한다. 아직 저장하지 않았으므로 "
+        "`qaCriterionId`와 상태는 반환하지 않는다.\n\n"
+        "- **200**: 요구사항이 있고 계약에 맞는 후보를 만들었을 때\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **404 / ISSUE_NOT_FOUND**: 요구사항이 없거나 내 것이 아닐 때\n"
+        "- **422 / INVALID_REQUEST**: `issueId`가 정수가 아닐 때\n"
+        "- **502 / AI_RESPONSE_INVALID**: 생성 결과의 개수·길이·형식이 계약에 맞지 않을 때\n"
+        "- **503 / AI_SERVICE_UNAVAILABLE**: 생성 서비스에 연결할 수 없을 때\n"
+        "- **500 / INTERNAL_ERROR**: 그 밖의 서버 오류가 발생했을 때\n\n"
+        "Mock은 고정된 200 응답만 반환한다. 502·503은 후속 Service 구현을 위한 "
+        "응답 계약 예시이며 Mock 전용 실패 트리거를 만들지 않는다."
+    ),
+)
+def suggest_qa_criteria(
+    issueId: Annotated[
+        int,
+        Path(
+            description="요구사항 식별자. 404는 요구사항 없음 재현용 예약값이다.",
+            examples=[312],
+        ),
+    ],
+) -> QaSuggestionListResponse | JSONResponse:
+    if issueId == NOT_FOUND_ISSUE_ID:
+        return _error_response(404, ISSUE_NOT_FOUND)
+    return QaSuggestionListResponse(**QA_SUGGESTION_LIST_EXAMPLE)
 
 
 @router.post(
