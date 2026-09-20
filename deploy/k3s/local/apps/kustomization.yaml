@@ -38,3 +38,4 @@ secretGenerator:
     namespace: komit
     literals:
       - ESCROW_BOOTSTRAP_CLIENT_API_KEY=komit-backend-client-api-key-dev-only
+      - ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE=KOMIT

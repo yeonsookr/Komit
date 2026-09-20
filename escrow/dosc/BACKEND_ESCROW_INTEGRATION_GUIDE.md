@@ -155,6 +155,8 @@ ESCROW_CLIENT_API_KEY=mock-client-api-key
 
 현재 배포 스크립트는 `ESCROW_CLIENT_API_KEY`를 Backend의 `service-auth` Secret에 넣고, 같은 값을 Escrow의 `escrow-security` Secret에 `ESCROW_BOOTSTRAP_CLIENT_API_KEY`라는 이름으로 전달한다. Escrow는 시작할 때 이 원문을 HMAC으로 변환하여 `Komit Backend` 서비스 레코드를 등록하거나 키를 갱신한다. 원문은 DB에 저장되지 않는다.
 
+`ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE`도 함께 전달되며 같은 `service_clients` 행의 `one_won_auth_message`에 저장된다. Backend가 `Header.clientApiKey`로 1원 인증을 요청하면 Escrow는 키 해시로 서비스 ID를 인증하고, 그 서비스 ID의 `one_won_auth_message`를 조회하여 금융망 1원 송금 문구로 사용한다. Backend가 인증 문구를 요청 Body에 직접 보내거나 결정하지 않는다.
+
 ```text
 GitLab CI/CD Variable
   -> 배포 Job 필수값 검사
@@ -171,6 +173,7 @@ GitLab CI/CD Variable
 | --- | --- | --- |
 | `ESCROW_API_BASE_URL` | Visible, Protected | `service-config` ConfigMap |
 | `ESCROW_CLIENT_API_KEY` | Masked, Protected | `service-auth` Secret |
+| `ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE` | Visible, Protected | `escrow-security` Secret을 거쳐 `service_clients.one_won_auth_message`에 등록 |
 
 변수를 GitLab에 등록하는 것만으로는 충분하지 않다. 배포 스크립트가 그 값을 받아 Kubernetes 리소스를 생성하고 Pod에 주입하는 부분까지 있어야 한다.
 

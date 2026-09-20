@@ -21,7 +21,7 @@ class ServiceClientBootstrapTest {
     @Test
     void skipsRegistrationWhenBootstrapKeyIsEmpty() {
         ServiceClientBootstrap bootstrap = new ServiceClientBootstrap(
-                jdbcTemplate, apiKeyHasher, "");
+                jdbcTemplate, apiKeyHasher, "", "");
 
         bootstrap.run(new DefaultApplicationArguments());
 
@@ -35,7 +35,7 @@ class ServiceClientBootstrapTest {
         when(jdbcTemplate.update(anyString(), anyMap()))
                 .thenReturn(0, 1);
         ServiceClientBootstrap bootstrap = new ServiceClientBootstrap(
-                jdbcTemplate, apiKeyHasher, "backend-secret");
+                jdbcTemplate, apiKeyHasher, "backend-secret", "KOMIT");
 
         bootstrap.run(new DefaultApplicationArguments());
 
@@ -49,10 +49,20 @@ class ServiceClientBootstrapTest {
         when(apiKeyHasher.hash("backend-secret")).thenReturn("hashed-key");
         when(jdbcTemplate.update(anyString(), anyMap())).thenReturn(1);
         ServiceClientBootstrap bootstrap = new ServiceClientBootstrap(
-                jdbcTemplate, apiKeyHasher, "backend-secret");
+                jdbcTemplate, apiKeyHasher, "backend-secret", "KOMIT");
 
         bootstrap.run(new DefaultApplicationArguments());
 
         verify(jdbcTemplate).update(anyString(), anyMap());
+    }
+
+    @Test
+    void rejectsEmptyAuthMessageWhenKeyIsConfigured() {
+        ServiceClientBootstrap bootstrap = new ServiceClientBootstrap(
+                jdbcTemplate, apiKeyHasher, "backend-secret", "");
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                IllegalStateException.class,
+                () -> bootstrap.run(new DefaultApplicationArguments()));
     }
 }

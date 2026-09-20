@@ -16,20 +16,22 @@ import org.springframework.transaction.annotation.Transactional;
 @Component
 public class ServiceClientBootstrap implements ApplicationRunner {
     private static final String SERVICE_NAME = "Komit Backend";
-    private static final String AUTH_MESSAGE = "KOMIT";
 
     private final NamedParameterJdbcTemplate jdbcTemplate;
     private final ClientApiKeyHasher apiKeyHasher;
     private final String clientApiKey;
+    private final String oneWonAuthMessage;
 
     public ServiceClientBootstrap(
             NamedParameterJdbcTemplate jdbcTemplate,
             ClientApiKeyHasher apiKeyHasher,
-            @Value("${app.security.bootstrap-client-api-key:}") String clientApiKey
+            @Value("${app.security.bootstrap-client-api-key:}") String clientApiKey,
+            @Value("${app.security.bootstrap-client-one-won-auth-message:}") String oneWonAuthMessage
     ) {
         this.jdbcTemplate = jdbcTemplate;
         this.apiKeyHasher = apiKeyHasher;
         this.clientApiKey = clientApiKey;
+        this.oneWonAuthMessage = oneWonAuthMessage;
     }
 
     @Override
@@ -38,11 +40,14 @@ public class ServiceClientBootstrap implements ApplicationRunner {
         if (clientApiKey.isBlank()) {
             return;
         }
+        if (oneWonAuthMessage.isBlank() || oneWonAuthMessage.length() > 100) {
+            throw new IllegalStateException("Backend 1원 인증 문구는 1자 이상 100자 이하여야 합니다.");
+        }
         String apiKeyHash = apiKeyHasher.hash(clientApiKey);
         Map<String, Object> parameters = Map.of(
                 "name", SERVICE_NAME,
                 "apiKeyHash", apiKeyHash,
-                "authMessage", AUTH_MESSAGE);
+                "authMessage", oneWonAuthMessage);
         int updated = jdbcTemplate.update("""
                 UPDATE service_clients
                 SET api_key_hash = :apiKeyHash,

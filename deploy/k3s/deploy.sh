@@ -17,6 +17,7 @@ FE_IMAGE=${FE_IMAGE:-}
 : "${AI_API_BASE_URL:?AI_API_BASE_URL is required}"
 : "${ESCROW_API_BASE_URL:?ESCROW_API_BASE_URL is required}"
 : "${ESCROW_CLIENT_API_KEY:?ESCROW_CLIENT_API_KEY is required}"
+: "${ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE:?ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE is required}"
 # 카카오 로그인. fe 의 인가 시작 Route Handler 가 실행 시점에 읽습니다. 없으면 로그인이 500 입니다.
 : "${KAKAO_CLIENT_ID:?KAKAO_CLIENT_ID is required}"
 : "${KAKAO_REDIRECT_URI:?KAKAO_REDIRECT_URI is required}"
@@ -60,6 +61,10 @@ for NAME in CLIENT_API_KEY_HMAC_SECRET SENSITIVE_DATA_HMAC_SECRET OPERATOR_CLIEN
 done
 if [ "${#ESCROW_CLIENT_API_KEY}" -lt 32 ]; then
   echo "ESCROW_CLIENT_API_KEY must contain at least 32 characters" >&2
+  exit 1
+fi
+if [ "${#ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE}" -gt 100 ]; then
+  echo "ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE must not exceed 100 characters" >&2
   exit 1
 fi
 ENCRYPTION_KEY_BYTES=$(printf '%s' "$FIELD_ENCRYPTION_KEY_BASE64" | base64 -d 2>/dev/null | wc -c | tr -d ' ')
@@ -201,6 +206,7 @@ EOF
   config_literal FIELD_ENCRYPTION_KEY_BASE64 "$FIELD_ENCRYPTION_KEY_BASE64"
   config_literal OPERATOR_CLIENT_API_KEY "$OPERATOR_CLIENT_API_KEY"
   config_literal ESCROW_BOOTSTRAP_CLIENT_API_KEY "$ESCROW_CLIENT_API_KEY"
+  config_literal ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE "$ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE"
   config_literal SSAFY_FINANCE_API_KEY "$SSAFY_FINANCE_API_KEY"
   config_literal SSAFY_ESCROW_USER_KEY "$SSAFY_ESCROW_USER_KEY"
   config_literal SSAFY_ESCROW_ACCOUNT_NO "$SSAFY_ESCROW_ACCOUNT_NO"

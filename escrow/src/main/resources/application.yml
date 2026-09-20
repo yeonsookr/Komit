@@ -26,6 +26,7 @@ app:
     operator-api-key: ${OPERATOR_CLIENT_API_KEY}
     # Backend 호출용 원문 키는 시작 시 HMAC으로 변환해 service_clients에 등록하고 DB에는 저장하지 않습니다.
     bootstrap-client-api-key: ${ESCROW_BOOTSTRAP_CLIENT_API_KEY:}
+    bootstrap-client-one-won-auth-message: ${ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE:}
   finance:
     enabled: ${SSAFY_FINANCE_ENABLED:true}
     base-url: ${SSAFY_FINANCE_BASE_URL:https://finopenapi.ssafy.io/ssafy}
