@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { buttonClass } from "@/components/buttons";
 import { Card } from "@/components/common";
+import { CompleteSignupButton } from "@/components/domains/auth/CompleteSignupButton";
 import { NEXT_PARAM } from "@/lib/auth/params";
 import { safeNext } from "@/lib/auth/safeNext";
 import { ROUTES } from "@/lib/routes";
@@ -32,12 +33,7 @@ export default async function SignupAccountPage({
         >
           계좌 등록하기
         </Link>
-        <Link
-          href={ROUTES.signupComplete(next)}
-          className={buttonClass({ variant: "outline", size: "lg", fullWidth: true })}
-        >
-          다음에 하기
-        </Link>
+        <CompleteSignupButton next={next} />
       </div>
     </Card>
   );

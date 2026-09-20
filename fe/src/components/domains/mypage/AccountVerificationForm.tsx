@@ -8,6 +8,7 @@ import { Card, Dropdown, Field, Input, NumberedSteps, PageHeader } from "@/compo
 import { Callout, useToast } from "@/components/feedback";
 import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
+import { finishSignup } from "@/lib/api/services/signup";
 import { ROUTES } from "@/lib/routes";
 import type {
   AccountVerification,
@@ -141,6 +142,7 @@ export function AccountVerificationForm({
                 INTERNAL.ACCOUNT_VERIFICATION_CONFIRM(verification.verificationId),
                 { authCode },
               );
+              if (signup) await finishSignup();
               showToast({ tone: "success", title: "계좌를 등록했습니다." });
               router.replace(completionHref);
               router.refresh();

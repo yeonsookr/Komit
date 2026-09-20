@@ -26,7 +26,8 @@ class TermsAgreementServiceTest {
 
     @BeforeEach
     void setUp() {
-        termsAgreementService = new TermsAgreementService(settingRepository, userService);
+        termsAgreementService = new TermsAgreementService(
+                settingRepository, userService, new RequiredTermsWriter(settingRepository));
     }
 
     @Test

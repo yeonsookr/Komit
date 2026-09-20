@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { buttonClass } from "@/components/buttons";
 import { Card } from "@/components/common";
 import { NEXT_PARAM } from "@/lib/auth/params";
 import { safeNext } from "@/lib/auth/safeNext";
 import { ROUTES } from "@/lib/routes";
+import { getSignupCompletion } from "@/lib/api/services/auth";
+import { ApiError } from "@/types/api";
 
 export const metadata: Metadata = {
   title: "가입 완료 | Komit",
@@ -15,6 +18,13 @@ export default async function SignupCompletePage({
   searchParams,
 }: Readonly<{ searchParams: Promise<Record<string, string | string[] | undefined>> }>) {
   const next = safeNext((await searchParams)[NEXT_PARAM]);
+  try {
+    await getSignupCompletion();
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 409) redirect(ROUTES.signupAccount(next));
+    if (error instanceof ApiError && error.status === 401) redirect(ROUTES.login);
+    throw error;
+  }
 
   return (
     <Card variant="elevated" padding="lg" className="mx-auto w-full max-w-[520px] sm:p-9">

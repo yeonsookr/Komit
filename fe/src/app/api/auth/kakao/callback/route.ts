@@ -56,10 +56,10 @@ export async function GET(request: NextRequest) {
 
     const terms = await getRequiredTerms(login.accessToken);
     setSessionCookies(store, login);
-    const needsAgreement = login.isNewUser || Object.values(terms).some((agreed) => !agreed);
+    const needsAgreement = Object.values(terms).some((agreed) => !agreed);
     const destination = needsAgreement
       ? ROUTES.signupTerms(handoff.next)
-      : handoff.next ?? ROUTES.home;
+      : login.isNewUser ? ROUTES.signupAccount(handoff.next) : handoff.next ?? ROUTES.home;
     return NextResponse.redirect(new URL(destination, siteOrigin));
   } catch (error) {
     if (error instanceof ApiError && error.status > 0) {

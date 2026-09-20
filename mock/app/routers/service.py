@@ -660,7 +660,7 @@ class KakaoLoginResponse(TokenResponse):
     """카카오 로그인 응답. 토큰 응답에 가입 여부와 사용자 정보를 더한다."""
 
     isNewUser: bool = Field(
-        description="이번 로그인으로 새로 가입했는지. 참이면 처음 들어온 사용자다.",
+        description="가입을 완료하지 않았는지. 첫 로그인 또는 중단한 가입이면 true다.",
         examples=[False],
     )
     user: LoginUserResponse = Field(description="로그인한 사용자.")
@@ -1032,9 +1032,10 @@ def get_featured_developers(
     description=(
         "**화면 — `1_로그인` › 카카오로 시작하기**\n\n"
         "카카오 로그인 화면에서 받은 인가 코드로 로그인한다. 처음 들어온 사용자라면 "
-        "계정을 만들고 `isNewUser`를 true로 돌려준다. 가입 화면에서 필수 약관에 "
+        "가입 진행 상태로 저장하고 `isNewUser`를 true로 돌려준다. 중단한 가입으로 "
+        "다시 로그인해도 true다. 가입 화면에서 필수 약관에 "
         "명시적으로 동의한 뒤 계좌 등록을 선택하거나 건너뛴다.\n\n"
-        "처음 가입할 때는 에스크로의 `createMemberAccount` API로 SSAFY 금융망 "
+        "가입 완료 요청 시 에스크로의 `createMemberAccount` API로 SSAFY 금융망 "
         "`userKey`와 개인 계좌 발급을 요청한 뒤, 결과를 Komit Service DB에 저장한다. "
         "이 금융 정보까지 "
         "준비되어야 가입이 완료된 것으로 처리한다. 기존 사용자의 로그인에서는 다시 "
@@ -1047,7 +1048,7 @@ def get_featured_developers(
         "`users.kakao_refresh_token`은 카카오 API를 부를 때 쓰는 카카오 쪽 토큰으로, 여기 "
         "`refreshToken`과 다르다. 두 토큰의 형식과 만료는 `docs/jwt-samples.md`를, "
         "리프레시 토큰 저장은 `docs/BACKEND_CONVENTIONS.md` 6.4(Redis, TTL 만료)를 따른다.\n\n"
-        "- **200**: 로그인에 성공했을 때. 이번에 새로 가입했으면 `isNewUser`가 true다\n"
+        "- **200**: 로그인에 성공했을 때. 가입을 마치지 않았으면 `isNewUser`가 true다\n"
         "- **401 / KAKAO_AUTH_FAILED**: `code`가 `invalid-code`일 때. 인가 코드가 "
         "만료되었거나 이미 쓴 값이다. 계정이 있는지 없는지는 구분해 알려주지 않는다\n"
         "- **422 / INVALID_REQUEST**: `code`나 `redirectUri`가 없을 때\n"
@@ -1141,6 +1142,63 @@ def agree_required_terms(request: AgreeRequiredTermsRequest) -> RequiredTermsRes
             ),
         )
     return RequiredTermsResponse(**REQUIRED_TERMS_AGREED_EXAMPLE)
+
+
+SIGNUP_PENDING = ("SIGNUP_PENDING", "가입이 아직 완료되지 않았습니다.")
+TERMS_NOT_AGREED = ("TERMS_NOT_AGREED", "필수 약관에 동의해 주세요.")
+
+
+@router.get(
+    "/auth/signup/completion",
+    status_code=204,
+    response_class=Response,
+    tags=["1 랜딩 · 로그인"],
+    responses={
+        204: {"description": "가입 완료 상태. 본문 없음."},
+        **AREA1_UNAUTHORIZED,
+        409: {"model": ErrorResponse, "description": "가입 진행 중",
+              "content": {"application/json": {"example": {"code": SIGNUP_PENDING[0], "message": SIGNUP_PENDING[1]}}}},
+        500: AREA1_ERRORS[500],
+    },
+    summary="가입 완료 상태 확인",
+    description=(
+        "가입 완료 화면에서 서버의 완료 상태를 확인한다. 사용자 식별자는 토큰에서 읽는다.\n\n"
+        "- **204**: 가입 완료 요청이 성공해 서비스 이용 상태일 때\n"
+        "- **401 / UNAUTHORIZED**: 토큰이 없거나 유효하지 않을 때\n"
+        "- **409 / SIGNUP_PENDING**: 가입 진행 중일 때"
+    ),
+)
+def get_signup_completion() -> Response:
+    return Response(status_code=204)
+
+
+@router.post(
+    "/auth/signup/completion",
+    status_code=204,
+    response_class=Response,
+    tags=["1 랜딩 · 로그인"],
+    responses={
+        204: {"description": "가입 완료. 다시 요청해도 본문 없이 204."},
+        **AREA1_UNAUTHORIZED,
+        409: {"model": ErrorResponse, "description": "필수 약관 미동의",
+              "content": {"application/json": {"example": {"code": TERMS_NOT_AGREED[0], "message": TERMS_NOT_AGREED[1]}}}},
+        503: {"model": ErrorResponse, "description": "Escrow 발급 실패 또는 결과 불명확",
+              "content": {"application/json": {"example": {"code": "ESCROW_UNAVAILABLE", "message": "지금은 계좌를 확인할 수 없습니다. 잠시 뒤 다시 시도해 주세요."}}}},
+        500: AREA1_ERRORS[500],
+    },
+    summary="가입 완료",
+    description=(
+        "**화면 — 가입 › 계좌 등록 제안 › 다음에 하기 또는 1원 인증 성공**\n\n"
+        "필수 약관에 모두 동의하고 회원 발급 계좌가 준비되면 가입을 완료한다. "
+        "계좌 등록을 건너뛰어도 회원 발급 계좌는 준비되어야 한다. 같은 요청은 멱등이다.\n\n"
+        "- **204**: 가입이 완료되었거나 이미 완료된 경우\n"
+        "- **401 / UNAUTHORIZED**: 토큰이 없거나 유효하지 않을 때\n"
+        "- **409 / TERMS_NOT_AGREED**: 필수 약관에 아직 동의하지 않았을 때\n"
+        "- **503 / ESCROW_UNAVAILABLE**: 계좌 발급을 확정할 수 없을 때. 가입 진행 상태를 유지한다"
+    ),
+)
+def complete_signup() -> Response:
+    return Response(status_code=204)
 
 
 @router.post(

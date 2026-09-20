@@ -3,7 +3,7 @@
 
 INSERT INTO system_enum_groups (group_code, group_name, description)
 VALUES
-    ('RECORD_STATUS', '레코드 상태', '공통 레코드의 사용 및 삭제 상태'),
+    ('RECORD_STATUS', '레코드 상태', '공통 레코드의 가입 진행, 사용 및 삭제 상태'),
     ('ROOM_TYPE', '대화방 유형', '문의·컨설팅·개발 대화방 구분'),
     ('ROOM_STATUS', '대화방 상태', '대화방 개폐 상태'),
     ('CONSULTING_AGREEMENT_STATUS', '컨설팅 계약 상태', '컨설팅 계약 진행 상태'),
@@ -44,6 +44,7 @@ INSERT INTO system_enums (
 VALUES
     ('ACTIVE', 'RECORD_STATUS', '사용중', 1, FALSE, NULL),
     ('DELETED', 'RECORD_STATUS', '삭제됨', 2, FALSE, NULL),
+    ('PENDING', 'RECORD_STATUS', '가입 진행 중', 3, FALSE, NULL),
 
     ('INQUIRY', 'ROOM_TYPE', '문의', 1, FALSE, NULL),
     ('CONSULTING', 'ROOM_TYPE', '컨설팅', 2, FALSE, NULL),

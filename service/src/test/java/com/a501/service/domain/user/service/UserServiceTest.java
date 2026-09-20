@@ -54,7 +54,7 @@ class UserServiceTest {
     void registersNewUserWithPendingTerms() {
         when(stringCrypto.encrypt("kakao-refresh")).thenReturn("protected");
         when(userRepository.findByKakaoId(123L)).thenReturn(Optional.empty());
-        when(userRepository.save(any())).thenAnswer(invocation -> {
+        when(userRepository.saveAndFlush(any())).thenAnswer(invocation -> {
             User saved = invocation.getArgument(0);
             ReflectionTestUtils.setField(saved, "id", 12);
             return saved;
@@ -70,7 +70,8 @@ class UserServiceTest {
         verify(settingService).createForNewUser(12);
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
-        verify(userRepository).save(captor.capture());
+        verify(userRepository).saveAndFlush(captor.capture());
+        verify(userRepository).markSignupPending(12);
         assertThat(ReflectionTestUtils.getField(captor.getValue(), "kakaoRefreshToken")).isEqualTo("protected");
         assertThat(ReflectionTestUtils.getField(captor.getValue(), "lastLoginAt")).isEqualTo(NOW_UTC);
     }
@@ -90,6 +91,18 @@ class UserServiceTest {
         assertThat(ReflectionTestUtils.getField(existing, "lastLoginAt")).isEqualTo(NOW_UTC);
         verify(userRepository, never()).save(any());
         verify(settingService, never()).createForNewUser(any());
+    }
+
+    @Test
+    @DisplayName("가입 진행 중 다시 로그인해도 가입 흐름으로 이어간다")
+    void pendingUserResumesSignup() {
+        User pending = existingUser(12);
+        ReflectionTestUtils.setField(pending, "recordStatus", "PENDING");
+        when(stringCrypto.encrypt("kakao-refresh")).thenReturn("protected-again");
+        when(userRepository.findByKakaoId(123L)).thenReturn(Optional.of(pending));
+
+        assertThat(userService.loginOrRegister(kakaoUserData()).newUser()).isTrue();
+        verify(userRepository, never()).saveAndFlush(any());
     }
 
     @Test
