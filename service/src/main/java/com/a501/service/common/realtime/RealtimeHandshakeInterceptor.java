@@ -44,8 +44,7 @@ public class RealtimeHandshakeInterceptor implements HandshakeInterceptor {
                         consumed.userId(),
                         UUID.randomUUID().toString(),
                         consumed.channel(),
-                        consumed.channelId(),
-                        consumed.allowedEventFamily()));
+                        consumed.channelId()));
         return true;
     }
 
