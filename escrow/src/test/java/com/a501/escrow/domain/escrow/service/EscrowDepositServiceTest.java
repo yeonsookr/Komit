@@ -102,7 +102,7 @@ class EscrowDepositServiceTest {
 
     private static DepositEscrow state(String step, String transactionStatus, String escrowStatus) {
         return new DepositEscrow(11, 21, 7, "CONTRACT-1", "DEVELOPMENT", BigInteger.valueOf(650_000),
-                escrowStatus, transactionStatus, "deposit-key", "fingerprint", step, "name-cipher",
+                escrowStatus, "NONE", transactionStatus, "deposit-key", "fingerprint", step, "name-cipher",
                 "VA_CREATING".equals(step) ? null : "va-1", "VA_CREATING".equals(step) ? null : "0011111111111111",
                 "COMPLETED".equals(transactionStatus) ? "MATCHED" : "PENDING", null, null, "001", "source-cipher");
     }

@@ -25,6 +25,10 @@ import com.a501.escrow.config.InstanceRole;
 import com.a501.escrow.domain.common.Money;
 import com.a501.escrow.domain.escrow.repository.EscrowRepository;
 import com.a501.escrow.domain.escrow.repository.EscrowDepositRepository;
+import com.a501.escrow.domain.escrow.dto.EscrowHoldDtos;
+import com.a501.escrow.domain.escrow.dto.EscrowDtos;
+import com.a501.escrow.domain.escrow.service.EscrowDepositService;
+import com.a501.escrow.domain.escrow.service.EscrowHoldService;
 import com.a501.escrow.domain.finance.repository.FinancialOperationAttemptRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterAll;
@@ -106,6 +110,12 @@ class DataAccessIntegrationTests {
     EscrowDepositRepository escrowDepositRepository;
 
     @Autowired
+    EscrowHoldService escrowHoldService;
+
+    @Autowired
+    EscrowDepositService escrowDepositService;
+
+    @Autowired
     FinancialOperationAttemptRepository attemptRepository;
 
     @Autowired
@@ -131,6 +141,7 @@ class DataAccessIntegrationTests {
 
     @Autowired
     PlatformTransactionManager transactionManager;
+
 
     @BeforeEach
     void seed() {
@@ -316,6 +327,65 @@ class DataAccessIntegrationTests {
         assertThat(escrowDepositRepository.findById(1, created.escrowId()).orElseThrow().escrowStatus())
                 .isEqualTo("CANCELLED");
     }
+
+    @Test
+    void holdsAndReleasesActiveEscrowAndReplaysHistoricalResults() {
+        jdbcTemplate.update("UPDATE escrows SET status='ACTIVE' WHERE id=1");
+        var hold = new EscrowHoldDtos.Request(
+                validHeader("holdEscrow", "test-client-api-key", "hold-key", null),
+                1, "REPORT-7");
+        var unhold = new EscrowHoldDtos.Request(
+                validHeader("unholdEscrow", "test-client-api-key", "unhold-key", null),
+                1, "REPORT-7");
+
+        assertThat(escrowHoldService.hold(hold).isHeld()).isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT hold_status FROM escrows WHERE id=1", String.class)).isEqualTo("HELD");
+        assertThat(escrowDepositService.inquire(new EscrowDtos.InquireRequest(
+                validHeader("inquireEscrow", "test-client-api-key", null, null), 1, "CONTRACT-1")).isHeld())
+                .isTrue();
+        assertThat(escrowHoldService.hold(hold).isHeld()).isTrue();
+
+        assertThat(escrowHoldService.unhold(unhold).isHeld()).isFalse();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT hold_status FROM escrows WHERE id=1", String.class)).isEqualTo("RELEASED");
+        assertThat(escrowDepositService.inquire(new EscrowDtos.InquireRequest(
+                validHeader("inquireEscrow", "test-client-api-key", null, null), 1, "CONTRACT-1")).isHeld())
+                .isFalse();
+        assertThat(escrowHoldService.hold(hold).isHeld()).isTrue();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT hold_status FROM escrows WHERE id=1", String.class)).isEqualTo("RELEASED");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM escrow_state_commands WHERE escrow_id=1", Integer.class)).isEqualTo(2);
+    }
+
+    @Test
+    void rejectsConflictingReportAndClosedOrUnfundedEscrow() {
+        jdbcTemplate.update("UPDATE escrows SET status='ACTIVE' WHERE id=1");
+        escrowHoldService.hold(new EscrowHoldDtos.Request(
+                validHeader("holdEscrow", "test-client-api-key", "hold-key", null),
+                1, "REPORT-7"));
+
+        assertThatThrownBy(() -> escrowHoldService.hold(new EscrowHoldDtos.Request(
+                validHeader("holdEscrow", "test-client-api-key", "other-key", null),
+                1, "REPORT-8")))
+                .isInstanceOfSatisfying(EscrowApiException.class,
+                        exception -> assertThat(exception.responseCode()).isEqualTo("E5014"));
+        assertThatThrownBy(() -> escrowHoldService.unhold(new EscrowHoldDtos.Request(
+                validHeader("unholdEscrow", "test-client-api-key", "unhold-key", null),
+                1, "REPORT-8")))
+                .isInstanceOfSatisfying(EscrowApiException.class,
+                        exception -> assertThat(exception.responseCode()).isEqualTo("E5014"));
+
+        jdbcTemplate.update("UPDATE escrows SET hold_status='NONE',external_report_id=NULL,held_at=NULL WHERE id=1");
+        jdbcTemplate.update("UPDATE escrows SET status='CREATED' WHERE id=1");
+        assertThatThrownBy(() -> escrowHoldService.hold(new EscrowHoldDtos.Request(
+                validHeader("holdEscrow", "test-client-api-key", "created-key", null),
+                1, "REPORT-9")))
+                .isInstanceOfSatisfying(EscrowApiException.class,
+                        exception -> assertThat(exception.responseCode()).isEqualTo("E5007"));
+    }
+
 
     @Test
     void validatesMockHeaderRulesAndReaderRejectsWrites() {

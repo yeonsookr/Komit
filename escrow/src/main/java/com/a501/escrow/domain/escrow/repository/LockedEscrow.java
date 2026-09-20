@@ -8,6 +8,7 @@ public record LockedEscrow(
         String externalContractId,
         Money expectedAmount,
         String status,
-        String holdStatus
+        String holdStatus,
+        String externalReportId
 ) {
 }

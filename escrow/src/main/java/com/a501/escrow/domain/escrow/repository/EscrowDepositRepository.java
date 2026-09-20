@@ -47,6 +47,7 @@ public class EscrowDepositRepository {
         return jdbc.sql("""
                 SELECT e.id escrow_id, t.id transaction_id, e.service_client_id,
                   e.external_contract_id, e.contract_type, e.expected_amount, e.status escrow_status,
+                  e.hold_status,
                   t.status transaction_status, t.idempotency_key, t.request_fingerprint, t.deposit_step,
                   t.depositor_name_encrypted, t.virtual_account_id, t.virtual_account_no,
                   t.deposit_verification_status, t.verified_deposit_amount, t.depositor_name_matched,
@@ -57,7 +58,7 @@ public class EscrowDepositRepository {
                         rs.getLong("escrow_id"), rs.getLong("transaction_id"),
                         rs.getLong("service_client_id"), rs.getString("external_contract_id"),
                         rs.getString("contract_type"), integer(rs.getBigDecimal("expected_amount")),
-                        rs.getString("escrow_status"), rs.getString("transaction_status"),
+                        rs.getString("escrow_status"), rs.getString("hold_status"), rs.getString("transaction_status"),
                         rs.getString("idempotency_key"), rs.getString("request_fingerprint"),
                         rs.getString("deposit_step"), rs.getString("depositor_name_encrypted"),
                         rs.getString("virtual_account_id"), rs.getString("virtual_account_no"),
@@ -254,7 +255,7 @@ public class EscrowDepositRepository {
         return Boolean.TRUE.equals(transactions.execute(status -> {
             DepositEscrow escrow = jdbc.sql("""
                     SELECT e.id escrow_id, t.id transaction_id, e.service_client_id, e.external_contract_id,
-                      e.contract_type,e.expected_amount,e.status escrow_status,t.status transaction_status,
+                      e.contract_type,e.expected_amount,e.status escrow_status,e.hold_status,t.status transaction_status,
                       t.idempotency_key,t.request_fingerprint,t.deposit_step,t.depositor_name_encrypted,
                       t.virtual_account_id,t.virtual_account_no,t.deposit_verification_status,
                       t.verified_deposit_amount,t.depositor_name_matched,t.source_bank_code,t.source_account_encrypted
@@ -301,7 +302,7 @@ public class EscrowDepositRepository {
     public List<DepositEscrow> list(long clientId, List<String> contractIds, String escrowStatus) {
         StringBuilder sql = new StringBuilder("""
                 SELECT e.id escrow_id, t.id transaction_id, e.service_client_id, e.external_contract_id,
-                  e.contract_type,e.expected_amount,e.status escrow_status,t.status transaction_status,
+                  e.contract_type,e.expected_amount,e.status escrow_status,e.hold_status,t.status transaction_status,
                   t.idempotency_key,t.request_fingerprint,t.deposit_step,t.depositor_name_encrypted,
                   t.virtual_account_id,t.virtual_account_no,t.deposit_verification_status,
                   t.verified_deposit_amount,t.depositor_name_matched,t.source_bank_code,t.source_account_encrypted
@@ -327,7 +328,7 @@ public class EscrowDepositRepository {
         return new DepositEscrow(rs.getLong("escrow_id"), rs.getLong("transaction_id"),
                 rs.getLong("service_client_id"), rs.getString("external_contract_id"),
                 rs.getString("contract_type"), integer(rs.getBigDecimal("expected_amount")),
-                rs.getString("escrow_status"), rs.getString("transaction_status"),
+                rs.getString("escrow_status"), rs.getString("hold_status"), rs.getString("transaction_status"),
                 rs.getString("idempotency_key"), rs.getString("request_fingerprint"), rs.getString("deposit_step"),
                 rs.getString("depositor_name_encrypted"), rs.getString("virtual_account_id"),
                 rs.getString("virtual_account_no"), rs.getString("deposit_verification_status"),

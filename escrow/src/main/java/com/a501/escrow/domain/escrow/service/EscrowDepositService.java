@@ -291,14 +291,14 @@ public class EscrowDepositService {
         AuthenticatedCaller.Client caller = client(request.header(), "inquireEscrowList", ApiRequirements.read());
         List<EscrowDtos.SummaryItem> items = repository.list(caller.serviceClientId(), request.contractIds(), request.status())
                 .stream().map(row -> new EscrowDtos.SummaryItem(row.escrowId(), row.contractId(),
-                        row.escrowStatus(), completed(row) ? row.amount() : ZERO, false)).toList();
+                        row.escrowStatus(), completed(row) ? row.amount() : ZERO, held(row))).toList();
         return new EscrowDtos.ListRecord(items.size(), items);
     }
 
     private EscrowDtos.InquireRecord detail(DepositEscrow escrow) {
         BigInteger deposited = completed(escrow) ? escrow.amount() : ZERO;
         return new EscrowDtos.InquireRecord(escrow.escrowId(), escrow.contractId(), escrow.escrowStatus(),
-                deposited, ZERO, ZERO, ZERO, deposited, false, repository.transactions(escrow.escrowId()));
+                deposited, ZERO, ZERO, ZERO, deposited, held(escrow), repository.transactions(escrow.escrowId()));
     }
 
     private EscrowDtos.AmountRecord amount(DepositEscrow escrow) {
@@ -309,6 +309,10 @@ public class EscrowDepositService {
 
     private boolean completed(DepositEscrow escrow) {
         return COMPLETED.equals(escrow.transactionStatus());
+    }
+
+    private boolean held(DepositEscrow escrow) {
+        return "HELD".equals(escrow.holdStatus());
     }
 
     private Operation claim(long transactionId, String step) {
