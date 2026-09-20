@@ -2,6 +2,7 @@ package com.a501.escrow.domain.escrow.repository;
 
 import java.math.BigInteger;
 import java.sql.Types;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -224,9 +225,48 @@ public class EscrowSettlementRepository {
     public void finishAttempt(long id, String status, String externalId, String code) {
         jdbc.sql("""
                 UPDATE financial_operation_attempts SET status=:status,external_transaction_id=:externalId,
-                    response_code=:code,responded_at=clock_timestamp() WHERE id=:id
+                    response_code=:code,
+                    responded_at=CASE WHEN :status='UNKNOWN' THEN NULL ELSE clock_timestamp() END
+                WHERE id=:id
                 """).param(STATUS, status).param("externalId", externalId, Types.VARCHAR)
                 .param("code", code, Types.VARCHAR).param("id", id).update();
+    }
+
+    public List<UnknownTransfer> unknownTransfers() {
+        return jdbc.sql("""
+                SELECT t.id,t.settlement_id,t.escrow_id,t.transaction_type,t.amount,
+                       min(a.dispatched_at) dispatched_at
+                FROM escrow_transactions t
+                JOIN financial_operation_attempts a ON a.transaction_id=t.id
+                WHERE t.status='UNKNOWN'
+                  AND t.transaction_type IN ('RELEASE','FEE','REFUND')
+                  AND a.status='UNKNOWN'
+                  AND a.step IN ('PAYOUT_TRANSFER','FEE_TRANSFER','REFUND_TRANSFER')
+                GROUP BY t.id,t.settlement_id,t.escrow_id,t.transaction_type,t.amount
+                ORDER BY t.id
+                """).query((rs, row) -> new UnknownTransfer(rs.getLong("id"),
+                        rs.getLong("settlement_id"), rs.getLong("escrow_id"),
+                        rs.getString("transaction_type"), rs.getBigDecimal("amount").toBigIntegerExact(),
+                        rs.getObject("dispatched_at", OffsetDateTime.class))).list();
+    }
+
+    public void resolveUnknown(long transactionId, long queryAttemptId, String externalId) {
+        jdbc.sql("""
+                UPDATE financial_operation_attempts SET status='SUCCEEDED',external_transaction_id=:externalId,
+                    response_code='RECOVERED' WHERE transaction_id=:transactionId AND status='UNKNOWN'
+                """).param("externalId", externalId).param("transactionId", transactionId).update();
+        finishAttempt(queryAttemptId, "SUCCEEDED", externalId, "H0000");
+        complete(transactionId, externalId);
+    }
+
+    public void auditRecovery(UnknownTransfer row, String action, String evidence, String result) {
+        jdbc.sql("""
+                INSERT INTO operation_audit_events(escrow_id,transaction_id,actor_type,actor_id,action,reason,
+                    evidence_reference,previous_status,resulting_status)
+                VALUES(:escrowId,:transactionId,'SYSTEM','financial-recovery',:action,
+                    'R-PAY-12 financial call result inquiry',:evidence,'UNKNOWN',:result)
+                """).param("escrowId", row.escrowId()).param("transactionId", row.transactionId())
+                .param("action", action).param("evidence", evidence).param("result", result).update();
     }
 
     public record FundingSource(String bankCode, String accountEncrypted) {
@@ -245,5 +285,9 @@ public class EscrowSettlementRepository {
     private record TransactionDraft(long clientId, long escrowId, long settlementId, String type,
             BigInteger amount, String reference, String key, String fingerprint,
             String bankCode, String encryptedAccount, String name) {
+    }
+
+    public record UnknownTransfer(long transactionId, long settlementId, long escrowId,
+            String type, BigInteger amount, OffsetDateTime dispatchedAt) {
     }
 }

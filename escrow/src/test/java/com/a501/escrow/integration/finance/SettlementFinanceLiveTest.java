@@ -26,14 +26,18 @@ class SettlementFinanceLiveTest {
                 Clock.systemUTC());
 
         FinanceClient.AccountHolder escrowHolder = client.inquireAccountHolder(userKey, escrowAccount);
+        var escrowBalance = client.inquireAccountBalance(userKey, escrowAccount);
         assertThat(escrowHolder.accountNo()).isEqualTo(escrowAccount);
         assertThat(escrowHolder.bankCode()).isEqualTo("001");
         assertThat(escrowHolder.userName()).isNotBlank();
+        assertThat(escrowBalance).isNotNegative();
 
         if (feeAccount != null && !feeAccount.isBlank()) {
             FinanceClient.AccountHolder feeHolder = client.inquireAccountHolder(userKey, feeAccount);
+            var feeBalance = client.inquireAccountBalance(userKey, feeAccount);
             assertThat(feeHolder.accountNo()).isEqualTo(feeAccount).isNotEqualTo(escrowAccount);
             assertThat(feeHolder.userName()).isEqualTo(escrowHolder.userName());
+            assertThat(feeBalance).isNotNegative();
         }
     }
 
