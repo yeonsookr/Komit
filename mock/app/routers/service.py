@@ -11503,6 +11503,110 @@ def download_deliverable(
 ContractResponse.model_rebuild()
 WriteDevelopmentContractRequest.model_rebuild()
 
+
+# =========================================================================== #
+# 공통 실시간 통신 — 일회용 WebSocket 티켓
+# =========================================================================== #
+
+
+class RealtimeTicketRequest(BaseModel):
+    channel: Literal["CONSULTING_SESSION", "CHAT_ROOM"] = Field(
+        description="티켓으로 열 연결의 종류. 화상 세션과 채팅 연결은 서로 분리한다.",
+        examples=["CONSULTING_SESSION"],
+    )
+    channelId: str = Field(
+        min_length=1,
+        max_length=50,
+        pattern=r".*\S.*",
+        description=(
+            "연결할 컨설팅 세션 또는 채팅방 식별자. CONSULTING_SESSION이면 sessionId, "
+            "CHAT_ROOM이면 chatRefId다."
+        ),
+        examples=["55"],
+    )
+
+
+class RealtimeTicketResponse(BaseModel):
+    ticket: str = Field(
+        description=(
+            "WebSocket handshake에 한 번만 사용하는 짧은 수명의 티켓. 영속 DB에 저장하는 "
+            "데이터가 아니라 Redis에서 만료·소비되므로 ERD 대상이 아니다. (R-RT-01)"
+        ),
+        examples=["mock-realtime-ticket-once"],
+    )
+
+
+REALTIME_CHANNEL_FORBIDDEN = (
+    "CHANNEL_FORBIDDEN",
+    "이 연결로는 다룰 수 없는 대상입니다.",
+)
+REALTIME_CHANNEL_FORBIDDEN_EXAMPLE = {
+    "code": REALTIME_CHANNEL_FORBIDDEN[0],
+    "message": REALTIME_CHANNEL_FORBIDDEN[1],
+}
+
+
+@router.post(
+    "/realtime/tickets",
+    response_model=RealtimeTicketResponse,
+    tags=["공통 실시간 통신"],
+    responses={
+        200: {
+            "description": "일회용 연결 티켓 발급",
+            "content": {
+                "application/json": {
+                    "example": {"ticket": "mock-realtime-ticket-once"}
+                }
+            },
+        },
+        401: {
+            "model": ErrorResponse,
+            "description": "로그인하지 않았거나 액세스 토큰이 만료됨",
+            "content": {"application/json": {"example": UNAUTHORIZED_EXAMPLE}},
+        },
+        403: {
+            "model": ErrorResponse,
+            "description": "요청한 세션 또는 채팅방에 참여할 권한이 없음",
+            "content": {
+                "application/json": {"example": REALTIME_CHANNEL_FORBIDDEN_EXAMPLE}
+            },
+        },
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": "INVALID_REQUEST",
+                        "message": "요청 형식이 올바르지 않습니다.",
+                        "errors": [
+                            {"field": "channelId", "reason": "1자 이상이어야 합니다."}
+                        ],
+                    }
+                }
+            },
+        },
+    },
+    summary="WebSocket 연결 티켓 발급",
+    description=(
+        "인증된 사용자가 Raw WebSocket 연결을 열기 전에 짧은 수명의 일회용 티켓을 "
+        "발급받는다. 티켓은 사용자, 채널, 채널 식별자와 허용 기능에 묶이며 한 번 사용하면 "
+        "폐기된다. (R-RT-01)\n\n"
+        "- **200**: 요청한 세션 또는 채팅방에 참여할 수 있을 때\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았거나 액세스 토큰이 만료되었을 때\n"
+        "- **403 / CHANNEL_FORBIDDEN**: 요청한 세션 또는 채팅방의 참가자가 아닐 때. "
+        "목에서는 `channelId`가 `403`이면 재현한다\n"
+        "- **422 / INVALID_REQUEST**: 채널이 허용된 값이 아니거나 channelId가 비었거나 "
+        "50자를 초과했을 때"
+    ),
+)
+def issue_realtime_ticket(
+    payload: RealtimeTicketRequest,
+) -> RealtimeTicketResponse | JSONResponse:
+    if payload.channelId == "403":
+        return _error_response(403, REALTIME_CHANNEL_FORBIDDEN)
+    return RealtimeTicketResponse(ticket="mock-realtime-ticket-once")
+
 # 개발자가 상담 요청을 수락·거절하는 기능은 만들지 않기로 했다.
 # ERD의 recommendation_items.status(RECOMMENDATION_DEV_RESPONSE)는 쓰지 않는다.
 # 의뢰인이 상담을 요청하면 방이 바로 열린다.
@@ -11584,6 +11688,14 @@ SERVICE_TAGS = [
             "**규약의 기준 API.** 성공·실패 응답 스키마, 상태코드, description 작성 "
             "방식을 이 두 API에 맞춘다. 도메인 데이터를 다루지 않는다.\n\n"
             "규약이 바뀌면 여기를 먼저 고치고 나머지를 따라 맞춘다."
+        ),
+    },
+    {
+        "name": "공통 실시간 통신",
+        "description": (
+            "Raw WebSocket 연결 전에 필요한 공통 REST 계약이다. WebRTC와 채팅은 같은 "
+            "Envelope를 사용하지만 티켓과 물리 연결은 각각 발급하고 연다. 티켓은 Redis에서 "
+            "짧게 유지되며 한 번 사용하면 폐기된다."
         ),
     },
     {
