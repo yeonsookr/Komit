@@ -27,6 +27,7 @@ import com.a501.escrow.config.FinanceProperties;
 import com.a501.escrow.domain.escrow.dto.EscrowDtos;
 import com.a501.escrow.domain.escrow.repository.DepositEscrow;
 import com.a501.escrow.domain.escrow.repository.EscrowDepositRepository;
+import com.a501.escrow.domain.escrow.repository.EscrowSettlementRepository;
 import com.a501.escrow.domain.member.repository.MemberAccountProvision;
 import com.a501.escrow.domain.member.repository.MemberAccountRepository;
 import com.a501.escrow.integration.finance.FinanceClient;
@@ -37,14 +38,15 @@ class EscrowDepositServiceTest {
     void createsVerifiesSettlesAndClosesDepositExactlyOnce() {
         InternalApiSecurity security = mock(InternalApiSecurity.class);
         EscrowDepositRepository repository = mock(EscrowDepositRepository.class);
+        EscrowSettlementRepository settlements = mock(EscrowSettlementRepository.class);
         MemberAccountRepository members = mock(MemberAccountRepository.class);
         RequestFingerprint fingerprints = mock(RequestFingerprint.class);
         SensitiveDataHasher hasher = mock(SensitiveDataHasher.class);
         FieldEncryption encryption = mock(FieldEncryption.class);
         FinanceClient finance = mock(FinanceClient.class);
         FinanceProperties properties = new FinanceProperties(true, "https://finance.example", "api-key",
-                "Asia/Seoul", "product", "escrow-key", "0010000000000000", 30);
-        EscrowDepositService service = new EscrowDepositService(security, repository, members, fingerprints,
+                "Asia/Seoul", "product", "escrow-key", "0010000000000000", "0010000000000001", 30);
+        EscrowDepositService service = new EscrowDepositService(security, repository, settlements, members, fingerprints,
                 hasher, encryption, finance, properties,
                 Clock.fixed(Instant.parse("2026-09-19T12:00:00Z"), ZoneOffset.UTC), "pod-1");
         EscrowRequestHeader header = new EscrowRequestHeader("createEscrow", "20260919", "210000",

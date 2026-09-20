@@ -92,6 +92,13 @@ public class SsafyFinanceClient implements FinanceClient {
     }
 
     @Override
+    public AccountHolder inquireAccountHolder(String userKey, String accountNo) {
+        JsonNode record = requiredRecord(postWithHeader("inquireDemandDepositAccount", userKey,
+                Map.of(ACCOUNT_NO, accountNo)));
+        return new AccountHolder(text(record, "bankCode"), text(record, ACCOUNT_NO), text(record, "userName"));
+    }
+
+    @Override
     public String depositSeedMoney(String userKey, String accountNo, BigInteger amount, String requestReference) {
         JsonNode depositRecord = requiredRecord(postWithHeader("updateDemandDepositAccountDeposit", userKey, requestReference, Map.of(
                 ACCOUNT_NO, accountNo,

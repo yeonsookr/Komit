@@ -20,6 +20,7 @@ import com.a501.escrow.config.FinanceProperties;
 import com.a501.escrow.domain.escrow.dto.EscrowDtos;
 import com.a501.escrow.domain.escrow.repository.DepositEscrow;
 import com.a501.escrow.domain.escrow.repository.EscrowDepositRepository;
+import com.a501.escrow.domain.escrow.repository.EscrowSettlementRepository;
 import com.a501.escrow.domain.member.repository.MemberAccountProvision;
 import com.a501.escrow.domain.member.repository.MemberAccountRepository;
 import com.a501.escrow.integration.finance.FinanceApiException;
@@ -42,6 +43,7 @@ public class EscrowDepositService {
 
     private final InternalApiSecurity security;
     private final EscrowDepositRepository repository;
+    private final EscrowSettlementRepository settlements;
     private final MemberAccountRepository members;
     private final RequestFingerprint fingerprints;
     private final SensitiveDataHasher hasher;
@@ -53,11 +55,13 @@ public class EscrowDepositService {
     private final ZoneId financeZone;
 
     public EscrowDepositService(InternalApiSecurity security, EscrowDepositRepository repository,
+            EscrowSettlementRepository settlements,
             MemberAccountRepository members, RequestFingerprint fingerprints, SensitiveDataHasher hasher,
             FieldEncryption encryption, FinanceClient finance, FinanceProperties properties, Clock clock,
             @Value("${POD_NAME:local-writer}") String instanceId) {
         this.security = security;
         this.repository = repository;
+        this.settlements = settlements;
         this.members = members;
         this.fingerprints = fingerprints;
         this.hasher = hasher;
@@ -297,8 +301,11 @@ public class EscrowDepositService {
 
     private EscrowDtos.InquireRecord detail(DepositEscrow escrow) {
         BigInteger deposited = completed(escrow) ? escrow.amount() : ZERO;
+        var totals = settlements.totals(escrow.escrowId());
         return new EscrowDtos.InquireRecord(escrow.escrowId(), escrow.contractId(), escrow.escrowStatus(),
-                deposited, ZERO, ZERO, ZERO, deposited, held(escrow), repository.transactions(escrow.escrowId()));
+                deposited, totals.released(), totals.fee(), totals.refunded(),
+                deposited.subtract(totals.released()).subtract(totals.fee()).subtract(totals.refunded()),
+                held(escrow), repository.transactions(escrow.escrowId()));
     }
 
     private EscrowDtos.AmountRecord amount(DepositEscrow escrow) {

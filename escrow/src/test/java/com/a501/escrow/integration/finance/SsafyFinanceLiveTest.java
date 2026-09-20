@@ -21,7 +21,7 @@ class SsafyFinanceLiveTest {
         SsafyFinanceClient client = new SsafyFinanceClient(RestClient.builder(), JsonMapper.builder().build(),
                 new FinanceProperties(true, "https://finopenapi.ssafy.io/ssafy", apiKey,
                         "Asia/Seoul", "001-1-231ecb61d2554c", "unused",
-                        "0010000000000000", 30), Clock.systemUTC());
+                        "0010000000000000", "0010000000000001", 30), Clock.systemUTC());
 
         FinanceClient.UserRegistration user = client.findUser(userId).orElseThrow();
         FinanceClient.DemandDepositAccount account = client.findDemandDepositAccounts(user.userKey()).stream()
@@ -29,10 +29,13 @@ class SsafyFinanceLiveTest {
                 .findFirst().orElseThrow();
         var transactions = client.inquireTransactions(user.userKey(), account.accountNo(),
                 LocalDate.now().minusDays(1), LocalDate.now(), "A", "DESC");
+        var holder = client.inquireAccountHolder(user.userKey(), account.accountNo());
 
         assertThat(user.userId()).isEqualTo(userId);
         assertThat(account.bankCode()).isEqualTo("001");
         assertThat(account.currency()).isEqualTo("KRW");
+        assertThat(holder.accountNo()).isEqualTo(account.accountNo());
+        assertThat(holder.userName()).isNotBlank();
         assertThat(transactions).anyMatch(transaction -> "50000000".equals(transaction.transactionBalance()));
     }
 

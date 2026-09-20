@@ -16,6 +16,7 @@ public record FinanceProperties(
         @NotBlank String accountTypeUniqueNo,
         @NotBlank String escrowUserKey,
         @NotBlank String escrowAccountNo,
+        @NotBlank String feeAccountNo,
         @Positive @Max(30) int virtualAccountValidityDays
 ) {
 }

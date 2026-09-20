@@ -32,12 +32,18 @@ ESCROW_API_BASE_URL=${ESCROW_API_BASE_URL:-}
 : "${SSAFY_DEMAND_DEPOSIT_PRODUCT_NO:?SSAFY_DEMAND_DEPOSIT_PRODUCT_NO is required}"
 : "${SSAFY_ESCROW_USER_KEY:?SSAFY_ESCROW_USER_KEY is required}"
 : "${SSAFY_ESCROW_ACCOUNT_NO:?SSAFY_ESCROW_ACCOUNT_NO is required}"
+: "${SSAFY_FEE_ACCOUNT_NO:?SSAFY_FEE_ACCOUNT_NO is required}"
 : "${SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS:?SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS is required}"
 
 case "$SSAFY_ESCROW_ACCOUNT_NO" in
   *[!0-9]*|'') echo "SSAFY_ESCROW_ACCOUNT_NO must contain exactly 16 digits" >&2; exit 1 ;;
 esac
 [ "${#SSAFY_ESCROW_ACCOUNT_NO}" -eq 16 ] || { echo "SSAFY_ESCROW_ACCOUNT_NO must contain exactly 16 digits" >&2; exit 1; }
+case "$SSAFY_FEE_ACCOUNT_NO" in
+  *[!0-9]*|'') echo "SSAFY_FEE_ACCOUNT_NO must contain exactly 16 digits" >&2; exit 1 ;;
+esac
+[ "${#SSAFY_FEE_ACCOUNT_NO}" -eq 16 ] || { echo "SSAFY_FEE_ACCOUNT_NO must contain exactly 16 digits" >&2; exit 1; }
+[ "$SSAFY_FEE_ACCOUNT_NO" != "$SSAFY_ESCROW_ACCOUNT_NO" ] || { echo "SSAFY_FEE_ACCOUNT_NO must differ from SSAFY_ESCROW_ACCOUNT_NO" >&2; exit 1; }
 case "$SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS" in
   *[!0-9]*|'') echo "SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS must be a positive integer" >&2; exit 1 ;;
 esac
@@ -192,6 +198,7 @@ EOF
   config_literal SSAFY_FINANCE_API_KEY "$SSAFY_FINANCE_API_KEY"
   config_literal SSAFY_ESCROW_USER_KEY "$SSAFY_ESCROW_USER_KEY"
   config_literal SSAFY_ESCROW_ACCOUNT_NO "$SSAFY_ESCROW_ACCOUNT_NO"
+  config_literal SSAFY_FEE_ACCOUNT_NO "$SSAFY_FEE_ACCOUNT_NO"
 } >> "$WORK_DIR/apps/kustomization.yaml"
 kubectl apply -k "$WORK_DIR/apps"
 rollout() {

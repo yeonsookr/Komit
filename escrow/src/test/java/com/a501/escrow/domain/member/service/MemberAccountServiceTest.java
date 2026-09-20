@@ -39,7 +39,7 @@ class MemberAccountServiceTest {
         MemberAccountService service = new MemberAccountService(security, repository, fingerprint, hasher,
                 encryption, finance, new FinanceProperties(
                         false, "https://finance.example", "test-api-key", "Asia/Seoul", "product-1",
-                        "unused", "0010000000000000", 30), clock);
+                        "unused", "0010000000000000", "0010000000000001", 30), clock);
         EscrowRequestHeader header = header("createMemberAccount", "member-key", null);
         MemberAccountDtos.CreateRequest request = new MemberAccountDtos.CreateRequest(header, "new@komit.example");
         MemberAccountProvision initial = provision("USER_REGISTER", null, null, null);
