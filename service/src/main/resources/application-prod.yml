@@ -18,6 +18,11 @@ app:
   auth:
     user-jwt-secret: ${KOMIT_USER_JWT_SECRET}
     kakao-token-encryption-key: ${KAKAO_TOKEN_ENCRYPTION_KEY}
+  account:
+    encryption-key: ${ACCOUNT_DATA_ENCRYPTION_KEY}
+  escrow:
+    base-url: ${ESCROW_API_BASE_URL}
+    client-api-key: ${ESCROW_CLIENT_API_KEY}
   kakao:
     client-id: ${KAKAO_CLIENT_ID}
     client-secret: ${KAKAO_CLIENT_SECRET}

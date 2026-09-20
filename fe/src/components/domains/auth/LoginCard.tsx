@@ -43,8 +43,7 @@ export interface LoginCardProps {
 /**
  * LoginCard — 「카카오로 시작하기」 하나만 있는 로그인 카드.
  *
- * 가입 화면과 약관 동의 화면이 따로 없습니다. 처음 들어온 사용자는 이 버튼 하나로
- * 가입까지 끝나고, 필수 약관 동의는 아래 안내로 갈음합니다(목 명세 영역 1).
+ * 처음 들어온 사용자는 카카오 로그인 뒤 가입 약관 화면으로 이동합니다.
  *
  * 버튼은 이동만 하므로 `<button>` 이 아니라 링크입니다. 목적지인 인가 시작
  * 경로는 Route Handler(`app/api/auth/kakao`)가 받아 카카오 로그인 화면으로 보냅니다.
@@ -86,7 +85,7 @@ export function LoginCard({ next, errorCode }: Readonly<LoginCardProps>) {
 
       <div className="mt-7 border-t border-line-subtle pt-5">
         <p className="text-[13px] leading-6 text-fg-muted">
-          계속하시면 아래 약관에 동의하신 것으로 간주합니다.
+          처음 가입하신다면 다음 화면에서 필수 약관을 확인하고 동의할 수 있습니다.
         </p>
         {/* R-LEG-01 — 통신판매중개자 고지. 문구를 바꿀 때는 규칙서를 함께 봅니다. */}
         <p className="mt-2 text-[13px] leading-6 text-fg-muted">

@@ -660,10 +660,28 @@ class KakaoLoginResponse(TokenResponse):
     """카카오 로그인 응답. 토큰 응답에 가입 여부와 사용자 정보를 더한다."""
 
     isNewUser: bool = Field(
-        description="이번 로그인으로 새로 가입했는지. 참이면 처음 들어온 사용자다.",
+        description="가입을 완료하지 않았는지. 첫 로그인 또는 중단한 가입이면 true다.",
         examples=[False],
     )
     user: LoginUserResponse = Field(description="로그인한 사용자.")
+
+
+class RequiredTermsResponse(BaseModel):
+    """가입 화면에서 확인하는 필수 약관 동의 상태. settings의 네 필드다."""
+
+    isEscrowTermsAgreed: bool = Field(description="에스크로 약관 동의 여부.")
+    isPrivacyCollectAgreed: bool = Field(description="개인정보 수집 동의 여부.")
+    isPrivacyThirdPartyAgreed: bool = Field(description="개인정보 제3자 제공 동의 여부.")
+    isServiceTermsAgreed: bool = Field(description="서비스 이용약관 동의 여부.")
+
+
+class AgreeRequiredTermsRequest(BaseModel):
+    """가입을 계속하기 위해 각각 명시적으로 동의하는 필수 약관."""
+
+    isEscrowTermsAgreed: bool = Field(description="에스크로 약관 동의.")
+    isPrivacyCollectAgreed: bool = Field(description="개인정보 수집 동의.")
+    isPrivacyThirdPartyAgreed: bool = Field(description="개인정보 제3자 제공 동의.")
+    isServiceTermsAgreed: bool = Field(description="서비스 이용약관 동의.")
 
 
 class RefreshTokenRequest(BaseModel):
@@ -843,6 +861,21 @@ LOGIN_EXAMPLE = {
     "user": LOGIN_USER,
 }
 
+REQUIRED_TERMS_PENDING_EXAMPLE = {
+    "isEscrowTermsAgreed": False,
+    "isPrivacyCollectAgreed": False,
+    "isPrivacyThirdPartyAgreed": False,
+    "isServiceTermsAgreed": False,
+}
+REQUIRED_TERMS_AGREED_EXAMPLE = {
+    field: True for field in REQUIRED_TERMS_PENDING_EXAMPLE
+}
+REQUIRED_TERMS_INVALID_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [{"field": "isEscrowTermsAgreed", "reason": "동의가 필요합니다."}],
+}
+
 TOKEN_EXAMPLE = {
     "accessToken": ACCESS_TOKEN,
     "refreshToken": REISSUED_REFRESH_TOKEN,
@@ -999,21 +1032,23 @@ def get_featured_developers(
     description=(
         "**화면 — `1_로그인` › 카카오로 시작하기**\n\n"
         "카카오 로그인 화면에서 받은 인가 코드로 로그인한다. 처음 들어온 사용자라면 "
-        "이 요청으로 가입까지 끝나며, 별도의 가입 화면이나 약관 동의 화면은 없다.\n\n"
-        "처음 가입할 때는 에스크로의 `createMemberAccount` API로 SSAFY 금융망 "
+        "가입 진행 상태로 저장하고 `isNewUser`를 true로 돌려준다. 중단한 가입으로 "
+        "다시 로그인해도 true다. 가입 화면에서 필수 약관에 "
+        "명시적으로 동의한 뒤 계좌 등록을 선택하거나 건너뛴다.\n\n"
+        "가입 완료 요청 시 에스크로의 `createMemberAccount` API로 SSAFY 금융망 "
         "`userKey`와 개인 계좌 발급을 요청한 뒤, 결과를 Komit Service DB에 저장한다. "
         "이 금융 정보까지 "
         "준비되어야 가입이 완료된 것으로 처리한다. 기존 사용자의 로그인에서는 다시 "
         "발급하지 않는다.\n\n"
-        "로그인 화면이 '계속하시면 아래 이용약관과 개인정보 처리방침에 동의하신 것으로 "
-        "간주합니다'라고 안내하므로 필수 약관 동의는 이 요청으로 함께 처리된다. "
-        "개발자 판매자 약관만 선택이며, 개발자 프로필을 만들 때 그 행위로 갈음한다.\n\n"
+        "로그인만으로 `settings`의 필수 약관 동의 값은 바뀌지 않는다. "
+        "동의 화면이 `PUT /api/settings/terms`를 호출해야 값이 기록된다. "
+        "개발자 판매자 약관은 개발자 프로필을 만들 때 별도로 처리한다.\n\n"
         "응답의 `accessToken`·`refreshToken`·`expiresIn`은 코밋 서버가 발급만 하는 값이라 "
         "DB에 저장하지 않고 ERD에도 없다(`mock/AGENTS.md` ERD 예외). ERD의 "
         "`users.kakao_refresh_token`은 카카오 API를 부를 때 쓰는 카카오 쪽 토큰으로, 여기 "
         "`refreshToken`과 다르다. 두 토큰의 형식과 만료는 `docs/jwt-samples.md`를, "
         "리프레시 토큰 저장은 `docs/BACKEND_CONVENTIONS.md` 6.4(Redis, TTL 만료)를 따른다.\n\n"
-        "- **200**: 로그인에 성공했을 때. 이번에 새로 가입했으면 `isNewUser`가 true다\n"
+        "- **200**: 로그인에 성공했을 때. 가입을 마치지 않았으면 `isNewUser`가 true다\n"
         "- **401 / KAKAO_AUTH_FAILED**: `code`가 `invalid-code`일 때. 인가 코드가 "
         "만료되었거나 이미 쓴 값이다. 계정이 있는지 없는지는 구분해 알려주지 않는다\n"
         "- **422 / INVALID_REQUEST**: `code`나 `redirectUri`가 없을 때\n"
@@ -1037,6 +1072,133 @@ def login_with_kakao(request: KakaoLoginRequest) -> KakaoLoginResponse | JSONRes
         isNewUser=request.code == NEW_USER_CODE,
         user=LoginUserResponse(**LOGIN_USER),
     )
+
+
+@router.get(
+    "/settings/terms",
+    response_model=RequiredTermsResponse,
+    tags=["1 랜딩 · 로그인"],
+    responses={
+        200: {"content": {"application/json": {"example": REQUIRED_TERMS_AGREED_EXAMPLE}}},
+        **AREA1_UNAUTHORIZED,
+        500: AREA1_ERRORS[500],
+    },
+    summary="필수 약관 동의 상태 조회",
+    description=(
+        "**화면 — 가입 › 약관 동의**\n\n"
+        "로그인한 자신의 `settings`에 저장된 필수 약관 동의 네 항목을 조회한다. "
+        "가입 도중 화면을 닫았다가 다시 들어와도 미동의 상태를 확인할 수 있다. "
+        "사용자 식별자는 토큰에서만 읽는다.\n\n"
+        "- **200**: 현재 동의 상태를 반환한다\n"
+        "- **401 / UNAUTHORIZED**: 토큰이 없거나 만료·위조되었을 때\n"
+        "- **500 / INTERNAL_ERROR**: 상태를 읽지 못했을 때"
+    ),
+)
+def get_required_terms() -> RequiredTermsResponse:
+    # 목은 상태를 저장하지 않으므로 이미 동의한 사용자 예시를 고정 반환한다.
+    return RequiredTermsResponse(**REQUIRED_TERMS_AGREED_EXAMPLE)
+
+
+@router.put(
+    "/settings/terms",
+    response_model=RequiredTermsResponse,
+    tags=["1 랜딩 · 로그인"],
+    responses={
+        200: {"content": {"application/json": {"example": REQUIRED_TERMS_AGREED_EXAMPLE}}},
+        **AREA1_UNAUTHORIZED,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "필수 약관 누락 또는 미동의",
+            "content": {"application/json": {"example": REQUIRED_TERMS_INVALID_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
+    },
+    summary="필수 약관 동의",
+    description=(
+        "**화면 — 가입 › 약관 동의 › 계속하기**\n\n"
+        "본인이 필수 약관 네 항목을 각각 확인하고 동의했을 때만 저장한다. "
+        "하나라도 없거나 false이면 저장하지 않는다. 같은 동의를 다시 보내도 결과는 같다. "
+        "`settings.is_seller_terms_agreed`는 이 요청으로 바꾸지 않는다. "
+        "사용자 식별자는 토큰에서만 읽는다.\n\n"
+        "- **200**: 네 항목의 동의가 저장되었을 때\n"
+        "- **401 / UNAUTHORIZED**: 토큰이 없거나 만료·위조되었을 때\n"
+        "- **422 / INVALID_REQUEST**: 항목이 없거나 false일 때\n"
+        "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
+    ),
+)
+def agree_required_terms(request: AgreeRequiredTermsRequest) -> RequiredTermsResponse | JSONResponse:
+    missing = [
+        FieldError(field=name, reason="동의가 필요합니다.")
+        for name, agreed in request.model_dump().items()
+        if not agreed
+    ]
+    if missing:
+        return JSONResponse(
+            status_code=422,
+            content=jsonable_encoder(
+                ValidationErrorResponse(
+                    code=INVALID_REQUEST[0], message=INVALID_REQUEST[1], errors=missing
+                )
+            ),
+        )
+    return RequiredTermsResponse(**REQUIRED_TERMS_AGREED_EXAMPLE)
+
+
+SIGNUP_PENDING = ("SIGNUP_PENDING", "가입이 아직 완료되지 않았습니다.")
+TERMS_NOT_AGREED = ("TERMS_NOT_AGREED", "필수 약관에 동의해 주세요.")
+
+
+@router.get(
+    "/auth/signup/completion",
+    status_code=204,
+    response_class=Response,
+    tags=["1 랜딩 · 로그인"],
+    responses={
+        204: {"description": "가입 완료 상태. 본문 없음."},
+        **AREA1_UNAUTHORIZED,
+        409: {"model": ErrorResponse, "description": "가입 진행 중",
+              "content": {"application/json": {"example": {"code": SIGNUP_PENDING[0], "message": SIGNUP_PENDING[1]}}}},
+        500: AREA1_ERRORS[500],
+    },
+    summary="가입 완료 상태 확인",
+    description=(
+        "가입 완료 화면에서 서버의 완료 상태를 확인한다. 사용자 식별자는 토큰에서 읽는다.\n\n"
+        "- **204**: 가입 완료 요청이 성공해 서비스 이용 상태일 때\n"
+        "- **401 / UNAUTHORIZED**: 토큰이 없거나 유효하지 않을 때\n"
+        "- **409 / SIGNUP_PENDING**: 가입 진행 중일 때"
+    ),
+)
+def get_signup_completion() -> Response:
+    return Response(status_code=204)
+
+
+@router.post(
+    "/auth/signup/completion",
+    status_code=204,
+    response_class=Response,
+    tags=["1 랜딩 · 로그인"],
+    responses={
+        204: {"description": "가입 완료. 다시 요청해도 본문 없이 204."},
+        **AREA1_UNAUTHORIZED,
+        409: {"model": ErrorResponse, "description": "필수 약관 미동의",
+              "content": {"application/json": {"example": {"code": TERMS_NOT_AGREED[0], "message": TERMS_NOT_AGREED[1]}}}},
+        503: {"model": ErrorResponse, "description": "Escrow 발급 실패 또는 결과 불명확",
+              "content": {"application/json": {"example": {"code": "ESCROW_UNAVAILABLE", "message": "지금은 계좌를 확인할 수 없습니다. 잠시 뒤 다시 시도해 주세요."}}}},
+        500: AREA1_ERRORS[500],
+    },
+    summary="가입 완료",
+    description=(
+        "**화면 — 가입 › 계좌 등록 제안 › 다음에 하기 또는 1원 인증 성공**\n\n"
+        "필수 약관에 모두 동의하고 회원 발급 계좌가 준비되면 가입을 완료한다. "
+        "계좌 등록을 건너뛰어도 회원 발급 계좌는 준비되어야 한다. 같은 요청은 멱등이다.\n\n"
+        "- **204**: 가입이 완료되었거나 이미 완료된 경우\n"
+        "- **401 / UNAUTHORIZED**: 토큰이 없거나 유효하지 않을 때\n"
+        "- **409 / TERMS_NOT_AGREED**: 필수 약관에 아직 동의하지 않았을 때\n"
+        "- **503 / ESCROW_UNAVAILABLE**: 계좌 발급을 확정할 수 없을 때. 가입 진행 상태를 유지한다"
+    ),
+)
+def complete_signup() -> Response:
+    return Response(status_code=204)
 
 
 @router.post(
@@ -8089,11 +8251,9 @@ def get_income() -> IncomeResponse:
 #       8_펼침_은행선택 · 8_아바타메뉴 · 8_회원탈퇴 · 8_알림 · 8_약관
 #       8_개발자_내프로필 · 8_내일정
 #
-# 8_약관과 8_아바타메뉴에는 API 가 없다. 약관 문서와 개정일, 사업자 정보는 서버가
-# 들고 있지 않고 화면이 가진 정적 문서이며, 아바타 메뉴는 이미 받은 값으로 그리는
-# 메뉴다. 동의 여부는 settings 에 있지만 그것을 읽고 바꾸는 API 는 두지 않는다 —
-# 필수 약관은 로그인에, 판매자 약관은 개발자 프로필을 만드는 것에 묶여 있어 따로
-# 켜고 끌 일이 없다.
+# 8_약관 문서와 8_아바타메뉴에는 별도 API가 없다. 약관 문서는 화면의 정적 문서이고,
+# 필수 약관 동의 상태는 가입 영역의 /api/settings/terms에서 관리한다. 판매자 약관
+# 동의는 개발자 프로필을 만드는 것에 묶여 있다.
 #
 # 내 프로필은 줄마다 저장하지 않는다. 화면의 저장 버튼 하나가 소개·기술·경력·작업물·
 # 가격표를 통째로 보내고, 보낸 내용으로 맞춘다. 파일만 먼저 올려 식별자를 받는다.
@@ -11837,9 +11997,12 @@ SERVICE_TAGS = [
         "name": "1 랜딩 · 로그인",
         "description": (
             "랜딩에서 무엇을 파는지 보고 로그인한다.\n\n"
-            "**화면** `1_랜딩홈` · `1_로그인`\n\n"
+            "**화면** `1_랜딩홈` · `1_로그인` · 가입 약관 동의 · 계좌 등록 제안\n\n"
             "랜딩 홈은 히어로 · 증상별로 찾기 · 추천 개발자 · 진행 순서 · 사전 점검 · "
             "푸터 여섯 섹션이 한 페이지에 들어간다.\n\n"
+            "첫 카카오 로그인으로 계정을 만든 뒤 필수 약관 네 항목을 가입 화면에서 "
+            "명시적으로 동의받는다. 로그인 안내 문구만으로 동의 처리하지 않는다. "
+            "계좌 등록은 가입 중 선택하거나 마이페이지에서 나중에 할 수 있다.\n\n"
             "**여러 영역이 함께 쓰는 API가 여기 있다.** 토큰 재발급, 로그아웃, 내 정보는 전 영역에서 부르지만 처음 나온 이 영역에만 "
             "적는다.\n\n"
             "---\n\n"
@@ -11997,10 +12160,9 @@ SERVICE_TAGS = [
             "`PUT /api/users/me/developer-profile`이 없으면 만들고 있으면 고친다. "
             "마이페이지의 「프로필 생성」과 「프로필 편집」이 같은 화면으로 오고, "
             "그 화면의 저장 버튼 하나가 두 경우를 다 맡는다.\n\n"
-            "약관 **동의 여부**는 서버가 들고 있지만 그걸 읽고 바꾸는 API는 두지 "
-            "않는다 — 필수 약관은 로그인에, 판매자 약관은 개발자 프로필을 만드는 "
-            "것에 묶여 있어 따로 켜고 끄지 않는다. 동의한 문서는 마이페이지 약관 "
-            "칸에서 본다.\n\n"
+            "필수 약관 **동의 여부**는 가입 영역의 `GET /api/settings/terms`로 조회하고 "
+            "`PUT /api/settings/terms`로 기록한다. 판매자 약관은 개발자 프로필을 만드는 "
+            "것에 묶여 있다. 약관 문서는 마이페이지 약관 칸에서 본다.\n\n"
             "**함께 쓰는 API** `GET /api/users/me` (전 영역 헤더) · "
             "`POST /api/auth/logout` · `GET /api/codes/{groupKey}` · "
             "`GET /api/settlements/income` (개발자 소득 내역의 계좌 칸)\n\n"

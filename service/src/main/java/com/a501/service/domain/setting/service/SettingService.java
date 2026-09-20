@@ -12,12 +12,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class SettingService {
     private final SettingRepository settingRepository;
 
-    /**
-     * 가입과 함께 필수 약관 동의를 기록합니다. 가입 트랜잭션 안에서 불리면 그 트랜잭션에 합류해
-     * 사용자 생성과 설정 생성이 함께 커밋되거나 함께 롤백됩니다.
-     */
+    /** 사용자 생성과 설정 생성을 한 트랜잭션에서 처리하되, 동의 값은 초기 false로 둡니다. (R-ACC-12) */
     @Transactional
-    public void createWithRequiredTerms(Integer userId) {
-        settingRepository.save(Setting.agreeRequiredTerms(userId));
+    public void createForNewUser(Integer userId) {
+        settingRepository.save(Setting.forNewUser(userId));
     }
 }

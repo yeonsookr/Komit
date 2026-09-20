@@ -44,7 +44,7 @@ public class UserService {
     }
 
     /**
-     * 카카오 계정으로 로그인하거나, 처음 들어온 사용자면 가입까지 끝냅니다.
+     * 카카오 계정으로 로그인하거나, 처음 들어온 사용자면 가입 진행 상태로 저장합니다.
      * 탈퇴한 사용자는 같은 카카오 계정으로 다시 가입할 수 없습니다. (R-AUTH-05)
      */
     @Transactional
@@ -70,6 +70,19 @@ public class UserService {
                 .orElse(false);
     }
 
+    public boolean isSignupComplete(Integer userId) {
+        return userRepository.findById(userId)
+                .map(user -> !user.isWithdrawn() && "ACTIVE".equals(user.getRecordStatus()))
+                .orElse(false);
+    }
+
+    @Transactional
+    public void completeSignup(Integer userId) {
+        if (userRepository.completeSignup(userId) == 0 && !isSignupComplete(userId)) {
+            throw new BusinessException(CommonErrorCode.UNAUTHORIZED);
+        }
+    }
+
     private UserLoginResult loginExisting(
             User user,
             KakaoUserData data,
@@ -87,11 +100,11 @@ public class UserService {
                 protectedRefreshToken,
                 data.kakaoRefreshTokenExpiresAt(),
                 now);
-        return UserLoginResult.accepted(snapshot(user), false);
+        return UserLoginResult.accepted(snapshot(user), "PENDING".equals(user.getRecordStatus()));
     }
 
     private UserLoginResult register(KakaoUserData data, String protectedRefreshToken, Instant now) {
-        User saved = userRepository.save(User.register(
+        User saved = userRepository.saveAndFlush(User.register(
                 data.kakaoId(),
                 data.nickname(),
                 data.profileImageUrl(),
@@ -102,8 +115,11 @@ public class UserService {
                 protectedRefreshToken,
                 data.kakaoRefreshTokenExpiresAt(),
                 now));
-        settingService.createWithRequiredTerms(saved.getId());
-        return UserLoginResult.accepted(snapshot(saved), true);
+        Integer userId = saved.getId();
+        UserSnapshot newUser = snapshot(saved);
+        userRepository.markSignupPending(userId);
+        settingService.createForNewUser(userId);
+        return UserLoginResult.accepted(newUser, true);
     }
 
     private UserSnapshot snapshot(User user) {

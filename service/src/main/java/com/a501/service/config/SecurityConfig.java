@@ -2,6 +2,8 @@ package com.a501.service.config;
 
 import com.a501.service.common.security.JwtAuthenticationFilter;
 import com.a501.service.common.security.SecurityErrorWriter;
+import com.a501.service.common.security.SignupAccessFilter;
+import com.a501.service.domain.user.service.UserService;
 import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -17,7 +19,8 @@ public class SecurityConfig {
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,
             JwtAuthenticationFilter jwtAuthenticationFilter,
-            SecurityErrorWriter errorWriter) throws Exception {
+            SecurityErrorWriter errorWriter,
+            UserService userService) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -40,7 +43,8 @@ public class SecurityConfig {
                         // 여기서 열어 두고 RealtimeHandshakeInterceptor 의 일회용 티켓이 관문 역할을 합니다.
                         .requestMatchers("/ws/**").permitAll()
                         .anyRequest().authenticated())
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(new SignupAccessFilter(userService, errorWriter), JwtAuthenticationFilter.class);
         return http.build();
     }
 }

@@ -1,4 +1,4 @@
-# 로컬 전체 구동. PostgreSQL·Redis와 service·escrow·fe를 한 번에 올립니다.
+# 로컬 전체 구동. 서비스별 PostgreSQL·Redis와 service·escrow·fe를 한 번에 올립니다.
 # 앱 설정값은 각 서버의 application-local.yml 기본값과 같고, 컨테이너 사이 주소만 서비스 이름으로 바꿨습니다.
 # 카카오 키처럼 개인 값은 이 디렉터리의 .env 에서 읽습니다. (.env.example 참고)
 #
@@ -15,7 +15,7 @@
 name: komit-local
 
 services:
-  # 로컬은 PostgreSQL 하나를 두 서버가 같이 씁니다. 각 서버가 application-local.yml 의 DB_* 자리로 붙고, 테이블은 JPA 가 만듭니다.
+  # Service와 Escrow는 별도 데이터베이스를 사용합니다. Escrow 스키마는 Flyway가 관리합니다.
   postgres:
     image: postgres:18.6-alpine
     ports:
@@ -28,6 +28,20 @@ services:
       - postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U service -d service"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  escrow-postgres:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_DB: escrow
+      POSTGRES_USER: escrow
+      POSTGRES_PASSWORD: escrow
+    volumes:
+      - escrow-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U escrow -d escrow"]
       interval: 5s
       timeout: 3s
       retries: 10
@@ -78,13 +92,13 @@ services:
     ports:
       - "8081:8081"
     depends_on:
-      postgres:
+      escrow-postgres:
         condition: service_healthy
     environment:
       SPRING_PROFILES_ACTIVE: local
-      DB_URL: jdbc:postgresql://postgres:5432/service
-      DB_USERNAME: service
-      DB_PASSWORD: service
+      DB_URL: jdbc:postgresql://escrow-postgres:5432/escrow
+      DB_USERNAME: escrow
+      DB_PASSWORD: escrow
       APP_INSTANCE_ROLE: WRITER
       APP_PUBLIC_BASE_URL: http://localhost:8081
       ESCROW_BOOTSTRAP_CLIENT_API_KEY: ${ESCROW_CLIENT_API_KEY:-komit-backend-client-api-key-dev-only}
@@ -117,4 +131,5 @@ services:
 
 volumes:
   postgres-data:
+  escrow-postgres-data:
   redis-data:

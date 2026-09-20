@@ -49,15 +49,17 @@ public class Setting extends SoftDeleteEntity {
     @Column(name = "is_seller_terms_agreed", nullable = false)
     private boolean sellerTermsAgreed = false;
 
-    public static Setting agreeRequiredTerms(Integer userId) {
+    public static Setting forNewUser(Integer userId) {
         Setting setting = new Setting();
         setting.userId = userId;
-        setting.notificationEnabled = true;
-        setting.serviceTermsAgreed = true;
-        setting.privacyCollectAgreed = true;
-        setting.privacyThirdPartyAgreed = true;
-        setting.escrowTermsAgreed = true;
-        setting.sellerTermsAgreed = false;
         return setting;
+    }
+
+    public void agreeRequiredTerms() {
+        // R-ACC-12: 가입 화면에서 명시적으로 제출한 뒤에만 필수 약관을 동의 처리한다.
+        serviceTermsAgreed = true;
+        privacyCollectAgreed = true;
+        privacyThirdPartyAgreed = true;
+        escrowTermsAgreed = true;
     }
 }

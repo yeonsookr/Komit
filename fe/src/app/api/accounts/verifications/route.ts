@@ -11,7 +11,7 @@ function parseBody(body: unknown): RequestAccountVerificationBody | null {
   const input = body as Record<string, unknown>;
 
   if (!Number.isInteger(input.bankCodeId) || (input.bankCodeId as number) <= 0) return null;
-  if (typeof input.accountNumber !== "string" || !/^\d+$/.test(input.accountNumber)) return null;
+  if (typeof input.accountNumber !== "string" || !/^\d{16}$/.test(input.accountNumber)) return null;
   if (typeof input.accountHolder !== "string") return null;
 
   const accountHolder = input.accountHolder.trim();

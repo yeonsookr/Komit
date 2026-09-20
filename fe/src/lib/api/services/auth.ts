@@ -11,7 +11,7 @@ import type {
 } from "@/types/auth";
 
 /**
- * 카카오 인가 코드로 로그인. 처음 들어온 사용자는 이 요청으로 가입까지 끝납니다.
+ * 카카오 인가 코드로 로그인. 처음 들어온 사용자는 필수 약관 동의 화면으로 이어집니다.
  * 401(KAKAO_AUTH_FAILED)·503(KAKAO_UNAVAILABLE) 은 그대로 ApiError 로 올라옵니다.
  */
 export async function loginWithKakao(body: KakaoLoginRequest): Promise<KakaoLoginResponse> {
@@ -34,4 +34,14 @@ export async function refreshTokens(body: RefreshTokenRequest): Promise<TokenRes
  */
 export async function logoutOnServer(): Promise<void> {
   await backendApi().post(BACKEND.AUTH_LOGOUT, undefined, await authorized());
+}
+
+/** 가입 완료 상태 확인. 진행 중이면 409(SIGNUP_PENDING). */
+export async function getSignupCompletion(): Promise<void> {
+  await backendApi().get(BACKEND.SIGNUP_COMPLETION, await authorized());
+}
+
+/** 약관과 회원 발급 계좌가 준비된 경우에만 가입을 완료합니다. */
+export async function completeSignup(): Promise<void> {
+  await backendApi().post(BACKEND.SIGNUP_COMPLETION, undefined, await authorized());
 }
