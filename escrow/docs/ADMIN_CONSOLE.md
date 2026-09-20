@@ -7,6 +7,8 @@ Escrow 운영 콘솔은 별도 SPA가 아니라 Escrow Spring Boot 애플리케�
 - 로컬: `http://localhost:8081/admin/login`
 - 운영: `https://komit.site/escrow/admin/login`
 
+`https://komit.site/escrow`는 nginx에서 `/escrow/`로 정규화되고, Escrow 루트는 `/admin`으로 이동한다. 따라서 정상 구성에서는 Base URL로 접속해도 운영 로그인 화면에 도착한다. nginx에 `location = /escrow { return 308 /escrow/; }`가 없으면 요청이 기본 FE location으로 빠져 카카오 로그인 화면이 나타날 수 있다.
+
 ## 제공 정보
 
 - 전체·활성·동결·종료 에스크로 건수

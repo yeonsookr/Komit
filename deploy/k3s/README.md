@@ -176,6 +176,11 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # 슬래시 없는 /escrow가 위의 FE location으로 빠지지 않도록 정규화합니다.
+    location = /escrow {
+        return 308 /escrow/;
+    }
+
     location /escrow/ {
         proxy_pass http://komit_escrow/;
         proxy_http_version 1.1;

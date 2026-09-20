@@ -12,6 +12,11 @@ public class AdminController {
         this.dashboardService = dashboardService;
     }
 
+    @GetMapping("/")
+    String root() {
+        return "redirect:/admin";
+    }
+
     @GetMapping("/admin/login")
     String login() {
         return "admin/login";
