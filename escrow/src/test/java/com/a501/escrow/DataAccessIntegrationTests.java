@@ -264,6 +264,32 @@ class DataAccessIntegrationTests {
                 .isIn("escrow-pod-a", "escrow-pod-b");
     }
 
+    @Test
+    void onlyOnePodCanPrepareTheSameUnresolvedFinancialStep() {
+        CountDownLatch start = new CountDownLatch(1);
+        var first = CompletableFuture.supplyAsync(() -> prepareAfter(start, "holder-a"));
+        var second = CompletableFuture.supplyAsync(() -> prepareAfter(start, "holder-b"));
+        start.countDown();
+
+        assertThat(java.util.List.of(first.join(), second.join()))
+                .filteredOn(java.util.Optional::isPresent).hasSize(1);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM financial_operation_attempts
+                WHERE transaction_id=1 AND step='HOLDER_VERIFY'
+                  AND status IN ('REQUESTED','DISPATCHING','UNKNOWN')
+                """, Integer.class)).isEqualTo(1);
+    }
+
+    private java.util.Optional<Long> prepareAfter(CountDownLatch start, String reference) {
+        try {
+            start.await();
+            return escrowSettlementRepository.prepareAttempt(1, "HOLDER_VERIFY", reference);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(exception);
+        }
+    }
+
     private java.util.Optional<com.a501.escrow.domain.finance.repository.ClaimedFinancialOperation> claimAfter(
             CountDownLatch start, String instanceId) {
         try {
@@ -543,7 +569,11 @@ class DataAccessIntegrationTests {
                     completed_at=clock_timestamp() WHERE id=1
                 """);
         when(financeClient.inquireAccountBalance("test-escrow-user-key", "0010000000000000"))
-                .thenReturn(BigInteger.ONE);
+                .thenAnswer(invocation -> {
+                    assertThat(org.springframework.transaction.support.TransactionSynchronizationManager
+                            .isActualTransactionActive()).isFalse();
+                    return BigInteger.ONE;
+                });
 
         var result = reconciliationService.inquire(new ReconciliationDtos.Request(
                 validHeader("inquireReconciliation", "dev-only-operator-client-api-key", null, null), 7));

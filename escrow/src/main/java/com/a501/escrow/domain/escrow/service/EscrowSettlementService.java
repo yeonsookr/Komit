@@ -169,7 +169,7 @@ public class EscrowSettlementService {
             if (!"PROCESSING".equals(current.status()) && !"PENDING".equals(current.status())) return;
         }
         try {
-            verifyHolder(current, header);
+            if (!verifyHolder(current, header)) return;
             current = settlements.findById(current.id()).orElseThrow();
             settlements.processing(current.id());
             Attempt attempt = claim(current.id(), transferStep);
@@ -185,9 +185,9 @@ public class EscrowSettlementService {
         }
     }
 
-    private void verifyHolder(SettlementTransaction row, EscrowRequestHeader header) {
+    private boolean verifyHolder(SettlementTransaction row, EscrowRequestHeader header) {
         Attempt attempt = claim(row.id(), "HOLDER_VERIFY");
-        if (attempt == null) return;
+        if (attempt == null) return false;
         String account = encryption.decrypt(row.recipientAccountEncrypted());
         FinanceClient.AccountHolder holder;
         try {
@@ -210,6 +210,7 @@ public class EscrowSettlementService {
         }
         if ("FEE".equals(row.type())) settlements.recipientName(row.id(), holder.userName());
         settlements.finishAttempt(attempt.id(), "SUCCEEDED", account, "H0000");
+        return true;
     }
 
     private void transfer(SettlementTransaction row, Attempt attempt) {
@@ -279,7 +280,9 @@ public class EscrowSettlementService {
 
     private Attempt claim(long transactionId, String step) {
         String reference = nextReference();
-        long id = settlements.prepareAttempt(transactionId, step, reference);
+        var prepared = settlements.prepareAttempt(transactionId, step, reference);
+        if (prepared.isEmpty()) return null;
+        long id = prepared.orElseThrow();
         return settlements.claimAttempt(id, instanceId)
                 ? new Attempt(id, settlements.attemptReference(id)) : null;
     }

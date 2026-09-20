@@ -4,6 +4,7 @@ import java.math.BigInteger;
 import java.util.List;
 
 import com.a501.escrow.common.api.EscrowRequestHeader;
+import com.a501.escrow.domain.common.Money;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -25,6 +26,11 @@ public final class EscrowDtos {
             @NotBlank @Pattern(regexp = "\\d{3}") String withdrawalBankCode,
             @NotBlank @Pattern(regexp = "\\d{16}") String withdrawalAccountNo
     ) {
+        public CreateRequest {
+            if (amount != null && amount.compareTo(Money.MAX_VALUE) > 0) {
+                throw new IllegalArgumentException("금액은 NUMERIC(19,0) 범위를 초과할 수 없습니다.");
+            }
+        }
     }
 
     public record AmountRecord(long escrowId, String status, BigInteger depositedAmount,

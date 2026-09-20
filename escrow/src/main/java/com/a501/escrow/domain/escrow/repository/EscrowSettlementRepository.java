@@ -203,13 +203,15 @@ public class EscrowSettlementRepository {
         }
     }
 
-    public long prepareAttempt(long transactionId, String step, String reference) {
+    public Optional<Long> prepareAttempt(long transactionId, String step, String reference) {
         return jdbc.sql("""
                 INSERT INTO financial_operation_attempts(transaction_id,step,attempt_no,request_reference)
                 SELECT :transactionId,:step,COALESCE(max(attempt_no),0)+1,:reference
-                FROM financial_operation_attempts WHERE transaction_id=:transactionId AND step=:step RETURNING id
+                FROM financial_operation_attempts WHERE transaction_id=:transactionId AND step=:step
+                ON CONFLICT DO NOTHING
+                RETURNING id
                 """).param(TRANSACTION_ID, transactionId).param("step", step).param(REFERENCE, reference)
-                .query(Long.class).single();
+                .query(Long.class).optional();
     }
 
     public Optional<Long> prepareRecoveryAttempt(long transactionId, String reference) {
