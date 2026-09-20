@@ -10,6 +10,8 @@ import java.math.BigInteger;
 import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 
 import com.a501.escrow.common.api.EscrowErrorResponse;
 import com.a501.escrow.common.api.EscrowHeaderFactory;
@@ -248,15 +250,78 @@ class DataAccessIntegrationTests {
 
     @Test
     void onlyOneCallerCanClaimRequestedAttempt() {
-        var first = attemptRepository.claim(1, "writer-1");
-        var second = attemptRepository.claim(1, "writer-2");
+        CountDownLatch start = new CountDownLatch(1);
+        var first = CompletableFuture.supplyAsync(() -> claimAfter(start, "escrow-pod-a"));
+        var second = CompletableFuture.supplyAsync(() -> claimAfter(start, "escrow-pod-b"));
+        start.countDown();
+        var claims = java.util.List.of(first.join(), second.join());
 
-        assertThat(first).isPresent();
-        assertThat(first.orElseThrow().requestReference()).isEqualTo("request-1");
-        assertThat(second).isEmpty();
+        assertThat(claims).filteredOn(java.util.Optional::isPresent).hasSize(1);
+        assertThat(claims.stream().flatMap(java.util.Optional::stream).findFirst().orElseThrow()
+                .requestReference()).isEqualTo("request-1");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT dispatched_by FROM financial_operation_attempts WHERE id = 1", String.class))
-                .isEqualTo("writer-1");
+                .isIn("escrow-pod-a", "escrow-pod-b");
+    }
+
+    private java.util.Optional<com.a501.escrow.domain.finance.repository.ClaimedFinancialOperation> claimAfter(
+            CountDownLatch start, String instanceId) {
+        try {
+            start.await();
+            return attemptRepository.claim(1, instanceId);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(exception);
+        }
+    }
+
+    @Test
+    void staleDispatchIsRecoveredWithoutCreatingTwoQueryClaims() {
+        jdbcTemplate.update("""
+                INSERT INTO settlements(id,escrow_id,external_reference_id,approved_amount,status)
+                VALUES (2,1,'SETTLEMENT:HA-1',1,'PROCESSING')
+                """);
+        jdbcTemplate.update("""
+                INSERT INTO escrow_transactions(id,service_client_id,escrow_id,settlement_id,transaction_type,
+                    amount,status,external_reference_id,idempotency_key,request_fingerprint,
+                    recipient_bank_code,recipient_account_encrypted,recipient_name)
+                VALUES (2,1,1,2,'RELEASE',1,'PROCESSING','SETTLEMENT:HA-1','ha-release',repeat('c',64),
+                    '001','encrypted','worker')
+                """);
+        jdbcTemplate.update("""
+                INSERT INTO financial_operation_attempts(transaction_id,step,attempt_no,request_reference,
+                    status,dispatched_by,dispatched_at)
+                VALUES (2,'PAYOUT_TRANSFER',1,'ha-request','DISPATCHING','escrow-pod-a',
+                    clock_timestamp() - interval '5 minutes')
+                """);
+
+        int recovered = escrowSettlementRepository.markStaleDispatchingUnknown(
+                java.time.OffsetDateTime.now().minusMinutes(2));
+        var firstQuery = escrowSettlementRepository.prepareRecoveryAttempt(2, "ha-query-a");
+        var competingQuery = escrowSettlementRepository.prepareRecoveryAttempt(2, "ha-query-b");
+
+        assertThat(recovered).isEqualTo(1);
+        assertThat(firstQuery).isPresent();
+        assertThat(competingQuery).isEmpty();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM escrow_transactions WHERE id=2", String.class)).isEqualTo("UNKNOWN");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM financial_operation_attempts WHERE transaction_id=2 AND step='PAYOUT_TRANSFER'",
+                String.class)).isEqualTo("UNKNOWN");
+
+        assertThat(escrowSettlementRepository.claimAttempt(firstQuery.orElseThrow(), "escrow-pod-a")).isTrue();
+        jdbcTemplate.update("""
+                UPDATE financial_operation_attempts SET dispatched_at=clock_timestamp() - interval '5 minutes'
+                WHERE id=?
+                """, firstQuery.orElseThrow());
+        int recycled = escrowSettlementRepository.markStaleDispatchingUnknown(
+                java.time.OffsetDateTime.now().minusMinutes(2));
+
+        assertThat(recycled).isEqualTo(1);
+        assertThat(escrowSettlementRepository.prepareRecoveryAttempt(2, "ha-query-retry")).isPresent();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM financial_operation_attempts WHERE id=?", String.class,
+                firstQuery.orElseThrow())).isEqualTo("FAILED");
     }
 
     @Test

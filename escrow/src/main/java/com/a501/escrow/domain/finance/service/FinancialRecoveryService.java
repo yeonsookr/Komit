@@ -3,7 +3,9 @@ package com.a501.escrow.domain.finance.service;
 import java.math.BigInteger;
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 
@@ -29,10 +31,12 @@ public class FinancialRecoveryService {
     private final Clock clock;
     private final ZoneId financeZone;
     private final String instanceId;
+    private final Duration dispatchTimeout;
 
     public FinancialRecoveryService(EscrowSettlementRepository repository, FinanceClient finance,
             FinanceProperties financeProperties, AppProperties appProperties, Clock clock,
-            @Value("${POD_NAME:local-writer}") String instanceId) {
+            @Value("${POD_NAME:local-writer}") String instanceId,
+            @Value("${app.finance.dispatch-timeout-ms:120000}") long dispatchTimeoutMillis) {
         this.repository = repository;
         this.finance = finance;
         this.financeProperties = financeProperties;
@@ -40,22 +44,21 @@ public class FinancialRecoveryService {
         this.clock = clock;
         this.financeZone = ZoneId.of(financeProperties.timeZone());
         this.instanceId = instanceId;
+        this.dispatchTimeout = Duration.ofMillis(dispatchTimeoutMillis);
     }
 
     @Scheduled(initialDelayString = "${app.finance.recovery-initial-delay-ms:30000}",
             fixedDelayString = "${app.finance.recovery-delay-ms:300000}")
     public void recoverUnknownTransfers() {
         if (appProperties.instanceRole() != InstanceRole.WRITER) return;
+        repository.markStaleDispatchingUnknown(OffsetDateTime.now(clock).minus(dispatchTimeout));
         repository.unknownTransfers().forEach(this::recover);
     }
 
     private void recover(UnknownTransfer row) {
-        long attemptId;
-        try {
-            attemptId = repository.prepareAttempt(row.transactionId(), "RESULT_QUERY", nextReference());
-        } catch (RuntimeException exception) {
-            return;
-        }
+        var prepared = repository.prepareRecoveryAttempt(row.transactionId(), nextReference());
+        if (prepared.isEmpty()) return;
+        long attemptId = prepared.orElseThrow();
         if (!repository.claimAttempt(attemptId, instanceId)) return;
         try {
             LocalDate start = row.dispatchedAt().atZoneSameInstant(financeZone).toLocalDate();

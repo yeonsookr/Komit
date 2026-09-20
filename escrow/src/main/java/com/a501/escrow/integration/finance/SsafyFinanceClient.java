@@ -102,9 +102,9 @@ public class SsafyFinanceClient implements FinanceClient {
 
     @Override
     public BigInteger inquireAccountBalance(String userKey, String accountNo) {
-        JsonNode record = requiredRecord(postWithHeader("inquireDemandDepositAccountBalance", userKey,
+        JsonNode accountBalanceRecord = requiredRecord(postWithHeader("inquireDemandDepositAccountBalance", userKey,
                 Map.of(ACCOUNT_NO, accountNo)));
-        return new BigInteger(text(record, "accountBalance"));
+        return new BigInteger(text(accountBalanceRecord, "accountBalance"));
     }
 
     @Override
@@ -175,9 +175,17 @@ public class SsafyFinanceClient implements FinanceClient {
                         TRANSACTION_BALANCE, amount.toString(),
                         "depositTransactionSummary", depositSummary,
                         "withdrawalTransactionSummary", withdrawalSummary)));
-        JsonNode withdrawal = result.has("withdrawalTransaction")
-                ? result.path("withdrawalTransaction") : result;
+        JsonNode withdrawal = transferWithdrawal(result, withdrawalAccountNo);
         return text(withdrawal, TRANSACTION_NO);
+    }
+
+    private static JsonNode transferWithdrawal(JsonNode result, String withdrawalAccountNo) {
+        if (result.has("withdrawalTransaction")) return result.path("withdrawalTransaction");
+        if (!result.isArray()) return result;
+        for (JsonNode item : result) {
+            if (withdrawalAccountNo.equals(optionalText(item, ACCOUNT_NO))) return item;
+        }
+        throw new FinanceApiException(502, "Q1000", "금융망 이체 응답에서 출금 거래를 찾을 수 없습니다.");
     }
 
     @Override
