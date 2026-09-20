@@ -31,7 +31,7 @@ from fastapi.exception_handlers import (
 )
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import scan_result
@@ -5079,6 +5079,7 @@ class SummaryChangeResponse(BaseModel):
         examples=[312],
     )
     title: str = Field(
+        min_length=1,
         description="반영할 요구사항 문장.",
         examples=["검수 기준 갱신 · 회원탈퇴 경로 구현"],
     )
@@ -5090,6 +5091,14 @@ class SummaryChangeResponse(BaseModel):
         description="이미 요청서에 반영했는지.",
         examples=[False],
     )
+
+    @model_validator(mode="after")
+    def validate_issue_reference(self):
+        if self.kind == "UPDATE" and self.issueId is None:
+            raise ValueError("UPDATE 변경에는 기존 요구사항 식별자가 필요합니다.")
+        if self.kind == "ADD" and self.issueId is not None:
+            raise ValueError("ADD 변경에는 기존 요구사항 식별자를 넣을 수 없습니다.")
+        return self
 
 
 class SessionSummaryResponse(BaseModel):

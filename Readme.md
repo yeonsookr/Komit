@@ -27,8 +27,12 @@
 |---|---|
 | Frontend | React |
 | Backend | Spring Boot |
-| Database | PostgreSQL, Redis, S3 |
-| AI | LLM (ex. EXAONE 3.5), SetFit, Vector DB, RAG |
+| Database | PostgreSQL, Redis, S3 호환 Object Storage(연동 예정) |
+| AI | GMS 기반 LLM, SetFit(라벨 데이터 축적 후 조건부 고도화) |
+
+- GMS에서 실제 접근 가능한 모델을 확인한 뒤 평가하므로 EXAONE을 특정 모델로 미리 고정하지 않는다.
+- 상담 요약의 근거는 같은 처리 입력의 발화를 직접 참조한다. Vector DB·RAG는 검색 누락이나 잘못된 근거 선택 가능성과 운영 복잡도를 늘리므로 현재 범위에서 사용하지 않는다.
+- 파일 메타데이터와 업로드 계약은 S3 호환 Object Storage를 전제로 하지만 저장소 연동 구현은 후속 작업이다.
 
 ### 산출물 현황
 | 산출물 | 상태 |
