@@ -6,6 +6,9 @@
 deploy/local/.env
 fe/.env
 
+# AI Worker 로컬 비밀값
+ai/worker/.env
+
 # 로컬 Python 실행 환경과 생성 파일
 .venv/
 __pycache__/
