@@ -18,6 +18,8 @@ public class EscrowSettlementRepository {
     private static final String REFERENCE = "reference";
     private static final String AMOUNT = "amount";
     private static final String STATUS = "status";
+    private static final String TRANSACTION_ID = "transactionId";
+    private static final String EXTERNAL_ID = "externalId";
     private final JdbcClient jdbc;
 
     public EscrowSettlementRepository(JdbcClient jdbc) {
@@ -167,7 +169,7 @@ public class EscrowSettlementRepository {
         jdbc.sql("""
                 UPDATE escrow_transactions SET status='COMPLETED',financial_transaction_id=:externalId,
                     completed_at=clock_timestamp(),updated_at=clock_timestamp() WHERE id=:id
-                """).param("externalId", externalId).param("id", transactionId).update();
+                """).param(EXTERNAL_ID, externalId).param("id", transactionId).update();
     }
 
     public void unknown(long transactionId) {
@@ -206,8 +208,20 @@ public class EscrowSettlementRepository {
                 INSERT INTO financial_operation_attempts(transaction_id,step,attempt_no,request_reference)
                 SELECT :transactionId,:step,COALESCE(max(attempt_no),0)+1,:reference
                 FROM financial_operation_attempts WHERE transaction_id=:transactionId AND step=:step RETURNING id
-                """).param("transactionId", transactionId).param("step", step).param(REFERENCE, reference)
+                """).param(TRANSACTION_ID, transactionId).param("step", step).param(REFERENCE, reference)
                 .query(Long.class).single();
+    }
+
+    public Optional<Long> prepareRecoveryAttempt(long transactionId, String reference) {
+        return jdbc.sql("""
+                INSERT INTO financial_operation_attempts(transaction_id,step,attempt_no,request_reference)
+                SELECT :transactionId,'RESULT_QUERY',COALESCE(max(attempt_no),0)+1,:reference
+                FROM financial_operation_attempts
+                WHERE transaction_id=:transactionId AND step='RESULT_QUERY'
+                ON CONFLICT DO NOTHING
+                RETURNING id
+                """).param(TRANSACTION_ID, transactionId).param(REFERENCE, reference)
+                .query(Long.class).optional();
     }
 
     public boolean claimAttempt(long id, String instanceId) {
@@ -228,7 +242,7 @@ public class EscrowSettlementRepository {
                     response_code=:code,
                     responded_at=CASE WHEN :status='UNKNOWN' THEN NULL ELSE clock_timestamp() END
                 WHERE id=:id
-                """).param(STATUS, status).param("externalId", externalId, Types.VARCHAR)
+                """).param(STATUS, status).param(EXTERNAL_ID, externalId, Types.VARCHAR)
                 .param("code", code, Types.VARCHAR).param("id", id).update();
     }
 
@@ -246,15 +260,41 @@ public class EscrowSettlementRepository {
                 ORDER BY t.id
                 """).query((rs, row) -> new UnknownTransfer(rs.getLong("id"),
                         rs.getLong("settlement_id"), rs.getLong("escrow_id"),
-                        rs.getString("transaction_type"), rs.getBigDecimal("amount").toBigIntegerExact(),
+                        rs.getString("transaction_type"), rs.getBigDecimal(AMOUNT).toBigIntegerExact(),
                         rs.getObject("dispatched_at", OffsetDateTime.class))).list();
+    }
+
+    @Transactional
+    public int markStaleDispatchingUnknown(OffsetDateTime cutoff) {
+        int staleQueries = jdbc.sql("""
+                UPDATE financial_operation_attempts
+                SET status='FAILED',response_code='QUERY_TIMEOUT',responded_at=clock_timestamp()
+                WHERE status='DISPATCHING'
+                  AND dispatched_at < :cutoff
+                  AND step='RESULT_QUERY'
+                """).param("cutoff", cutoff).update();
+        List<Long> transactionIds = jdbc.sql("""
+                UPDATE financial_operation_attempts
+                SET status='UNKNOWN',response_code='DISPATCH_TIMEOUT'
+                WHERE status='DISPATCHING'
+                  AND dispatched_at < :cutoff
+                  AND step IN ('PAYOUT_TRANSFER','FEE_TRANSFER','REFUND_TRANSFER')
+                RETURNING transaction_id
+                """).param("cutoff", cutoff).query(Long.class).list();
+        if (transactionIds.isEmpty()) return staleQueries;
+        jdbc.sql("""
+                UPDATE escrow_transactions
+                SET status='UNKNOWN',updated_at=clock_timestamp()
+                WHERE id IN (:ids) AND status='PROCESSING'
+                """).param("ids", transactionIds).update();
+        return staleQueries + transactionIds.size();
     }
 
     public void resolveUnknown(long transactionId, long queryAttemptId, String externalId) {
         jdbc.sql("""
                 UPDATE financial_operation_attempts SET status='SUCCEEDED',external_transaction_id=:externalId,
                     response_code='RECOVERED' WHERE transaction_id=:transactionId AND status='UNKNOWN'
-                """).param("externalId", externalId).param("transactionId", transactionId).update();
+                """).param(EXTERNAL_ID, externalId).param(TRANSACTION_ID, transactionId).update();
         finishAttempt(queryAttemptId, "SUCCEEDED", externalId, "H0000");
         complete(transactionId, externalId);
     }
@@ -265,7 +305,7 @@ public class EscrowSettlementRepository {
                     evidence_reference,previous_status,resulting_status)
                 VALUES(:escrowId,:transactionId,'SYSTEM','financial-recovery',:action,
                     'R-PAY-12 financial call result inquiry',:evidence,'UNKNOWN',:result)
-                """).param("escrowId", row.escrowId()).param("transactionId", row.transactionId())
+                """).param(ESCROW_ID, row.escrowId()).param(TRANSACTION_ID, row.transactionId())
                 .param("action", action).param("evidence", evidence).param("result", result).update();
     }
 

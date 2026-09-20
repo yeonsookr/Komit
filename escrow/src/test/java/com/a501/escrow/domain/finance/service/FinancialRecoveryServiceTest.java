@@ -13,6 +13,7 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 
 import com.a501.escrow.config.AppProperties;
 import com.a501.escrow.config.FinanceProperties;
@@ -29,7 +30,7 @@ class FinancialRecoveryServiceTest {
         FinanceClient finance = mock(FinanceClient.class);
         UnknownTransfer unknown = unknown();
         when(repository.unknownTransfers()).thenReturn(List.of(unknown));
-        when(repository.prepareAttempt(eq(20L), eq("RESULT_QUERY"), anyString())).thenReturn(30L);
+        when(repository.prepareRecoveryAttempt(eq(20L), anyString())).thenReturn(Optional.of(30L));
         when(repository.claimAttempt(30L, "pod-1")).thenReturn(true);
         when(finance.inquireTransactions(eq("escrow-key"), eq("0010000000000000"),
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), eq("D"), eq("DESC")))
@@ -38,6 +39,7 @@ class FinancialRecoveryServiceTest {
 
         service(repository, finance, InstanceRole.WRITER).recoverUnknownTransfers();
 
+        verify(repository).markStaleDispatchingUnknown(OffsetDateTime.parse("2026-09-20T02:58:00Z"));
         verify(repository).resolveUnknown(20L, 30L, "bank-tx");
         verify(repository).refreshSettlement(10L, 1L);
         verify(repository).auditRecovery(unknown, "UNKNOWN_RESOLVED", "bank-tx", "COMPLETED");
@@ -49,7 +51,7 @@ class FinancialRecoveryServiceTest {
         FinanceClient finance = mock(FinanceClient.class);
         UnknownTransfer unknown = unknown();
         when(repository.unknownTransfers()).thenReturn(List.of(unknown));
-        when(repository.prepareAttempt(eq(20L), eq("RESULT_QUERY"), anyString())).thenReturn(30L);
+        when(repository.prepareRecoveryAttempt(eq(20L), anyString())).thenReturn(Optional.of(30L));
         when(repository.claimAttempt(30L, "pod-1")).thenReturn(true);
         when(finance.inquireTransactions(eq("escrow-key"), eq("0010000000000000"),
                 org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), eq("D"), eq("DESC")))
@@ -62,6 +64,8 @@ class FinancialRecoveryServiceTest {
 
         EscrowSettlementRepository readerRepository = mock(EscrowSettlementRepository.class);
         service(readerRepository, finance, InstanceRole.READER).recoverUnknownTransfers();
+        verify(readerRepository, org.mockito.Mockito.never())
+                .markStaleDispatchingUnknown(org.mockito.ArgumentMatchers.any());
         verify(readerRepository, org.mockito.Mockito.never()).unknownTransfers();
     }
 
@@ -71,7 +75,7 @@ class FinancialRecoveryServiceTest {
                 "Asia/Seoul", "product", "escrow-key", "0010000000000000", "0010000000000001", 30);
         return new FinancialRecoveryService(repository, finance, properties,
                 new AppProperties(URI.create("http://localhost:8081"), role),
-                Clock.fixed(Instant.parse("2026-09-20T03:00:00Z"), ZoneOffset.UTC), "pod-1");
+                Clock.fixed(Instant.parse("2026-09-20T03:00:00Z"), ZoneOffset.UTC), "pod-1", 120_000);
     }
 
     private static UnknownTransfer unknown() {
