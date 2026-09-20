@@ -36,6 +36,9 @@ public class SecurityConfig {
                                 "/api/developers/*",
                                 "/api/developers/*/reviews").permitAll()
                         .requestMatchers("/actuator/health/**", "/actuator/info", "/docs/**", "/v3/api-docs/**").permitAll()
+                        // 브라우저는 네이티브 WebSocket 에 Authorization 헤더를 붙일 수 없습니다.
+                        // 여기서 열어 두고 RealtimeHandshakeInterceptor 의 일회용 티켓이 관문 역할을 합니다.
+                        .requestMatchers("/ws/**").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         return http.build();

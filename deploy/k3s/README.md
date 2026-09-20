@@ -134,6 +134,19 @@ nginx 컨테이너 안의 `127.0.0.1`은 호스트가 아니라 컨테이너 자
 `conf.d/default.conf`에 추가합니다. `upstream`은 반드시 `server { }` 블록 **밖**에 둡니다. 기존의 `location = / { return 200 ... }`은 FE와 겹치므로 지웁니다.
 
 ```nginx
+# WebSocket 업그레이드를 그대로 넘기기 위한 값입니다. conf.d 파일은 http 블록 안에
+# 들어가므로 upstream 과 마찬가지로 server { } 밖에 둡니다.
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+# 질의 문자열을 뺀 접근 로그 형식입니다. WebSocket 주소에는 일회용 입장 티켓이 실려 오므로
+# 그대로 남기면 로그를 읽을 수 있는 사람이 남의 연결을 열 수 있습니다.
+log_format komit_ws '$remote_addr - $remote_user [$time_local] '
+                    '"$request_method $uri $server_protocol" $status $body_bytes_sent '
+                    '"$http_referer" "$http_user_agent"';
+
 upstream komit_fe {
     server 172.17.0.1:30082;
     keepalive 16;
@@ -174,6 +187,33 @@ server {
         proxy_set_header X-Forwarded-Prefix /escrow;
     }
 
+    # WebSocket은 Upgrade 헤더가 그대로 가야 열립니다. 아래 `/service/`는 keepalive를 쓰려고
+    # Connection을 비우는데, 그 설정이 WebSocket에 걸리면 업그레이드 신호가 지워져 핸드셰이크가
+    # 평범한 HTTP 요청으로 끝납니다. nginx는 접두사가 더 긴 location을 먼저 고르므로 이 블록이
+    # `/service/`보다 뒤에 있어도 됩니다.
+    location /service/ws/ {
+        proxy_pass http://komit_service/ws/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Prefix /service;
+
+        # 조용한 구간이 기본 60초를 넘으면 nginx가 먼저 끊습니다. 서버가 20초마다 확인하지만
+        # 그보다 넉넉히 둬야 잠깐 밀렸다고 통화가 끊기지 않습니다.
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+
+        # 모아서 보내면 통화를 여는 신호가 늦게 도착해 연결이 느려집니다.
+        proxy_buffering off;
+
+        # 같은 파일에 형식을 섞지 않도록 따로 씁니다. 통화 접속만 모여 보기도 편합니다.
+        access_log /var/log/nginx/ws_access.log komit_ws;
+    }
+
     # proxy_pass 끝의 /가 /service/ 접두사를 떼고 Spring에 넘깁니다.
     location /service/ {
         proxy_pass http://komit_service/;
@@ -194,6 +234,27 @@ server {
 docker compose run --rm --no-deps nginx nginx -t
 docker compose up -d nginx
 ```
+
+#### WebSocket 경로 확인
+
+이 확인은 `service` Pod가 떠 있어야 뜻이 있습니다. 아직 첫 배포 전이면 **502**가 나오는 것이
+정상이므로, 5단계를 마친 뒤 돌립니다.
+
+```bash
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  -H 'Connection: Upgrade' \
+  -H 'Upgrade: websocket' \
+  -H 'Sec-WebSocket-Version: 13' \
+  -H "Sec-WebSocket-Key: $(head -c 16 /dev/urandom | base64)" \
+  https://komit.site/service/ws/realtime
+```
+
+`401`이면 통과입니다. 티켓 없이 열려고 했으니 거절당하는 것이 맞고, 거절했다는 것은 요청이
+프록시를 지나 Spring의 입장 검사까지 닿았다는 뜻입니다. `404`나 `200`이 나오면 `/service/ws/`
+블록이 없거나 `/service/`에 걸려 업그레이드가 지워진 것입니다.
+
+브라우저가 쓰는 주소는 `wss://komit.site/service/ws/realtime?ticket=...`입니다. `/service`
+접두사는 프록시가 떼므로 Spring에는 `/ws/realtime`으로 들어갑니다.
 
 ### 5. 첫 배포
 
@@ -451,6 +512,10 @@ rm -rf ~/komit-k3s-manual
 | `curl`이 **502** | 30080에 받는 쪽이 없음 | `sudo kubectl -n komit get pods`로 service Pod가 Ready인지 확인 |
 | `curl`이 **504** (약 60초 뒤) | nginx 컨테이너가 30080에 닿지 못함 | A-0의 `nodeport-addresses` 확인 |
 | 리다이렉트 `Location`이 `https://komit.site/login`처럼 `/service` 접두사를 잃음 | nginx의 `X-Forwarded-Prefix`가 빠졌거나 Spring이 헤더를 반영하지 않음 | 서버 nginx `location /service/`에 `proxy_set_header X-Forwarded-Prefix /service;`가 있는지 확인. Spring은 prod에서 `server.forward-headers-strategy=framework`로 반영합니다 |
+| WebSocket 핸드셰이크가 **404**나 **200**으로 끝남 | `/service/ws/` 블록이 없어 `/service/`에 걸렸고, 그쪽이 `Connection ""`으로 업그레이드를 지움 | 4단계의 `location /service/ws/`와 `map $http_upgrade` 블록이 들어갔는지 확인 |
+| 통화가 **1분쯤 지나 저절로** 끊김 | `proxy_read_timeout` 기본값 60초 | `location /service/ws/`의 `proxy_read_timeout`·`proxy_send_timeout` 확인 |
+| WebSocket 핸드셰이크가 **403** | Spring의 같은 출처 검사에 막힘. 프록시가 원래 scheme·host를 넘기지 않음 | `X-Forwarded-Proto`, `Host` 헤더와 prod의 `server.forward-headers-strategy=framework` 확인. 다른 출처에서 열어야 하면 `app.realtime.allowed-origins`에 추가 |
+| 통화 신호가 눈에 띄게 느림 | 프록시가 모아서 보냄 | `location /service/ws/`의 `proxy_buffering off` 확인 |
 | 앱 로그: `Binding to target ... app.public-base-url` 또는 `APP_PUBLIC_BASE_URL` 관련 기동 실패 | 공개 주소 변수 미등록 | GitLab 변수 `SERVICE_PUBLIC_BASE_URL`, `ESCROW_PUBLIC_BASE_URL` 확인 |
 
 ## CI/CD
@@ -558,6 +623,8 @@ kubectl -n komit get pods -o wide -L role,redis-role
 kubectl -n komit port-forward service/service 8080:8080
 curl http://localhost:8080/actuator/health
 ```
+
+WebSocket 경로는 프록시를 지나야 뜻이 있으므로 「4. nginx 연결」의 확인 명령으로 봅니다.
 
 ## 스케일 조정
 

@@ -21,6 +21,10 @@ app:
     # 개발 전용 값입니다. 운영 프로필에는 기본값이 없습니다.
     user-jwt-secret: ${KOMIT_USER_JWT_SECRET:komit-user-jwt-secret-dev-only-change-me}
     kakao-token-encryption-key: ${KAKAO_TOKEN_ENCRYPTION_KEY:ZGV2LW9ubHkta2FrYW8tdG9rZW4ta2V5LTMyYnl0ZXM=}
+  realtime:
+    # 로컬은 프론트(3000)와 서버(8080)의 출처가 달라 열어 줍니다.
+    allowed-origins:
+      - http://localhost:3000
   kakao:
     client-id: ${KAKAO_CLIENT_ID:kakao-client-id-dev-only}
     client-secret: ${KAKAO_CLIENT_SECRET:kakao-client-secret-dev-only}
