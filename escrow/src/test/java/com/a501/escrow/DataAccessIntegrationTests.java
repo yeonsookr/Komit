@@ -2,6 +2,9 @@ package com.a501.escrow;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.when;
 
 import java.math.BigInteger;
 import java.net.URI;
@@ -27,9 +30,13 @@ import com.a501.escrow.domain.escrow.repository.EscrowRepository;
 import com.a501.escrow.domain.escrow.repository.EscrowDepositRepository;
 import com.a501.escrow.domain.escrow.dto.EscrowHoldDtos;
 import com.a501.escrow.domain.escrow.dto.EscrowDtos;
+import com.a501.escrow.domain.escrow.dto.EscrowSettlementDtos;
 import com.a501.escrow.domain.escrow.service.EscrowDepositService;
 import com.a501.escrow.domain.escrow.service.EscrowHoldService;
+import com.a501.escrow.domain.escrow.service.EscrowSettlementService;
+import com.a501.escrow.domain.escrow.repository.EscrowSettlementRepository;
 import com.a501.escrow.domain.finance.repository.FinancialOperationAttemptRepository;
+import com.a501.escrow.integration.finance.FinanceClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
@@ -38,6 +45,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -56,6 +64,7 @@ import org.testcontainers.utility.DockerImageName;
         "app.finance.account-type-unique-no=test-product",
         "app.finance.escrow-user-key=test-escrow-user-key",
         "app.finance.escrow-account-no=0010000000000000",
+        "app.finance.fee-account-no=0010000000000001",
         "app.finance.virtual-account-validity-days=30"
 })
 class DataAccessIntegrationTests {
@@ -116,6 +125,15 @@ class DataAccessIntegrationTests {
     EscrowDepositService escrowDepositService;
 
     @Autowired
+    EscrowSettlementService escrowSettlementService;
+
+    @Autowired
+    EscrowSettlementRepository escrowSettlementRepository;
+
+    @MockitoBean
+    FinanceClient financeClient;
+
+    @Autowired
     FinancialOperationAttemptRepository attemptRepository;
 
     @Autowired
@@ -148,6 +166,7 @@ class DataAccessIntegrationTests {
         jdbcTemplate.update("DELETE FROM escrow_state_commands");
         jdbcTemplate.update("DELETE FROM financial_operation_attempts");
         jdbcTemplate.update("DELETE FROM escrow_transactions");
+        jdbcTemplate.update("DELETE FROM settlements");
         jdbcTemplate.update("DELETE FROM escrows");
         jdbcTemplate.update("DELETE FROM member_account_provisions");
         jdbcTemplate.update("DELETE FROM service_clients");
@@ -384,6 +403,66 @@ class DataAccessIntegrationTests {
                 1, "REPORT-9")))
                 .isInstanceOfSatisfying(EscrowApiException.class,
                         exception -> assertThat(exception.responseCode()).isEqualTo("E5007"));
+    }
+
+    @Test
+    void releasesNetAndFeeThenRefundsOnlyTheFullRemainingBalance() {
+        String payerAccount = "0012222222222222";
+        String workerAccount = "0013333333333333";
+        jdbcTemplate.update("""
+                UPDATE escrows SET expected_amount=650000,status='ACTIVE' WHERE id=1
+                """);
+        jdbcTemplate.update("""
+                UPDATE escrow_transactions SET amount=650000,status='COMPLETED',deposit_verification_status='MATCHED',
+                    source_bank_code='001',source_account_encrypted=?,completed_at=clock_timestamp() WHERE id=1
+                """, fieldEncryption.encrypt(payerAccount));
+
+        when(financeClient.inquireAccountHolder(anyString(), anyString())).thenAnswer(invocation -> {
+            String account = invocation.getArgument(1);
+            String name = account.equals(workerAccount) ? "worker" : account.equals(payerAccount) ? "payer" : "KOMIT";
+            return new FinanceClient.AccountHolder("001", account, name);
+        });
+        when(financeClient.transfer(anyString(), anyString(), anyString(), any(BigInteger.class),
+                anyString(), anyString(), anyString())).thenReturn("bank-release", "bank-fee", "bank-refund");
+
+        var released = escrowSettlementService.release(new EscrowSettlementDtos.ReleaseRequest(
+                validHeader("releaseEscrow", "test-client-api-key", "release-key", null),
+                1, "SETTLEMENT:9001", BigInteger.valueOf(400_000), "001", workerAccount, "worker"));
+
+        assertThat(released.status()).isEqualTo("COMPLETED");
+        assertThat(released.netAmount()).isEqualTo(BigInteger.valueOf(396_000));
+        assertThat(released.feeAmount()).isEqualTo(BigInteger.valueOf(4_000));
+        assertThat(released.releasedAmount()).isEqualTo(BigInteger.valueOf(400_000));
+        assertThat(released.balance()).isEqualTo(BigInteger.valueOf(250_000));
+        assertThat(escrowSettlementRepository.totals(1).released()).isEqualTo(BigInteger.valueOf(396_000));
+        assertThat(escrowSettlementService.release(new EscrowSettlementDtos.ReleaseRequest(
+                validHeader("releaseEscrow", "test-client-api-key", "release-key", null),
+                1, "SETTLEMENT:9001", BigInteger.valueOf(400_000), "001", workerAccount, "worker")))
+                .isEqualTo(released);
+
+        assertThatThrownBy(() -> escrowSettlementService.refund(new EscrowSettlementDtos.RefundRequest(
+                validHeader("refundEscrow", "test-client-api-key", "partial-refund", null),
+                1, BigInteger.valueOf(200_000), "001", payerAccount, "payer", "SETTLEMENT:9001")))
+                .isInstanceOfSatisfying(EscrowApiException.class,
+                        exception -> assertThat(exception.responseCode()).isEqualTo("E5013"));
+
+        var refunded = escrowSettlementService.refund(new EscrowSettlementDtos.RefundRequest(
+                validHeader("refundEscrow", "test-client-api-key", "refund-key", null),
+                1, BigInteger.valueOf(250_000), "001", payerAccount, "payer", "SETTLEMENT:9001"));
+
+        assertThat(refunded.status()).isEqualTo("COMPLETED");
+        assertThat(refunded.refundedAmount()).isEqualTo(BigInteger.valueOf(250_000));
+        assertThat(refunded.balance()).isZero();
+        assertThat(jdbcTemplate.queryForObject("SELECT status FROM escrows WHERE id=1", String.class))
+                .isEqualTo("REFUNDED");
+        assertThat(escrowDepositService.inquire(new EscrowDtos.InquireRequest(
+                validHeader("inquireEscrow", "test-client-api-key", null, null), 1, "CONTRACT-1")))
+                .satisfies(detail -> {
+                    assertThat(detail.releasedAmount()).isEqualTo(BigInteger.valueOf(396_000));
+                    assertThat(detail.feeAmount()).isEqualTo(BigInteger.valueOf(4_000));
+                    assertThat(detail.refundedAmount()).isEqualTo(BigInteger.valueOf(250_000));
+                    assertThat(detail.balance()).isZero();
+                });
     }
 
 

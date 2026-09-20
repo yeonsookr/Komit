@@ -15,6 +15,8 @@ public interface FinanceClient {
 
     List<DemandDepositAccount> findDemandDepositAccounts(String userKey);
 
+    AccountHolder inquireAccountHolder(String userKey, String accountNo);
+
     String depositSeedMoney(
             String userKey,
             String accountNo,
@@ -60,6 +62,9 @@ public interface FinanceClient {
             String accountTypeCode,
             String currency
     ) {
+    }
+
+    record AccountHolder(String bankCode, String accountNo, String userName) {
     }
 
     record DepositTransaction(

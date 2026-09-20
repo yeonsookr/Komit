@@ -17,4 +17,5 @@ public record ApiRequirements(
     public static ApiRequirements operatorRead() {
         return new ApiRequirements(false, false, false, true);
     }
+
 }

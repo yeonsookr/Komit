@@ -71,6 +71,27 @@ class SsafyFinanceClientTest {
     }
 
     @Test
+    void mapsAccountHolderInquiry() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        SsafyFinanceClient client = new SsafyFinanceClient(builder, JsonMapper.builder().build(),
+                properties("https://finance.example", "test-api-key"), Clock.systemUTC());
+        server.expect(requestTo("https://finance.example/api/v1/edu/demandDeposit/inquireDemandDepositAccount"))
+                .andExpect(content().json("""
+                        {"accountNo":"0011234567890123",
+                         "Header":{"apiName":"inquireDemandDepositAccount","userKey":"escrow-key"}}
+                        """, false))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000"},
+                         "REC":{"bankCode":"001","accountNo":"0011234567890123","userName":"worker"}}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(client.inquireAccountHolder("escrow-key", "0011234567890123"))
+                .isEqualTo(new FinanceClient.AccountHolder("001", "0011234567890123", "worker"));
+        server.verify();
+    }
+
+    @Test
     void mapsVirtualAccountCreateTransferVerifySettleAndClose() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
@@ -140,6 +161,6 @@ class SsafyFinanceClientTest {
     }
     private static FinanceProperties properties(String baseUrl, String apiKey) {
         return new FinanceProperties(true, baseUrl, apiKey, "Asia/Seoul", "product",
-                "escrow-user-key", "0010000000000000", 30);
+                "escrow-user-key", "0010000000000000", "0010000000000001", 30);
     }
 }

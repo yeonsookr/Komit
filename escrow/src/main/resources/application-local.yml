@@ -24,6 +24,7 @@ app:
     account-type-unique-no: ${SSAFY_DEMAND_DEPOSIT_PRODUCT_NO:001-1-231ecb61d2554c}
     escrow-user-key: ${SSAFY_ESCROW_USER_KEY:disabled-local-escrow-user-key}
     escrow-account-no: ${SSAFY_ESCROW_ACCOUNT_NO:0010000000000000}
+    fee-account-no: ${SSAFY_FEE_ACCOUNT_NO:0010000000000001}
     virtual-account-validity-days: ${SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS:30}
 
 logging:
