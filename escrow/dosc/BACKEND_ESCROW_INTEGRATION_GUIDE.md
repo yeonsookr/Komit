@@ -79,12 +79,25 @@ SSAFY 금융망
 
 ### 3.1 권장 Backend 환경변수
 
+현재 Backend 개발 단계에서는 Mock Server를 호출한다.
+
 ```dotenv
-ESCROW_API_BASE_URL=http://escrow:8081/api
-ESCROW_CLIENT_API_KEY=<Backend 서비스 전용 원문 API 키>
+# service/.env 및 현재 개발 배포의 GitLab CI/CD Variables
+ESCROW_API_BASE_URL=https://komit.site/mock/escrow
+ESCROW_CLIENT_API_KEY=mock-client-api-key
 ```
 
-K3s 내부 DNS를 사용하는 경우 권장 Base URL은 `http://escrow:8081/api`이다. Java Controller 경로가 `/api/v1/...`이므로 Client에서 아래처럼 조합한다.
+`ESCROW_CLIENT_API_KEY` 변수는 Mock 개발 중에도 필요하다. Backend는 환경과 관계없이 이 값을 요청 JSON의 `Header.clientApiKey`에 넣는다. Mock에서는 Mock이 인식하는 고정값 `mock-client-api-key`를 사용하고, 실제 Escrow에서는 별도로 발급한 `komit_be_...` 키를 사용한다.
+
+실제 Escrow 통합 단계에서는 환경변수만 다음과 같이 교체한다.
+
+```dotenv
+# 실제 K3s Escrow 통합 시 GitLab CI/CD Variables
+ESCROW_API_BASE_URL=http://escrow:8081/api
+ESCROW_CLIENT_API_KEY=komit_be_<발급한 Backend 전용 랜덤 키>
+```
+
+K3s 내부 DNS를 사용하는 실제 통합 환경의 Base URL은 `http://escrow:8081/api`이다. Java Controller 경로가 `/api/v1/...`이므로 Client에서 아래처럼 조합한다.
 
 ```text
 Base URL: http://escrow:8081/api
@@ -93,6 +106,17 @@ Endpoint: /v1/escrow/createMemberAccount
 ```
 
 외부 프록시를 거쳐 호출한다면 실제 Ingress 설정의 prefix를 확인해야 한다. 서버 간 호출은 외부 TLS/Ingress 장애와 불필요한 네트워크 왕복을 줄이기 위해 K3s 내부 Service 주소를 우선한다.
+
+환경별 값은 다음과 같다.
+
+| 환경 | `ESCROW_API_BASE_URL` | `ESCROW_CLIENT_API_KEY` | 비고 |
+| --- | --- | --- | --- |
+| Backend 로컬 개발 | `https://komit.site/mock/escrow` | `mock-client-api-key` | `service/.env` 사용 |
+| 현재 개발 K3s 배포 | `https://komit.site/mock/escrow` | `mock-client-api-key` | GitLab CI/CD Variables 사용 |
+| 실제 Escrow 로컬 통합 | `http://localhost:8081/api` | `komit_be_...` | `service/.env` 값 교체 |
+| 실제 Escrow K3s 통합 | `http://escrow:8081/api` | `komit_be_...` | GitLab CI/CD Variables 값 교체 |
+
+Backend 코드에는 위 주소나 키를 하드코딩하지 않는다. Mock에서 실제 Escrow로 전환할 때 코드를 수정하는 것이 아니라 환경변수만 교체한다.
 
 ### 3.2 키의 구분
 
@@ -110,13 +134,26 @@ Endpoint: /v1/escrow/createMemberAccount
 ### 3.3 로컬 환경
 
 - Escrow 자체 SSAFY 설정은 `escrow/.env`에서 관리하고 Git에 커밋하지 않는다.
-- Backend의 Escrow URL과 Client API Key는 Backend가 사용하는 로컬 환경설정에 둔다.
+- Backend의 Escrow URL과 Client API Key는 `service/.env`에 둔다. `application-local.yml`이 이 파일을 선택적으로 읽는다.
+- 현재 `service/.env`의 기본 개발 대상은 Mock Server이며 `mock-client-api-key`를 사용한다.
+- 실제 로컬 Escrow 통합 시험 때만 URL을 `http://localhost:8081/api`, 키를 발급한 `komit_be_...` 값으로 바꾼다.
 - `.env.example`에는 변수명과 안전한 예시만 기록하고 실제 키는 넣지 않는다.
 - 테스트에서는 실제 키 대신 테스트 전용 키와 Stub/WireMock을 사용한다.
 
 ### 3.4 CI/CD와 K3s
 
 Backend용 변수를 GitLab CI/CD Variables에 추가한 뒤 다음 전달 경로를 모두 확인해야 한다.
+
+현재 개발 배포에서는 GitLab 변수에도 Mock 값을 등록한다.
+
+```dotenv
+ESCROW_API_BASE_URL=https://komit.site/mock/escrow
+ESCROW_CLIENT_API_KEY=mock-client-api-key
+```
+
+실제 Escrow 통합을 시작할 때 동일한 GitLab 변수의 값만 실제 내부 주소와 `komit_be_...` 키로 교체한다. `ESCROW_API_BASE_URL`을 Java 코드, `deploy.sh`, K3s 운영 YAML에 직접 고정하지 않는다.
+
+현재 배포 스크립트는 `ESCROW_CLIENT_API_KEY`를 Backend의 `service-auth` Secret에 넣고, 같은 값을 Escrow의 `escrow-security` Secret에 `ESCROW_BOOTSTRAP_CLIENT_API_KEY`라는 이름으로 전달한다. Escrow는 시작할 때 이 원문을 HMAC으로 변환하여 `Komit Backend` 서비스 레코드를 등록하거나 키를 갱신한다. 원문은 DB에 저장되지 않는다.
 
 ```text
 GitLab CI/CD Variable
@@ -133,7 +170,7 @@ GitLab CI/CD Variable
 | 변수 | GitLab 표시 | Kubernetes 저장소 |
 | --- | --- | --- |
 | `ESCROW_API_BASE_URL` | Visible, Protected | `service-config` ConfigMap |
-| `ESCROW_CLIENT_API_KEY` | Masked, Protected | `service-security` Secret |
+| `ESCROW_CLIENT_API_KEY` | Masked, Protected | `service-auth` Secret |
 
 변수를 GitLab에 등록하는 것만으로는 충분하지 않다. 배포 스크립트가 그 값을 받아 Kubernetes 리소스를 생성하고 Pod에 주입하는 부분까지 있어야 한다.
 
@@ -161,7 +198,7 @@ output     = lowercase hex HMAC-SHA256
 
 주의사항:
 
-- 원문 API 키는 Backend Secret에만 저장한다.
+- 실제 원문 API 키는 Backend의 `service-auth` Secret과 자동 등록을 수행하는 Escrow의 `escrow-security` Secret에만 존재한다.
 - Escrow DB에는 해시만 저장한다.
 - HMAC 생성 시 운영 Escrow와 동일한 `CLIENT_API_KEY_HMAC_SECRET`을 사용해야 한다.
 - 운영자 키를 일반 업무 API에 사용하면 `E5001`로 거절된다.
@@ -873,6 +910,24 @@ Backend DB에서 지급 가능으로 보이더라도 Escrow가 동결되어 있�
 ---
 
 ## 14. Mock에서 실제 Escrow로 교체할 때 확인할 차이
+
+### 14.1 전환 방법
+
+Backend Client, DTO, Header 생성 및 오류 처리 코드는 Mock 개발 단계부터 실제 Escrow 계약과 동일하게 작성한다. 전환 시 코드나 배포 YAML에 URL을 새로 하드코딩하지 않고 GitLab CI/CD Variables만 변경한다.
+
+```dotenv
+# 전환 전: Mock
+ESCROW_API_BASE_URL=https://komit.site/mock/escrow
+ESCROW_CLIENT_API_KEY=mock-client-api-key
+
+# 전환 후: 실제 Escrow
+ESCROW_API_BASE_URL=http://escrow:8081/api
+ESCROW_CLIENT_API_KEY=komit_be_<발급한 Backend 전용 랜덤 키>
+```
+
+실제 키를 주입하면 Escrow 시작 시 해당 키의 HMAC 해시가 `service_clients`에 자동 등록된다. Mock을 사용하는 동안에는 이 DB 등록 결과가 호출에 사용되지 않지만, 향후 실제 전환을 위해 생성한 `komit_be_...` 키와 자동 등록 기능은 유지한다.
+
+### 14.2 실제 Escrow에서 추가로 확인할 사항
 
 1. 실제 Escrow는 DB에 등록된 서비스 API 키를 요구한다.
 2. 실제 Escrow는 `apiName`과 endpoint, `apiServiceCode`의 일치를 엄격히 검사한다.

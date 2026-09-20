@@ -33,3 +33,8 @@ configMapGenerator:
     namespace: komit
     literals:
       - APP_PUBLIC_BASE_URL=http://localhost:8081
+secretGenerator:
+  - name: escrow-security
+    namespace: komit
+    literals:
+      - ESCROW_BOOTSTRAP_CLIENT_API_KEY=komit-backend-client-api-key-dev-only

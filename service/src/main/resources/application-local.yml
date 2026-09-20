@@ -1,4 +1,8 @@
 spring:
+  config:
+    # service 디렉터리에서 로컬 실행할 때 service/.env를 읽습니다.
+    # 파일은 Git에 커밋하지 않고 .env.example을 복사해 사용합니다.
+    import: optional:file:.env[.properties]
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/service}
     username: ${DB_USERNAME:service}

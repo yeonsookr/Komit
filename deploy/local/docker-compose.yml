@@ -66,6 +66,9 @@ services:
       # 카카오 REST API 키·시크릿. .env 에 없으면 로그인만 실패하고 나머지는 동작합니다.
       KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID:-kakao-client-id-dev-only}
       KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-kakao-client-secret-dev-only}
+      # 로컬 개발 기본값은 Mock이며, 실제 Escrow 통합 시험 때만 셸/.env 값으로 덮어씁니다.
+      ESCROW_API_BASE_URL: ${ESCROW_API_BASE_URL:-https://komit.site/mock/escrow}
+      ESCROW_CLIENT_API_KEY: ${ESCROW_CLIENT_API_KEY:-komit-backend-client-api-key-dev-only}
 
   escrow:
     build:
@@ -84,6 +87,7 @@ services:
       DB_PASSWORD: service
       APP_INSTANCE_ROLE: WRITER
       APP_PUBLIC_BASE_URL: http://localhost:8081
+      ESCROW_BOOTSTRAP_CLIENT_API_KEY: ${ESCROW_CLIENT_API_KEY:-komit-backend-client-api-key-dev-only}
 
   fe:
     build:
