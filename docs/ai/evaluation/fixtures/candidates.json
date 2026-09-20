@@ -1,0 +1,81 @@
+{
+  "cases": [
+    {
+      "caseId": "qa-synthetic-001",
+      "task": "qa_suggestion",
+      "status": "candidate",
+      "split": "development",
+      "source": {
+        "kind": "synthetic",
+        "reference": "합성 관리자 화면 예시",
+        "usageTerms": "팀 내부 평가 형식 예시",
+        "anonymized": true
+      },
+      "input": {
+        "issueId": 312,
+        "requirement": "관리자 화면은 관리자만 사용할 수 있다."
+      },
+      "expected": {
+        "testCases": [
+          "로그인하지 않고 관리자 주소에 들어가면 로그인 화면이 나타난다.",
+          "일반 회원으로 관리자 주소에 들어가면 접근이 거부된다.",
+          "관리자로 로그인하고 관리자 주소에 들어가면 관리 화면이 열린다."
+        ],
+        "reviewNote": "실행 가능성과 통과·실패 판정은 승인 전 확인한다."
+      }
+    },
+    {
+      "caseId": "stt-synthetic-001",
+      "task": "transcription",
+      "status": "candidate",
+      "split": "development",
+      "source": {
+        "kind": "synthetic",
+        "reference": "합성 결제 오류 발화 예시",
+        "usageTerms": "팀 내부 평가 형식 예시",
+        "anonymized": true
+      },
+      "input": {
+        "language": "ko",
+        "audio": null
+      },
+      "expected": {
+        "rawText": "결제 에이피아이에서 오백 오류가 나요.",
+        "normalizedText": "결제 API에서 500 오류가 나요.",
+        "reviewNote": "실제 오디오가 없어 CER/WER 점수에는 사용하지 않는다."
+      }
+    },
+    {
+      "caseId": "summary-synthetic-001",
+      "task": "summary",
+      "status": "candidate",
+      "split": "development",
+      "source": {
+        "kind": "synthetic",
+        "reference": "합성 컨설팅 발화 예시",
+        "usageTerms": "팀 내부 평가 형식 예시",
+        "anonymized": true
+      },
+      "input": {
+        "utterances": [
+          { "utteranceIndex": 0, "text": "관리자 화면 접근 오류를 확인했어요." },
+          { "utteranceIndex": 1, "text": "로그인하지 않으면 관리자 화면을 막는 것으로 정하죠." },
+          { "utteranceIndex": 2, "text": "제가 재현 절차를 정리해서 보내겠습니다." }
+        ]
+      },
+      "expected": {
+        "discussed": [
+          { "title": "관리자 화면 접근 오류 논의", "detail": null, "evidenceUtteranceIndexes": [0], "reviewRequired": false }
+        ],
+        "decided": [
+          { "title": "비로그인 접근 차단", "detail": null, "evidenceUtteranceIndexes": [1], "reviewRequired": false }
+        ],
+        "nextActions": [
+          { "title": "재현 절차 전달", "detail": null, "evidenceUtteranceIndexes": [2], "reviewRequired": false }
+        ],
+        "changes": [],
+        "reviewNote": "분류와 근거 의미의 적합성은 승인 전 검토한다."
+      }
+    }
+  ]
+}
