@@ -51,7 +51,7 @@ export function AccountVerificationForm({
   const [confirming, setConfirming] = React.useState(false);
 
   const canSubmit =
-    bankCodeId !== "" && accountNumber.length > 0 && accountHolder.trim().length > 0;
+    bankCodeId !== "" && /^\d{16}$/.test(accountNumber) && accountHolder.trim().length > 0;
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -248,6 +248,7 @@ export function AccountVerificationForm({
               autoComplete="off"
               value={accountNumber}
               placeholder="하이픈 없이 숫자만 적어주세요"
+              maxLength={16}
               disabled={sending}
               onChange={(event) => setAccountNumber(event.target.value.replace(/\D/g, ""))}
             />
