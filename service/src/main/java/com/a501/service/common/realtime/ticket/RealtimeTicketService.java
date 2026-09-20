@@ -9,8 +9,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 import com.a501.service.config.RealtimeProperties;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
@@ -59,7 +59,7 @@ public class RealtimeTicketService {
     private String serialize(RealtimeTicket ticket) {
         try {
             return objectMapper.writeValueAsString(ticket);
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             throw new IllegalStateException("Realtime ticket is not serializable", exception);
         }
     }
@@ -67,7 +67,7 @@ public class RealtimeTicketService {
     private Optional<RealtimeTicket> deserialize(String stored) {
         try {
             return Optional.of(objectMapper.readValue(stored, RealtimeTicket.class));
-        } catch (JsonProcessingException exception) {
+        } catch (JacksonException exception) {
             // 형식이 바뀐 뒤 남아 있던 값. 이미 지워졌으므로 없는 티켓과 같이 다룬다.
             return Optional.empty();
         }

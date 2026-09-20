@@ -9,11 +9,12 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.a501.service.common.exception.BusinessException;
+import com.a501.service.common.realtime.presence.RealtimePresenceService;
 import com.a501.service.common.realtime.protocol.RealtimeChannelType;
 import com.a501.service.common.realtime.protocol.RealtimeErrorCode;
 import com.a501.service.config.RealtimeProperties;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -35,20 +36,26 @@ class RealtimeWebSocketHandlerTest {
             new RealtimePrincipal(12, "conn-1", RealtimeChannelType.CONSULTING_SESSION, "55");
 
     private RealtimeDispatcher dispatcher;
+    private RealtimeConnectionRegistry registry;
+    private RealtimePresenceService presence;
+    private RealtimeDuplicateConnections duplicates;
     private RealtimeWebSocketHandler handler;
     private WebSocketSession session;
     private final List<String> sent = new ArrayList<>();
 
     @BeforeEach
     void setUp() throws Exception {
+        RealtimeProperties properties = RealtimeTestFixtures.properties(MAX_BYTES);
         dispatcher = mock(RealtimeDispatcher.class);
+        presence = mock(RealtimePresenceService.class);
+        registry = new RealtimeConnectionRegistry(MAPPER, presence, properties);
+        duplicates = mock(RealtimeDuplicateConnections.class);
         handler =
                 new RealtimeWebSocketHandler(
-                        dispatcher,
-                        MAPPER,
-                        new RealtimeProperties(Duration.ofSeconds(30), MAX_BYTES, List.of()));
+                        dispatcher, registry, presence, duplicates, MAPPER, properties);
 
         session = mock(WebSocketSession.class);
+        when(session.isOpen()).thenReturn(true);
         Map<String, Object> attributes = new HashMap<>();
         attributes.put(RealtimeHandshakeInterceptor.PRINCIPAL_ATTRIBUTE, PRINCIPAL);
         when(session.getAttributes()).thenReturn(attributes);
@@ -59,6 +66,8 @@ class RealtimeWebSocketHandlerTest {
                         })
                 .when(session)
                 .sendMessage(any());
+
+        handler.afterConnectionEstablished(session);
     }
 
     private void receive(String payload) throws Exception {
@@ -149,12 +158,65 @@ class RealtimeWebSocketHandlerTest {
     }
 
     @Test
-    void principal_이_없으면_연결을_닫는다() throws Exception {
+    void 등록되지_않은_연결로_온_메시지는_1001_로_닫는다() throws Exception {
+        // 이미 걷어 갔거나 pod 가 내려가는 중이다. 서버 결함이 아니므로 1011 로 알리면
+        // 클라이언트가 오류로 알아보고 재접속 대신 오류 화면을 띄운다.
         when(session.getAttributes()).thenReturn(new HashMap<>());
 
         receive(envelope("SYSTEM_PING"));
 
-        verify(session).close(CloseStatus.SERVER_ERROR);
+        verify(session).close(CloseStatus.GOING_AWAY);
         assertThat(sent).isEmpty();
+    }
+
+    @Test
+    void 연결이_열리면_registry_에_올린다() {
+        assertThat(registry.find(PRINCIPAL.connectionId())).isPresent();
+        assertThat(registry.inChannel(RealtimeChannelType.CONSULTING_SESSION, "55")).hasSize(1);
+    }
+
+    @Test
+    void 연결이_닫히면_registry_에서_내린다() {
+        handler.afterConnectionClosed(session, CloseStatus.NORMAL);
+
+        assertThat(registry.find(PRINCIPAL.connectionId())).isEmpty();
+        assertThat(registry.size()).isZero();
+    }
+
+    @Test
+    void 연결이_열리고_닫히는_것을_presence_에도_알린다() {
+        // registry 는 이 pod 것만 안다. 다른 pod 의 상대가 알 수 있는 곳은 presence 뿐이다.
+        verify(presence).touch(PRINCIPAL);
+
+        handler.afterConnectionClosed(session, CloseStatus.NORMAL);
+
+        verify(presence).leave(PRINCIPAL);
+    }
+
+    @Test
+    void 들어오면_같은_사람의_앞선_연결을_정리한다() {
+        verify(duplicates).closeOlderOf(PRINCIPAL);
+    }
+
+    @Test
+    void principal_이_없으면_정리도_하지_않는다() throws Exception {
+        WebSocketSession stray = mock(WebSocketSession.class);
+        when(stray.getAttributes()).thenReturn(new HashMap<>());
+
+        handler.afterConnectionEstablished(stray);
+
+        org.mockito.Mockito.verify(duplicates, org.mockito.Mockito.times(1))
+                .closeOlderOf(org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void principal_이_없으면_registry_에_올리지_않고_닫는다() throws Exception {
+        WebSocketSession stray = mock(WebSocketSession.class);
+        when(stray.getAttributes()).thenReturn(new HashMap<>());
+
+        handler.afterConnectionEstablished(stray);
+
+        verify(stray).close(CloseStatus.SERVER_ERROR);
+        assertThat(registry.size()).isEqualTo(1);
     }
 }

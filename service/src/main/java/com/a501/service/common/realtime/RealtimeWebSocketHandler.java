@@ -4,13 +4,14 @@ import java.nio.charset.StandardCharsets;
 
 import com.a501.service.common.exception.BusinessException;
 import com.a501.service.common.exception.ErrorCode;
+import com.a501.service.common.realtime.presence.RealtimePresenceService;
 import com.a501.service.common.realtime.protocol.RealtimeEnvelope;
 import com.a501.service.common.realtime.protocol.RealtimeErrorCode;
 import com.a501.service.common.realtime.protocol.RealtimeEventFamily;
 import com.a501.service.common.realtime.protocol.RealtimeSystemEvent;
 import com.a501.service.config.RealtimeProperties;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
@@ -20,36 +21,74 @@ import org.springframework.web.socket.handler.TextWebSocketHandler;
 @Component
 public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     private final RealtimeDispatcher dispatcher;
+    private final RealtimeConnectionRegistry registry;
+    private final RealtimePresenceService presence;
+    private final RealtimeDuplicateConnections duplicates;
     private final ObjectMapper objectMapper;
     private final int maxMessageBytes;
 
     public RealtimeWebSocketHandler(
-            RealtimeDispatcher dispatcher, ObjectMapper objectMapper, RealtimeProperties properties) {
+            RealtimeDispatcher dispatcher,
+            RealtimeConnectionRegistry registry,
+            RealtimePresenceService presence,
+            RealtimeDuplicateConnections duplicates,
+            ObjectMapper objectMapper,
+            RealtimeProperties properties) {
         this.dispatcher = dispatcher;
+        this.registry = registry;
+        this.presence = presence;
+        this.duplicates = duplicates;
         this.objectMapper = objectMapper;
         this.maxMessageBytes = properties.maxMessageBytes();
     }
 
     @Override
-    protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+    public void afterConnectionEstablished(WebSocketSession session) throws Exception {
         RealtimePrincipal principal = principal(session);
         if (principal == null) {
             // handshake 를 통과했다면 있어야 한다. 없으면 붙인 자리가 잘못된 것이다.
             session.close(CloseStatus.SERVER_ERROR);
             return;
         }
+        registry.register(principal, session);
+        presence.touch(principal);
+        duplicates.closeOlderOf(principal);
+    }
+
+    @Override
+    public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
+        RealtimePrincipal principal = principal(session);
+        if (principal != null) {
+            registry.forget(principal);
+        }
+    }
+
+    @Override
+    protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
+        RealtimePrincipal principal = principal(session);
+        RealtimeConnection connection =
+                principal == null ? null : registry.find(principal.connectionId()).orElse(null);
+        if (connection == null) {
+            // 이미 걷어 갔거나 pod 가 내려가는 중이다. 서버 결함이 아니므로 1011 이 아니라
+            // 1001 로 알리고, 감싸지 않은 session 으로는 답장하지 않는다.
+            session.close(CloseStatus.GOING_AWAY);
+            return;
+        }
+
+        // 내용이 무엇이든 들어왔다면 살아 있다는 뜻이라, 보기 전에 먼저 기록한다.
+        connection.touch();
 
         RealtimeEnvelope parsed = null;
         try {
             parsed = parse(message);
             if (parsed.family() == RealtimeEventFamily.SYSTEM) {
                 // 연결 확인은 공통 계층이 여기서 끝낸다. domain handler 로 내려보내지 않는다.
-                send(session, system(parsed));
+                connection.send(system(parsed));
                 return;
             }
             dispatcher.dispatch(principal, parsed);
         } catch (BusinessException exception) {
-            send(session, error(exception.getErrorCode(), parsed));
+            connection.send(error(exception.getErrorCode(), parsed));
         }
     }
 
@@ -73,7 +112,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             return envelope.reply(RealtimeSystemEvent.SYSTEM_PONG.name(), null);
         }
         if (RealtimeSystemEvent.SYSTEM_PONG.name().equals(envelope.type())) {
-            // 서버가 보낸 ping 에 대한 답. 살아 있다는 신호이므로 돌려줄 것이 없다.
+            // 서버가 보낸 ping 의 답이다. 돌려줄 것이 없다.
             return null;
         }
         throw new BusinessException(RealtimeErrorCode.UNKNOWN_EVENT_TYPE);
@@ -95,13 +134,6 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
                     payload);
         }
         return parsed.reply(RealtimeSystemEvent.SYSTEM_ERROR.name(), payload);
-    }
-
-    private void send(WebSocketSession session, RealtimeEnvelope envelope) throws Exception {
-        if (envelope == null) {
-            return;
-        }
-        session.sendMessage(new TextMessage(objectMapper.writeValueAsString(envelope)));
     }
 
     static RealtimePrincipal principal(WebSocketSession session) {

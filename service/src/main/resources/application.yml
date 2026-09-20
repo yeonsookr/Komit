@@ -40,6 +40,12 @@ app:
     ticket-ttl: 30s
     # SDP 는 몇 KB 까지 커집니다. 넉넉히 두되 한도는 둡니다.
     max-message-bytes: 65536
+    # 한 연결이 이 시간 안에 받아 가지 못하거나 밀린 양이 한도를 넘으면 그 연결만 끊습니다.
+    send-time-limit: 10s
+    send-buffer-bytes: 524288
+    # 주기적으로 말을 걸어 살아 있는지 확인합니다. 기다리는 시간은 간격보다 길어야 합니다.
+    heartbeat-interval: 20s
+    heartbeat-timeout: 60s
     # 비우면 같은 출처만 받습니다. 운영은 프론트와 같은 도메인입니다.
     allowed-origins: []
 

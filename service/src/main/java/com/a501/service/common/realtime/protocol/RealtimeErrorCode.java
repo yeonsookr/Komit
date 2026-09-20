@@ -11,11 +11,15 @@ public enum RealtimeErrorCode implements ErrorCode {
     MALFORMED_ENVELOPE(
             HttpStatus.BAD_REQUEST, "MALFORMED_ENVELOPE", "메시지 형식이 올바르지 않습니다."),
     PAYLOAD_TOO_LARGE(
-            HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "메시지가 너무 큽니다."),
+            HttpStatus.CONTENT_TOO_LARGE, "PAYLOAD_TOO_LARGE", "메시지가 너무 큽니다."),
     UNKNOWN_EVENT_TYPE(
             HttpStatus.BAD_REQUEST, "UNKNOWN_EVENT_TYPE", "처리할 수 없는 메시지입니다."),
     CHANNEL_FORBIDDEN(
-            HttpStatus.FORBIDDEN, "CHANNEL_FORBIDDEN", "이 연결로는 다룰 수 없는 대상입니다.");
+            HttpStatus.FORBIDDEN, "CHANNEL_FORBIDDEN", "이 연결로는 다룰 수 없는 대상입니다."),
+    RELAY_UNAVAILABLE(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "RELAY_UNAVAILABLE",
+            "지금은 상대에게 전할 수 없습니다. 잠시 뒤에 다시 시도해 주세요.");
 
     private final HttpStatus status;
     private final String code;

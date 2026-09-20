@@ -9,7 +9,7 @@ import static org.mockito.Mockito.when;
 
 import com.a501.service.common.realtime.protocol.RealtimeChannelType;
 import com.a501.service.config.RealtimeProperties;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.ObjectMapper;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
@@ -52,7 +52,7 @@ class RealtimeTicketServiceTest {
                 new RealtimeTicketService(
                         redisTemplate,
                         new ObjectMapper(),
-                        new RealtimeProperties(TICKET_TTL, 65536, java.util.List.of()));
+                        com.a501.service.common.realtime.RealtimeTestFixtures.properties());
     }
 
     @Test

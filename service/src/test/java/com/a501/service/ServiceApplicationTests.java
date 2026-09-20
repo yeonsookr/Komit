@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.testcontainers.containers.GenericContainer;
@@ -13,7 +14,10 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 @Testcontainers
-@SpringBootTest
+// 진짜 서블릿 컨테이너를 띄운다. MOCK 으로 두면 ServerContainer 가 없어 WebSocket 버퍼 설정
+// (WebSocketConfig.webSocketContainer) 이 기동에 실패하고, 애초에 WebSocket 등록 자체를
+// 확인할 수 없다.
+@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
 class ServiceApplicationTests {
     @Container
     @ServiceConnection

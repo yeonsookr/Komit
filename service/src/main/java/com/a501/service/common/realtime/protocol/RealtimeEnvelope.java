@@ -2,7 +2,7 @@ package com.a501.service.common.realtime.protocol;
 
 import com.a501.service.common.exception.BusinessException;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record RealtimeEnvelope(
