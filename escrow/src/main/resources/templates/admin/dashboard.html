@@ -8,7 +8,7 @@
   </style>
 </head>
 <body>
-<header><h1>Komit Escrow 운영 현황</h1><form th:action="@{/admin/logout}" method="post"><button>로그아웃</button></form></header>
+<header><h1>Komit Escrow 운영 현황</h1><form th:action="${adminPrefix + '/admin/logout'}" method="post"><button>로그아웃</button></form></header>
 <main>
   <section class="cards">
     <div class="card"><div class="label">전체 에스크로</div><div class="value" th:text="${dashboard.overview.total}">0</div></div>

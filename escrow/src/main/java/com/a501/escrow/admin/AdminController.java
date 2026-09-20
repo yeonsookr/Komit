@@ -23,12 +23,14 @@ public class AdminController {
     }
 
     @GetMapping("/admin/login")
-    String login() {
+    String login(Model model) {
+        model.addAttribute("adminPrefix", externalPrefix);
         return "admin/login";
     }
 
     @GetMapping("/admin")
     String dashboard(Model model) {
+        model.addAttribute("adminPrefix", externalPrefix);
         model.addAttribute("dashboard", dashboardService.dashboard());
         return "admin/dashboard";
     }
