@@ -17,6 +17,8 @@ public interface FinanceClient {
 
     AccountHolder inquireAccountHolder(String userKey, String accountNo);
 
+    BigInteger inquireAccountBalance(String userKey, String accountNo);
+
     String depositSeedMoney(
             String userKey,
             String accountNo,

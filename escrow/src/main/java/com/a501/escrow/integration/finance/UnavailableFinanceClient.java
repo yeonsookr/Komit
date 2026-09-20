@@ -16,6 +16,7 @@ public class UnavailableFinanceClient implements FinanceClient {
     @Override public DemandDepositAccount openDemandDepositAccount(String userKey, String product) { throw unavailable(); }
     @Override public List<DemandDepositAccount> findDemandDepositAccounts(String userKey) { throw unavailable(); }
     @Override public AccountHolder inquireAccountHolder(String userKey, String accountNo) { throw unavailable(); }
+    @Override public BigInteger inquireAccountBalance(String userKey, String accountNo) { throw unavailable(); }
     @Override public String depositSeedMoney(String userKey, String accountNo, BigInteger amount, String reference) { throw unavailable(); }
     @Override public List<DepositTransaction> findDeposits(String userKey, String accountNo, LocalDate start, LocalDate end) { throw unavailable(); }
     @Override public AccountAuthTransfer openAccountAuth(String userKey, String accountNo, String authText) { throw unavailable(); }

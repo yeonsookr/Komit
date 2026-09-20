@@ -5,3 +5,8 @@
 # 로컬 compose 개인 값
 deploy/local/.env
 fe/.env
+
+# 로컬 Python 실행 환경과 생성 파일
+.venv/
+__pycache__/
+*.pyc

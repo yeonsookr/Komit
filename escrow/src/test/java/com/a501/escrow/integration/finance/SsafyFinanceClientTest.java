@@ -92,6 +92,26 @@ class SsafyFinanceClientTest {
     }
 
     @Test
+    void mapsDemandDepositBalanceInquiry() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        SsafyFinanceClient client = new SsafyFinanceClient(builder, JsonMapper.builder().build(),
+                properties("https://finance.example", "test-api-key"), Clock.systemUTC());
+        server.expect(requestTo("https://finance.example/api/v1/edu/demandDeposit/inquireDemandDepositAccountBalance"))
+                .andExpect(content().json("""
+                        {"accountNo":"0011234567890123",
+                         "Header":{"apiName":"inquireDemandDepositAccountBalance","userKey":"escrow-key"}}
+                        """, false))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000"},"REC":{"accountBalance":"650000"}}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThat(client.inquireAccountBalance("escrow-key", "0011234567890123"))
+                .isEqualTo(BigInteger.valueOf(650_000));
+        server.verify();
+    }
+
+    @Test
     void mapsVirtualAccountCreateTransferVerifySettleAndClose() {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
@@ -122,7 +142,9 @@ class SsafyFinanceClientTest {
                         """, false))
                 .andRespond(withSuccess("""
                         {"Header":{"responseCode":"H0000"},
-                         "REC":{"withdrawalTransaction":{"transactionUniqueNo":"tx-1"}}}
+                         "REC":[
+                           {"accountNo":"0011111111111111","transactionUniqueNo":"tx-2"},
+                           {"accountNo":"0012222222222222","transactionUniqueNo":"tx-1"}]}
                         """, MediaType.APPLICATION_JSON));
         assertThat(client.transfer("payer-key", "0011111111111111", "0012222222222222",
                 BigInteger.valueOf(650_000), "김의뢰", "KOMIT-1", "20260919213456000002"))

@@ -21,11 +21,11 @@
 | --- | --- | --- |
 | 1 | [루트 AGENTS.md](../../AGENTS.md) | 저장소 작업 원칙과 문서 수정 절차 |
 | 2 | [기획서](../../docs/proposal.md), [규칙서](../../docs/RULES.md) | 서비스 경계, R-PAY·R-ACC·R-RPT 규칙 |
-| 3 | [백엔드 컨벤션](../../docs/BACKEND_CONVENTIONS.md) | 패키지·응답·시간·보안·Single Writer·테스트 규칙 |
+| 3 | [백엔드 컨벤션](../../docs/BACKEND_CONVENTIONS.md) | 패키지·응답·시간·보안·Active-Active·테스트 규칙 |
 | 4 | [Mock 작업 규칙](../../mock/AGENTS.md), [Escrow 라우터](../../mock/app/routers/escrow.py) | 실제 요청·응답 모델, 오류, 재현 사례 |
 | 5 | [PostgreSQL 통합 V1](../src/main/resources/db/migration/V1__create_escrow_schema.sql) | 실제 DDL, FK·CHECK·UNIQUE·부분 인덱스·감사 트리거 |
 | 6 | [금융 연동 매핑](FINANCE_MAPPING.md) | SSAFY 호출 순서, 결과 필드, 복구 조회, 실호출 확인 범위 |
-| 7 | [고가용성 기준](HIGH_AVAILABILITY.md) | Writer/Reader·DB 연결·fencing·인프라 인계 |
+| 7 | [고가용성 기준](HIGH_AVAILABILITY.md) | 애플리케이션 Active-Active·DB Primary-Standby·거래별 실행권·인프라 인계 |
 | 8 | [Git 가이드](../../docs/git_guide.md) | 브랜치와 기능별 커밋 형식 |
 
 정책은 규칙서, 외부 API 계약은 Mock Swagger, 저장 구조는 PostgreSQL V1을 기준으로 한다. 서로 모순되면 구현 편의대로 하나를 조용히 덮어쓰지 말고 영향 범위와 해결안을 기록한다. [ERD Cloud SQL](ERDCLOUD_SCHEMA.sql)은 시각화용 MySQL 변환본이다. 실제 DB에 실행하지 않는다. 부분 인덱스와 감사 트리거는 PostgreSQL 원본에서 확인한다.
@@ -43,7 +43,7 @@
 
 - 실제 Controller, 업무 Service, Repository, 금융 클라이언트.
 - API 키 인증, 서비스별 접근 제한, 암호화·조회 해시, 오류 변환.
-- Writer 역할 검증과 guard, 복구 작업, 원장 대사, 운영 감사 기록 흐름.
+- Active-Active 동시 실행 검증, 복구 작업, 원장 대사, 운영 감사 기록 흐름.
 - 자동 스키마 적용. 현재 `build.gradle`에는 Flyway 의존성이 없다.
 - 실제 서버 동시 실행·응답 유실·DB 장애 전환 검증. 현재 Java 테스트는 `contextLoads` 골격이다.
 
@@ -54,9 +54,9 @@
 | SQL 접근 기술 | 사용자는 JPA를 사용하지 않는 방향을 제시했지만, 현재 Gradle과 공용 컨벤션에는 JPA·QueryDSL이 남아 있음 | Escrow의 JDBC/MyBatis 선택을 확정하고 해당 의존성·트랜잭션 설정을 정리한다. 이 문서는 MyBatis 도입이 확정됐다고 가정하지 않는다. Spring JDBC로도 아래 원자적 SQL 흐름을 구현할 수 있다 |
 | 금액 범위 | Mock과 SQL은 `NUMERIC(19,0)` 범위를 허용하지만 공용 컨벤션은 Java `long` 사용을 명시 | DTO 작성 전에 범위를 맞춘다. 권장안은 `long` 표현 범위 안으로 API·DB 검증을 통일하는 것이다. 큰 값을 자르거나 오버플로를 무시하지 않는다. 수수료 곱셈의 중간값도 안전하게 계산한다 |
 | DB 버전 | 공용 문서는 PostgreSQL 18, 현재 k3s DB 이미지는 16.15 | 개발은 문서 기준을 따르되 배포 전 버전을 인프라 담당자와 일치시킨다. PostgreSQL 18 검증을 16 검증으로 간주하지 않는다 |
-| 역할 적용 | 설정에는 `instance-role`이 있지만 현재 `AppProperties`는 `publicBaseUrl`만 바인딩 | 역할 enum·누락 검증·쓰기 guard·작업 실행 제한을 실제로 구현한다 |
+| 역할 적용 | 모든 운영 Pod가 `WRITER`로 동작하는 Active-Active 구성 | 역할 값은 유지하되 단독 Writer 선출에 사용하지 않는다. 금융 호출과 작업의 단일 실행은 DB claim과 분산 lock으로 보장한다 |
 | DB 계정 | 현재 read/write 풀은 같은 datasource 자격증명을 사용 | 읽기 전용 계정 분리와 Primary 강제 조회를 구현한다. `readOnly=true`만으로 권한 차단을 대신하지 않는다 |
-| 배포 | 현재 공통 ConfigMap은 모든 Pod에 WRITER를 주입 | 인프라 문서의 목표 구성을 배포에 반영해야 한다. `replicas=1`이나 `maxSurge=0`만으로 장애 시 두 Writer 실행 방지를 보장하지 않는다 |
+| 배포 | 현재 Escrow Pod 두 개에 공통 `WRITER` 역할을 주입 | Active-Active 구성을 유지한다. Pod 수나 라우팅에 의존하지 않고 DB의 거래별 claim·멱등키·Unique 제약으로 동일 금융 호출을 한 번만 실행해야 한다 |
 
 위 항목은 설계 산출물에 남아 있는 차이다. 영향을 받지 않는 금융 클라이언트 인터페이스·도메인 모델·오류 계약 작업은 병행할 수 있다.
 
@@ -147,7 +147,7 @@ RETURNING id, request_reference;
 - 직접 응답을 잃었다면 원래 시도의 `responded_at`은 NULL을 유지한다. 조회 시도와 감사 사건으로 성공 확정 근거를 남긴다.
 - 같은 거래·단계의 미확정 시도는 부분 유니크 인덱스로 하나만 허용한다. 이 제약은 성공한 송금의 재실행까지 자동으로 막아주지 않는다. 완료된 단계는 업무 상태 검사로 차단한다.
 - 회원 발급은 `step_requested_at`, 계좌 인증은 자체 `DISPATCHING`을 사용한다. 두 흐름을 계약 금융 거래의 attempts 테이블에 억지로 넣지 않는다.
-- 단일 Writer에도 여러 요청 스레드가 있다. JVM lock만으로 보호하지 말고 계약 잠금·조건부 갱신·Unique 제약을 사용한다.
+- 여러 Active Pod와 요청 스레드가 동시에 실행된다. JVM lock만으로 보호하지 말고 계약 잠금·조건부 갱신·Unique 제약을 사용한다.
 - 동결·취소와 예치·지급 시작은 같은 계약 잠금 규약을 공유한다. 이미 전송된 금융 요청을 동결로 취소할 수 있다고 가정하지 않는다. 미확정 결과를 확인하고 후속 자금 이동은 현재 동결 상태를 다시 검사한다.
 
 ## 7. 업무별 구현 주의점
@@ -190,7 +190,7 @@ SSH 전달, Kustomize 생성, Pod `envFrom` 중 하나라도 빠지면 배포 �
 | 단계 | 구현 단위 | 해당 단계 완료 증거 |
 | --- | --- | --- |
 | 1 | SQL 접근 방식·금액 범위 정리, migration 실행 경로, 테스트 DB | 빈 PostgreSQL에서 V1 적용, 실제 DAO 트랜잭션 동작 |
-| 2 | API DTO·예외 처리·API 키 인증·Writer guard | Mock과 같은 JSON/오류, 다른 서비스 접근 거절, Reader 쓰기 차단 |
+| 2 | API DTO·예외 처리·API 키 인증·공통 보안 | Mock과 같은 JSON/오류, 다른 서비스 접근 거절, 모든 Active Pod의 동일한 인증·권한 적용 |
 | 3 | 암호화·요청 지문·멱등 Repository·금융 클라이언트 인터페이스 | 재요청 충돌, 소유권, 호출 실행권 경쟁 검사 |
 | 4 | 회원 발급과 인증 | 각 단계 응답 유실 복구, 데모 중복 입금 방지, 인증 만료·소유권 검사 |
 | 5 | 생성·예치·취소·단건/목록 조회 | 최초 예치 흐름, 미확정 예치 취소 거절, 조회 일관성 |
@@ -206,13 +206,13 @@ SSH 전달, Kustomize 생성, Pod `envFrom` 중 하나라도 빠지면 배포 �
 | 순서 | Story | 하위 Task | Story 완료 조건 | 선행 Story |
 | --- | --- | --- | --- | --- |
 | S1 | Escrow 실행 기반과 데이터 접근 구성 | SQL 접근 기술 확정 및 의존성 정리 / V1 적용 경로 구성 / Primary·Standby 라우팅 / 금액 타입·범위 통일 / 테스트 DB 구성 | 빈 DB에 V1이 적용되고 실제 Repository가 트랜잭션·잠금·조건부 갱신을 수행한다 | 없음 |
-| S2 | 내부 API 보안과 공통 계약 구현 | 요청·응답 DTO / Mock 오류 응답 변환 / `clientApiKey` 인증 / 서비스 소유권 검사 / Writer guard / 요청 지문·암호화 기반 구성 | Mock 계약과 같은 JSON을 반환하고 잘못된 키·다른 서비스 접근·Reader 쓰기를 거절한다 | S1 |
+| S2 | 내부 API 보안과 공통 계약 구현 | 요청·응답 DTO / Mock 오류 응답 변환 / `clientApiKey` 인증 / 서비스 소유권 검사 / 요청 지문·암호화 기반 구성 | Mock 계약과 같은 JSON을 반환하고 잘못된 키와 다른 서비스의 접근을 거절한다 | S1 |
 | S3 | 회원 계좌 발급과 1원 인증 구현 | 회원·계좌 발급 단계 저장 / 데모 입금 / 발급 복구 / 인증 요청 / 인증 확인·만료 검사 / 중복 요청 검증 | 중단 후 재시도해도 추가 계좌·중복 입금·중복 1원 송금이 없고 인증 소유권과 만료가 검증된다 | S1, S2 |
 | S4 | 계약 생성과 예치 구현 | 계약 생성 멱등 처리 / 가입 발급 계좌 대조 / VA 생성 / 예치 이체·검증·보관계좌 정산 / 취소 / 단건·목록 조회 | 예치 전 과정이 복구 가능하며 완료 전 ACTIVE가 되지 않고 진행·UNKNOWN 예치는 취소되지 않는다 | S1, S2, S3 |
 | S5 | 신고 동결과 해제 구현 | 동결 명령 / 해제 명령 / 신고 식별자 충돌 / 성공 결과 재현 / 지급·예치와 계약 잠금 경합 | 같은 명령 재전송은 최초 성공 결과를 반환하고 다른 신고 및 자금 이동과의 경합에서 상태 불변식이 유지된다 | S4 |
 | S6 | 지급·수수료·환불 구현 | 지급 정산 생성 / 순지급 이체 / 수수료 계산·이체 / 최종 환불 / 부분 성공 복구 / 잔액 집계 | 완료된 이체를 반복하지 않고 RELEASE·FEE·REFUND 합계와 응답 금액이 원장과 일치한다 | S4, S5 |
 | S7 | 금융 호출 복구와 대사 구현 | 실행권 획득 / UNKNOWN 탐지·조회 / 재시작 복구 작업 / 감사 사건 기록 / 전체 보관계좌 대사 / 운영자 권한 | 응답 유실·프로세스 종료 뒤에도 중복 송금 없이 결과를 확정하거나 UNKNOWN으로 보존하고 근거가 감사 기록에 남는다 | S3, S4, S6 |
-| S8 | 고가용성 및 실제 금융 환경 검증 | Writer fencing / Reader DB 계정 분리 / Primary 강제 조회 / DB 장애 전환 / 금융망 egress 차단 검증 / 승인된 테스트 계좌 E2E | 이중화 환경의 역할 전환 중 실행권이 하나만 유지되고 승인된 테스트 환경의 핵심 흐름과 장애 복구가 통과한다 | S7, 인프라 준비 |
+| S8 | 고가용성 및 실제 금융 환경 검증 | Active-Active 동시 처리 / 거래별 DB claim / Standby 읽기 계정 / Primary 강제 조회 / DB 장애 전환 / 승인된 테스트 계좌 E2E | 여러 Pod의 동시 요청에서도 금융 실행권이 하나만 유지되고 DB 전환과 승인된 테스트 환경의 핵심 흐름·장애 복구가 통과한다 | S7, 인프라 준비 |
 
 권장 진행 경로는 `S1 → S2 → S3 → S4 → S5 → S6 → S7 → S8`이다. S1에서 금융 클라이언트 인터페이스와 대역 구현을 함께 준비하면 S3 이후 Story를 실제 금융망 없이 검증할 수 있다. S5는 S4가 끝난 뒤 시작하고, S6는 동결과 자금 이동의 경합 규약을 사용하므로 S5 다음에 진행한다. S8은 애플리케이션 복구 기준이 완성된 뒤 인프라 설정과 함께 검증한다.
 
@@ -260,13 +260,13 @@ Pop-Location
 - 지급과 환불, 동결과 지급, 취소와 예치가 경합할 때 불변식이 유지되는지.
 - 다른 서비스·사용자의 계약과 인증 거래에 접근할 수 없는지.
 - 실시간 만료 계산과 동일 인증 재요청의 만료 불변성이 유지되는지.
-- Primary와 Standby 읽기 경로, Reader DB 권한, Writer 전환 중 실행권이 올바른지.
+- Primary와 Standby 읽기 경로, Standby 읽기 계정 권한, 여러 Active Pod의 거래별 실행권이 올바른지.
 
 ## 10. 외부 협업과 운영 전 확인
 
 - **Service 연동:** `openAccountAuth` 멱등키와 `checkAuthCode.transactionUniqueNo`, 필수 환불 `referenceId`, 환불 거래 상태를 클라이언트에 반영한다. 최초 키는 외부 호출 전에 영속화한다. 이 문서에서 Service 변경이 완료됐다고 가정하지 않는다.
 - **분리 DB:** Service 업무 저장과 Escrow 호출은 하나의 로컬 트랜잭션이 아니다. 호출 유실 방지를 위해 Service 측 영속 명령/Outbox와 재시도가 필요하다. 이는 Escrow ERD만으로 해결할 수 없으며 Service 담당자에게 인계한다.
-- **인프라:** Single Writer, 읽기 계정, 금융망 egress를 포함한 fencing, 동기 복제, 버전 정합성은 `HIGH_AVAILABILITY.md` 기준으로 인수한다. lease 만료나 DB 계정 변경만으로 이전 프로세스의 이미 허용된 외부 호출까지 취소되는 것은 아니다.
+- **인프라:** 애플리케이션 Active-Active, DB Primary-Standby, 읽기 계정, 거래별 DB 실행권, 동기 복제와 버전 정합성은 `HIGH_AVAILABILITY.md` 기준으로 인수한다. Pod 수나 로드밸런서만으로 금융 호출의 단일 실행을 보장하지 않는다.
 - **금융 환경:** API 키, 보관계좌, 수수료 수익 계좌, 상품 고유번호, 암호화 키를 환경별로 설정한다. 기동 때 계좌·상품을 반복 개설하지 않는다. 한도는 R-PAY-11로 확인한다.
 - **복구 한계:** 회원 계좌 목록의 후보가 여러 개이거나 1원 인증 거래 결과를 특정할 수 없으면 UNKNOWN을 유지하고 운영 확인에 넘긴다. 불확실한 금융 API 복구 수단을 지어내지 않는다.
 - **수익 계좌:** 동일 소유자 명의 보관계좌·수익 계좌 간 실제 이체 및 조회 검증 상태는 `FINANCE_MAPPING.md`의 미결 항목에서 확인한다.

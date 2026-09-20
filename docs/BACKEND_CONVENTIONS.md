@@ -211,65 +211,46 @@ Resource path:  /api/developers/{developerId}
 
 외부 SSAFY 금융 API에 존재하는 필드를 Escrow 목 응답에 사용해야 한다면 팀의 명시적 승인을 받고, 해당 필드가 ERD 외부 명세에서 왔음을 문서에 남깁니다.
 
-## 6. 서버 이중화와 Single Writer 구조
+## 6. 서버 Active-Active와 DB Primary-Standby 구조
 
-Komit 서버와 Escrow 서버는 각각 최소 2개의 인스턴스로 운영합니다. 두 인스턴스는 같은 애플리케이션 artifact를 사용하지만 런타임 역할은 다릅니다.
-
-- **Writer 인스턴스:** 조회와 변경 모두 수행
-- **Reader 인스턴스:** 조회만 수행하고 DB 상태를 변경하지 않음
-
-각 서버는 동시에 Writer를 하나만 가집니다. Komit의 Writer와 Escrow의 Writer는 서로 독립적으로 선출·전환됩니다.
+Komit 서버와 Escrow 서버는 각각 최소 2개의 동일한 애플리케이션 인스턴스를 Active-Active로 운영합니다. 모든 Ready 인스턴스가 조회와 상태 변경 요청을 처리할 수 있습니다. 데이터베이스는 Primary-Standby로 운영하며 모든 쓰기는 현재 Primary에서 처리합니다.
 
 ```text
 Client / Frontend
         │
-        ├── Komit Load Balancer
-        │       ├── READ  ── Komit Writer + Komit Reader
-        │       └── WRITE ── Komit Writer only
-        │                       └── Komit가 소유한 공용 외부 저장소
+        ├── Komit Load Balancer ── Komit Active A + Active B
+        │                              └── Komit DB Primary + Standby
         │
-        └── Escrow Load Balancer
-                ├── READ  ── Escrow Writer + Escrow Reader
-                └── WRITE ── Escrow Writer only
-                                └── Escrow가 소유한 공용 외부 저장소
+        └── Escrow Load Balancer ── Escrow Active A + Active B
+                                       └── Escrow DB Primary + Standby
 ```
 
-여기서 이중화는 애플리케이션 서버 인스턴스를 의미합니다. 데이터베이스, Redis, 메시지 브로커의 고가용성 구성은 별도 인프라 설계로 정하며 이 문서가 자동으로 DB 이중화를 전제하지 않습니다.
+애플리케이션 Active-Active와 DB Primary-Standby는 서로 다른 계층의 구성입니다. 애플리케이션 인스턴스가 여러 개여도 동일 업무의 상태 변경과 외부 금융 호출은 DB의 멱등키, Unique 제약과 원자적 조건부 갱신으로 한 번만 실행되어야 합니다.
 
-### 6.1 읽기·쓰기 라우팅
+### 6.1 애플리케이션과 DB 라우팅
 
-- 조회 요청은 Writer와 Reader 모두 처리할 수 있습니다.
-- 생성·수정·삭제·상태 전이 요청은 Writer만 처리합니다.
-- 로드밸런서는 read route를 두 인스턴스에 분산하고 write route를 현재 Writer에만 전달합니다.
-- 단순히 HTTP method만 보지 않고 API 명세에 정의된 실제 동작을 기준으로 read/write를 분류합니다. 조회 성격의 POST와 상태를 변경하는 비표준 endpoint가 있다면 route 설정에 명시합니다.
-- Reader로 write 요청이 전달되지 않는 것이 1차 방어선입니다. 애플리케이션과 DB 권한에서도 write를 다시 차단합니다.
-- 인스턴스 역할은 `local`·`prod` 프로필과 분리된 배포 환경 값으로 주입합니다. 예: `APP_INSTANCE_ROLE=WRITER|READER`.
-- 애플리케이션 시작 시 역할 값이 없거나 유효하지 않으면 시작을 실패시킵니다.
-- Reader가 받은 write 요청을 자신이 처리하거나 임의로 Writer에 HTTP redirect하지 않습니다.
-- Writer 부재 중 write API를 외부에 실패 응답으로 노출해야 한다면 상태 코드와 서버별 응답 body를 먼저 목 Swagger에 정의합니다. 운영 편의를 이유로 계약에 없는 응답을 즉석에서 만들지 않습니다.
+- 로드밸런서는 조회와 상태 변경 요청을 모든 Ready 애플리케이션 인스턴스에 분산합니다.
+- 변경 트랜잭션은 DB Primary의 read-write Service로 연결합니다.
+- 복제 지연을 허용할 수 있는 일반 조회만 Standby의 read-only Service로 연결할 수 있습니다.
+- 쓰기 직후 조회, 멱등 결과 확인, 금융 복구와 대사는 Primary에서 읽습니다.
+- 모든 Active 인스턴스는 동일한 배포 역할을 사용합니다. Escrow의 `APP_INSTANCE_ROLE=WRITER`는 단독 Active를 뜻하지 않고 DB 실행권을 획득할 수 있는 인스턴스를 뜻합니다.
 
 ### 6.2 DB 권한과 트랜잭션 방어
 
-- Writer는 읽기·쓰기 DB 계정을 사용하고 Reader는 DB에서 실제로 쓰기가 제한된 read-only 계정을 사용합니다.
-- Reader의 DB 계정에는 `INSERT`, `UPDATE`, `DELETE`, DDL 권한을 부여하지 않습니다.
+- Primary 연결은 읽기·쓰기 DB 계정을 사용하고 Standby 연결은 실제로 쓰기가 제한된 read-only 계정을 사용합니다.
+- Standby 읽기 계정에는 `INSERT`, `UPDATE`, `DELETE`, DDL 권한을 부여하지 않습니다.
 - `@Transactional(readOnly = true)`는 성능과 의도 표현을 위한 규칙이며 보안 경계로 신뢰하지 않습니다. 최종 쓰기 차단은 DB 권한으로 보장합니다.
-- write Service는 Writer 역할에서만 실행되도록 공통 guard를 적용합니다.
-- Reader가 실수로 write를 시도하면 정상 처리로 숨기지 않고 즉시 실패시키며 운영 경보를 발생시킵니다.
+- Standby 연결로 쓰기를 시도하면 정상 처리로 숨기지 않고 즉시 실패시키며 운영 경보를 발생시킵니다.
 
-### 6.3 Writer 장애 전환과 split-brain 방지
+### 6.3 거래별 실행권과 DB 장애 전환
 
-Writer 장애 시 Reader를 새 Writer로 승격할 수 있지만, 두 인스턴스가 동시에 write 가능한 상태가 되어서는 안 됩니다.
-
-1. 기존 Writer를 write 대상에서 제거하고 쓰기 권한을 fencing합니다.
-2. 기존 Writer가 더 이상 write할 수 없음을 확인합니다.
-3. Reader에 write DB 권한과 Writer 역할을 부여합니다.
-4. 로드밸런서 write route를 새 Writer로 전환합니다.
-5. health check, write smoke test, 중복 처리 여부를 확인합니다.
-
-- 역할 변경은 사람의 기억이나 단순 로컬 flag가 아니라 배포 설정, lease 또는 외부 조정 저장소로 관리합니다.
-- 네트워크 단절된 이전 Writer가 살아 돌아와도 write하지 못하도록 DB 권한, lease/epoch 또는 이에 준하는 fencing 수단을 둡니다.
-- 자동 failover를 도입하더라도 동시에 한 Writer만 허용한다는 불변조건을 테스트합니다.
-- 장애 전환 중 재시도된 계약·결제·정산 요청은 idempotency key와 DB 제약조건으로 중복 처리를 막습니다.
+- 동일 명령이 여러 Active 인스턴스에 도달할 수 있음을 전제로 합니다.
+- 멱등키와 요청 지문, DB Unique 제약, `WHERE status = ...` 조건부 갱신을 최종 중복 방어선으로 둡니다.
+- 외부 금융 호출은 `REQUESTED → DISPATCHING` 갱신이 1행 성공한 인스턴스만 수행합니다.
+- `dispatched_by`에 Pod 이름 등 실행 생명주기 고유 식별자를 기록합니다.
+- Primary 장애 시 DB 클러스터가 Standby를 승격하고 read-write Service를 새 Primary로 전환합니다.
+- DB 장애 전환 전후에 재시도된 계약·결제·정산 요청도 같은 멱등키로 한 번만 반영되어야 합니다.
+- `DISPATCHING`에서 인스턴스나 DB 연결이 중단되면 같은 금융 요청을 재전송하지 않고 `UNKNOWN` 조회·대사로 복구합니다.
 
 ### 6.4 무상태 애플리케이션
 
@@ -280,11 +261,11 @@ Writer 장애 시 Reader를 새 Writer로 승격할 수 있지만, 두 인스턴
 - 업로드 파일과 생성 결과물을 인스턴스 로컬 디스크에 영구 보관하지 않습니다. 공용 Object Storage를 사용합니다.
 - 로컬 메모리 캐시는 없어져도 정합성이 깨지지 않는 값에만 사용합니다.
 - sticky session은 성능 최적화로 사용할 수 있지만 정확성을 보장하는 필수 조건으로 삼지 않습니다.
-- 채팅·WebSocket 연결 상태를 여러 인스턴스가 공유해야 하면 Redis Pub/Sub 또는 메시지 브로커 같은 공용 전달 계층을 사용합니다. Reader에 연결된 사용자가 상태 변경 명령을 보내는 경우 Reader가 DB에 직접 쓰지 않고 Writer가 소비하는 command channel로 전달합니다.
+- 채팅·WebSocket 연결 상태를 여러 인스턴스가 공유해야 하면 Redis Pub/Sub 또는 메시지 브로커 같은 공용 전달 계층을 사용합니다.
 
 ### 6.5 중복 요청과 동시 실행
 
-로드밸런서 재시도, 클라이언트 재시도 또는 네트워크 timeout으로 같은 명령이 Writer에 다시 실행될 수 있습니다.
+로드밸런서 재시도, 클라이언트 재시도 또는 네트워크 timeout으로 같은 명령이 다른 Active 인스턴스에서 다시 실행될 수 있습니다.
 
 - 계약 수락, 상담 신청, 결제·환불·정산 요청은 멱등하게 설계합니다.
 - 외부 결제 요청처럼 중복 실행 비용이 큰 API는 idempotency key를 사용합니다.
@@ -294,10 +275,9 @@ Writer 장애 시 Reader를 새 Writer로 승격할 수 있지만, 두 인스턴
 
 ### 6.6 스케줄러와 비동기 작업
 
-- 상태를 변경하는 `@Scheduled` 작업과 consumer는 Writer에서만 활성화합니다.
-- Reader에서는 조회·모니터링처럼 DB 상태를 변경하지 않는 작업만 실행할 수 있습니다.
-- Writer 전환 과정에서 작업이 다시 실행될 수 있으므로 스케줄러와 consumer도 멱등하게 구현합니다.
-- 한 번만 실행되어야 하는 작업은 Writer 역할 제한과 함께 외부 스케줄러, 작업 큐 또는 분산 lock을 사용합니다.
+- 상태를 변경하는 `@Scheduled` 작업과 consumer가 모든 Active 인스턴스에서 기동될 수 있음을 전제로 합니다.
+- 처리 대상별 DB claim으로 한 인스턴스만 실행권을 획득하게 합니다.
+- 전체 범위에서 한 번만 실행되어야 하는 작업은 외부 스케줄러, 작업 큐 또는 DB 기반 분산 lock을 사용합니다.
 - JVM의 `synchronized`나 로컬 lock으로 인스턴스 간 중복 실행을 막을 수 없습니다.
 - 메시지 consumer는 동일 메시지가 다시 전달되어도 안전하도록 멱등하게 처리합니다.
 - 실패 작업은 재시도 횟수, backoff, 최종 실패 보관 및 수동 재처리 절차를 둡니다.
@@ -305,8 +285,8 @@ Writer 장애 시 Reader를 새 Writer로 승격할 수 있지만, 두 인스턴
 ### 6.7 헬스체크와 무중단 배포
 
 - 로드밸런서는 Actuator 기반 liveness와 readiness를 구분해 확인합니다.
-- read readiness는 Writer와 Reader 모두 제공하고, write readiness는 현재 Writer만 통과해야 합니다.
-- 로드밸런서의 read target group에는 두 인스턴스를, write target group에는 write readiness를 통과한 Writer 하나만 등록합니다.
+- 모든 Active 인스턴스는 동일한 readiness를 제공하고 로드밸런서 대상에 포함됩니다.
+- readiness는 애플리케이션과 현재 DB Primary 연결이 요청을 처리할 수 있는지 확인합니다.
 - readiness 실패 인스턴스에는 해당 종류의 신규 트래픽을 보내지 않습니다.
 - 종료 시 신규 요청 수신을 먼저 중단하고 진행 중 요청을 마칠 수 있도록 graceful shutdown을 사용합니다.
 - 모든 인스턴스가 같은 버전으로 한 번에 교체된다고 가정하지 않습니다. API와 DB migration은 롤링 배포 중 구버전·신버전이 잠시 공존해도 호환되어야 합니다.
@@ -752,7 +732,7 @@ src/main/resources/
 
 - 공통 설정만 `application.yml`에 둡니다.
 - 활성 프로필은 `local`, `prod` 두 개만 사용합니다.
-- Writer/Reader는 Spring profile이 아닙니다. `local-writer`, `prod-reader` 같은 조합 프로필을 만들지 않고 `APP_INSTANCE_ROLE` 같은 별도 배포 설정으로 구분합니다.
+- 애플리케이션 Active-Active와 DB Primary-Standby는 Spring profile로 구분하지 않습니다. DB 연결 대상과 애플리케이션 역할은 별도 배포 설정으로 주입합니다.
 - local은 로컬 PostgreSQL을 사용하고 prod는 환경 변수로 운영 PostgreSQL과 외부 인프라에 연결합니다.
 - 테스트는 `application-test.yml`을 만들지 않습니다. Testcontainers의 `@ServiceConnection` 또는 동적 property 주입으로 격리된 PostgreSQL에 연결합니다.
 - 비밀번호, JWT secret, API key, access token을 설정 파일이나 Git에 커밋하지 않습니다. 운영에 쓰지 않는 개발용 예시 값은 예외입니다. `docs/jwt-samples.md`의 샘플 서명 키처럼 값에 `dev-only`를 명시하고 운영 값으로 쓰지 않습니다.
@@ -800,7 +780,7 @@ spring:
 - 같은 요청의 중복 실행은 unique constraint, 상태 검사 또는 idempotency key로 차단합니다.
 - 동시 변경이 가능한 리소스는 낙관적 잠금 충돌을 409로 변환합니다.
 - 이벤트 발행이 DB commit과 함께 보장되어야 하면 Outbox 패턴 도입을 검토합니다.
-- Writer 역할은 장애 전환으로 다른 인스턴스로 이동할 수 있으므로 JVM 내부 lock을 정합성 수단으로 사용하지 않습니다.
+- 여러 Active 인스턴스가 동시에 실행되므로 JVM 내부 lock을 인스턴스 간 정합성 수단으로 사용하지 않습니다.
 
 ## 17. API 문서화 규칙
 
@@ -942,11 +922,11 @@ log.info("Contract accepted. contractId={}, actorId={}", contractId, actorId);
 
 ### 이중화 역할 테스트
 
-- 같은 조회 API가 Writer와 Reader 역할에서 모두 성공하는지 확인합니다.
-- Reader 역할에서 모든 write Service와 상태 변경 scheduler가 차단되는지 확인합니다.
-- Reader DB 계정으로 `INSERT`, `UPDATE`, `DELETE`, DDL이 실패하는지 통합 테스트 또는 배포 검증으로 확인합니다.
-- Writer 장애 전환 시 두 Writer가 동시에 활성화되지 않는지 확인합니다.
-- 장애 전환 전후에 같은 idempotency key를 다시 사용해도 상태가 한 번만 변경되는지 확인합니다.
+- 같은 API가 어느 Active 인스턴스에 도달해도 같은 계약과 권한 규칙으로 동작하는지 확인합니다.
+- 동일한 idempotency key를 여러 인스턴스에 동시에 보내도 상태와 외부 호출이 한 번만 반영되는지 확인합니다.
+- Standby 읽기 계정으로 `INSERT`, `UPDATE`, `DELETE`, DDL이 실패하는지 통합 테스트 또는 배포 검증으로 확인합니다.
+- DB Primary 장애 전환 뒤 커밋 완료된 상태와 금융 시도가 보존되는지 확인합니다.
+- `DISPATCHING` 직후 처리 인스턴스가 종료되어도 다른 인스턴스가 금융 요청을 재전송하지 않는지 확인합니다.
 
 ### 실행 기준
 
@@ -1009,10 +989,10 @@ PR 설명에는 다음을 포함합니다.
 - [ ] PostgreSQL 기반 통합 테스트가 필요한 변경인가?
 - [ ] 스키마 변경이 엔티티와 ERD에 함께 반영되었는가?
 - [ ] 조회 요청을 어느 인스턴스가 받아도 동작하는 무상태 구현인가?
-- [ ] 조회 API는 Writer와 Reader 양쪽에서 실행 가능한가?
-- [ ] 쓰기 API와 상태 변경 작업은 Writer에서만 실행되는가?
-- [ ] Reader DB 계정에 실제 read-only 권한이 적용되는가?
-- [ ] Writer 전환 중 두 Writer가 생기지 않도록 fencing이 적용되는가?
+- [ ] 조회와 쓰기 API가 어느 Active 인스턴스에서도 실행 가능한가?
+- [ ] Standby DB 계정에 실제 read-only 권한이 적용되는가?
+- [ ] 여러 인스턴스가 동일 금융 시도를 경쟁해도 DB 실행권을 한 인스턴스만 획득하는가?
+- [ ] DB Primary 장애 전환 중에도 완료 기록과 멱등 결과가 보존되는가?
 - [ ] 재시도·중복 요청·동시 실행에도 상태가 중복 변경되지 않는가?
 - [ ] 스케줄러 또는 consumer가 이중 실행되어도 안전한가?
 - [ ] 롤링 배포 중 구버전과 신버전이 공존할 수 있는 변경인가?
@@ -1034,7 +1014,7 @@ PR 설명에는 다음을 포함합니다.
 3. 목 Swagger가 최신 계약을 보여줍니다.
 4. 실제 Spring API가 목 계약과 일치합니다.
 5. 권한, 상태 전이, 동시성 및 멱등성 규칙이 Service에 구현되어 있습니다.
-6. 조회는 두 인스턴스에서 가능하고 쓰기는 현재 Writer 하나에서만 가능하도록 라우팅·애플리케이션 guard·DB 권한이 적용되어 있습니다.
+6. 모든 Active 인스턴스가 요청을 처리하되 동일 명령과 금융 호출은 DB 실행권·멱등성·제약조건으로 한 번만 반영되며, DB는 Primary-Standby로 구성되어 있습니다.
 7. 필요 시 엔티티와 ERD가 함께 갱신되었습니다.
 8. 단위·통합·Controller 테스트가 변경 위험에 맞게 작성되었습니다.
 9. `gradlew build`가 통과합니다.

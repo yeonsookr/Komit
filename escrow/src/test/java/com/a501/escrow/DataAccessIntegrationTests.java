@@ -10,6 +10,8 @@ import java.math.BigInteger;
 import java.net.URI;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 
 import com.a501.escrow.common.api.EscrowErrorResponse;
 import com.a501.escrow.common.api.EscrowHeaderFactory;
@@ -37,6 +39,8 @@ import com.a501.escrow.domain.escrow.service.EscrowSettlementService;
 import com.a501.escrow.domain.escrow.repository.EscrowSettlementRepository;
 import com.a501.escrow.domain.finance.repository.FinancialOperationAttemptRepository;
 import com.a501.escrow.integration.finance.FinanceClient;
+import com.a501.escrow.domain.reconciliation.dto.ReconciliationDtos;
+import com.a501.escrow.domain.reconciliation.service.ReconciliationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
@@ -130,6 +134,9 @@ class DataAccessIntegrationTests {
     @Autowired
     EscrowSettlementRepository escrowSettlementRepository;
 
+    @Autowired
+    ReconciliationService reconciliationService;
+
     @MockitoBean
     FinanceClient financeClient;
 
@@ -163,6 +170,7 @@ class DataAccessIntegrationTests {
 
     @BeforeEach
     void seed() {
+        jdbcTemplate.update("DELETE FROM reconciliation_snapshots");
         jdbcTemplate.update("DELETE FROM escrow_state_commands");
         jdbcTemplate.update("DELETE FROM financial_operation_attempts");
         jdbcTemplate.update("DELETE FROM escrow_transactions");
@@ -221,7 +229,7 @@ class DataAccessIntegrationTests {
                   AND table_name IN ('service_clients', 'escrows', 'financial_operation_attempts')
                 """, Integer.class);
 
-        assertThat(migrationCount).isEqualTo(1);
+        assertThat(migrationCount).isEqualTo(2);
         assertThat(tableCount).isEqualTo(3);
     }
 
@@ -242,15 +250,104 @@ class DataAccessIntegrationTests {
 
     @Test
     void onlyOneCallerCanClaimRequestedAttempt() {
-        var first = attemptRepository.claim(1, "writer-1");
-        var second = attemptRepository.claim(1, "writer-2");
+        CountDownLatch start = new CountDownLatch(1);
+        var first = CompletableFuture.supplyAsync(() -> claimAfter(start, "escrow-pod-a"));
+        var second = CompletableFuture.supplyAsync(() -> claimAfter(start, "escrow-pod-b"));
+        start.countDown();
+        var claims = java.util.List.of(first.join(), second.join());
 
-        assertThat(first).isPresent();
-        assertThat(first.orElseThrow().requestReference()).isEqualTo("request-1");
-        assertThat(second).isEmpty();
+        assertThat(claims).filteredOn(java.util.Optional::isPresent).hasSize(1);
+        assertThat(claims.stream().flatMap(java.util.Optional::stream).findFirst().orElseThrow()
+                .requestReference()).isEqualTo("request-1");
         assertThat(jdbcTemplate.queryForObject(
                 "SELECT dispatched_by FROM financial_operation_attempts WHERE id = 1", String.class))
-                .isEqualTo("writer-1");
+                .isIn("escrow-pod-a", "escrow-pod-b");
+    }
+
+    @Test
+    void onlyOnePodCanPrepareTheSameUnresolvedFinancialStep() {
+        CountDownLatch start = new CountDownLatch(1);
+        var first = CompletableFuture.supplyAsync(() -> prepareAfter(start, "holder-a"));
+        var second = CompletableFuture.supplyAsync(() -> prepareAfter(start, "holder-b"));
+        start.countDown();
+
+        assertThat(java.util.List.of(first.join(), second.join()))
+                .filteredOn(java.util.Optional::isPresent).hasSize(1);
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM financial_operation_attempts
+                WHERE transaction_id=1 AND step='HOLDER_VERIFY'
+                  AND status IN ('REQUESTED','DISPATCHING','UNKNOWN')
+                """, Integer.class)).isEqualTo(1);
+    }
+
+    private java.util.Optional<Long> prepareAfter(CountDownLatch start, String reference) {
+        try {
+            start.await();
+            return escrowSettlementRepository.prepareAttempt(1, "HOLDER_VERIFY", reference);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(exception);
+        }
+    }
+
+    private java.util.Optional<com.a501.escrow.domain.finance.repository.ClaimedFinancialOperation> claimAfter(
+            CountDownLatch start, String instanceId) {
+        try {
+            start.await();
+            return attemptRepository.claim(1, instanceId);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(exception);
+        }
+    }
+
+    @Test
+    void staleDispatchIsRecoveredWithoutCreatingTwoQueryClaims() {
+        jdbcTemplate.update("""
+                INSERT INTO settlements(id,escrow_id,external_reference_id,approved_amount,status)
+                VALUES (2,1,'SETTLEMENT:HA-1',1,'PROCESSING')
+                """);
+        jdbcTemplate.update("""
+                INSERT INTO escrow_transactions(id,service_client_id,escrow_id,settlement_id,transaction_type,
+                    amount,status,external_reference_id,idempotency_key,request_fingerprint,
+                    recipient_bank_code,recipient_account_encrypted,recipient_name)
+                VALUES (2,1,1,2,'RELEASE',1,'PROCESSING','SETTLEMENT:HA-1','ha-release',repeat('c',64),
+                    '001','encrypted','worker')
+                """);
+        jdbcTemplate.update("""
+                INSERT INTO financial_operation_attempts(transaction_id,step,attempt_no,request_reference,
+                    status,dispatched_by,dispatched_at)
+                VALUES (2,'PAYOUT_TRANSFER',1,'ha-request','DISPATCHING','escrow-pod-a',
+                    clock_timestamp() - interval '5 minutes')
+                """);
+
+        int recovered = escrowSettlementRepository.markStaleDispatchingUnknown(
+                java.time.OffsetDateTime.now().minusMinutes(2));
+        var firstQuery = escrowSettlementRepository.prepareRecoveryAttempt(2, "ha-query-a");
+        var competingQuery = escrowSettlementRepository.prepareRecoveryAttempt(2, "ha-query-b");
+
+        assertThat(recovered).isEqualTo(1);
+        assertThat(firstQuery).isPresent();
+        assertThat(competingQuery).isEmpty();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM escrow_transactions WHERE id=2", String.class)).isEqualTo("UNKNOWN");
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM financial_operation_attempts WHERE transaction_id=2 AND step='PAYOUT_TRANSFER'",
+                String.class)).isEqualTo("UNKNOWN");
+
+        assertThat(escrowSettlementRepository.claimAttempt(firstQuery.orElseThrow(), "escrow-pod-a")).isTrue();
+        jdbcTemplate.update("""
+                UPDATE financial_operation_attempts SET dispatched_at=clock_timestamp() - interval '5 minutes'
+                WHERE id=?
+                """, firstQuery.orElseThrow());
+        int recycled = escrowSettlementRepository.markStaleDispatchingUnknown(
+                java.time.OffsetDateTime.now().minusMinutes(2));
+
+        assertThat(recycled).isEqualTo(1);
+        assertThat(escrowSettlementRepository.prepareRecoveryAttempt(2, "ha-query-retry")).isPresent();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM financial_operation_attempts WHERE id=?", String.class,
+                firstQuery.orElseThrow())).isEqualTo("FAILED");
     }
 
     @Test
@@ -463,6 +560,35 @@ class DataAccessIntegrationTests {
                     assertThat(detail.refundedAmount()).isEqualTo(BigInteger.valueOf(250_000));
                     assertThat(detail.balance()).isZero();
                 });
+    }
+
+    @Test
+    void reconcilesAllServiceLedgerAgainstActualCustodyBalanceWithOperatorKey() {
+        jdbcTemplate.update("""
+                UPDATE escrow_transactions SET status='COMPLETED',deposit_verification_status='MATCHED',
+                    completed_at=clock_timestamp() WHERE id=1
+                """);
+        when(financeClient.inquireAccountBalance("test-escrow-user-key", "0010000000000000"))
+                .thenAnswer(invocation -> {
+                    assertThat(org.springframework.transaction.support.TransactionSynchronizationManager
+                            .isActualTransactionActive()).isFalse();
+                    return BigInteger.ONE;
+                });
+
+        var result = reconciliationService.inquire(new ReconciliationDtos.Request(
+                validHeader("inquireReconciliation", "dev-only-operator-client-api-key", null, null), 7));
+
+        assertThat(result.ledgerTotal()).isEqualTo(BigInteger.ONE);
+        assertThat(result.bankBalance()).isEqualTo(BigInteger.ONE);
+        assertThat(result.differenceAmount()).isZero();
+        assertThat(result.result()).isEqualTo("MATCHED");
+        assertThat(result.escrowCount()).isEqualTo(1);
+        assertThat(result.history()).hasSize(1);
+
+        assertThatThrownBy(() -> reconciliationService.inquire(new ReconciliationDtos.Request(
+                validHeader("inquireReconciliation", "test-client-api-key", null, null), 7)))
+                .isInstanceOfSatisfying(EscrowApiException.class,
+                        exception -> assertThat(exception.responseCode()).isEqualTo("E5001"));
     }
 
 

@@ -1376,6 +1376,7 @@ class CreateEscrowRequest(WithdrawalAccount):
             "escrows.contract_type에 대응한다."
         ),
         examples=["DEVELOPMENT"],
+        min_length=1,
         max_length=30,
     )
     depositorName: str = Field(
@@ -1443,7 +1444,7 @@ class ReleaseEscrowRequest(BaseModel):
     )
     escrowId: int = Field(
         description="대상 에스크로. 404는 없음, 409는 동결 중 재현용 예약값이다.",
-        examples=[ESCROW_ID],
+        examples=[ESCROW_ID], gt=0,
     )
     referenceId: str = Field(
         description=(
@@ -1541,7 +1542,7 @@ class RefundEscrowRequest(BaseModel):
     )
     escrowId: int = Field(
         description="대상 에스크로. 404는 없음, 409는 동결 중 재현용 예약값이다.",
-        examples=[ESCROW_ID],
+        examples=[ESCROW_ID], gt=0,
     )
     amount: int = Field(
         description="최종 정산에서 남은 금액 전액. 부분 환불은 허용하지 않는다.",
@@ -1617,7 +1618,7 @@ class CancelEscrowRequest(BaseModel):
             "취소할 에스크로. CREATED 또는 DEPOSIT_PENDING이며 자금 이동이 없다고 확정된 경우만 가능하다. 203·204는 송금 진행·결과 불명, 205는 무출금 확정 실패다. 404는 "
             "없음, 42와 409는 이미 ACTIVE 재현용 예약값이다."
         ),
-        examples=[DEPOSIT_PENDING_ESCROW_ID],
+        examples=[DEPOSIT_PENDING_ESCROW_ID], gt=0,
     )
 
 
@@ -2260,7 +2261,7 @@ class HoldEscrowRequest(BaseModel):
     )
     escrowId: int = Field(
         description="동결할 에스크로. 404는 없음 재현용 예약값이다.",
-        examples=[ESCROW_ID],
+        examples=[ESCROW_ID], gt=0,
     )
     reportId: str = Field(
         description=(
@@ -2297,7 +2298,7 @@ class UnholdEscrowRequest(BaseModel):
     )
     escrowId: int = Field(
         description="대상 에스크로. 404는 없음 재현용 예약값이다.",
-        examples=[ESCROW_ID],
+        examples=[ESCROW_ID], gt=0,
     )
     reportId: str = Field(
         description=(
@@ -2506,7 +2507,7 @@ class InquireEscrowRequest(BaseModel):
         description=(
             "조회할 에스크로. 202는 예치 대기, 404는 없음 재현용 예약값이다."
         ),
-        examples=[ESCROW_ID],
+        examples=[ESCROW_ID], gt=0,
     )
     contractId: str | None = Field(
         default=None,
@@ -2573,12 +2574,15 @@ class InquireEscrowListRequest(BaseModel):
     Header: EscrowRequestHeader = Field(
         description="JSON Body 안에 담는 공통 요청 Header."
     )
-    contractIds: List[str] | None = Field(
+    contractIds: List[Annotated[str, Field(min_length=1, max_length=100)]] | None = Field(
         default=None,
         description="특정 계약만 거를 때 쓴다. 비우면 전부 내려간다.",
         examples=[["CONTRACT-999"]],
+        max_length=100,
     )
-    status: str | None = Field(
+    status: Literal[
+        "CREATED", "DEPOSIT_PENDING", "ACTIVE", "COMPLETED", "REFUNDED", "CANCELLED"
+    ] | None = Field(
         default=None,
         description="상태로 거를 때 쓴다. 비우면 전부 내려간다.",
         examples=["ACTIVE"],
