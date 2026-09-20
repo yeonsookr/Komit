@@ -546,6 +546,8 @@ fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
 | `ESCROW_API_BASE_URL` | Visible, Protected | Backend가 호출할 Escrow 계약 서버 주소. 현재 개발 배포는 Mock 주소를 사용하고 실제 통합 시 `http://escrow:8081/api`로 교체합니다 |
 | `ESCROW_CLIENT_API_KEY` | Masked, Protected | Backend의 Escrow 내부 API 인증키. 32자 이상이며 Escrow 시작 시 HMAC 해시만 `service_clients`에 등록됩니다 |
 | `ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE` | Visible, Protected | 해당 API 키의 `service_clients.one_won_auth_message`에 저장할 1원 인증 문구. 현재 권장값은 `KOMIT`입니다 |
+| `ESCROW_ADMIN_USERNAME` | Visible, Protected | Escrow 조회 전용 운영 페이지 로그인 아이디 |
+| `ESCROW_ADMIN_PASSWORD_HASH` | Masked, Protected | 운영 페이지 비밀번호의 `{bcrypt}...` 해시. 원문 비밀번호는 저장하지 않습니다 |
 | `SSAFY_FINANCE_API_KEY` | Masked, Protected | Escrow가 SSAFY 교육용 금융망을 호출할 때 사용하는 앱 관리자 API Key |
 | `SSAFY_DEMAND_DEPOSIT_PRODUCT_NO` | Visible, Protected | R-ACC-10에 따라 해당 SSAFY 환경에 미리 등록한 입출금 상품 고유번호 |
 | `SSAFY_ESCROW_USER_KEY`, `SSAFY_ESCROW_ACCOUNT_NO` | Masked, Protected | 계약별 가상계좌의 모계좌가 되는 Escrow 보관 주체의 금융망 사용자 키와 16자리 보관계좌 번호 |

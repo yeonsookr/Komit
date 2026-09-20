@@ -89,6 +89,9 @@ services:
       APP_PUBLIC_BASE_URL: http://localhost:8081
       ESCROW_BOOTSTRAP_CLIENT_API_KEY: ${ESCROW_CLIENT_API_KEY:-komit-backend-client-api-key-dev-only}
       ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE: ${ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE:-KOMIT}
+      ESCROW_ADMIN_USERNAME: ${ESCROW_ADMIN_USERNAME:-admin}
+      # 로컬 전용 기본 계정(admin/admin). 운영은 GitLab의 BCrypt 해시를 사용합니다.
+      ESCROW_ADMIN_PASSWORD_HASH: "{noop}admin"
 
   fe:
     build:

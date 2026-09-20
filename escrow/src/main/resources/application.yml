@@ -12,6 +12,13 @@ spring:
 server:
   port: ${SERVER_PORT:8081}
   shutdown: graceful
+  servlet:
+    session:
+      timeout: ${ESCROW_ADMIN_SESSION_TIMEOUT:30m}
+      cookie:
+        http-only: true
+        same-site: strict
+        secure: ${ESCROW_ADMIN_COOKIE_SECURE:true}
 
 app:
   # WRITER | READER. 배포 환경 값으로만 주입하며 프로필과 섞지 않습니다.
@@ -38,6 +45,9 @@ app:
     escrow-account-no: ${SSAFY_ESCROW_ACCOUNT_NO}
     fee-account-no: ${SSAFY_FEE_ACCOUNT_NO}
     virtual-account-validity-days: ${SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS}
+  admin:
+    username: ${ESCROW_ADMIN_USERNAME}
+    password-hash: ${ESCROW_ADMIN_PASSWORD_HASH}
 
 management:
   endpoints:
