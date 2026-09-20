@@ -61,10 +61,16 @@ for NAME in CLIENT_API_KEY_HMAC_SECRET SENSITIVE_DATA_HMAC_SECRET OPERATOR_CLIEN
     exit 1
   fi
 done
-if [ "${#ESCROW_CLIENT_API_KEY}" -lt 32 ]; then
-  echo "ESCROW_CLIENT_API_KEY must contain at least 32 characters" >&2
-  exit 1
-fi
+# Mock은 명세에 정의된 고정 키를 사용합니다. 실제 Escrow 연동 키에만 충분한 엔트로피를 강제합니다.
+case "$ESCROW_API_BASE_URL" in
+  */mock/escrow|*/mock/escrow/) ;;
+  *)
+    if [ "${#ESCROW_CLIENT_API_KEY}" -lt 32 ]; then
+      echo "ESCROW_CLIENT_API_KEY must contain at least 32 characters for real Escrow integration" >&2
+      exit 1
+    fi
+    ;;
+esac
 if [ "${#ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE}" -gt 100 ]; then
   echo "ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE must not exceed 100 characters" >&2
   exit 1
