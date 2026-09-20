@@ -28,6 +28,15 @@ public class SsafyFinanceClient implements FinanceClient {
     private static final DateTimeFormatter DATE = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final DateTimeFormatter TIME = DateTimeFormatter.ofPattern("HHmmss");
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final String API_KEY = "apiKey";
+    private static final String USER_ID = "userId";
+    private static final String USER_KEY = "userKey";
+    private static final String ACCOUNT_NO = "accountNo";
+    private static final String CURRENCY = "currency";
+    private static final String TRANSACTION_NO = "transactionUniqueNo";
+    private static final String TRANSACTION_BALANCE = "transactionBalance";
+    private static final String VIRTUAL_ACCOUNT_ID = "virtualAccountId";
+    private static final String HEADER = "Header";
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -46,16 +55,16 @@ public class SsafyFinanceClient implements FinanceClient {
 
     @Override
     public UserRegistration registerUser(String userId) {
-        JsonNode response = post("/api/v1/member/", Map.of("apiKey", properties.apiKey(), "userId", userId));
-        return new UserRegistration(text(response, "userId"), text(response, "userKey"));
+        JsonNode response = post("/api/v1/member/", Map.of(API_KEY, properties.apiKey(), USER_ID, userId));
+        return new UserRegistration(text(response, USER_ID), text(response, USER_KEY));
     }
 
     @Override
     public Optional<UserRegistration> findUser(String userId) {
         try {
             JsonNode response = post("/api/v1/member/search",
-                    Map.of("apiKey", properties.apiKey(), "userId", userId));
-            return Optional.of(new UserRegistration(text(response, "userId"), text(response, "userKey")));
+                    Map.of(API_KEY, properties.apiKey(), USER_ID, userId));
+            return Optional.of(new UserRegistration(text(response, USER_ID), text(response, USER_KEY)));
         } catch (FinanceApiException exception) {
             if ("E4003".equals(exception.code())) return Optional.empty();
             throw exception;
@@ -64,10 +73,10 @@ public class SsafyFinanceClient implements FinanceClient {
 
     @Override
     public DemandDepositAccount openDemandDepositAccount(String userKey, String accountTypeUniqueNo) {
-        JsonNode record = record(postWithHeader("createDemandDepositAccount", userKey,
+        JsonNode accountRecord = requiredRecord(postWithHeader("createDemandDepositAccount", userKey,
                 Map.of("accountTypeUniqueNo", accountTypeUniqueNo)));
-        return new DemandDepositAccount(text(record, "bankCode"), text(record, "accountNo"),
-                "Komit 데모 입출금", "1", text(record.path("currency"), "currency"));
+        return new DemandDepositAccount(text(accountRecord, "bankCode"), text(accountRecord, ACCOUNT_NO),
+                "Komit 데모 입출금", "1", text(accountRecord.path(CURRENCY), CURRENCY));
     }
 
     @Override
@@ -75,21 +84,21 @@ public class SsafyFinanceClient implements FinanceClient {
         JsonNode records = postWithHeader("inquireDemandDepositAccountList", userKey, Map.of()).path("REC");
         List<DemandDepositAccount> result = new ArrayList<>();
         if (records.isArray()) {
-            records.forEach(record -> result.add(new DemandDepositAccount(
-                    text(record, "bankCode"), text(record, "accountNo"), text(record, "accountName"),
-                    text(record, "accountTypeCode"), text(record, "currency"))));
+            records.forEach(account -> result.add(new DemandDepositAccount(
+                    text(account, "bankCode"), text(account, ACCOUNT_NO), text(account, "accountName"),
+                    text(account, "accountTypeCode"), text(account, CURRENCY))));
         }
         return result;
     }
 
     @Override
     public String depositSeedMoney(String userKey, String accountNo, BigInteger amount, String requestReference) {
-        JsonNode record = record(postWithHeader("updateDemandDepositAccountDeposit", userKey, requestReference, Map.of(
-                "accountNo", accountNo,
+        JsonNode depositRecord = requiredRecord(postWithHeader("updateDemandDepositAccountDeposit", userKey, requestReference, Map.of(
+                ACCOUNT_NO, accountNo,
                 // 실호출 검증 결과 Q1001을 피하려면 금액은 JSON 문자열로 전송해야 합니다.
-                "transactionBalance", amount.toString(),
+                TRANSACTION_BALANCE, amount.toString(),
                 "transactionSummary", requestReference)));
-        return text(record, "transactionUniqueNo");
+        return text(depositRecord, TRANSACTION_NO);
     }
 
     @Override
@@ -102,30 +111,88 @@ public class SsafyFinanceClient implements FinanceClient {
 
     @Override
     public AccountAuthTransfer openAccountAuth(String userKey, String accountNo, String authText) {
-        JsonNode record = record(postWithHeader("openAccountAuth", userKey,
-                Map.of("accountNo", accountNo, "authText", authText)));
-        return new AccountAuthTransfer(text(record, "transactionUniqueNo"));
+        JsonNode authRecord = requiredRecord(postWithHeader("openAccountAuth", userKey,
+                Map.of(ACCOUNT_NO, accountNo, "authText", authText)));
+        return new AccountAuthTransfer(text(authRecord, TRANSACTION_NO));
     }
 
     @Override
     public List<AccountTransaction> inquireTransactions(String userKey, String accountNo,
             LocalDate startDate, LocalDate endDate, String transactionType, String orderByType) {
         Map<String, Object> fields = new LinkedHashMap<>();
-        fields.put("accountNo", accountNo);
+        fields.put(ACCOUNT_NO, accountNo);
         fields.put("startDate", startDate.format(DATE));
         fields.put("endDate", endDate.format(DATE));
         fields.put("transactionType", transactionType);
         if (orderByType != null && !orderByType.isBlank()) fields.put("orderByType", orderByType);
-        JsonNode items = record(postWithHeader("inquireTransactionHistoryList", userKey, fields)).path("list");
+        JsonNode items = requiredRecord(postWithHeader("inquireTransactionHistoryList", userKey, fields)).path("list");
         List<AccountTransaction> result = new ArrayList<>();
         if (items.isArray()) {
             items.forEach(item -> result.add(new AccountTransaction(
-                    text(item, "transactionUniqueNo"), text(item, "transactionDate"),
+                    text(item, TRANSACTION_NO), text(item, "transactionDate"),
                     text(item, "transactionTime"), text(item, "transactionType"),
-                    text(item, "transactionTypeName"), text(item, "transactionBalance"),
+                    text(item, "transactionTypeName"), text(item, TRANSACTION_BALANCE),
                     text(item, "transactionAfterBalance"), optionalText(item, "transactionSummary"))));
         }
         return result;
+    }
+
+    @Override
+    public VirtualAccount createVirtualAccount(String userKey, String mainAccountNo, String depositorName,
+            BigInteger expectedAmount, LocalDate expiryDate, String requestReference) {
+        JsonNode result = requiredRecord(postWithHeader("createVirtualAccount", userKey, requestReference, Map.of(
+                "mainAccountNo", mainAccountNo,
+                "depositorName", depositorName,
+                "expectedAmount", expectedAmount.toString(),
+                "expiryDate", expiryDate.format(DATE),
+                "autoTransfer", false)));
+        return new VirtualAccount(text(result, VIRTUAL_ACCOUNT_ID), text(result, "virtualAccountNo"));
+    }
+
+    @Override
+    public String transfer(String userKey, String depositAccountNo, String withdrawalAccountNo,
+            BigInteger amount, String depositSummary, String withdrawalSummary, String requestReference) {
+        JsonNode result = requiredRecord(postWithHeader("updateDemandDepositAccountTransfer", userKey,
+                requestReference, Map.of(
+                        "depositAccountNo", depositAccountNo,
+                        "withdrawalAccountNo", withdrawalAccountNo,
+                        TRANSACTION_BALANCE, amount.toString(),
+                        "depositTransactionSummary", depositSummary,
+                        "withdrawalTransactionSummary", withdrawalSummary)));
+        JsonNode withdrawal = result.has("withdrawalTransaction")
+                ? result.path("withdrawalTransaction") : result;
+        return text(withdrawal, TRANSACTION_NO);
+    }
+
+    @Override
+    public List<VirtualAccountDeposit> inquireVirtualAccountDeposits(String userKey, String virtualAccountId) {
+        JsonNode result = requiredRecord(postWithHeader("inquireVirtualAccountDeposits", userKey,
+                Map.of(VIRTUAL_ACCOUNT_ID, virtualAccountId)));
+        JsonNode deposits = result.path("deposits");
+        List<VirtualAccountDeposit> items = new ArrayList<>();
+        if (deposits.isArray()) {
+            deposits.forEach(item -> items.add(new VirtualAccountDeposit(
+                    new BigInteger(text(item, "depositAmount")),
+                    item.path("nameMatched").asBoolean(false),
+                    item.path("transferred").asBoolean(false))));
+        }
+        return items;
+    }
+
+    @Override
+    public VirtualAccountSettlement settleVirtualAccount(
+            String userKey, String virtualAccountId, String requestReference) {
+        JsonNode result = requiredRecord(postWithHeader("settleVirtualAccount", userKey, requestReference,
+                Map.of(VIRTUAL_ACCOUNT_ID, virtualAccountId)));
+        return new VirtualAccountSettlement(
+                new BigInteger(text(result, "settledAmount")), text(result, "settledAt"));
+    }
+
+    @Override
+    public String closeVirtualAccount(String userKey, String virtualAccountId, String requestReference) {
+        JsonNode result = requiredRecord(postWithHeader("closeVirtualAccount", userKey, requestReference,
+                Map.of(VIRTUAL_ACCOUNT_ID, virtualAccountId)));
+        return text(result, "status");
     }
 
     private JsonNode postWithHeader(String apiName, String userKey, Map<String, Object> fields) {
@@ -135,10 +202,12 @@ public class SsafyFinanceClient implements FinanceClient {
     private JsonNode postWithHeader(
             String apiName, String userKey, String transactionReference, Map<String, Object> fields) {
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("Header", header(apiName, userKey, transactionReference));
+        body.put(HEADER, header(apiName, userKey, transactionReference));
         body.putAll(fields);
         return post("/api/v1/edu/" + switch (apiName) {
             case "openAccountAuth" -> "accountAuth/" + apiName;
+            case "createVirtualAccount", "inquireVirtualAccountDeposits",
+                    "settleVirtualAccount", "closeVirtualAccount" -> "account/" + apiName;
             default -> "demandDeposit/" + apiName;
         }, body);
     }
@@ -154,8 +223,8 @@ public class SsafyFinanceClient implements FinanceClient {
         header.put("apiServiceCode", apiName);
         header.put("institutionTransactionUniqueNo",
                 transactionReference == null ? transactionNo(now) : transactionReference);
-        header.put("apiKey", properties.apiKey());
-        if (userKey != null) header.put("userKey", userKey);
+        header.put(API_KEY, properties.apiKey());
+        if (userKey != null) header.put(USER_KEY, userKey);
         return header;
     }
 
@@ -183,9 +252,9 @@ public class SsafyFinanceClient implements FinanceClient {
             JsonNode error = objectMapper.readTree(responseBody);
             String code = optionalText(error, "responseCode");
             String message = optionalText(error, "responseMessage");
-            if (code == null && error.has("Header")) {
-                code = optionalText(error.path("Header"), "responseCode");
-                message = optionalText(error.path("Header"), "responseMessage");
+            if (code == null && error.has(HEADER)) {
+                code = optionalText(error.path(HEADER), "responseCode");
+                message = optionalText(error.path(HEADER), "responseMessage");
             }
             return new FinanceApiException(status, code == null ? "Q1000" : code,
                     message == null ? "SSAFY 금융망 오류" : message);
@@ -194,10 +263,10 @@ public class SsafyFinanceClient implements FinanceClient {
         }
     }
 
-    private static JsonNode record(JsonNode response) {
-        JsonNode record = response.path("REC");
-        if (record.isMissingNode() || record.isNull()) throw new FinanceApiException(502, "Q1000", "금융망 응답에 REC가 없습니다.");
-        return record;
+    private static JsonNode requiredRecord(JsonNode response) {
+        JsonNode responseRecord = response.path("REC");
+        if (responseRecord.isMissingNode() || responseRecord.isNull()) throw new FinanceApiException(502, "Q1000", "금융망 응답에 REC가 없습니다.");
+        return responseRecord;
     }
 
     private static String text(JsonNode node, String field) {

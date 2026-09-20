@@ -30,6 +30,19 @@ ESCROW_API_BASE_URL=${ESCROW_API_BASE_URL:-}
 : "${OPERATOR_CLIENT_API_KEY:?OPERATOR_CLIENT_API_KEY is required}"
 : "${SSAFY_FINANCE_API_KEY:?SSAFY_FINANCE_API_KEY is required}"
 : "${SSAFY_DEMAND_DEPOSIT_PRODUCT_NO:?SSAFY_DEMAND_DEPOSIT_PRODUCT_NO is required}"
+: "${SSAFY_ESCROW_USER_KEY:?SSAFY_ESCROW_USER_KEY is required}"
+: "${SSAFY_ESCROW_ACCOUNT_NO:?SSAFY_ESCROW_ACCOUNT_NO is required}"
+: "${SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS:?SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS is required}"
+
+case "$SSAFY_ESCROW_ACCOUNT_NO" in
+  *[!0-9]*|'') echo "SSAFY_ESCROW_ACCOUNT_NO must contain exactly 16 digits" >&2; exit 1 ;;
+esac
+[ "${#SSAFY_ESCROW_ACCOUNT_NO}" -eq 16 ] || { echo "SSAFY_ESCROW_ACCOUNT_NO must contain exactly 16 digits" >&2; exit 1; }
+case "$SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS" in
+  *[!0-9]*|'') echo "SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS must be a positive integer" >&2; exit 1 ;;
+esac
+[ "$SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS" -gt 0 ] || { echo "SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS must be positive" >&2; exit 1; }
+[ "$SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS" -le 30 ] || { echo "SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS must not exceed 30" >&2; exit 1; }
 
 for NAME in CLIENT_API_KEY_HMAC_SECRET SENSITIVE_DATA_HMAC_SECRET OPERATOR_CLIENT_API_KEY; do
   eval "VALUE=\${$NAME}"
@@ -169,6 +182,7 @@ EOF
   printf '  - name: escrow-config\n    namespace: komit\n    literals:\n'
   config_literal APP_PUBLIC_BASE_URL "$ESCROW_PUBLIC_BASE_URL"
   config_literal SSAFY_DEMAND_DEPOSIT_PRODUCT_NO "$SSAFY_DEMAND_DEPOSIT_PRODUCT_NO"
+  config_literal SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS "$SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS"
   # Secret 값이 바뀌면 이름 해시와 Pod template이 함께 바뀌어 Escrow가 자동 재시작됩니다.
   printf 'secretGenerator:\n  - name: escrow-security\n    namespace: komit\n    literals:\n'
   config_literal CLIENT_API_KEY_HMAC_SECRET "$CLIENT_API_KEY_HMAC_SECRET"
@@ -176,9 +190,24 @@ EOF
   config_literal FIELD_ENCRYPTION_KEY_BASE64 "$FIELD_ENCRYPTION_KEY_BASE64"
   config_literal OPERATOR_CLIENT_API_KEY "$OPERATOR_CLIENT_API_KEY"
   config_literal SSAFY_FINANCE_API_KEY "$SSAFY_FINANCE_API_KEY"
+  config_literal SSAFY_ESCROW_USER_KEY "$SSAFY_ESCROW_USER_KEY"
+  config_literal SSAFY_ESCROW_ACCOUNT_NO "$SSAFY_ESCROW_ACCOUNT_NO"
 } >> "$WORK_DIR/apps/kustomization.yaml"
 kubectl apply -k "$WORK_DIR/apps"
-kubectl -n komit rollout status deployment/service --timeout=300s
-kubectl -n komit rollout status deployment/escrow --timeout=300s
-kubectl -n komit rollout status deployment/fe --timeout=300s
+rollout() {
+  NAME=$1
+  if kubectl -n komit rollout status "deployment/$NAME" --timeout=300s; then return 0; fi
+  echo "deployment/$NAME rollout failed; collecting diagnostics" >&2
+  kubectl -n komit get deployment,replicaset,pod -l "app.kubernetes.io/name=$NAME" -o wide >&2 || true
+  kubectl -n komit describe deployment "$NAME" >&2 || true
+  for POD in $(kubectl -n komit get pod -l "app.kubernetes.io/name=$NAME" -o name 2>/dev/null); do
+    kubectl -n komit describe "$POD" >&2 || true
+    kubectl -n komit logs "$POD" --all-containers --tail=200 >&2 || true
+    kubectl -n komit logs "$POD" --all-containers --previous --tail=200 >&2 || true
+  done
+  return 1
+}
+rollout service
+rollout escrow
+rollout fe
 kubectl -n komit get pods -o wide

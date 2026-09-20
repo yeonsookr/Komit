@@ -480,6 +480,8 @@ fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
 | `OPERATOR_CLIENT_API_KEY` | Masked, Protected | Escrow 운영자 API 키. 32자 이상이어야 합니다 |
 | `SSAFY_FINANCE_API_KEY` | Masked, Protected | Escrow가 SSAFY 교육용 금융망을 호출할 때 사용하는 앱 관리자 API Key |
 | `SSAFY_DEMAND_DEPOSIT_PRODUCT_NO` | Visible, Protected | R-ACC-10에 따라 해당 SSAFY 환경에 미리 등록한 입출금 상품 고유번호 |
+| `SSAFY_ESCROW_USER_KEY`, `SSAFY_ESCROW_ACCOUNT_NO` | Masked, Protected | 계약별 가상계좌의 모계좌가 되는 Escrow 보관 주체의 금융망 사용자 키와 16자리 보관계좌 번호 |
+| `SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS` | Visible, Protected | 가상계좌 만료일 계산에 사용할 1~30일. SSAFY 금융망은 발급일로부터 30일 이내만 허용한다 |
 
 > GitLab에 CI/CD 변수를 등록하는 것만으로는 Pod에 전달되지 않습니다. 애플리케이션에 운영 환경변수를
 > 추가할 때는 같은 MR에서 `.gitlab-ci.yml`의 필수 변수 검사와 SSH 전달 목록, `deploy/k3s/deploy.sh`의
@@ -511,6 +513,9 @@ export FIELD_ENCRYPTION_KEY_BASE64=<32바이트 AES 키의 Base64 값>
 export OPERATOR_CLIENT_API_KEY=<32자 이상 운영자 키>
 export SSAFY_FINANCE_API_KEY=<SSAFY 금융망 앱 관리자 API Key>
 export SSAFY_DEMAND_DEPOSIT_PRODUCT_NO=<SSAFY 입출금 상품 고유번호>
+export SSAFY_ESCROW_USER_KEY=<Escrow 보관 주체의 SSAFY userKey>
+export SSAFY_ESCROW_ACCOUNT_NO=<Escrow 보관계좌 16자리 번호>
+export SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS=<가상계좌 유효 일수>
 
 # 이번에 바뀐 모듈만 넘깁니다. 클러스터에 아직 없는 모듈은 반드시 넘깁니다.
 export SERVICE_IMAGE=docker.io/<account>/komit-service:<commit-sha>
@@ -534,6 +539,8 @@ chmod +x deploy/k3s/deploy.sh
 | `OPERATOR_CLIENT_API_KEY` | 예 | Escrow 운영자 API 키. 32자 이상이며 `escrow-security` Secret으로 주입됩니다. |
 | `SSAFY_FINANCE_API_KEY` | 예 | SSAFY 금융망 앱 관리자 API Key. `escrow-security` Secret으로 주입되며 저장소나 ConfigMap에 기록하지 않습니다. |
 | `SSAFY_DEMAND_DEPOSIT_PRODUCT_NO` | 예 | R-ACC-10 입출금 상품 고유번호. `escrow-config` ConfigMap으로 주입됩니다. |
+| `SSAFY_ESCROW_USER_KEY`, `SSAFY_ESCROW_ACCOUNT_NO` | 예 | Escrow 보관 주체의 금융망 사용자 키와 보관계좌 번호. `escrow-security` Secret으로 주입합니다. |
+| `SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS` | 예 | 가상계좌 만료일 계산에 쓰는 1~30일. `escrow-config` ConfigMap으로 주입합니다. |
 | `SERVICE_IMAGE`, `ESCROW_IMAGE`, `FE_IMAGE` | 아니요 | 비어 있으면 클러스터에서 돌고 있는 이미지를 유지합니다. 바뀌지 않은 모듈은 재시작하지 않습니다. 클러스터에 아직 없는 모듈은 필수입니다. |
 
 스크립트는 배포할 이미지 태그를 임시 디렉터리의 Kustomize overlay에 고정해 적용하고, 각 단계의 준비 완료를 기다린 뒤 다음 단계로 넘어갑니다. DB·Redis 주소는 클러스터 내부 DNS 이름으로 고정되어 있어 주입하지 않습니다.

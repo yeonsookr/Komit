@@ -1,6 +1,8 @@
 package com.a501.escrow.config;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Positive;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.validation.annotation.Validated;
 
@@ -11,6 +13,9 @@ public record FinanceProperties(
         @NotBlank String baseUrl,
         @NotBlank String apiKey,
         @NotBlank String timeZone,
-        @NotBlank String accountTypeUniqueNo
+        @NotBlank String accountTypeUniqueNo,
+        @NotBlank String escrowUserKey,
+        @NotBlank String escrowAccountNo,
+        @Positive @Max(30) int virtualAccountValidityDays
 ) {
 }

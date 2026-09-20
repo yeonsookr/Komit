@@ -20,7 +20,8 @@ class SsafyFinanceLiveTest {
         String userId = required("SSAFY_LIVE_TEST_USER_ID");
         SsafyFinanceClient client = new SsafyFinanceClient(RestClient.builder(), JsonMapper.builder().build(),
                 new FinanceProperties(true, "https://finopenapi.ssafy.io/ssafy", apiKey,
-                        "Asia/Seoul", "001-1-231ecb61d2554c"), Clock.systemUTC());
+                        "Asia/Seoul", "001-1-231ecb61d2554c", "unused",
+                        "0010000000000000", 30), Clock.systemUTC());
 
         FinanceClient.UserRegistration user = client.findUser(userId).orElseThrow();
         FinanceClient.DemandDepositAccount account = client.findDemandDepositAccounts(user.userKey()).stream()

@@ -37,6 +37,19 @@ public interface FinanceClient {
             String transactionType,
             String orderByType);
 
+    VirtualAccount createVirtualAccount(String userKey, String mainAccountNo, String depositorName,
+            BigInteger expectedAmount, LocalDate expiryDate, String requestReference);
+
+    String transfer(String userKey, String depositAccountNo, String withdrawalAccountNo,
+            BigInteger amount, String depositSummary, String withdrawalSummary, String requestReference);
+
+    List<VirtualAccountDeposit> inquireVirtualAccountDeposits(String userKey, String virtualAccountId);
+
+    VirtualAccountSettlement settleVirtualAccount(String userKey, String virtualAccountId,
+            String requestReference);
+
+    String closeVirtualAccount(String userKey, String virtualAccountId, String requestReference);
+
     record UserRegistration(String userId, String userKey) {
     }
 
@@ -69,5 +82,14 @@ public interface FinanceClient {
             String transactionAfterBalance,
             String transactionSummary
     ) {
+    }
+
+    record VirtualAccount(String virtualAccountId, String virtualAccountNo) {
+    }
+
+    record VirtualAccountDeposit(BigInteger amount, boolean nameMatched, boolean transferred) {
+    }
+
+    record VirtualAccountSettlement(BigInteger settledAmount, String settledAt) {
     }
 }

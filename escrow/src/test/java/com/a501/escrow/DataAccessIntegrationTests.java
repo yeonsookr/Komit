@@ -24,6 +24,7 @@ import com.a501.escrow.config.AppProperties;
 import com.a501.escrow.config.InstanceRole;
 import com.a501.escrow.domain.common.Money;
 import com.a501.escrow.domain.escrow.repository.EscrowRepository;
+import com.a501.escrow.domain.escrow.repository.EscrowDepositRepository;
 import com.a501.escrow.domain.finance.repository.FinancialOperationAttemptRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterAll;
@@ -40,9 +41,18 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 @SpringBootTest(properties = {
+        "spring.profiles.active=prod",
         "app.instance-role=WRITER",
         "app.public-base-url=http://localhost:8081",
-        "app.security.operator-api-key=dev-only-operator-client-api-key"
+        "app.security.client-api-key-hmac-secret=test-client-api-key-hmac-secret-0001",
+        "app.security.sensitive-data-hmac-secret=test-sensitive-data-hmac-secret-0001",
+        "app.security.encryption-key-base64=ZGV2LW9ubHktMzItYnl0ZS1hZXMta2V5LTAwMDAwMDA=",
+        "app.security.operator-api-key=dev-only-operator-client-api-key",
+        "app.finance.api-key=test-finance-api-key",
+        "app.finance.account-type-unique-no=test-product",
+        "app.finance.escrow-user-key=test-escrow-user-key",
+        "app.finance.escrow-account-no=0010000000000000",
+        "app.finance.virtual-account-validity-days=30"
 })
 class DataAccessIntegrationTests {
 
@@ -93,6 +103,9 @@ class DataAccessIntegrationTests {
     EscrowRepository escrowRepository;
 
     @Autowired
+    EscrowDepositRepository escrowDepositRepository;
+
+    @Autowired
     FinancialOperationAttemptRepository attemptRepository;
 
     @Autowired
@@ -121,6 +134,7 @@ class DataAccessIntegrationTests {
 
     @BeforeEach
     void seed() {
+        jdbcTemplate.update("DELETE FROM escrow_state_commands");
         jdbcTemplate.update("DELETE FROM financial_operation_attempts");
         jdbcTemplate.update("DELETE FROM escrow_transactions");
         jdbcTemplate.update("DELETE FROM escrows");
@@ -154,6 +168,16 @@ class DataAccessIntegrationTests {
                     (id, transaction_id, step, attempt_no, request_reference)
                 VALUES (1, 1, 'DEPOSIT_TRANSFER', 1, 'request-1')
                 """);
+        // The fixture uses explicit IDs; advance identity sequences so repository inserts behave as production does.
+        jdbcTemplate.queryForObject(
+                "SELECT setval(pg_get_serial_sequence('escrows','id'), (SELECT max(id) FROM escrows), true)",
+                Long.class);
+        jdbcTemplate.queryForObject(
+                "SELECT setval(pg_get_serial_sequence('escrow_transactions','id'), "
+                        + "(SELECT max(id) FROM escrow_transactions), true)", Long.class);
+        jdbcTemplate.queryForObject(
+                "SELECT setval(pg_get_serial_sequence('financial_operation_attempts','id'), "
+                        + "(SELECT max(id) FROM financial_operation_attempts), true)", Long.class);
     }
 
     @Test
@@ -248,6 +272,49 @@ class DataAccessIntegrationTests {
                 ApiRequirements.operatorRead());
 
         assertThat(caller).isInstanceOf(AuthenticatedCaller.Operator.class);
+    }
+
+    @Test
+    void persistsDepositStateMachineAndActivatesOnlyAfterSettlement() {
+        String depositor = fieldEncryption.encrypt("김의뢰");
+        String account = fieldEncryption.encrypt("0012222222222222");
+        escrowDepositRepository.create(1, 1, "CONTRACT-DEPOSIT", "DEVELOPMENT",
+                BigInteger.valueOf(650_000), "deposit-idempotency", "c".repeat(64),
+                depositor, "001", account);
+
+        var created = escrowDepositRepository.findByContractId(1, "CONTRACT-DEPOSIT").orElseThrow();
+        assertThat(created.escrowStatus()).isEqualTo("CREATED");
+        assertThat(created.transactionStatus()).isEqualTo("PENDING");
+
+        escrowDepositRepository.virtualAccountCreated(created.transactionId(), "va-1", "0011111111111111");
+        escrowDepositRepository.transferStarted(created.transactionId());
+        escrowDepositRepository.transferred(created.transactionId(), "bank-tx-1");
+        escrowDepositRepository.verified(created.transactionId(), BigInteger.valueOf(650_000), true, true);
+        assertThat(escrowDepositRepository.findById(1, created.escrowId()).orElseThrow().escrowStatus())
+                .isEqualTo("CREATED");
+
+        escrowDepositRepository.settled(created.escrowId(), created.transactionId(), BigInteger.valueOf(650_000));
+        var active = escrowDepositRepository.findById(1, created.escrowId()).orElseThrow();
+        assertThat(active.escrowStatus()).isEqualTo("ACTIVE");
+        assertThat(active.transactionStatus()).isEqualTo("COMPLETED");
+    }
+
+    @Test
+    void cancelsOnlyBeforeAnyDepositDispatchAndReplaysCommand() {
+        escrowDepositRepository.create(1, 1, "CONTRACT-CANCEL", "DEVELOPMENT",
+                BigInteger.valueOf(100_000), "cancel-create-key", "d".repeat(64),
+                fieldEncryption.encrypt("김의뢰"), "001", fieldEncryption.encrypt("0012222222222222"));
+        var created = escrowDepositRepository.findByContractId(1, "CONTRACT-CANCEL").orElseThrow();
+
+        assertThat(escrowDepositRepository.cancel(1, created.escrowId(), "cancel-key", "e".repeat(64)))
+                .isTrue();
+        assertThat(escrowDepositRepository.findCancelCommand(1, "cancel-key"))
+                .hasValueSatisfying(command -> {
+                    assertThat(command.escrowId()).isEqualTo(created.escrowId());
+                    assertThat(command.fingerprint()).isEqualTo("e".repeat(64));
+                });
+        assertThat(escrowDepositRepository.findById(1, created.escrowId()).orElseThrow().escrowStatus())
+                .isEqualTo("CANCELLED");
     }
 
     @Test

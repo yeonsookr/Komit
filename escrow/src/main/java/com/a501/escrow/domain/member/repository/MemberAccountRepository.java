@@ -22,6 +22,11 @@ public class MemberAccountRepository {
         return query("service_client_id=:clientId AND user_id=:value", clientId, userId);
     }
 
+    public Optional<MemberAccountProvision> findCompletedByUserKeyHash(long clientId, String userKeyHash) {
+        return query("service_client_id=:clientId AND user_key_lookup_hash=:value "
+                + "AND provision_status='COMPLETED'", clientId, userKeyHash);
+    }
+
     private Optional<MemberAccountProvision> query(String predicate, long clientId, String value) {
         return jdbc.sql("SELECT * FROM member_account_provisions WHERE " + predicate)
                 .param("clientId", clientId).param("value", value)
