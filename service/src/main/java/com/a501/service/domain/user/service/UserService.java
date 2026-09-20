@@ -102,7 +102,7 @@ public class UserService {
                 protectedRefreshToken,
                 data.kakaoRefreshTokenExpiresAt(),
                 now));
-        settingService.createWithRequiredTerms(saved.getId());
+        settingService.createForNewUser(saved.getId());
         return UserLoginResult.accepted(snapshot(saved), true);
     }
 

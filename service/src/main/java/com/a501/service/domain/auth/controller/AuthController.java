@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
     private final AuthService authService;
 
-    @Operation(summary = "카카오 로그인", description = "카카오 인가 코드로 로그인한다. 처음 들어온 사용자는 이 요청으로 가입까지 끝난다.")
+    @Operation(summary = "카카오 로그인", description = "카카오 인가 코드로 로그인한다. 신규 계정은 이 요청으로 생성되며 가입 화면에서 필수 약관에 별도로 동의한다. (R-ACC-12)")
     @PostMapping("/kakao")
     KakaoLoginResponse loginWithKakao(@Valid @RequestBody KakaoLoginRequest request) {
         return authService.loginWithKakao(request.code(), request.redirectUri());

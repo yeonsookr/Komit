@@ -5,7 +5,7 @@ import { getCodes, getMyPage } from "@/lib/api/services";
 
 export const metadata: Metadata = {
   title: "계좌 등록 | Komit",
-  description: "환불과 대금을 받을 계좌를 등록합니다.",
+  description: "거래 대금을 받을 계좌를 등록합니다.",
   robots: { index: false },
 };
 

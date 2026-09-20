@@ -1,0 +1,34 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { buttonClass } from "@/components/buttons";
+import { Card } from "@/components/common";
+import { NEXT_PARAM } from "@/lib/auth/params";
+import { safeNext } from "@/lib/auth/safeNext";
+import { ROUTES } from "@/lib/routes";
+
+export const metadata: Metadata = {
+  title: "가입 완료 | Komit",
+  robots: { index: false },
+};
+
+export default async function SignupCompletePage({
+  searchParams,
+}: Readonly<{ searchParams: Promise<Record<string, string | string[] | undefined>> }>) {
+  const next = safeNext((await searchParams)[NEXT_PARAM]);
+
+  return (
+    <Card variant="elevated" padding="lg" className="mx-auto w-full max-w-[520px] sm:p-9">
+      <p className="text-sm font-bold text-primary">Komit</p>
+      <h1 className="mt-4 text-3xl font-bold tracking-tight text-fg">가입을 완료했어요!</h1>
+      <p className="mt-5 text-base leading-7 text-fg-muted">
+        이제 Komit에서 프로젝트를 살펴보고 개발자와 거래할 수 있어요.
+      </p>
+      <Link
+        href={next ?? ROUTES.home}
+        className={buttonClass({ size: "lg", fullWidth: true, className: "mt-9" })}
+      >
+        Komit 시작하기
+      </Link>
+    </Card>
+  );
+}

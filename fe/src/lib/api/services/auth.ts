@@ -11,7 +11,7 @@ import type {
 } from "@/types/auth";
 
 /**
- * 카카오 인가 코드로 로그인. 처음 들어온 사용자는 이 요청으로 가입까지 끝납니다.
+ * 카카오 인가 코드로 로그인. 처음 들어온 사용자는 필수 약관 동의 화면으로 이어집니다.
  * 401(KAKAO_AUTH_FAILED)·503(KAKAO_UNAVAILABLE) 은 그대로 ApiError 로 올라옵니다.
  */
 export async function loginWithKakao(body: KakaoLoginRequest): Promise<KakaoLoginResponse> {

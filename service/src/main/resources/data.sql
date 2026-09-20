@@ -170,3 +170,42 @@ ON CONFLICT (id) DO NOTHING;
 
 -- id 를 직접 넣었으므로 identity 시퀀스를 그 뒤로 옮긴다. 옮기지 않으면 다음 JPA 저장이 id=1 과 충돌한다.
 SELECT setval(pg_get_serial_sequence('defaults', 'id'), (SELECT MAX(id) FROM defaults));
+
+-- 목 Service /api/codes/{groupKey}의 선택지. JPA dynamic_codes 스키마에 시드한다.
+INSERT INTO dynamic_code_groups (group_key, group_name)
+SELECT source.group_key, source.group_name
+FROM (VALUES
+    ('TECH_CATEGORY', '기술'), ('DEV_FIELD', '개발 분야'),
+    ('BANK_CODE', '은행'), ('CARD_COMPANY', '카드사'),
+    ('ISSUE_CATEGORY', '결함 분류')
+) AS source(group_key, group_name)
+WHERE NOT EXISTS (SELECT 1 FROM dynamic_code_groups existing WHERE existing.group_key = source.group_key);
+
+INSERT INTO dynamic_codes (code_id, group_id, code_name, sort_order, is_active)
+SELECT source.code_id, groups.group_id, source.code_name, source.sort_order, TRUE
+FROM (VALUES
+    (21, 'TECH_CATEGORY', 'Next.js', 1), (22, 'TECH_CATEGORY', 'Supabase', 2),
+    (23, 'TECH_CATEGORY', 'TypeScript', 3),
+    (41, 'DEV_FIELD', '인터넷에 올리기', 1), (42, 'DEV_FIELD', 'DB 연결', 2),
+    (43, 'DEV_FIELD', '도메인 연결', 3), (44, 'DEV_FIELD', '로그인 붙이기', 4),
+    (45, 'DEV_FIELD', '알림 보내기', 5), (46, 'DEV_FIELD', '비용 진단', 6),
+    (47, 'DEV_FIELD', '버그 잡기', 7), (48, 'DEV_FIELD', '결제 붙이기', 8),
+    (51, 'BANK_CODE', '국민은행', 1), (52, 'BANK_CODE', '신한은행', 2),
+    (53, 'BANK_CODE', '우리은행', 3), (54, 'BANK_CODE', '하나은행', 4),
+    (55, 'BANK_CODE', '농협은행', 5), (56, 'BANK_CODE', '카카오뱅크', 6),
+    (57, 'BANK_CODE', '토스뱅크', 7),
+    (61, 'CARD_COMPANY', '우리카드', 1), (62, 'CARD_COMPANY', '국민카드', 2),
+    (63, 'CARD_COMPANY', '신한카드', 3), (64, 'CARD_COMPANY', '삼성카드', 4),
+    (65, 'CARD_COMPANY', '현대카드', 5), (66, 'CARD_COMPANY', '롯데카드', 6),
+    (67, 'CARD_COMPANY', '하나카드', 7), (68, 'CARD_COMPANY', 'BC카드', 8),
+    (71, 'ISSUE_CATEGORY', '보안', 1), (72, 'ISSUE_CATEGORY', '위법', 2),
+    (73, 'ISSUE_CATEGORY', '결제', 3), (75, 'ISSUE_CATEGORY', '데이터', 4),
+    (76, 'ISSUE_CATEGORY', '비용', 5), (77, 'ISSUE_CATEGORY', '인계', 6),
+    (78, 'ISSUE_CATEGORY', 'AI 잔재', 7), (74, 'ISSUE_CATEGORY', '기타', 8)
+) AS source(code_id, group_key, code_name, sort_order)
+JOIN dynamic_code_groups groups ON groups.group_key = source.group_key
+ON CONFLICT (code_id) DO UPDATE
+SET group_id = EXCLUDED.group_id, code_name = EXCLUDED.code_name,
+    sort_order = EXCLUDED.sort_order;
+
+SELECT setval(pg_get_serial_sequence('dynamic_codes', 'code_id'), (SELECT MAX(code_id) FROM dynamic_codes));

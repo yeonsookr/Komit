@@ -50,8 +50,8 @@ class UserServiceTest {
     }
 
     @Test
-    @DisplayName("처음 들어온 카카오 계정은 가입하고 필수 약관 동의를 함께 기록한다")
-    void registersNewUserWithRequiredTerms() {
+    @DisplayName("처음 들어온 카카오 계정은 미동의 설정으로 가입한다")
+    void registersNewUserWithPendingTerms() {
         when(stringCrypto.encrypt("kakao-refresh")).thenReturn("protected");
         when(userRepository.findByKakaoId(123L)).thenReturn(Optional.empty());
         when(userRepository.save(any())).thenAnswer(invocation -> {
@@ -67,7 +67,7 @@ class UserServiceTest {
         assertThat(result.user().userId()).isEqualTo(12);
         assertThat(result.user().name()).isEqualTo("김미미");
         assertThat(result.user().hasDevProfile()).isFalse();
-        verify(settingService).createWithRequiredTerms(12);
+        verify(settingService).createForNewUser(12);
 
         ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
         verify(userRepository).save(captor.capture());
@@ -89,7 +89,7 @@ class UserServiceTest {
         assertThat(ReflectionTestUtils.getField(existing, "kakaoRefreshToken")).isEqualTo("protected-again");
         assertThat(ReflectionTestUtils.getField(existing, "lastLoginAt")).isEqualTo(NOW_UTC);
         verify(userRepository, never()).save(any());
-        verify(settingService, never()).createWithRequiredTerms(any());
+        verify(settingService, never()).createForNewUser(any());
     }
 
     @Test

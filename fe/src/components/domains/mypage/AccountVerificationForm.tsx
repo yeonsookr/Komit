@@ -21,6 +21,9 @@ import { AccountVerificationCodeInput } from "./AccountVerificationCodeInput";
 export interface AccountVerificationFormProps {
   currentAccount: SettlementAccount | null;
   banks: CodeItem[];
+  completionHref?: string;
+  cancelHref?: string;
+  signup?: boolean;
 }
 
 const STEPS = [
@@ -33,6 +36,9 @@ const STEPS = [
 export function AccountVerificationForm({
   currentAccount,
   banks,
+  completionHref = ROUTES.mypage,
+  cancelHref = ROUTES.mypage,
+  signup = false,
 }: Readonly<AccountVerificationFormProps>) {
   const router = useRouter();
   const showToast = useToast();
@@ -77,7 +83,7 @@ export function AccountVerificationForm({
     return (
       <>
         <PageHeader
-          title="계좌 확인"
+          title={signup ? "1원 인증" : "계좌 확인"}
           description="보낸 1원의 입금자명 뒤 네 자리를 적어주세요."
         />
 
@@ -136,7 +142,7 @@ export function AccountVerificationForm({
                 { authCode },
               );
               showToast({ tone: "success", title: "계좌를 등록했습니다." });
-              router.replace(ROUTES.mypage);
+              router.replace(completionHref);
               router.refresh();
             } catch (error) {
               showToast({
@@ -165,7 +171,7 @@ export function AccountVerificationForm({
 
           <div className="mt-8 flex justify-end gap-2">
             <Link
-              href={ROUTES.mypage}
+              href={cancelHref}
               className={buttonClass({ variant: "outline", size: "lg" })}
             >
               그만두기
@@ -187,8 +193,8 @@ export function AccountVerificationForm({
   return (
     <>
       <PageHeader
-        title="계좌 등록"
-        description="환불과 대금을 받는 계좌입니다. 1원 인증으로 확인합니다."
+        title={signup ? "1원 인증" : "계좌 등록"}
+        description="거래 대금을 받을 계좌를 1원 인증으로 확인합니다."
       />
 
       <form onSubmit={submit}>
@@ -260,13 +266,19 @@ export function AccountVerificationForm({
         </Card>
       </section>
 
-      <Callout tone="neutral" className="mt-8" title="등록 절차">
-        <NumberedSteps items={STEPS} tone="primary" className="mt-3 gap-3" />
-      </Callout>
+      {signup ? (
+        <Callout tone="neutral" className="mt-8">
+          계좌로 보낸 1원의 입금자명에서 확인 번호를 찾아 입력해 주세요.
+        </Callout>
+      ) : (
+        <Callout tone="neutral" className="mt-8" title="등록 절차">
+          <NumberedSteps items={STEPS} tone="primary" className="mt-3 gap-3" />
+        </Callout>
+      )}
 
       <div className="mt-8 flex justify-end gap-2">
         <Link
-          href={ROUTES.mypage}
+          href={cancelHref}
           className={buttonClass({ variant: "outline", size: "lg" })}
         >
           취소
