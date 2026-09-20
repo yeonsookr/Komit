@@ -24,7 +24,8 @@ public class EscrowRepository {
     @Transactional(propagation = Propagation.MANDATORY)
     public Optional<LockedEscrow> findOwnedByIdForUpdate(long serviceClientId, long escrowId) {
         String sql = """
-                SELECT id, service_client_id, external_contract_id, expected_amount, status, hold_status
+                SELECT id, service_client_id, external_contract_id, expected_amount, status, hold_status,
+                       external_report_id
                 FROM escrows
                 WHERE id = :escrowId AND service_client_id = :serviceClientId
                 FOR UPDATE
@@ -39,7 +40,8 @@ public class EscrowRepository {
                         resultSet.getString("external_contract_id"),
                         Money.fromDatabase(resultSet.getBigDecimal("expected_amount")),
                         resultSet.getString("status"),
-                        resultSet.getString("hold_status")
+                        resultSet.getString("hold_status"),
+                        resultSet.getString("external_report_id")
                 ))
                 .stream()
                 .findFirst();

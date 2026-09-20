@@ -10,6 +10,7 @@ public record DepositEscrow(
         String contractType,
         BigInteger amount,
         String escrowStatus,
+        String holdStatus,
         String transactionStatus,
         String idempotencyKey,
         String requestFingerprint,
