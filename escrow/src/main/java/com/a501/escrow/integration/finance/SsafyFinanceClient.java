@@ -31,6 +31,7 @@ public class SsafyFinanceClient implements FinanceClient {
     private static final String API_KEY = "apiKey";
     private static final String USER_ID = "userId";
     private static final String USER_KEY = "userKey";
+    private static final String BANK_CODE = "bankCode";
     private static final String ACCOUNT_NO = "accountNo";
     private static final String CURRENCY = "currency";
     private static final String TRANSACTION_NO = "transactionUniqueNo";
@@ -75,8 +76,8 @@ public class SsafyFinanceClient implements FinanceClient {
     public DemandDepositAccount openDemandDepositAccount(String userKey, String accountTypeUniqueNo) {
         JsonNode accountRecord = requiredRecord(postWithHeader("createDemandDepositAccount", userKey,
                 Map.of("accountTypeUniqueNo", accountTypeUniqueNo)));
-        return new DemandDepositAccount(text(accountRecord, "bankCode"), text(accountRecord, ACCOUNT_NO),
-                "Komit 데모 입출금", "1", text(accountRecord.path(CURRENCY), CURRENCY));
+        return new DemandDepositAccount(text(accountRecord, BANK_CODE), text(accountRecord, ACCOUNT_NO),
+                "Komit demo demand deposit", "1", text(accountRecord.path(CURRENCY), CURRENCY));
     }
 
     @Override
@@ -85,7 +86,7 @@ public class SsafyFinanceClient implements FinanceClient {
         List<DemandDepositAccount> result = new ArrayList<>();
         if (records.isArray()) {
             records.forEach(account -> result.add(new DemandDepositAccount(
-                    text(account, "bankCode"), text(account, ACCOUNT_NO), text(account, "accountName"),
+                    text(account, BANK_CODE), text(account, ACCOUNT_NO), text(account, "accountName"),
                     text(account, "accountTypeCode"), text(account, CURRENCY))));
         }
         return result;
@@ -93,9 +94,17 @@ public class SsafyFinanceClient implements FinanceClient {
 
     @Override
     public AccountHolder inquireAccountHolder(String userKey, String accountNo) {
-        JsonNode record = requiredRecord(postWithHeader("inquireDemandDepositAccount", userKey,
+        JsonNode accountRecord = requiredRecord(postWithHeader("inquireDemandDepositAccount", userKey,
                 Map.of(ACCOUNT_NO, accountNo)));
-        return new AccountHolder(text(record, "bankCode"), text(record, ACCOUNT_NO), text(record, "userName"));
+        return new AccountHolder(text(accountRecord, BANK_CODE), text(accountRecord, ACCOUNT_NO),
+                text(accountRecord, "userName"));
+    }
+
+    @Override
+    public BigInteger inquireAccountBalance(String userKey, String accountNo) {
+        JsonNode record = requiredRecord(postWithHeader("inquireDemandDepositAccountBalance", userKey,
+                Map.of(ACCOUNT_NO, accountNo)));
+        return new BigInteger(text(record, "accountBalance"));
     }
 
     @Override

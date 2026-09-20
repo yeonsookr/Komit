@@ -37,6 +37,8 @@ import com.a501.escrow.domain.escrow.service.EscrowSettlementService;
 import com.a501.escrow.domain.escrow.repository.EscrowSettlementRepository;
 import com.a501.escrow.domain.finance.repository.FinancialOperationAttemptRepository;
 import com.a501.escrow.integration.finance.FinanceClient;
+import com.a501.escrow.domain.reconciliation.dto.ReconciliationDtos;
+import com.a501.escrow.domain.reconciliation.service.ReconciliationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
@@ -130,6 +132,9 @@ class DataAccessIntegrationTests {
     @Autowired
     EscrowSettlementRepository escrowSettlementRepository;
 
+    @Autowired
+    ReconciliationService reconciliationService;
+
     @MockitoBean
     FinanceClient financeClient;
 
@@ -163,6 +168,7 @@ class DataAccessIntegrationTests {
 
     @BeforeEach
     void seed() {
+        jdbcTemplate.update("DELETE FROM reconciliation_snapshots");
         jdbcTemplate.update("DELETE FROM escrow_state_commands");
         jdbcTemplate.update("DELETE FROM financial_operation_attempts");
         jdbcTemplate.update("DELETE FROM escrow_transactions");
@@ -221,7 +227,7 @@ class DataAccessIntegrationTests {
                   AND table_name IN ('service_clients', 'escrows', 'financial_operation_attempts')
                 """, Integer.class);
 
-        assertThat(migrationCount).isEqualTo(1);
+        assertThat(migrationCount).isEqualTo(2);
         assertThat(tableCount).isEqualTo(3);
     }
 
@@ -463,6 +469,31 @@ class DataAccessIntegrationTests {
                     assertThat(detail.refundedAmount()).isEqualTo(BigInteger.valueOf(250_000));
                     assertThat(detail.balance()).isZero();
                 });
+    }
+
+    @Test
+    void reconcilesAllServiceLedgerAgainstActualCustodyBalanceWithOperatorKey() {
+        jdbcTemplate.update("""
+                UPDATE escrow_transactions SET status='COMPLETED',deposit_verification_status='MATCHED',
+                    completed_at=clock_timestamp() WHERE id=1
+                """);
+        when(financeClient.inquireAccountBalance("test-escrow-user-key", "0010000000000000"))
+                .thenReturn(BigInteger.ONE);
+
+        var result = reconciliationService.inquire(new ReconciliationDtos.Request(
+                validHeader("inquireReconciliation", "dev-only-operator-client-api-key", null, null), 7));
+
+        assertThat(result.ledgerTotal()).isEqualTo(BigInteger.ONE);
+        assertThat(result.bankBalance()).isEqualTo(BigInteger.ONE);
+        assertThat(result.differenceAmount()).isZero();
+        assertThat(result.result()).isEqualTo("MATCHED");
+        assertThat(result.escrowCount()).isEqualTo(1);
+        assertThat(result.history()).hasSize(1);
+
+        assertThatThrownBy(() -> reconciliationService.inquire(new ReconciliationDtos.Request(
+                validHeader("inquireReconciliation", "test-client-api-key", null, null), 7)))
+                .isInstanceOfSatisfying(EscrowApiException.class,
+                        exception -> assertThat(exception.responseCode()).isEqualTo("E5001"));
     }
 
 
