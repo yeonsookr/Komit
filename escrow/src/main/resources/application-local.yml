@@ -1,4 +1,6 @@
 spring:
+  config:
+    import: optional:file:.env[.properties]
   datasource:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/escrow}
     username: ${DB_USERNAME:escrow}
@@ -20,6 +22,9 @@ app:
     api-key: ${SSAFY_FINANCE_API_KEY:disabled-local-api-key}
     time-zone: ${SSAFY_FINANCE_TIME_ZONE:Asia/Seoul}
     account-type-unique-no: ${SSAFY_DEMAND_DEPOSIT_PRODUCT_NO:001-1-231ecb61d2554c}
+    escrow-user-key: ${SSAFY_ESCROW_USER_KEY:disabled-local-escrow-user-key}
+    escrow-account-no: ${SSAFY_ESCROW_ACCOUNT_NO:0010000000000000}
+    virtual-account-validity-days: ${SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS:30}
 
 logging:
   level:

@@ -162,6 +162,11 @@ RETURNING id, request_reference;
 
 가입 발급 기록의 사용자 키 조회값과 계좌를 대조한다. 요청 입금자명은 암호화해 저장하고 VA 생성과 예치 이체에 같은 값을 사용한다. 금융 단계와 필드 매핑은 `FINANCE_MAPPING.md`의 예치 표를 따른다.
 
+운영 환경은 `SSAFY_ESCROW_USER_KEY`, `SSAFY_ESCROW_ACCOUNT_NO`,
+`SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS`를 GitLab CI/CD 변수에 등록해야 한다. 앞의 두 값은
+`escrow-security` Secret, 유효 일수는 `escrow-config` ConfigMap으로 전달한다. CI 필수값 검사,
+SSH 전달, Kustomize 생성, Pod `envFrom` 중 하나라도 빠지면 배포 전에 실패하도록 함께 검증한다.
+
 입금 검증·보관계좌 정산·로컬 완료 기록이 끝난 뒤에만 ACTIVE다. 완료 전 금액을 예치액에 포함하지 않는다. VA 해지는 자금 정산 후 별도 정리 단계다. CREATED·DEPOSIT_PENDING이라도 외부 송금 진행·UNKNOWN이면 취소하지 않는다. (`R-PAY-08`, `R-PAY-09`)
 
 ### 지급·환불

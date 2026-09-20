@@ -8,6 +8,7 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import java.math.BigInteger;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 
 import com.a501.escrow.config.FinanceProperties;
@@ -23,7 +24,7 @@ class SsafyFinanceClientTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         SsafyFinanceClient client = new SsafyFinanceClient(builder, JsonMapper.builder().build(),
-                new FinanceProperties(true, "https://finance.example", "test-api-key", "Asia/Seoul", "product"),
+                properties("https://finance.example", "test-api-key"),
                 Clock.fixed(Instant.parse("2026-09-19T12:34:56Z"), ZoneOffset.UTC));
         server.expect(requestTo("https://finance.example/api/v1/edu/demandDeposit/updateDemandDepositAccountDeposit"))
                 .andExpect(content().json("""
@@ -58,7 +59,7 @@ class SsafyFinanceClientTest {
         RestClient.Builder builder = RestClient.builder();
         MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
         SsafyFinanceClient client = new SsafyFinanceClient(builder, JsonMapper.builder().build(),
-                new FinanceProperties(true, "https://finance.example", "test-api-key", "Asia/Seoul", "product"),
+                properties("https://finance.example", "test-api-key"),
                 Clock.systemUTC());
         server.expect(requestTo("https://finance.example/api/v1/member/search"))
                 .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators
@@ -67,5 +68,78 @@ class SsafyFinanceClientTest {
 
         assertThat(client.findUser("missing@example.com")).isEmpty();
         server.verify();
+    }
+
+    @Test
+    void mapsVirtualAccountCreateTransferVerifySettleAndClose() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        SsafyFinanceClient client = new SsafyFinanceClient(builder, JsonMapper.builder().build(),
+                properties("https://finance.example", "test-api-key"),
+                Clock.fixed(Instant.parse("2026-09-19T12:34:56Z"), ZoneOffset.UTC));
+
+        server.expect(requestTo("https://finance.example/api/v1/edu/account/createVirtualAccount"))
+                .andExpect(content().json("""
+                        {"mainAccountNo":"0010000000000000","depositorName":"김의뢰",
+                         "expectedAmount":"650000","expiryDate":"20261019","autoTransfer":false}
+                        """, false))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000"},
+                         "REC":{"virtualAccountId":"va-1","virtualAccountNo":"0011111111111111"}}
+                        """, MediaType.APPLICATION_JSON));
+        assertThat(client.createVirtualAccount("escrow-key", "0010000000000000", "김의뢰",
+                BigInteger.valueOf(650_000), LocalDate.of(2026, 10, 19), "20260919213456000001"))
+                .isEqualTo(new FinanceClient.VirtualAccount("va-1", "0011111111111111"));
+        server.verify();
+        server.reset();
+
+        server.expect(requestTo("https://finance.example/api/v1/edu/demandDeposit/updateDemandDepositAccountTransfer"))
+                .andExpect(content().json("""
+                        {"depositAccountNo":"0011111111111111","withdrawalAccountNo":"0012222222222222",
+                         "transactionBalance":"650000","depositTransactionSummary":"김의뢰",
+                         "withdrawalTransactionSummary":"KOMIT-1"}
+                        """, false))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000"},
+                         "REC":{"withdrawalTransaction":{"transactionUniqueNo":"tx-1"}}}
+                        """, MediaType.APPLICATION_JSON));
+        assertThat(client.transfer("payer-key", "0011111111111111", "0012222222222222",
+                BigInteger.valueOf(650_000), "김의뢰", "KOMIT-1", "20260919213456000002"))
+                .isEqualTo("tx-1");
+        server.verify();
+        server.reset();
+
+        server.expect(requestTo("https://finance.example/api/v1/edu/account/inquireVirtualAccountDeposits"))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000"},"REC":{"deposits":[
+                          {"depositAmount":"650000","nameMatched":true,"transferred":false}]}}
+                        """, MediaType.APPLICATION_JSON));
+        assertThat(client.inquireVirtualAccountDeposits("escrow-key", "va-1"))
+                .containsExactly(new FinanceClient.VirtualAccountDeposit(
+                        BigInteger.valueOf(650_000), true, false));
+        server.verify();
+        server.reset();
+
+        server.expect(requestTo("https://finance.example/api/v1/edu/account/settleVirtualAccount"))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000"},
+                         "REC":{"settledAmount":"650000","settledAt":"2026-09-19T21:35:00+09:00"}}
+                        """, MediaType.APPLICATION_JSON));
+        assertThat(client.settleVirtualAccount("escrow-key", "va-1", "20260919213500000003").settledAmount())
+                .isEqualTo(BigInteger.valueOf(650_000));
+        server.verify();
+        server.reset();
+
+        server.expect(requestTo("https://finance.example/api/v1/edu/account/closeVirtualAccount"))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000"},"REC":{"status":"CLOSED"}}
+                        """, MediaType.APPLICATION_JSON));
+        assertThat(client.closeVirtualAccount("escrow-key", "va-1", "20260919213500000004"))
+                .isEqualTo("CLOSED");
+        server.verify();
+    }
+    private static FinanceProperties properties(String baseUrl, String apiKey) {
+        return new FinanceProperties(true, baseUrl, apiKey, "Asia/Seoul", "product",
+                "escrow-user-key", "0010000000000000", 30);
     }
 }

@@ -31,6 +31,9 @@ app:
     time-zone: ${SSAFY_FINANCE_TIME_ZONE:Asia/Seoul}
     # R-ACC-10: 사전에 등록하고 검증한 단일 원화 수시입출금 상품.
     account-type-unique-no: ${SSAFY_DEMAND_DEPOSIT_PRODUCT_NO}
+    escrow-user-key: ${SSAFY_ESCROW_USER_KEY}
+    escrow-account-no: ${SSAFY_ESCROW_ACCOUNT_NO}
+    virtual-account-validity-days: ${SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS}
 
 management:
   endpoints:
