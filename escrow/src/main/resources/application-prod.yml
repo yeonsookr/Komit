@@ -13,6 +13,11 @@ server:
   # 이 값을 반영해야 리다이렉트와 생성 URL이 https://komit.site/escrow/... 로 나옵니다.
   # 헤더는 nginx가 덮어써서 보내므로 클라이언트가 위조한 값은 들어오지 않습니다.
   forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        name: ESCROWSESSION
+        path: /escrow
 
 springdoc:
   swagger-ui:
