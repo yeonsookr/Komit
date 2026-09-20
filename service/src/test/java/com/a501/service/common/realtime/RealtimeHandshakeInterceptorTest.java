@@ -6,6 +6,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.a501.service.common.realtime.protocol.RealtimeChannelType;
+import com.a501.service.common.realtime.protocol.RealtimeEventFamily;
 import com.a501.service.common.realtime.ticket.RealtimeTicket;
 import com.a501.service.common.realtime.ticket.RealtimeTicketService;
 import java.net.URI;
@@ -55,6 +56,7 @@ class RealtimeHandshakeInterceptorTest {
         assertThat(principal.userId()).isEqualTo(12);
         assertThat(principal.channel()).isEqualTo(RealtimeChannelType.CONSULTING_SESSION);
         assertThat(principal.channelId()).isEqualTo("55");
+        assertThat(principal.allowedEventFamily()).isEqualTo(RealtimeEventFamily.RTC);
         assertThat(principal.connectionId()).isNotBlank();
     }
 

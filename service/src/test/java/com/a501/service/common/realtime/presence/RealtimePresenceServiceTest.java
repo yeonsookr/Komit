@@ -2,6 +2,7 @@ package com.a501.service.common.realtime.presence;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -66,10 +67,17 @@ class RealtimePresenceServiceTest {
         ArgumentCaptor<List<String>> keys = ArgumentCaptor.forClass(List.class);
         ArgumentCaptor<Object> args = ArgumentCaptor.forClass(Object.class);
         verify(redisTemplate)
-                .execute(any(RedisScript.class), keys.capture(), args.capture(), args.capture(), args.capture());
+                .execute(
+                        any(RedisScript.class),
+                        keys.capture(),
+                        args.capture(),
+                        args.capture(),
+                        args.capture(),
+                        args.capture());
         assertThat(keys.getValue()).containsExactly(PRESENCE_KEY, OWNER_KEY);
-        assertThat(args.getAllValues().get(0)).isEqualTo("12:conn-1");
-        assertThat(args.getAllValues().get(1))
+        assertThat(args.getAllValues().get(0)).isEqualTo("conn-1");
+        assertThat(args.getAllValues().get(1)).isEqualTo("12:conn-1");
+        assertThat(args.getAllValues().get(2))
                 .isEqualTo(String.valueOf(NOW.plus(RealtimeTestFixtures.HEARTBEAT_TIMEOUT).toEpochMilli()));
     }
 
@@ -78,7 +86,7 @@ class RealtimePresenceServiceTest {
         presence.touchAll(List.of(principal(12, "conn-1"), principal(34, "conn-2")));
 
         verify(redisTemplate, org.mockito.Mockito.times(2))
-                .execute(any(RedisScript.class), anyList(), any(), any(), any());
+                .execute(any(RedisScript.class), anyList(), any(), any(), any(), any());
     }
 
     @Test
@@ -114,11 +122,23 @@ class RealtimePresenceServiceTest {
     }
 
     @Test
-    void 대표를_못_정해도_새_연결을_막지_않는다() {
+    void 대표를_못_정하면_새_연결을_받지_않는다() {
         when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any()))
                 .thenThrow(new RedisConnectionFailureException("down"));
 
-        assertThat(presence.claimOwnership(principal(12, "conn-1"))).isEmpty();
+        assertThatThrownBy(() -> presence.claimOwnership(principal(12, "conn-1")))
+                .isInstanceOf(RealtimePresenceService.OwnershipClaimException.class)
+                .hasCauseInstanceOf(RedisConnectionFailureException.class);
+    }
+
+    @Test
+    void 대표가_아닌_예전_연결은_수명을_늘리지_못한다() {
+        when(redisTemplate.execute(
+                        any(RedisScript.class), anyList(), any(), any(), any(), any()))
+                .thenReturn(0L);
+
+        assertThat(presence.touchAll(List.of(principal(12, "conn-old"))))
+                .containsExactly(principal(12, "conn-old"));
     }
 
     @Test
@@ -170,7 +190,7 @@ class RealtimePresenceServiceTest {
     @Test
     void Redis_가_죽어도_연결을_끊지_않는다() {
         // presence 는 장부일 뿐 메시지가 오가는 길이 아니다. 여기서 던지면 입장 자체가 막힌다.
-        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any(), any()))
+        when(redisTemplate.execute(any(RedisScript.class), anyList(), any(), any(), any(), any()))
                 .thenThrow(new RedisConnectionFailureException("down"));
         when(zSet.range(anyString(), any(Long.class), any(Long.class)))
                 .thenThrow(new RedisConnectionFailureException("down"));

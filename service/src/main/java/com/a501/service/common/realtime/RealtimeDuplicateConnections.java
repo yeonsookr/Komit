@@ -1,6 +1,9 @@
 package com.a501.service.common.realtime;
 
 import com.a501.service.common.realtime.presence.RealtimePresenceService;
+import com.a501.service.common.realtime.protocol.RealtimeCloseStatus;
+import com.a501.service.common.realtime.protocol.RealtimeEnvelope;
+import com.a501.service.common.realtime.protocol.RealtimeSystemEvent;
 import com.a501.service.common.realtime.relay.RealtimeControlPublisher;
 import org.springframework.stereotype.Component;
 
@@ -12,11 +15,33 @@ import org.springframework.stereotype.Component;
 public class RealtimeDuplicateConnections {
     private final RealtimePresenceService presence;
     private final RealtimeControlPublisher controlPublisher;
+    private final RealtimeConnectionRegistry registry;
 
     public RealtimeDuplicateConnections(
-            RealtimePresenceService presence, RealtimeControlPublisher controlPublisher) {
+            RealtimePresenceService presence,
+            RealtimeControlPublisher controlPublisher,
+            RealtimeConnectionRegistry registry) {
         this.presence = presence;
         this.controlPublisher = controlPublisher;
+        this.registry = registry;
+    }
+
+    /**
+     * 밀려난 연결을 접는다. 지시를 받았을 때와, 지시가 유실돼 heartbeat 가 대표 자리를 잃은 것을
+     * 뒤늦게 알아챘을 때 모두 이 길로 온다. 한쪽만 1008 처럼 재접속을 부르는 코드로 닫으면
+     * 밀려난 탭이 다시 붙어 새 탭을 밀어내는 고리가 생기므로 접는 방법을 하나로 둔다.
+     */
+    public void replace(RealtimeConnection connection) {
+        RealtimePrincipal principal = connection.principal();
+        connection.send(
+                new RealtimeEnvelope(
+                        RealtimeEnvelope.CURRENT_VERSION,
+                        RealtimeSystemEvent.SYSTEM_REPLACED.name(),
+                        null,
+                        principal.channel(),
+                        principal.channelId(),
+                        null));
+        registry.disconnect(connection, RealtimeCloseStatus.DUPLICATE_CONNECTION);
     }
 
     /**

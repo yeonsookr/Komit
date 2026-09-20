@@ -5,7 +5,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadPoolExecutor;
 
 import com.a501.service.common.realtime.presence.RealtimePresenceService;
@@ -26,6 +28,7 @@ import org.springframework.web.socket.CloseStatus;
 public class RealtimeHeartbeat implements DisposableBean {
     private final RealtimeConnectionRegistry registry;
     private final RealtimePresenceService presence;
+    private final RealtimeDuplicateConnections duplicates;
     private final Duration timeout;
     private final Clock clock;
 
@@ -35,29 +38,38 @@ public class RealtimeHeartbeat implements DisposableBean {
      * 끊긴다. 막힐 수 있는 일은 전부 여기로 넘긴다.
      */
     private final Executor sendExecutor;
+    private final Executor presenceExecutor;
 
-    private final ThreadPoolTaskExecutor ownedExecutor;
+    private final ThreadPoolTaskExecutor ownedSendExecutor;
+    private final ThreadPoolTaskExecutor ownedPresenceExecutor;
 
     @Autowired
     public RealtimeHeartbeat(
             RealtimeConnectionRegistry registry,
             RealtimePresenceService presence,
+            RealtimeDuplicateConnections duplicates,
             RealtimeProperties properties) {
-        this(registry, presence, properties, Clock.systemUTC(), null);
+        this(registry, presence, duplicates, properties, Clock.systemUTC(), null, null);
     }
 
     RealtimeHeartbeat(
             RealtimeConnectionRegistry registry,
             RealtimePresenceService presence,
+            RealtimeDuplicateConnections duplicates,
             RealtimeProperties properties,
             Clock clock,
-            Executor sendExecutor) {
+            Executor sendExecutor,
+            Executor presenceExecutor) {
         this.registry = registry;
         this.presence = presence;
+        this.duplicates = duplicates;
         this.timeout = properties.heartbeatTimeout();
         this.clock = clock;
-        this.ownedExecutor = sendExecutor == null ? createSendExecutor() : null;
-        this.sendExecutor = ownedExecutor != null ? ownedExecutor : sendExecutor;
+        this.ownedSendExecutor = sendExecutor == null ? createSendExecutor() : null;
+        this.ownedPresenceExecutor = presenceExecutor == null ? createPresenceExecutor() : null;
+        this.sendExecutor = ownedSendExecutor != null ? ownedSendExecutor : sendExecutor;
+        this.presenceExecutor =
+                ownedPresenceExecutor != null ? ownedPresenceExecutor : presenceExecutor;
     }
 
     @Scheduled(fixedDelayString = "${app.realtime.heartbeat-interval}")
@@ -68,26 +80,82 @@ public class RealtimeHeartbeat implements DisposableBean {
         for (RealtimeConnection connection : registry.all()) {
             if (connection.lastSeenAt().isBefore(silentSince)) {
                 log.debug("realtime 응답이 없어 연결을 닫는다: connectionId={}", connection.connectionId());
-                sendExecutor.execute(() -> registry.disconnect(connection, CloseStatus.GOING_AWAY));
+                sendExecutor.execute(() -> disconnectIfStillSilent(connection, silentSince));
                 continue;
             }
             live.add(connection);
         }
 
-        // 보내기 전에 늘린다. 보내다 끊긴 연결은 그 과정에서 presence 에서도 내려가므로,
-        // 뒤집으면 방금 내려간 것을 다시 올려 아무도 지우지 못하는 항목이 남는다.
-        presence.touchAll(live.stream().map(RealtimeConnection::principal).toList());
+        renewPresence(live);
 
         for (RealtimeConnection connection : live) {
-            sendExecutor.execute(() -> connection.send(ping(connection.principal())));
+            sendExecutor.execute(() -> {
+                if (isCurrentOpenConnection(connection)) {
+                    connection.send(ping(connection.principal()));
+                }
+            });
         }
     }
 
     @Override
     public void destroy() {
-        if (ownedExecutor != null) {
-            ownedExecutor.shutdown();
+        if (ownedSendExecutor != null) {
+            ownedSendExecutor.shutdown();
         }
+        if (ownedPresenceExecutor != null) {
+            ownedPresenceExecutor.shutdown();
+        }
+    }
+
+    private void renewPresence(List<RealtimeConnection> candidates) {
+        try {
+            presenceExecutor.execute(() -> {
+                List<RealtimeConnection> current = candidates.stream()
+                        .filter(this::isCurrentOpenConnection)
+                        .toList();
+                List<RealtimePrincipal> noLongerOwners = presence.touchAll(
+                        current.stream().map(RealtimeConnection::principal).toList());
+                for (RealtimePrincipal principal : noLongerOwners) {
+                    registry.find(principal.connectionId())
+                            .filter(connection -> connection.principal().equals(principal))
+                            .ifPresent(duplicates::replace);
+                }
+
+                Set<String> replaced = noLongerOwners.stream()
+                        .map(RealtimePrincipal::connectionId)
+                        .collect(java.util.stream.Collectors.toSet());
+                for (RealtimeConnection connection : current) {
+                    if (connection.isOpen() || replaced.contains(connection.connectionId())) {
+                        continue;
+                    }
+                    // 보내다 끊긴 연결이다. 위 touchAll 이 presence 에 다시 올렸을 수 있으므로,
+                    // 이미 목록에서 빠졌더라도 presence 는 확실히 내린다.
+                    if (registry.find(connection.connectionId())
+                            .filter(registered -> registered == connection)
+                            .isPresent()) {
+                        registry.forget(connection.principal());
+                    } else {
+                        presence.leave(connection.principal());
+                    }
+                }
+            });
+        } catch (RejectedExecutionException exception) {
+            log.warn("realtime presence 갱신이 밀려 이번 차례를 건너뛴다", exception);
+        }
+    }
+
+    private void disconnectIfStillSilent(RealtimeConnection connection, Instant silentSince) {
+        if (isCurrentOpenConnection(connection)
+                && connection.lastSeenAt().isBefore(silentSince)) {
+            registry.disconnect(connection, CloseStatus.GOING_AWAY);
+        }
+    }
+
+    private boolean isCurrentOpenConnection(RealtimeConnection connection) {
+        return connection.isOpen()
+                && registry.find(connection.connectionId())
+                        .filter(current -> current == connection)
+                        .isPresent();
     }
 
     private RealtimeEnvelope ping(RealtimePrincipal principal) {
@@ -110,6 +178,17 @@ public class RealtimeHeartbeat implements DisposableBean {
         executor.setQueueCapacity(1000);
         // 끊기 지시를 버리면 죽은 연결이 영영 남으므로 부른 thread 가 직접 한다.
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
+        executor.initialize();
+        return executor;
+    }
+
+    private static ThreadPoolTaskExecutor createPresenceExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setThreadNamePrefix("realtime-presence-");
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(1);
+        executor.setQueueCapacity(1);
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         executor.initialize();
         return executor;
     }

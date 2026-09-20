@@ -31,11 +31,20 @@ public class RealtimePresenceService {
     private static final String OWNER_KEY_PREFIX = "realtime:owner:";
     private static final String SEPARATOR = ":";
 
-    /** 기록과 수명 연장을 한 번에 한다. 나눠 보내면 사이에서 끊겼을 때 수명 없는 키가 남는다. */
+    /**
+     * 대표인 연결만 기록과 수명을 연장한다. 소유권 확인과 갱신을 나누면 사이에 새 연결이
+     * 대표를 가져가도 예전 연결이 다시 TTL을 늘릴 수 있다.
+     */
     private static final DefaultRedisScript<Long> TOUCH_SCRIPT = new DefaultRedisScript<>("""
-            redis.call('ZADD', KEYS[1], ARGV[2], ARGV[1])
-            redis.call('PEXPIRE', KEYS[1], ARGV[3])
-            redis.call('PEXPIRE', KEYS[2], ARGV[3])
+            local owner = redis.call('GET', KEYS[2])
+            if not owner then
+              redis.call('SET', KEYS[2], ARGV[1], 'PX', ARGV[4])
+            elseif owner ~= ARGV[1] then
+              return 0
+            end
+            redis.call('ZADD', KEYS[1], ARGV[3], ARGV[2])
+            redis.call('PEXPIRE', KEYS[1], ARGV[4])
+            redis.call('PEXPIRE', KEYS[2], ARGV[4])
             return 1
             """, Long.class);
 
@@ -77,22 +86,35 @@ public class RealtimePresenceService {
         touchAll(List.of(principal));
     }
 
-    /** 한 건이 실패해도 나머지는 계속 알린다. */
-    public void touchAll(Collection<RealtimePrincipal> principals) {
+    /**
+     * 한 건의 Redis 접속이 실패해도 나머지는 계속 알린다. 다른 연결에게 대표 자리를 내준
+     * 연결은 돌려줘 heartbeat가 로컬 연결을 접을 수 있게 한다.
+     */
+    public List<RealtimePrincipal> touchAll(Collection<RealtimePrincipal> principals) {
         if (principals.isEmpty()) {
-            return;
+            return List.of();
         }
         String expiresAt = String.valueOf(clock.millis() + ttl.toMillis());
         String ttlMillis = String.valueOf(ttl.toMillis());
+        List<RealtimePrincipal> noLongerOwners = new java.util.ArrayList<>();
         for (RealtimePrincipal principal : principals) {
             try {
-                redisTemplate.execute(
-                        TOUCH_SCRIPT, keys(principal), member(principal), expiresAt, ttlMillis);
+                Long touched = redisTemplate.execute(
+                        TOUCH_SCRIPT,
+                        keys(principal),
+                        principal.connectionId(),
+                        member(principal),
+                        expiresAt,
+                        ttlMillis);
+                if (Long.valueOf(0L).equals(touched)) {
+                    noLongerOwners.add(principal);
+                }
             } catch (DataAccessException exception) {
                 // presence 는 장부일 뿐 메시지가 오가는 길이 아니다. 던지면 연결이 끊긴다.
                 log.warn("realtime presence 기록 실패: userId={}", principal.userId(), exception);
             }
         }
+        return List.copyOf(noLongerOwners);
     }
 
     /** 대표 연결을 나로 바꾸고 직전 대표를 돌려준다. 없거나 나 자신이면 비어 있다. */
@@ -109,8 +131,13 @@ public class RealtimePresenceService {
             }
             return Optional.of(previous);
         } catch (DataAccessException exception) {
-            log.warn("realtime 대표 연결 갱신 실패: userId={}", principal.userId(), exception);
-            return Optional.empty();
+            throw new OwnershipClaimException(principal, exception);
+        }
+    }
+
+    public static final class OwnershipClaimException extends RuntimeException {
+        public OwnershipClaimException(RealtimePrincipal principal, DataAccessException cause) {
+            super("대표 연결을 안전하게 정할 수 없습니다: userId=" + principal.userId(), cause);
         }
     }
 

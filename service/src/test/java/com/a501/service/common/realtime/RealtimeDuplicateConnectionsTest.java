@@ -1,5 +1,6 @@
 package com.a501.service.common.realtime;
 
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -11,6 +12,7 @@ import com.a501.service.common.realtime.relay.RealtimeControlPublisher;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.data.redis.RedisConnectionFailureException;
 
 class RealtimeDuplicateConnectionsTest {
     private RealtimePresenceService presence;
@@ -21,7 +23,9 @@ class RealtimeDuplicateConnectionsTest {
     void setUp() {
         presence = mock(RealtimePresenceService.class);
         controlPublisher = mock(RealtimeControlPublisher.class);
-        duplicates = new RealtimeDuplicateConnections(presence, controlPublisher);
+        duplicates =
+                new RealtimeDuplicateConnections(
+                        presence, controlPublisher, mock(RealtimeConnectionRegistry.class));
     }
 
     @Test
@@ -56,5 +60,17 @@ class RealtimeDuplicateConnectionsTest {
         verify(presence).claimOwnership(joined);
         verify(presence, never()).inChannel(joined.channel(), joined.channelId());
         verify(controlPublisher).closeDuplicate("conn-1");
+    }
+
+    @Test
+    void Redis에서_대표를_정하지_못하면_입장을_실패시킨다() {
+        RealtimePrincipal joined = RealtimeTestFixtures.principal("conn-2");
+        RealtimePresenceService.OwnershipClaimException failure =
+                new RealtimePresenceService.OwnershipClaimException(
+                        joined, new RedisConnectionFailureException("down"));
+        when(presence.claimOwnership(joined)).thenThrow(failure);
+
+        assertThatThrownBy(() -> duplicates.closeOlderOf(joined)).isSameAs(failure);
+        verifyNoInteractions(controlPublisher);
     }
 }

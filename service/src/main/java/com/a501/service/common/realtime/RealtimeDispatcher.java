@@ -38,6 +38,10 @@ public class RealtimeDispatcher {
                     "SYSTEM 이벤트는 domain handler 로 보내지 않는다: " + envelope.type());
         }
 
+        if (!principal.allows(envelope.family())) {
+            throw new BusinessException(RealtimeErrorCode.CHANNEL_FORBIDDEN);
+        }
+
         handlers.stream()
                 .filter(handler -> handler.family() == envelope.family())
                 .filter(handler -> handler.supports(envelope.type()))

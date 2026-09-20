@@ -13,6 +13,9 @@ import org.springframework.validation.annotation.Validated;
 public record RealtimeProperties(
         @NotNull Duration ticketTtl,
         @Positive int maxMessageBytes,
+        @Positive int messagesPerSecond,
+        @Positive int messageBurst,
+        @Positive int rateLimitViolationsBeforeClose,
         @NotNull Duration sendTimeLimit,
         @Positive int sendBufferBytes,
         @NotNull Duration heartbeatInterval,
@@ -27,6 +30,10 @@ public record RealtimeProperties(
         // 감싼 session 은 이 값을 밀리초 int 로 받는다. 넘치면 기동이 영문 모를 예외로 죽는다.
         if (sendTimeLimit != null && sendTimeLimit.toMillis() > Integer.MAX_VALUE) {
             throw new IllegalArgumentException("Realtime send time limit must be under 24 days");
+        }
+        if (messageBurst < messagesPerSecond) {
+            throw new IllegalArgumentException(
+                    "Realtime message burst must be at least messages per second");
         }
         // 한 번 도는 데 걸리는 시간과 답이 오는 시간이 있으므로 간격보다 조금 긴 정도로는 모자란다.
         // 묻기도 전에 기한이 지나 멀쩡한 연결이 매번 끊긴다.

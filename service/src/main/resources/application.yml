@@ -36,14 +36,19 @@ app:
     # 이 시간을 넘긴 컨트롤러·서비스 호출은 WARN으로 남깁니다. (common/logging/LoggingAspect)
     slow-call-threshold: 1s
   realtime:
-    # 티켓을 받아 WebSocket 을 여는 사이에만 쓰입니다. 한 번 쓰면 바로 지워집니다.
+    # R-RT-01: 티켓을 받아 WebSocket 을 여는 사이에만 쓰며 한 번 쓰면 바로 지웁니다.
     ticket-ttl: 30s
-    # SDP 는 몇 KB 까지 커집니다. 넉넉히 두되 한도는 둡니다.
+    # R-RT-02: SDP 는 몇 KB 까지 커집니다. 넉넉히 두되 한도는 둡니다.
     max-message-bytes: 65536
+    # R-RT-02: 짧은 ICE 후보 묶음은 허용하되 한 연결이 서버와 Redis를 독점하지 못하게 합니다.
+    messages-per-second: 20
+    message-burst: 40
+    # R-RT-03: 일시적인 초과에는 오류로 답하고 반복되면 정책 위반으로 연결을 닫습니다.
+    rate-limit-violations-before-close: 3
     # 한 연결이 이 시간 안에 받아 가지 못하거나 밀린 양이 한도를 넘으면 그 연결만 끊습니다.
     send-time-limit: 10s
     send-buffer-bytes: 524288
-    # 주기적으로 말을 걸어 살아 있는지 확인합니다. 기다리는 시간은 간격보다 길어야 합니다.
+    # R-RT-04: 주기적으로 말을 걸어 살아 있는지 확인합니다. 기다리는 시간은 간격보다 길어야 합니다.
     heartbeat-interval: 20s
     heartbeat-timeout: 60s
     # 비우면 같은 출처만 받습니다. 운영은 프론트와 같은 도메인입니다.

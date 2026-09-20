@@ -3,6 +3,7 @@ package com.a501.service.common.realtime;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -10,6 +11,7 @@ import static org.mockito.Mockito.when;
 
 import com.a501.service.common.exception.BusinessException;
 import com.a501.service.common.realtime.presence.RealtimePresenceService;
+import com.a501.service.common.realtime.presence.RealtimePresenceService.OwnershipClaimException;
 import com.a501.service.common.realtime.protocol.RealtimeChannelType;
 import com.a501.service.common.realtime.protocol.RealtimeErrorCode;
 import com.a501.service.config.RealtimeProperties;
@@ -23,6 +25,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketMessage;
@@ -39,6 +42,7 @@ class RealtimeWebSocketHandlerTest {
     private RealtimeConnectionRegistry registry;
     private RealtimePresenceService presence;
     private RealtimeDuplicateConnections duplicates;
+    private RealtimeMessageRateLimiter rateLimiter;
     private RealtimeWebSocketHandler handler;
     private WebSocketSession session;
     private final List<String> sent = new ArrayList<>();
@@ -50,9 +54,18 @@ class RealtimeWebSocketHandlerTest {
         presence = mock(RealtimePresenceService.class);
         registry = new RealtimeConnectionRegistry(MAPPER, presence, properties);
         duplicates = mock(RealtimeDuplicateConnections.class);
+        rateLimiter = mock(RealtimeMessageRateLimiter.class);
+        when(rateLimiter.acquire(PRINCIPAL.connectionId()))
+                .thenReturn(new RealtimeMessageRateLimiter.Decision(true, false));
         handler =
                 new RealtimeWebSocketHandler(
-                        dispatcher, registry, presence, duplicates, MAPPER, properties);
+                        dispatcher,
+                        registry,
+                        presence,
+                        duplicates,
+                        rateLimiter,
+                        MAPPER,
+                        properties);
 
         session = mock(WebSocketSession.class);
         when(session.isOpen()).thenReturn(true);
@@ -128,6 +141,28 @@ class RealtimeWebSocketHandlerTest {
     }
 
     @Test
+    void 전송_횟수를_넘기면_파싱과_dispatch를_하지_않고_오류로_답한다() throws Exception {
+        when(rateLimiter.acquire(PRINCIPAL.connectionId()))
+                .thenReturn(new RealtimeMessageRateLimiter.Decision(false, false));
+
+        receive("{파싱할 수 없는 값");
+
+        assertThat(lastSent().get("payload").get("code").asText()).isEqualTo("RATE_LIMITED");
+        verify(dispatcher, never()).dispatch(any(), any());
+    }
+
+    @Test
+    void 전송_제한을_반복해서_넘기면_1008로_닫는다() throws Exception {
+        when(rateLimiter.acquire(PRINCIPAL.connectionId()))
+                .thenReturn(new RealtimeMessageRateLimiter.Decision(false, true));
+
+        receive(envelope("RTC_SDP_OFFER"));
+
+        verify(session).close(CloseStatus.POLICY_VIOLATION);
+        assertThat(lastSent().get("payload").get("code").asText()).isEqualTo("RATE_LIMITED");
+    }
+
+    @Test
     void 오류에도_requestId_를_실어_어느_요청인지_잇게_한다() throws Exception {
         doThrow(new BusinessException(RealtimeErrorCode.CHANNEL_FORBIDDEN))
                 .when(dispatcher)
@@ -181,6 +216,7 @@ class RealtimeWebSocketHandlerTest {
 
         assertThat(registry.find(PRINCIPAL.connectionId())).isEmpty();
         assertThat(registry.size()).isZero();
+        verify(rateLimiter).remove(PRINCIPAL.connectionId());
     }
 
     @Test
@@ -196,6 +232,36 @@ class RealtimeWebSocketHandlerTest {
     @Test
     void 들어오면_같은_사람의_앞선_연결을_정리한다() {
         verify(duplicates).closeOlderOf(PRINCIPAL);
+    }
+
+    @Test
+    void 대표를_정한_뒤에_presence를_기록한다() {
+        InOrder order = inOrder(duplicates, presence);
+
+        order.verify(duplicates).closeOlderOf(PRINCIPAL);
+        order.verify(presence).touch(PRINCIPAL);
+    }
+
+    @Test
+    void 대표_연결을_정할_수_없으면_1013으로_닫는다() throws Exception {
+        WebSocketSession retrySession = mock(WebSocketSession.class);
+        when(retrySession.isOpen()).thenReturn(true);
+        Map<String, Object> attributes = new HashMap<>();
+        RealtimePrincipal retryPrincipal =
+                new RealtimePrincipal(
+                        12, "conn-retry", RealtimeChannelType.CONSULTING_SESSION, "55");
+        attributes.put(RealtimeHandshakeInterceptor.PRINCIPAL_ATTRIBUTE, retryPrincipal);
+        when(retrySession.getAttributes()).thenReturn(attributes);
+        doThrow(new OwnershipClaimException(
+                        retryPrincipal,
+                        new org.springframework.dao.QueryTimeoutException("redis timeout")))
+                .when(duplicates)
+                .closeOlderOf(retryPrincipal);
+
+        handler.afterConnectionEstablished(retrySession);
+
+        verify(retrySession).close(CloseStatus.SERVICE_OVERLOAD);
+        verify(presence, never()).touch(retryPrincipal);
     }
 
     @Test

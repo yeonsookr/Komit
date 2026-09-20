@@ -8,6 +8,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.a501.service.common.realtime.protocol.RealtimeChannelType;
+import com.a501.service.common.realtime.protocol.RealtimeEventFamily;
 import com.a501.service.config.RealtimeProperties;
 import tools.jackson.databind.ObjectMapper;
 import java.time.Duration;
@@ -60,6 +61,32 @@ class RealtimeTicketServiceTest {
         String value = service.issue(TICKET);
 
         assertThat(service.consume(value)).contains(TICKET);
+    }
+
+    @Test
+    void 티켓에_채널이_허용하는_이벤트_갈래를_저장한다() {
+        String value = service.issue(TICKET);
+
+        assertThat(store.values())
+                .singleElement()
+                .asString()
+                .contains("\"allowedEventFamily\":\"RTC\"");
+        assertThat(service.consume(value))
+                .get()
+                .extracting(RealtimeTicket::allowedEventFamily)
+                .isEqualTo(RealtimeEventFamily.RTC);
+    }
+
+    @Test
+    void 채널과_다른_이벤트_갈래로는_티켓을_만들_수_없다() {
+        org.assertj.core.api.Assertions.assertThatIllegalArgumentException()
+                .isThrownBy(
+                        () ->
+                                new RealtimeTicket(
+                                        12,
+                                        RealtimeChannelType.CONSULTING_SESSION,
+                                        "55",
+                                        RealtimeEventFamily.CHAT));
     }
 
     @Test

@@ -2,10 +2,7 @@ package com.a501.service.common.realtime.relay;
 
 import com.a501.service.common.realtime.RealtimeConnection;
 import com.a501.service.common.realtime.RealtimeConnectionRegistry;
-import com.a501.service.common.realtime.RealtimePrincipal;
-import com.a501.service.common.realtime.protocol.RealtimeCloseStatus;
-import com.a501.service.common.realtime.protocol.RealtimeEnvelope;
-import com.a501.service.common.realtime.protocol.RealtimeSystemEvent;
+import com.a501.service.common.realtime.RealtimeDuplicateConnections;
 import tools.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.connection.Message;
@@ -16,11 +13,15 @@ import org.springframework.stereotype.Component;
 @Component
 public class RealtimeControlSubscriber implements MessageListener {
     private final RealtimeConnectionRegistry registry;
+    private final RealtimeDuplicateConnections duplicates;
     private final ObjectMapper objectMapper;
 
     public RealtimeControlSubscriber(
-            RealtimeConnectionRegistry registry, ObjectMapper objectMapper) {
+            RealtimeConnectionRegistry registry,
+            RealtimeDuplicateConnections duplicates,
+            ObjectMapper objectMapper) {
         this.registry = registry;
+        this.duplicates = duplicates;
         this.objectMapper = objectMapper;
     }
 
@@ -38,19 +39,6 @@ public class RealtimeControlSubscriber implements MessageListener {
             return;
         }
 
-        // 닫는 코드는 믿을 수 없다. 보낼 것이 쌓인 연결에는 감싼 session 이 자기 코드를 쓰고
-        // 아예 닫히지 않기도 하므로, 이유를 먼저 보낸다.
-        connection.send(replaced(connection.principal()));
-        registry.disconnect(connection, RealtimeCloseStatus.DUPLICATE_CONNECTION);
-    }
-
-    private RealtimeEnvelope replaced(RealtimePrincipal principal) {
-        return new RealtimeEnvelope(
-                RealtimeEnvelope.CURRENT_VERSION,
-                RealtimeSystemEvent.SYSTEM_REPLACED.name(),
-                null,
-                principal.channel(),
-                principal.channelId(),
-                null);
+        duplicates.replace(connection);
     }
 }

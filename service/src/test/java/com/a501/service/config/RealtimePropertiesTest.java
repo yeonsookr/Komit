@@ -12,6 +12,9 @@ class RealtimePropertiesTest {
         return new RealtimeProperties(
                 Duration.ofSeconds(30),
                 65536,
+                20,
+                40,
+                3,
                 Duration.ofSeconds(10),
                 524288,
                 heartbeatInterval,
@@ -61,7 +64,28 @@ class RealtimePropertiesTest {
                                 new RealtimeProperties(
                                         Duration.ofSeconds(30),
                                         65536,
+                                        20,
+                                        40,
+                                        3,
                                         Duration.ofDays(30),
+                                        524288,
+                                        Duration.ofSeconds(20),
+                                        Duration.ofSeconds(60),
+                                        List.of()))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void 초당_허용량보다_순간_허용량이_작으면_기동을_막는다() {
+        assertThatThrownBy(
+                        () ->
+                                new RealtimeProperties(
+                                        Duration.ofSeconds(30),
+                                        65536,
+                                        20,
+                                        19,
+                                        3,
+                                        Duration.ofSeconds(10),
                                         524288,
                                         Duration.ofSeconds(20),
                                         Duration.ofSeconds(60),

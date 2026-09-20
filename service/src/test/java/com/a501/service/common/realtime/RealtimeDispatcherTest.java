@@ -106,6 +106,46 @@ class RealtimeDispatcherTest {
     }
 
     @Test
+    void 같은_채널로_위장해도_티켓이_허용하지_않은_갈래는_막는다() {
+        RecordingHandler chat = new RecordingHandler(RealtimeEventFamily.CHAT);
+        RealtimeDispatcher dispatcher = new RealtimeDispatcher(List.of(chat));
+
+        assertThatThrownBy(
+                        () ->
+                                dispatcher.dispatch(
+                                        PRINCIPAL,
+                                        envelope(
+                                                "CHAT_SEND",
+                                                RealtimeChannelType.CONSULTING_SESSION,
+                                                "55")))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(RealtimeErrorCode.CHANNEL_FORBIDDEN);
+        assertThat(chat.seen).isNull();
+    }
+
+    @Test
+    void 채팅방_티켓은_RTC_갈래를_허용하지_않는다() {
+        RealtimePrincipal chatPrincipal =
+                new RealtimePrincipal(12, "conn-1", RealtimeChannelType.CHAT_ROOM, "room-1");
+        RecordingHandler rtc = new RecordingHandler(RealtimeEventFamily.RTC);
+        RealtimeDispatcher dispatcher = new RealtimeDispatcher(List.of(rtc));
+
+        assertThatThrownBy(
+                        () ->
+                                dispatcher.dispatch(
+                                        chatPrincipal,
+                                        envelope(
+                                                "RTC_SDP_OFFER",
+                                                RealtimeChannelType.CHAT_ROOM,
+                                                "room-1")))
+                .isInstanceOf(BusinessException.class)
+                .extracting(e -> ((BusinessException) e).getErrorCode())
+                .isEqualTo(RealtimeErrorCode.CHANNEL_FORBIDDEN);
+        assertThat(rtc.seen).isNull();
+    }
+
+    @Test
     void 맡은_handler_가_없으면_거절한다() {
         RealtimeDispatcher dispatcher = new RealtimeDispatcher(List.of());
 

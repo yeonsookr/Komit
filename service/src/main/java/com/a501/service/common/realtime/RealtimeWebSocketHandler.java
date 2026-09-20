@@ -24,6 +24,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     private final RealtimeConnectionRegistry registry;
     private final RealtimePresenceService presence;
     private final RealtimeDuplicateConnections duplicates;
+    private final RealtimeMessageRateLimiter rateLimiter;
     private final ObjectMapper objectMapper;
     private final int maxMessageBytes;
 
@@ -32,12 +33,14 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             RealtimeConnectionRegistry registry,
             RealtimePresenceService presence,
             RealtimeDuplicateConnections duplicates,
+            RealtimeMessageRateLimiter rateLimiter,
             ObjectMapper objectMapper,
             RealtimeProperties properties) {
         this.dispatcher = dispatcher;
         this.registry = registry;
         this.presence = presence;
         this.duplicates = duplicates;
+        this.rateLimiter = rateLimiter;
         this.objectMapper = objectMapper;
         this.maxMessageBytes = properties.maxMessageBytes();
     }
@@ -50,15 +53,23 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             session.close(CloseStatus.SERVER_ERROR);
             return;
         }
-        registry.register(principal, session);
-        presence.touch(principal);
-        duplicates.closeOlderOf(principal);
+        RealtimeConnection connection = registry.register(principal, session);
+        try {
+            duplicates.closeOlderOf(principal);
+            // 대표를 먼저 정해야 이전 연결이 있던 채널에서도 새 연결의 presence가 기록된다.
+            presence.touch(principal);
+        } catch (RealtimePresenceService.OwnershipClaimException exception) {
+            // 대표 연결을 정하지 못한 상태에서 둘 다 살려 두면 협상 메시지가 갈라진다.
+            // Redis가 회복된 뒤 새 티켓으로 다시 연결하게 하고, 방금 올린 로컬 상태도 치운다.
+            registry.disconnect(connection, CloseStatus.SERVICE_OVERLOAD);
+        }
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         RealtimePrincipal principal = principal(session);
         if (principal != null) {
+            rateLimiter.remove(principal.connectionId());
             registry.forget(principal);
         }
     }
@@ -72,6 +83,15 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             // 이미 걷어 갔거나 pod 가 내려가는 중이다. 서버 결함이 아니므로 1011 이 아니라
             // 1001 로 알리고, 감싸지 않은 session 으로는 답장하지 않는다.
             session.close(CloseStatus.GOING_AWAY);
+            return;
+        }
+
+        RealtimeMessageRateLimiter.Decision rate = rateLimiter.acquire(principal.connectionId());
+        if (!rate.allowed()) {
+            connection.send(error(RealtimeErrorCode.RATE_LIMITED, null));
+            if (rate.close()) {
+                registry.disconnect(connection, CloseStatus.POLICY_VIOLATION);
+            }
             return;
         }
 

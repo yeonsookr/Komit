@@ -36,7 +36,14 @@ class RealtimeControlSubscriberTest {
                         MAPPER,
                         mock(com.a501.service.common.realtime.presence.RealtimePresenceService.class),
                         com.a501.service.common.realtime.RealtimeTestFixtures.properties());
-        subscriber = new RealtimeControlSubscriber(registry, MAPPER);
+        subscriber =
+                new RealtimeControlSubscriber(
+                        registry,
+                        new com.a501.service.common.realtime.RealtimeDuplicateConnections(
+                                mock(com.a501.service.common.realtime.presence.RealtimePresenceService.class),
+                                mock(RealtimeControlPublisher.class),
+                                registry),
+                        MAPPER);
     }
 
     private final List<String> sent = new ArrayList<>();

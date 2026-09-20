@@ -27,6 +27,9 @@ public final class RealtimeTestFixtures {
         return new RealtimeProperties(
                 Duration.ofSeconds(30),
                 maxMessageBytes,
+                20,
+                40,
+                3,
                 Duration.ofSeconds(10),
                 524288,
                 HEARTBEAT_INTERVAL,
