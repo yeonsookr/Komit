@@ -3,6 +3,7 @@ import { buttonClass } from "@/components/buttons";
 import { Card } from "@/components/common";
 import { Callout } from "@/components/feedback";
 import { NEXT_PARAM } from "@/lib/auth/params";
+import { appPath } from "@/lib/basePath";
 import { ROUTES } from "@/lib/routes";
 
 /**
@@ -40,6 +41,12 @@ export interface LoginCardProps {
   errorCode?: string;
 }
 
+/** 일반 `<a>`도 전역 앱 경로 설정을 사용해 현재 FE의 인가 시작점으로 보냅니다. */
+export function kakaoStartHref(next?: string): string {
+  const start = appPath(ROUTES.kakaoStart);
+  return next ? `${start}?${NEXT_PARAM}=${encodeURIComponent(next)}` : start;
+}
+
 /**
  * LoginCard — 「카카오로 시작하기」 하나만 있는 로그인 카드.
  *
@@ -49,9 +56,7 @@ export interface LoginCardProps {
  * 경로는 Route Handler(`app/api/auth/kakao`)가 받아 카카오 로그인 화면으로 보냅니다.
  */
 export function LoginCard({ next, errorCode }: Readonly<LoginCardProps>) {
-  const kakaoHref = next
-    ? `${ROUTES.kakaoStart}?${NEXT_PARAM}=${encodeURIComponent(next)}`
-    : ROUTES.kakaoStart;
+  const kakaoHref = kakaoStartHref(next);
 
   // 카드 폭은 약관 링크 넷이 한 줄에 들어가는 값입니다. 좁히면 줄이 나뉩니다.
   return (

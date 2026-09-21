@@ -13,6 +13,9 @@ if (basePath && (!basePath.startsWith("/") || basePath.endsWith("/"))) {
 const nextConfig: NextConfig = {
   // 도커 이미지에 node_modules 전체를 넣지 않고 실제로 쓰는 것만 추려 담습니다.
   output: "standalone",
+  // 브라우저 코드가 자기 배포의 Route Handler를 호출할 때 쓰는 전역 접두사입니다.
+  // CI는 BASE_PATH 하나만 넣고, 컴포넌트는 환경변수를 직접 다루지 않습니다.
+  env: { NEXT_PUBLIC_BASE_PATH: basePath ?? "" },
   ...(basePath ? { basePath } : {}),
 };
 

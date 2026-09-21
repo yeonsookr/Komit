@@ -1,5 +1,6 @@
 import axios from "axios";
 import { attachErrorNormalizer } from "@/lib/api/interceptors";
+import { clientBasePath } from "@/lib/basePath";
 
 const TIMEOUT_MS = 10_000;
 
@@ -20,7 +21,7 @@ const TIMEOUT_MS = 10_000;
  */
 export const adminClientApi = attachErrorNormalizer(
   axios.create({
-    baseURL: "",
+    baseURL: clientBasePath(),
     timeout: TIMEOUT_MS,
     headers: { "Content-Type": "application/json" },
   }),

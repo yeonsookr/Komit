@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
-import Link from "next/link";
 import { redirect } from "next/navigation";
-import { buttonClass } from "@/components/buttons";
 import { Card } from "@/components/common";
+import { EnterKomitButton } from "@/components/domains/auth";
 import { NEXT_PARAM } from "@/lib/auth/params";
 import { safeNext } from "@/lib/auth/safeNext";
 import { ROUTES } from "@/lib/routes";
@@ -33,12 +32,7 @@ export default async function SignupCompletePage({
       <p className="mt-5 text-base leading-7 text-fg-muted">
         이제 Komit에서 프로젝트를 살펴보고 개발자와 거래할 수 있어요.
       </p>
-      <Link
-        href={next ?? ROUTES.home}
-        className={buttonClass({ size: "lg", fullWidth: true, className: "mt-9" })}
-      >
-        Komit 시작하기
-      </Link>
+      <EnterKomitButton href={next ?? ROUTES.home} />
     </Card>
   );
 }
