@@ -36,8 +36,9 @@ describe("authStore", () => {
     vi.mocked(fetchMe).mockResolvedValue(ME);
     const store = createAuthStore();
 
-    await store.getState().loadMe();
+    const authenticated = await store.getState().loadMe();
 
+    expect(authenticated).toBe(true);
     expect(store.getState()).toMatchObject({ status: "authenticated", user: ME });
   });
 
@@ -45,8 +46,9 @@ describe("authStore", () => {
     vi.mocked(fetchMe).mockRejectedValue(new ApiError(401, "UNAUTHORIZED", "로그인이 필요합니다."));
     const store = createAuthStore();
 
-    await store.getState().loadMe();
+    const authenticated = await store.getState().loadMe();
 
+    expect(authenticated).toBe(false);
     expect(store.getState()).toMatchObject({ status: "anonymous", user: null });
   });
 
@@ -54,8 +56,9 @@ describe("authStore", () => {
     vi.mocked(fetchMe).mockRejectedValue(new ApiError(0, "NETWORK_ERROR", "연결 실패"));
     const store = createAuthStore();
 
-    await store.getState().loadMe();
+    const authenticated = await store.getState().loadMe();
 
+    expect(authenticated).toBe(false);
     expect(store.getState().status).toBe("anonymous");
   });
 

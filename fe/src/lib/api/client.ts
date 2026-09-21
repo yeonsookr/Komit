@@ -3,6 +3,7 @@ import { INTERNAL } from "./endpoints";
 import { attachErrorNormalizer } from "./interceptors";
 import { attachTokenRefresh } from "./refresh";
 import { emitSessionExpired } from "@/lib/auth/sessionEvents";
+import { clientBasePath } from "@/lib/basePath";
 
 const TIMEOUT_MS = 10_000;
 
@@ -18,7 +19,8 @@ const AUTH_PATH_PREFIX = "/api/auth/";
  * ApiError 에는 원래 요청 설정이 없어 다시 보낼 수 없습니다.
  */
 const instance = axios.create({
-  baseURL: "",
+  // 기본 FE는 "", 테스트 FE는 "/test". 브라우저 API 호출 전체에 한 번만 적용합니다.
+  baseURL: clientBasePath(),
   timeout: TIMEOUT_MS,
   headers: { "Content-Type": "application/json" },
 });

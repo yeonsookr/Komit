@@ -24,8 +24,8 @@ export interface AuthActions {
   setUser: (user: Me) => void;
   /** 비로그인으로 돌립니다. 세션 만료 알림이 오면 Provider 가 부릅니다. */
   clear: () => void;
-  /** `/api/users/me` 를 불러 상태를 정합니다. 401 이면 비로그인입니다. */
-  loadMe: () => Promise<void>;
+  /** `/api/users/me` 를 불러 상태를 정하고, 인증 성공 여부를 돌려줍니다. */
+  loadMe: () => Promise<boolean>;
   /** 서버에 로그아웃을 알리고 비로그인으로 돌립니다. 서버가 실패해도 화면은 로그아웃합니다. */
   logout: () => Promise<void>;
 }
@@ -51,9 +51,11 @@ export function createAuthStore(initState: AuthState = defaultAuthState) {
       try {
         const me = await fetchMe();
         set({ status: "authenticated", user: me });
+        return true;
       } catch {
         // 401 은 로그인하지 않은 것이고, 네트워크 오류도 로그인했다고 볼 근거가 없습니다.
         set({ status: "anonymous", user: null });
+        return false;
       }
     },
 
