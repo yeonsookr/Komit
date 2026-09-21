@@ -4,6 +4,7 @@ import { requireServerEnv } from "@/lib/env";
 import { OAUTH_HANDOFF_COOKIE, clearOauthHandoffCookie, setSessionCookies } from "@/lib/auth/session";
 import { parseOauthHandoff } from "@/lib/auth/kakao";
 import { loginWithKakao } from "@/lib/api/services/auth";
+import { getRequiredTerms } from "@/lib/api/services/terms";
 import { toErrorResponse } from "@/lib/api/route";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
@@ -17,7 +18,7 @@ const STATE_MISMATCH_CODE = "KAKAO_AUTH_FAILED";
  * 1. 쿠키의 진행값(state·next)을 꺼내고 지웁니다. 한 번만 쓰는 값입니다.
  * 2. 카카오가 준 state 가 쿠키의 것과 같은지 봅니다. 다르면 로그인 실패입니다.
  * 3. 인가 코드를 코밋 서버에 넘겨 토큰을 받고 httpOnly 쿠키에 넣습니다.
- * 4. 돌아갈 곳으로 보냅니다. 없으면 랜딩입니다.
+ * 4. 필수 약관이 미동의이면 가입 화면으로, 동의했으면 돌아갈 곳으로 보냅니다.
  *
  * 실패는 전부 로그인 화면으로 돌려보내고 `error` 에 코드만 싣습니다.
  * 문구는 화면이 코드로 정합니다 — 주소에 문장을 실어 보내지 않습니다.
@@ -53,9 +54,13 @@ export async function GET(request: NextRequest) {
   try {
     const login = await loginWithKakao({ code, redirectUri });
 
+    const terms = await getRequiredTerms(login.accessToken);
     setSessionCookies(store, login);
-
-    return NextResponse.redirect(new URL(handoff.next ?? ROUTES.home, siteOrigin));
+    const needsAgreement = Object.values(terms).some((agreed) => !agreed);
+    const destination = needsAgreement
+      ? ROUTES.signupTerms(handoff.next)
+      : login.isNewUser ? ROUTES.signupAccount(handoff.next) : handoff.next ?? ROUTES.home;
+    return NextResponse.redirect(new URL(destination, siteOrigin));
   } catch (error) {
     if (error instanceof ApiError && error.status > 0) {
       // 401 KAKAO_AUTH_FAILED · 503 KAKAO_UNAVAILABLE — 화면이 코드로 문구를 고릅니다.

@@ -2,6 +2,10 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../base
+  # 백엔드를 직접 보는 확인용 FE. 운영 overlay 에만 둡니다 — 로컬 실습 overlay 의
+  # fe 는 이미 클러스터 안 service 를 보고 있어 따로 둘 이유가 없습니다.
+  - fe-be-deployment.yaml
+  - fe-be-service.yaml
 patches:
   - path: service-nodeport.yaml
   - path: escrow-nodeport.yaml

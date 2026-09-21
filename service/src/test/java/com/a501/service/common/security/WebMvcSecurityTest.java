@@ -36,7 +36,8 @@ import org.springframework.test.context.TestPropertySource;
         ServletWebSecurityAutoConfiguration.class,
         SecurityFilterAutoConfiguration.class
 })
-@Import({SecurityConfig.class, JwtTokenProvider.class, SecurityErrorWriter.class})
+@Import({SecurityConfig.class, JwtTokenProvider.class, SecurityErrorWriter.class,
+        SignupSecurityTestConfig.class})
 @EnableConfigurationProperties(AuthProperties.class)
 @TestPropertySource(properties = {
         "app.auth.user-jwt-secret=" + SecuritySliceTestSupport.USER_JWT_SECRET,

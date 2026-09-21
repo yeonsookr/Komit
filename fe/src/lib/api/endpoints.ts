@@ -10,6 +10,8 @@ export const BACKEND = {
   AUTH_KAKAO: "/api/auth/kakao",
   AUTH_TOKEN_REFRESH: "/api/auth/token/refresh",
   AUTH_LOGOUT: "/api/auth/logout",
+  SIGNUP_COMPLETION: "/api/auth/signup/completion",
+  REQUIRED_TERMS: "/api/settings/terms",
   LANDING_SUMMARY: "/api/landing/summary",
   LANDING_FEATURED: "/api/landing/featured-developers",
   ME: "/api/users/me",
@@ -40,6 +42,8 @@ export const BACKEND = {
   RECOMMENDATIONS: (projectId: number) => `/api/projects/${projectId}/recommendations`,
   MYPAGE: "/api/mypage",
   MY_SESSIONS: "/api/users/me/sessions",
+  /** 회원가입 때 발급한 계좌. 계좌 등록 화면의 「계좌 연동하기」가 씁니다. (R-ACC-14) */
+  MEMBER_ACCOUNT: "/api/accounts/member-account",
   ACCOUNT_VERIFICATIONS: "/api/accounts/verifications",
   ACCOUNT_VERIFICATION_CONFIRM: (verificationId: number) =>
     `/api/accounts/verifications/${verificationId}/confirm`,
@@ -106,6 +110,8 @@ export const INTERNAL = {
   AUTH_KAKAO_CALLBACK: "/api/auth/kakao/callback",
   AUTH_REFRESH: "/api/auth/refresh",
   AUTH_LOGOUT: "/api/auth/logout",
+  SIGNUP_COMPLETION: "/api/auth/signup/completion",
+  REQUIRED_TERMS: "/api/settings/terms",
   SURVEY: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/survey`,
   ME: "/api/users/me",
   PROFILE_IMAGE: "/api/users/me/profile-image",
@@ -131,6 +137,8 @@ export const INTERNAL = {
   RECOMMENDATIONS: (projectId: number) => `/api/projects/${projectId}/recommendations`,
   SCAN_FILE: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/scan-file`,
   MY_NAME: "/api/users/me",
+  /** 회원가입 때 발급한 계좌. 계좌 등록 화면의 「계좌 연동하기」가 씁니다. (R-ACC-14) */
+  MEMBER_ACCOUNT: "/api/accounts/member-account",
   ACCOUNT_VERIFICATIONS: "/api/accounts/verifications",
   ACCOUNT_VERIFICATION_CONFIRM: (verificationId: number) =>
     `/api/accounts/verifications/${verificationId}/confirm`,

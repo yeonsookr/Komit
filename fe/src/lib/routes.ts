@@ -7,9 +7,13 @@
  *
  * query 이름은 여기서 정하지 않고 그 값을 읽는 모듈에서 가져옵니다 (컨벤션 8.2).
  */
-import { ERROR_PARAM } from "./auth/params";
+import { ERROR_PARAM, NEXT_PARAM } from "./auth/params";
 import { FIELD_CODE_IDS_PARAM } from "./developerSearch";
 import { STEP_PARAM } from "./survey";
+
+function signupPath(path: string, next?: string): string {
+  return next ? `${path}?${NEXT_PARAM}=${encodeURIComponent(next)}` : path;
+}
 
 export const ROUTES = {
   home: "/",
@@ -20,6 +24,11 @@ export const ROUTES = {
   loginFailed: (code: string) => `/login?${ERROR_PARAM}=${encodeURIComponent(code)}`,
   /** 카카오 인가 시작. Route Handler(`app/api/auth/kakao`)가 카카오로 보냅니다. */
   kakaoStart: "/api/auth/kakao",
+  signupTerms: (next?: string) => signupPath("/signup/terms", next),
+  signupAccount: (next?: string) => signupPath("/signup/account", next),
+  signupIdentity: (next?: string) => signupPath("/signup/identity", next),
+  signupVerification: (next?: string) => signupPath("/signup/verification", next),
+  signupComplete: (next?: string) => signupPath("/signup/complete", next),
 
   developers: "/developers",
   developersByField: (codeId: number) =>
@@ -30,10 +39,13 @@ export const ROUTES = {
    * 약관과 정책. 문서마다 주소가 따로입니다.
    * 개인정보 처리방침처럼 주소 하나만 따로 제출해야 하는 문서가 있어 한 페이지에
    * 모으지 않습니다. 목록은 마이페이지 약관 칸이 맡고 별도 목록 화면은 두지 않습니다.
-   * 문서 목록과 개정일은 `lib/policies.ts` 에 있습니다. (본문 화면 없음 — 별도 이슈)
+   * 문서 목록과 초안 작성일은 `lib/policies.ts` 에 있습니다.
    */
   policiesTerms: "/policies/terms",
   policiesPrivacy: "/policies/privacy",
+  policiesPrivacyCollection: "/policies/privacy-collection",
+  policiesPrivacyThirdParty: "/policies/privacy-third-party",
+  policiesEscrow: "/policies/escrow",
   policiesElectronicFinance: "/policies/electronic-finance",
   policiesRefundDispute: "/policies/refund-dispute",
   /** 개발자 판매자 약관. 개발자 프로필을 만들면 동의한 것으로 봅니다. */

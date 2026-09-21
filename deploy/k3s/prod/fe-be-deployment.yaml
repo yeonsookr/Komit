@@ -1,0 +1,90 @@
+# 백엔드를 직접 보는 확인용 FE.
+#
+# base 의 fe 는 목 서버를 보고 2벌로 뜹니다. 이쪽은 클러스터 안의 service Pod 를
+# 그대로 호출해, 백엔드 기능을 붙이는 동안 화면에서 바로 확인하는 용도입니다.
+# 테스트 서버라 1벌만 띄우고 HPA·PDB 를 두지 않습니다. 이미지는 fe 와 같은
+# komit-fe 라서 deploy.sh 의 이미지 고정이 두 Deployment 에 함께 걸립니다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fe-be
+  namespace: komit
+  labels:
+    app.kubernetes.io/name: fe-be
+    app.kubernetes.io/part-of: komit
+spec:
+  replicas: 1
+  # 1벌짜리 확인용 서버라 새 Pod 를 띄운 뒤 넘기지 않고 갈아끼웁니다.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fe-be
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fe-be
+        app.kubernetes.io/part-of: komit
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fe
+          image: komit-fe:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: fe-be-config
+          # FE에는 헬스체크 전용 경로가 없어 포트 수신 여부로 판단합니다.
+          # 페이지 경로로 검사하면 백엔드 장애가 FE 재시작으로 번집니다.
+          startupProbe:
+            tcpSocket:
+              port: http
+            failureThreshold: 30
+            periodSeconds: 2
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 5"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            # Next.js가 이미지 최적화·데이터 캐시를 여기에 씁니다.
+            - name: next-cache
+              mountPath: /app/.next/cache
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: next-cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

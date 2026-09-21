@@ -32,4 +32,23 @@ public class Account extends SoftDeleteEntity {
 
     @Column(name = "bank_code_id", nullable = false)
     private Integer bankCodeId;
+
+    @Column(name = "account_no_encrypted", length = 255)
+    private String accountNoEncrypted;
+
+    public static Account register(Integer userId, String accountHolder, String maskedNumber,
+            Integer bankCodeId, String accountNoEncrypted) {
+        Account account = new Account();
+        account.userId = userId;
+        account.replace(accountHolder, maskedNumber, bankCodeId, accountNoEncrypted);
+        return account;
+    }
+
+    public void replace(String accountHolder, String maskedNumber, Integer bankCodeId,
+            String accountNoEncrypted) {
+        this.accountHolder = accountHolder;
+        this.maskedNumber = maskedNumber;
+        this.bankCodeId = bankCodeId;
+        this.accountNoEncrypted = accountNoEncrypted;
+    }
 }

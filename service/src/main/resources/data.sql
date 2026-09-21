@@ -3,7 +3,7 @@
 
 INSERT INTO system_enum_groups (group_code, group_name, description)
 VALUES
-    ('RECORD_STATUS', '레코드 상태', '공통 레코드의 사용 및 삭제 상태'),
+    ('RECORD_STATUS', '레코드 상태', '공통 레코드의 가입 진행, 사용 및 삭제 상태'),
     ('ROOM_TYPE', '대화방 유형', '문의·컨설팅·개발 대화방 구분'),
     ('ROOM_STATUS', '대화방 상태', '대화방 개폐 상태'),
     ('CONSULTING_AGREEMENT_STATUS', '컨설팅 계약 상태', '컨설팅 계약 진행 상태'),
@@ -28,7 +28,8 @@ VALUES
     ('ISSUE_STATUS', '이슈 상태', '진단 이슈의 처리 상태'),
     ('ISSUE_SEVERITY', '이슈 심각도', '진단 이슈의 위험도'),
     ('QA_CRITERION_STATUS', 'QA 기준 상태', 'QA 확인 결과'),
-    ('FILE_STATUS', '파일 상태', '파일 업로드 검증 상태')
+    ('FILE_STATUS', '파일 상태', '파일 업로드 검증 상태'),
+    ('MEMBER_ACCOUNT_STATUS', '회원 발급 계좌 상태', '회원가입 때 에스크로에 요청한 계좌 발급의 진행 상태')
 ON CONFLICT (group_code) DO UPDATE
 SET group_name = EXCLUDED.group_name,
     description = EXCLUDED.description;
@@ -44,6 +45,7 @@ INSERT INTO system_enums (
 VALUES
     ('ACTIVE', 'RECORD_STATUS', '사용중', 1, FALSE, NULL),
     ('DELETED', 'RECORD_STATUS', '삭제됨', 2, FALSE, NULL),
+    ('PENDING', 'RECORD_STATUS', '가입 진행 중', 3, FALSE, NULL),
 
     ('INQUIRY', 'ROOM_TYPE', '문의', 1, FALSE, NULL),
     ('CONSULTING', 'ROOM_TYPE', '컨설팅', 2, FALSE, NULL),
@@ -153,12 +155,25 @@ VALUES
 
     ('PENDING', 'FILE_STATUS', '발급됨, 검증 전', 1, FALSE, NULL),
     ('COMPLETED', 'FILE_STATUS', '검증 통과', 2, FALSE, NULL),
-    ('FAILED', 'FILE_STATUS', '크기·해시 불일치로 거부', 3, FALSE, NULL)
+    ('FAILED', 'FILE_STATUS', '크기·해시 불일치로 거부', 3, FALSE, NULL),
+
+    -- R-ACC-09, R-ACC-13: 회원 발급 계좌는 한 번만 발급하고 상태로 진행을 남긴다.
+    ('PENDING', 'MEMBER_ACCOUNT_STATUS', '발급 대기', 1, FALSE, NULL),
+    ('ISSUED', 'MEMBER_ACCOUNT_STATUS', '발급됨', 2, FALSE, NULL),
+    ('FAILED', 'MEMBER_ACCOUNT_STATUS', '발급 실패', 3, FALSE, NULL)
 ON CONFLICT (code_key, group_code) DO UPDATE
 SET code_name = EXCLUDED.code_name,
     sort_order = EXCLUDED.sort_order,
     is_deprecated = EXCLUDED.is_deprecated,
     meta_json = EXCLUDED.meta_json;
+
+-- R-ACC-09: 상태 컬럼이 새로 붙은 회원 계좌 행을 실제 발급 상태로 맞춘다.
+-- 발급이 끝난 행은 기본값 PENDING 으로 남아 있을 수 있다.
+UPDATE member_account_provisions
+SET status = 'ISSUED'
+WHERE status <> 'ISSUED'
+  AND user_key_encrypted IS NOT NULL
+  AND account_no_encrypted IS NOT NULL;
 
 -- 기준(default) API 예시 레코드. domain/defaults 참고.
 -- 목이 id=1 에서 200 을 돌려주는 것과 같은 결과가 실서버에서도 나오도록 한 건만 심는다.
@@ -170,3 +185,44 @@ ON CONFLICT (id) DO NOTHING;
 
 -- id 를 직접 넣었으므로 identity 시퀀스를 그 뒤로 옮긴다. 옮기지 않으면 다음 JPA 저장이 id=1 과 충돌한다.
 SELECT setval(pg_get_serial_sequence('defaults', 'id'), (SELECT MAX(id) FROM defaults));
+
+-- 목 Service /api/codes/{groupKey}의 선택지. JPA dynamic_codes 스키마에 시드한다.
+INSERT INTO dynamic_code_groups (group_key, group_name)
+SELECT source.group_key, source.group_name
+FROM (VALUES
+    ('TECH_CATEGORY', '기술'), ('DEV_FIELD', '개발 분야'),
+    ('BANK_CODE', '은행'), ('CARD_COMPANY', '카드사'),
+    ('ISSUE_CATEGORY', '결함 분류')
+) AS source(group_key, group_name)
+WHERE NOT EXISTS (SELECT 1 FROM dynamic_code_groups existing WHERE existing.group_key = source.group_key);
+
+INSERT INTO dynamic_codes (code_id, group_id, code_name, sort_order, is_active)
+SELECT source.code_id, groups.group_id, source.code_name, source.sort_order, TRUE
+FROM (VALUES
+    (21, 'TECH_CATEGORY', 'Next.js', 1), (22, 'TECH_CATEGORY', 'Supabase', 2),
+    (23, 'TECH_CATEGORY', 'TypeScript', 3),
+    (41, 'DEV_FIELD', '인터넷에 올리기', 1), (42, 'DEV_FIELD', 'DB 연결', 2),
+    (43, 'DEV_FIELD', '도메인 연결', 3), (44, 'DEV_FIELD', '로그인 붙이기', 4),
+    (45, 'DEV_FIELD', '알림 보내기', 5), (46, 'DEV_FIELD', '비용 진단', 6),
+    (47, 'DEV_FIELD', '버그 잡기', 7), (48, 'DEV_FIELD', '결제 붙이기', 8),
+    (51, 'BANK_CODE', '국민은행', 1), (52, 'BANK_CODE', '신한은행', 2),
+    (53, 'BANK_CODE', '우리은행', 3), (54, 'BANK_CODE', '하나은행', 4),
+    (55, 'BANK_CODE', '농협은행', 5), (56, 'BANK_CODE', '카카오뱅크', 6),
+    (57, 'BANK_CODE', '토스뱅크', 7),
+    -- R-ACC-10: 데모 계좌를 여는 은행. 에스크로 은행코드 001이다.
+    (58, 'BANK_CODE', '싸피은행', 8),
+    (61, 'CARD_COMPANY', '우리카드', 1), (62, 'CARD_COMPANY', '국민카드', 2),
+    (63, 'CARD_COMPANY', '신한카드', 3), (64, 'CARD_COMPANY', '삼성카드', 4),
+    (65, 'CARD_COMPANY', '현대카드', 5), (66, 'CARD_COMPANY', '롯데카드', 6),
+    (67, 'CARD_COMPANY', '하나카드', 7), (68, 'CARD_COMPANY', 'BC카드', 8),
+    (71, 'ISSUE_CATEGORY', '보안', 1), (72, 'ISSUE_CATEGORY', '위법', 2),
+    (73, 'ISSUE_CATEGORY', '결제', 3), (75, 'ISSUE_CATEGORY', '데이터', 4),
+    (76, 'ISSUE_CATEGORY', '비용', 5), (77, 'ISSUE_CATEGORY', '인계', 6),
+    (78, 'ISSUE_CATEGORY', 'AI 잔재', 7), (74, 'ISSUE_CATEGORY', '기타', 8)
+) AS source(code_id, group_key, code_name, sort_order)
+JOIN dynamic_code_groups groups ON groups.group_key = source.group_key
+ON CONFLICT (code_id) DO UPDATE
+SET group_id = EXCLUDED.group_id, code_name = EXCLUDED.code_name,
+    sort_order = EXCLUDED.sort_order;
+
+SELECT setval(pg_get_serial_sequence('dynamic_codes', 'code_id'), (SELECT MAX(code_id) FROM dynamic_codes));
