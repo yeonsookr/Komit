@@ -76,6 +76,8 @@ export const BACKEND = {
   SESSION_PARTICIPATIONS: (sessionId: number) =>
     `/api/consulting-sessions/${sessionId}/participations`,
   SESSION_END: (sessionId: number) => `/api/consulting-sessions/${sessionId}/end`,
+  SESSION_RECORDINGS: (sessionId: number) =>
+    `/api/consulting-sessions/${sessionId}/recordings`,
   SESSION_SUMMARY: (sessionId: number) => `/api/consulting-sessions/${sessionId}/summary`,
   SESSION_SUMMARY_CHANGES: (sessionId: number) =>
     `/api/consulting-sessions/${sessionId}/summary/applied-changes`,
@@ -166,6 +168,8 @@ export const INTERNAL = {
   SESSION_PARTICIPATIONS: (sessionId: number) =>
     `/api/consulting-sessions/${sessionId}/participations`,
   SESSION_END: (sessionId: number) => `/api/consulting-sessions/${sessionId}/end`,
+  SESSION_RECORDINGS: (sessionId: number) =>
+    `/api/consulting-sessions/${sessionId}/recordings`,
   SESSION_SUMMARY: (sessionId: number) => `/api/consulting-sessions/${sessionId}/summary`,
   SESSION_SUMMARY_CHANGES: (sessionId: number) =>
     `/api/consulting-sessions/${sessionId}/summary/applied-changes`,
