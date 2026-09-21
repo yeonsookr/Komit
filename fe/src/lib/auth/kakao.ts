@@ -26,6 +26,30 @@ export function buildKakaoAuthorizeUrl({ clientId, redirectUri, state }: KakaoAu
   return url.toString();
 }
 
+/** 콜백 Route Handler 의 경로. 공개 기준 주소를 되짚는 데 씁니다. */
+export const KAKAO_CALLBACK_PATH = "/api/auth/kakao/callback";
+
+/**
+ * 콜백 주소에서 이 배포의 공개 기준 주소를 되짚습니다.
+ *
+ * 하위 경로로 서비스하는 배포(`basePath`)에서는 origin 만 쓰면 접두사가 날아가
+ * 로그인 뒤 다른 배포로 떨어집니다. 예를 들어 콜백이
+ * `https://komit.site/test/api/auth/kakao/callback` 이면 기준 주소는
+ * `https://komit.site/test/` 여야 합니다.
+ */
+export function siteBaseUrl(redirectUri: string): URL {
+  const callback = new URL(redirectUri);
+  const prefix = callback.pathname.endsWith(KAKAO_CALLBACK_PATH)
+    ? callback.pathname.slice(0, -KAKAO_CALLBACK_PATH.length)
+    : "";
+  return new URL(`${prefix}/`, callback.origin);
+}
+
+/** 기준 주소 아래의 절대 주소. `/login` 처럼 앞에 `/` 가 붙어 있어도 접두사를 지킵니다. */
+export function siteUrl(path: string, base: URL): URL {
+  return new URL(path.replace(/^\/+/, ""), base);
+}
+
 /** 인가 요청마다 새로 만드는 state. 예측할 수 없어야 하므로 crypto 를 씁니다. */
 export function createOauthState(): string {
   return crypto.randomUUID();

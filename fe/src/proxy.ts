@@ -64,8 +64,15 @@ function guardAdmin(request: NextRequest, pathname: string, from: string) {
   return redirectToLogin(request, ROUTES.adminLogin, from);
 }
 
+/**
+ * `request.url` 로 절대 주소를 만들면 하위 경로 배포(`basePath`)에서 접두사가 날아가
+ * 다른 배포의 로그인 화면으로 떨어집니다. `nextUrl` 은 접두사를 알고 있으므로 이걸
+ * 복제해 경로만 바꿉니다.
+ */
 function redirectToLogin(request: NextRequest, loginPath: string, from: string) {
-  const login = new URL(loginPath, request.url);
+  const login = request.nextUrl.clone();
+  login.pathname = loginPath;
+  login.search = "";
   login.searchParams.set(NEXT_PARAM, from);
   return NextResponse.redirect(login);
 }
