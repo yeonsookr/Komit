@@ -3530,6 +3530,94 @@ class ConvertRoomRequest(BaseModel):
     )
 
 
+class ContractDraftMilestoneResponse(BaseModel):
+    """초안이 제안하는 작업 하나. 가격과 기간은 개발자가 채운다."""
+
+    title: str = Field(
+        min_length=1,
+        description="작업 이름.",
+        examples=["관리자 API에 인증 추가"],
+    )
+    qaCriteria: list[Annotated[str, Field(min_length=1, max_length=500)]] = Field(
+        min_length=1,
+        description="이 작업의 확인 문장. 하나 이상이다. (R-REQ-01, R-REQ-04)",
+        examples=[["로그인하지 않고 관리자 주소로 들어가면 로그인 화면이 나타난다"]],
+    )
+
+
+class RejectedIssueDraftResponse(BaseModel):
+    """맡지 않기로 한 요구사항 하나의 초안."""
+
+    issueId: int = Field(description="빼는 요구사항 식별자.", examples=[313])
+    reason: str = Field(
+        min_length=1,
+        description="상담에서 확인된 제외 사유. 대화에 없으면 초안에 담지 않는다.",
+        examples=["재현 로그가 없어 이번 범위에서 뺍니다."],
+    )
+
+
+class ConsultingContractDraftResponse(BaseModel):
+    """컨설팅 계약서 작성 화면의 초안."""
+
+    topic: str = Field(
+        min_length=1,
+        max_length=255,
+        description="이 세션에서 다룰 것. 한 줄이다.",
+        examples=["관리자 인증과 결제 실패를 함께 봅니다"],
+    )
+    detail: str | None = Field(
+        description="합의한 상담 내용의 상세 설명. 근거가 없으면 null이다.",
+        examples=["관리자 화면 접근 경로와 결제 실패 재현 방법을 화면 공유로 봅니다."],
+    )
+
+
+class DevelopmentContractDraftResponse(BaseModel):
+    """개발 계약서 작성 화면의 초안."""
+
+    issueIds: list[int] = Field(
+        description="맡기로 합의한 기존 요구사항 식별자. 요청서에 있는 것만 담는다.",
+        examples=[[312]],
+    )
+    milestones: list[ContractDraftMilestoneResponse] = Field(
+        min_length=1,
+        description="합의한 작업 범위. 하나 이상이다.",
+    )
+    rejectedIssues: list[RejectedIssueDraftResponse] = Field(
+        description="맡지 않기로 한 요구사항과 사유. 없으면 빈 배열이다.",
+    )
+
+
+class ContractDraftResponse(BaseModel):
+    """계약서 작성 화면에 채워 넣을 초안.
+
+    계약서 한 건과 같은 방식으로, 갈래별 내용만 `contractType`에 따라 `consulting`
+    또는 `development` 한쪽에 담긴다. 나머지 한쪽은 항상 null이다.
+
+    **저장하지 않는다.** 이 응답은 화면의 입력칸 초기값일 뿐이며, 개발자가 고쳐서
+    기존 계약서 작성 API로 보내야 계약이 생긴다.
+    """
+
+    roomId: int = Field(
+        description="초안을 만든 방 식별자. 갈래가 정해져 새로 열린 방이다.",
+        examples=[102],
+    )
+    contractType: Literal["CONSULTING", "DEVELOPMENT"] = Field(
+        description=(
+            "계약 종류. 방의 갈래를 따른다. CONSULTING이면 `consulting`이, "
+            "DEVELOPMENT면 `development`가 채워진다."
+        ),
+        examples=["DEVELOPMENT"],
+    )
+    consulting: ConsultingContractDraftResponse | None = Field(
+        default=None,
+        description="컨설팅 계약일 때의 초안. 개발 계약이면 null이다.",
+    )
+    development: DevelopmentContractDraftResponse | None = Field(
+        default=None,
+        description="개발 계약일 때의 초안. 컨설팅 계약이면 null이다.",
+    )
+
+
 # --------------------------------------------------------------------------- #
 # 영역 3 — 실패 응답 문구
 # --------------------------------------------------------------------------- #
@@ -3545,6 +3633,10 @@ ROOM_NOT_FOUND = ("ROOM_NOT_FOUND", "방을 찾을 수 없습니다.")
 ROOM_ALREADY_CONVERTED = (
     "ROOM_ALREADY_CONVERTED",
     "이미 갈래가 정해진 상담입니다.",
+)
+ROOM_NOT_CONVERTED = (
+    "ROOM_NOT_CONVERTED",
+    "갈래를 정하기 전에는 계약 초안을 만들 수 없습니다.",
 )
 CODE_GROUP_NOT_FOUND = ("CODE_GROUP_NOT_FOUND", "코드 분류를 찾을 수 없습니다.")
 
@@ -4098,6 +4190,41 @@ DEVELOPER_NOT_FOUND_EXAMPLE = {
 }
 
 ROOM_NOT_FOUND_EXAMPLE = {"code": "ROOM_NOT_FOUND", "message": "방을 찾을 수 없습니다."}
+ROOM_NOT_CONVERTED_EXAMPLE = {
+    "code": ROOM_NOT_CONVERTED[0],
+    "message": ROOM_NOT_CONVERTED[1],
+}
+
+CONSULTING_CONTRACT_DRAFT_EXAMPLE = {
+    "roomId": CONVERTED_CONSULTING_ROOM_ID,
+    "contractType": "CONSULTING",
+    "consulting": {
+        "topic": "관리자 인증과 결제 실패를 함께 봅니다",
+        "detail": "관리자 화면 접근 경로와 결제 실패 재현 방법을 화면 공유로 봅니다.",
+    },
+    "development": None,
+}
+
+DEVELOPMENT_CONTRACT_DRAFT_EXAMPLE = {
+    "roomId": CONVERTED_DEVELOPMENT_ROOM_ID,
+    "contractType": "DEVELOPMENT",
+    "consulting": None,
+    "development": {
+        "issueIds": [312],
+        "milestones": [
+            {
+                "title": "관리자 API에 인증 추가",
+                "qaCriteria": [
+                    "로그인하지 않고 관리자 주소로 들어가면 로그인 화면이 나타난다",
+                    "일반 회원으로 관리자 주소로 들어가면 권한이 없다고 나온다",
+                ],
+            }
+        ],
+        "rejectedIssues": [
+            {"issueId": 313, "reason": "재현 로그가 없어 이번 범위에서 뺍니다."}
+        ],
+    },
+}
 
 
 class CodeListResponse(BaseModel):
@@ -4891,6 +5018,123 @@ def convert_room(
             "convertedRoomType": request.targetType,
         }
     )
+
+
+@router.post(
+    "/rooms/{roomId}/contract-draft",
+    response_model=ContractDraftResponse,
+    tags=[AREA3_TAG],
+    responses={
+        200: {
+            "content": {
+                "application/json": {
+                    "example": DEVELOPMENT_CONTRACT_DRAFT_EXAMPLE
+                }
+            }
+        },
+        403: {
+            "model": ErrorResponse,
+            "description": "이 방의 개발자가 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
+        404: {
+            "model": ErrorResponse,
+            "description": "방 없음",
+            "content": {"application/json": {"example": ROOM_NOT_FOUND_EXAMPLE}},
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "아직 갈래가 정해지지 않은 상담방",
+            "content": {"application/json": {"example": ROOM_NOT_CONVERTED_EXAMPLE}},
+        },
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "방 식별자 형식 오류",
+        },
+        502: {
+            "model": ErrorResponse,
+            "description": "AI가 계약에 맞는 초안을 만들지 못함",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": AI_RESPONSE_INVALID[0],
+                        "message": AI_RESPONSE_INVALID[1],
+                    }
+                }
+            },
+        },
+        503: {
+            "model": ErrorResponse,
+            "description": "초안 생성 서비스에 연결할 수 없음",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": AI_SERVICE_UNAVAILABLE[0],
+                        "message": AI_SERVICE_UNAVAILABLE[1],
+                    }
+                }
+            },
+        },
+        **AREA1_UNAUTHORIZED,
+        **AREA1_ERRORS,
+    },
+    summary="계약서 초안 만들기",
+    description=(
+        "**화면 — `4_개발자_계약서작성` · 개발 계약서 작성**\n\n"
+        "무료 상담에서 나눈 이야기를 계약서 작성 화면의 입력칸 초기값으로 정리한다. "
+        "의뢰인이 갈래를 정해 새 방이 열린 뒤, 개발자가 그 방에서 계약서를 쓰려고 "
+        "들어올 때 부른다. 갈래를 정하지 않으면 초안도 만들지 않는다.\n\n"
+        "**방마다 한 번만 만든다.** 처음 부르면 만들어 보관하고, 같은 방에서 다시 부르면 "
+        "보관해 둔 초안을 그대로 준다. 몇 번을 불러도 문장이 달라지지 않는다.\n\n"
+        "**개발자가 고친 내용은 서버가 들고 있지 않는다.** 보관하는 것은 만들어진 그대로의 "
+        "초안이고, 고친 내용은 계약서 작성 화면이 들고 있다가 기존 계약서 작성 API로 "
+        "보낸다. 초안을 만들어 보여주는 것만으로는 계약이 생기지 않으며, AI는 계약서를 "
+        "제출하거나 서명하지 않는다.\n\n"
+        "**초안은 개발자가 본다.** 제외 사유처럼 개발자가 다듬어야 할 문구가 들어 있어 "
+        "의뢰인에게 먼저 보이지 않는다. 갈래를 정하는 쪽은 의뢰인이고 초안을 받는 쪽은 "
+        "개발자다.\n\n"
+        "**AI가 채우지 않는 칸이 있다.** 일정·기간·금액·인계물·전달 메시지는 응답에 "
+        "없다. 합의와 검수가 필요한 값이라 개발자가 직접 입력한다. 요구사항 식별자는 "
+        "요청서에 있는 것만 담고 새로 만들지 않는다.\n\n"
+        "- **200**: 계약에 맞는 초안을 만들었을 때\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **403 / FORBIDDEN**: 이 방의 개발자가 아닐 때\n"
+        "- **404 / ROOM_NOT_FOUND**: `roomId`가 404일 때\n"
+        "- **409 / ROOM_NOT_CONVERTED**: `roomId`가 91일 때. 아직 갈래를 정하지 않았다\n"
+        "- **422 / INVALID_REQUEST**: `roomId`가 정수가 아닐 때\n"
+        "- **502 / AI_RESPONSE_INVALID**: 생성 결과의 필드·길이·식별자가 계약에 맞지 "
+        "않을 때\n"
+        "- **503 / AI_SERVICE_UNAVAILABLE**: 생성 서비스에 연결할 수 없을 때\n"
+        "- **500 / INTERNAL_ERROR**: 그 밖의 서버 오류가 발생했을 때\n\n"
+        "Mock은 방의 갈래에 따라 고정된 200 응답을 반환한다. 502·503은 후속 Service "
+        "구현을 위한 응답 계약 예시이며 Mock 전용 실패 트리거를 만들지 않는다.\n\n"
+        "초안 보관 테이블은 아직 ERD에 없다. `docs/ai/chat-contract-draft.md` 3절의 "
+        "`contract_drafts` 설계를 ERD 담당이 확인한 뒤 Service가 구현한다."
+    ),
+)
+def draft_contract(
+    roomId: Annotated[
+        int,
+        Path(
+            description=(
+                "갈래가 정해져 새로 열린 방 식별자. 404는 없음, 91은 갈래를 정하기 "
+                "전인 상담방 재현용 예약값이다."
+            ),
+            examples=[CONVERTED_DEVELOPMENT_ROOM_ID],
+        ),
+    ],
+) -> ContractDraftResponse | JSONResponse:
+    room = _room(roomId)
+    if room is None:
+        return _error_response(404, ROOM_NOT_FOUND)
+    if room["type"] == "INQUIRY":
+        return _error_response(409, ROOM_NOT_CONVERTED)
+    example = (
+        CONSULTING_CONTRACT_DRAFT_EXAMPLE
+        if room["type"] == "CONSULTING"
+        else DEVELOPMENT_CONTRACT_DRAFT_EXAMPLE
+    )
+    return ContractDraftResponse(**{**example, "roomId": roomId})
 
 
 # =========================================================================== #
