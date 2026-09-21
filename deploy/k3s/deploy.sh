@@ -29,6 +29,8 @@ FE_IMAGE=${FE_IMAGE:-}
 # service 인증. application-prod.yml 이 환경변수로만 받고 기본값이 없어, 없으면 service Pod 가 기동하지 않습니다.
 : "${KOMIT_USER_JWT_SECRET:?KOMIT_USER_JWT_SECRET is required}"
 : "${KAKAO_TOKEN_ENCRYPTION_KEY:?KAKAO_TOKEN_ENCRYPTION_KEY is required}"
+# 계좌번호·userKey 를 암호화해 보관하는 키입니다. 없으면 service Pod 가 기동 중 죽습니다.
+: "${ACCOUNT_DATA_ENCRYPTION_KEY:?ACCOUNT_DATA_ENCRYPTION_KEY is required}"
 : "${KAKAO_CLIENT_SECRET:?KAKAO_CLIENT_SECRET is required}"
 # escrow 보안 설정. 운영에서는 application-local.yml의 개발 기본값을 사용하지 않습니다.
 : "${CLIENT_API_KEY_HMAC_SECRET:?CLIENT_API_KEY_HMAC_SECRET is required}"
@@ -76,6 +78,11 @@ case "$ESCROW_API_BASE_URL" in
 esac
 if [ "${#ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE}" -gt 100 ]; then
   echo "ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE must not exceed 100 characters" >&2
+  exit 1
+fi
+ACCOUNT_KEY_BYTES=$(printf '%s' "$ACCOUNT_DATA_ENCRYPTION_KEY" | base64 -d 2>/dev/null | wc -c | tr -d ' ')
+if [ "$ACCOUNT_KEY_BYTES" != 32 ]; then
+  echo "ACCOUNT_DATA_ENCRYPTION_KEY must encode exactly 32 bytes" >&2
   exit 1
 fi
 ENCRYPTION_KEY_BYTES=$(printf '%s' "$FIELD_ENCRYPTION_KEY_BASE64" | base64 -d 2>/dev/null | wc -c | tr -d ' ')
@@ -160,6 +167,7 @@ apply_password_secret service-redis-auth "$SERVICE_REDIS_PASSWORD"
 kubectl -n komit create secret generic service-auth \
   --from-literal=KOMIT_USER_JWT_SECRET="$KOMIT_USER_JWT_SECRET" \
   --from-literal=KAKAO_TOKEN_ENCRYPTION_KEY="$KAKAO_TOKEN_ENCRYPTION_KEY" \
+  --from-literal=ACCOUNT_DATA_ENCRYPTION_KEY="$ACCOUNT_DATA_ENCRYPTION_KEY" \
   --from-literal=KAKAO_CLIENT_ID="$KAKAO_CLIENT_ID" \
   --from-literal=KAKAO_CLIENT_SECRET="$KAKAO_CLIENT_SECRET" \
   --from-literal=ESCROW_CLIENT_API_KEY="$ESCROW_CLIENT_API_KEY" \
