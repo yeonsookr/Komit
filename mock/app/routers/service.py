@@ -5284,14 +5284,16 @@ class ConsultingAgreementResponse(BaseModel):
     """컨설팅 계약에만 있는 내용. 개발 계약이면 이 자리가 null이다."""
 
     status: Literal[
-        "SIGNED", "DEPOSITED", "IN_PROGRESS", "COMPLETED", "TERMINATED"
+        "PRE_SIGNED", "SIGNED", "DEPOSITED", "IN_PROGRESS", "COMPLETED", "TERMINATED"
     ] = Field(
         description=(
-            "컨설팅 진행. SIGNED는 체결됨, DEPOSITED는 예치됨, IN_PROGRESS는 진행중, "
-            "COMPLETED는 완료됨, TERMINATED는 파기됨이다.\n\n"
-            "**체결 여부는 바깥 계약의 `status`로만 판단한다.** 이 값은 체결 이후의 "
-            "진행을 나타내므로, 바깥이 `NEGOTIATING`인 동안에는 의미가 없다. 협의 중에는 "
-            "언제든 내용이 바뀔 수 있어 갈래에 따로 상태를 두지 않는다. (`R-CON-01`)"
+            "컨설팅 진행. PRE_SIGNED는 **가계약**으로, 계약서를 주고받으며 조정하는 "
+            "동안의 상태다. 양쪽이 서명하면 SIGNED, 예치가 끝나면 DEPOSITED, 세션이 "
+            "시작되면 IN_PROGRESS가 된다. COMPLETED는 완료됨, TERMINATED는 파기됨이다. "
+            "개발 계약과 같은 순서다.\n\n"
+            "**체결 여부는 바깥 계약의 `status`로만 판단한다.** 이 값이 PRE_SIGNED를 "
+            "지나쳤다고 체결된 것이 아니다. 서명 두 개가 모두 찍혀야 계약이 성립한다. "
+            "(`R-CON-01`)"
         ),
         examples=["SIGNED"],
     )
