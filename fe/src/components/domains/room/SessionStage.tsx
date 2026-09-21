@@ -361,11 +361,12 @@ export function SessionStage({
           />
 
           <div className="flex items-center gap-3">
+            {/* 공유 중에는 내가 무엇을 보내고 있는지가 카메라보다 중요합니다. */}
             <VideoTile
               className="h-[108px] w-[220px] max-w-[45%] shrink-0"
-              stream={call.localStream}
+              stream={call.screenStream ?? call.localStream}
               muted
-              label={`${myName} (나)`}
+              label={call.screenStream ? `${myName} (화면 공유 중)` : `${myName} (나)`}
               placeholder="카메라 꺼짐"
             />
             {call.status === "PERMISSION_DENIED" && (
@@ -413,9 +414,13 @@ export function SessionStage({
           >
             {call.cameraOn ? "카메라 끄기" : "카메라 켜기"}
           </Button>
-          {/* 화면 공유는 아직입니다. 눌리는데 아무 일도 없으면 고장으로 읽힙니다. */}
-          <Button variant="outline" disabled title="아직 붙지 않았습니다">
-            화면 공유
+          <Button
+            variant="outline"
+            disabled={!call.localStream}
+            aria-pressed={Boolean(call.screenStream)}
+            onClick={() => void call.toggleScreenShare()}
+          >
+            {call.screenStream ? "화면 공유 중지" : "화면 공유"}
           </Button>
         </div>
 
