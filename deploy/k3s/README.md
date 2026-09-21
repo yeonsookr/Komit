@@ -246,8 +246,32 @@ server {
 #### 확인용 FE(`fe-be`)
 
 `fe-be`는 NodePort `30083`으로 열려 있고, 위 `komit_test` upstream이 그 주소입니다.
-어떻게 밖으로 낼지는 nginx 쪽에서 정합니다. 정한 주소의 `/api/auth/kakao/callback`을
-카카오 콘솔에 등록하고 같은 값을 `FE_BE_KAKAO_REDIRECT_URI`에 넣어야 로그인이 됩니다.
+
+이 FE는 `/test` 접두사로 구운 별도 이미지(`komit-fe-be`)입니다. Next.js의 `basePath`가
+`/test`라서 nginx는 **접두사를 떼지 말고 그대로 넘겨야** 합니다.
+
+```nginx
+location /test {
+    proxy_pass http://komit_test;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+두 가지를 지켜야 합니다.
+
+- `proxy_pass` 끝에 `/`를 붙이지 않습니다. 붙이면 접두사가 떨어져 나가 Next가 `/`로 받고,
+  화면이 만드는 링크와 API 호출이 목을 보는 `fe`로 갑니다.
+- **`location = /test { return 301 /test/; }`를 두지 않습니다.** `basePath`가 `/test`면
+  Next는 `/test`를 정식 주소로 보고 `/test/`를 `/test`로 되돌립니다. nginx가 반대로
+  되돌리면 두 리다이렉트가 맞물려 `ERR_TOO_MANY_REDIRECTS`가 납니다.
+
+카카오 Redirect URI는 `https://komit.site/test/api/auth/kakao/callback`입니다. 카카오
+콘솔에 등록하고 같은 값을 `FE_BE_KAKAO_REDIRECT_URI`에 넣어야 로그인이 됩니다.
 
 문법 검사가 통과한 뒤에만 재시작합니다. 설정이 틀린 채로 재시작하면 nginx가 뜨지 않아 mock까지 접속이 끊깁니다.
 
@@ -639,7 +663,7 @@ chmod +x deploy/k3s/deploy.sh
 | `SSAFY_ESCROW_USER_KEY`, `SSAFY_ESCROW_ACCOUNT_NO` | 예 | Escrow 보관 주체의 금융망 사용자 키와 보관계좌 번호. `escrow-security` Secret으로 주입합니다. |
 | `SSAFY_FEE_ACCOUNT_NO` | 예 | 보관계좌와 다른 플랫폼 수수료 수익 계좌 번호. `escrow-security` Secret으로 주입합니다. |
 | `SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS` | 예 | 가상계좌 만료일 계산에 쓰는 1~30일. `escrow-config` ConfigMap으로 주입합니다. |
-| `SERVICE_IMAGE`, `ESCROW_IMAGE`, `FE_IMAGE` | 아니요 | 비어 있으면 클러스터에서 돌고 있는 이미지를 유지합니다. 바뀌지 않은 모듈은 재시작하지 않습니다. 클러스터에 아직 없는 모듈은 필수입니다. |
+| `SERVICE_IMAGE`, `ESCROW_IMAGE`, `FE_IMAGE`, `FE_BE_IMAGE` | 아니요 | 비어 있으면 클러스터에서 돌고 있는 이미지를 유지합니다. 바뀌지 않은 모듈은 재시작하지 않습니다. 클러스터에 아직 없는 모듈은 필수입니다. |
 
 스크립트는 배포할 이미지 태그를 임시 디렉터리의 Kustomize overlay에 고정해 적용하고, 각 단계의 준비 완료를 기다린 뒤 다음 단계로 넘어갑니다. DB·Redis 주소는 클러스터 내부 DNS 이름으로 고정되어 있어 주입하지 않습니다.
 
