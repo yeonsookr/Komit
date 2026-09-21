@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { Button, buttonClass } from "@/components/buttons";
 import { Card, Field, Input } from "@/components/common";
-import { Callout } from "@/components/feedback";
 import { ROUTES } from "@/lib/routes";
 
 const CARRIERS = ["SKT", "KT", "LG U+", "알뜰폰"] as const;
@@ -92,12 +91,8 @@ export function IdentityVerificationForm({ next }: Readonly<{ next?: string }>) 
             onChange={(event) => setAgreed(event.target.checked)}
             className="mt-1 size-4 accent-primary"
           />
-          입력한 정보로 데모 본인인증 화면을 진행하는 데 동의합니다.
+          입력한 정보로 본인인증을 진행하는 데 동의합니다.
         </label>
-
-        <Callout tone="neutral" size="sm">
-          이 화면은 데모입니다. 통신사 인증 요청이나 실제 본인 확인은 진행되지 않습니다.
-        </Callout>
 
         <div className="flex flex-col gap-3 pt-2">
           <Button type="submit" size="lg" fullWidth disabled={!ready}>

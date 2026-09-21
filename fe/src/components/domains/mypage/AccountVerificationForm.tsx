@@ -11,6 +11,7 @@ import { INTERNAL } from "@/lib/api/endpoints";
 import { finishSignup } from "@/lib/api/services/signup";
 import { DEMO_BANK_CODE, findBank } from "@/lib/bank";
 import { ROUTES } from "@/lib/routes";
+import { useAuthStore } from "@/stores/auth";
 import type {
   AccountVerification,
   ConfirmAccountVerificationResponse,
@@ -45,6 +46,7 @@ export function AccountVerificationForm({
 }: Readonly<AccountVerificationFormProps>) {
   const router = useRouter();
   const showToast = useToast();
+  const loadMe = useAuthStore((state) => state.loadMe);
   // R-ACC-10: 데모 계좌는 은행 한 곳으로만 열려 고를 여지가 없습니다.
   const bank = findBank(banks, DEMO_BANK_CODE);
   const bankCodeId = bank === null ? "" : String(bank.codeId);
@@ -60,8 +62,8 @@ export function AccountVerificationForm({
     bankCodeId !== "" && /^\d{16}$/.test(accountNumber) && accountHolder.trim().length > 0;
 
   /**
-   * 은행 앱이 없는 데모라 회원이 자기 계좌번호를 알 방법이 없습니다. 가입 때 발급된
-   * 번호를 받아 계좌번호 칸을 채웁니다. (R-ACC-14)
+   * 실제 은행 앱을 쓸 수 없어 회원이 자기 계좌번호를 확인할 방법이 없습니다. 가입 때
+   * 발급된 번호를 받아 계좌번호 칸을 채웁니다. (R-ACC-14)
    */
   const link = async () => {
     if (linking || sending) return;
@@ -169,7 +171,13 @@ export function AccountVerificationForm({
                 INTERNAL.ACCOUNT_VERIFICATION_CONFIRM(verification.verificationId),
                 { authCode },
               );
-              if (signup) await finishSignup();
+              if (signup) {
+                await finishSignup();
+                // 가입 진행 중에는 내 정보를 읽을 수 없어 헤더가 비로그인으로 남아
+                // 있습니다. 완료 직후 다시 읽어야 이어지는 화면이 로그인 상태로
+                // 보입니다. (R-ACC-13)
+                await loadMe();
+              }
               showToast({ tone: "success", title: "계좌를 등록했습니다." });
               router.replace(completionHref);
               router.refresh();
@@ -275,7 +283,7 @@ export function AccountVerificationForm({
             layout="horizontal"
             required
             htmlFor="account-number"
-            helper="은행 앱이 없어도 「계좌 연동하기」로 가입할 때 발급된 계좌를 불러올 수 있습니다."
+            helper="실제 은행 앱을 사용할 수 없어, 「계좌 연동하기」로 발급된 계좌번호를 불러옵니다."
           >
             <div className="flex items-center gap-2">
               <Input
