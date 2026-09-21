@@ -795,6 +795,8 @@ k3s-deploy:
         # 카카오 로그인. fe 의 /api/auth/kakao 가 실행 시점에 읽습니다. 없으면 로그인이 500 으로 실패합니다.
         echo "export KAKAO_CLIENT_ID=\"\$(printf %s '$(b64 "$KAKAO_CLIENT_ID")' | base64 -d)\""
         echo "export KAKAO_REDIRECT_URI=\"\$(printf %s '$(b64 "$KAKAO_REDIRECT_URI")' | base64 -d)\""
+        # 백엔드를 직접 보는 확인용 FE(fe-be)의 Redirect URI. fe 와 주소가 달라 값을 따로 받습니다.
+        echo "export FE_BE_KAKAO_REDIRECT_URI=\"\$(printf %s '$(b64 "$FE_BE_KAKAO_REDIRECT_URI")' | base64 -d)\""
         # service 인증. JWT 서명 키, 카카오 토큰 암호화 키(32바이트 Base64), 카카오 Client Secret. 없으면 service가 기동하지 않습니다.
         echo "export KOMIT_USER_JWT_SECRET=\"\$(printf %s '$(b64 "$KOMIT_USER_JWT_SECRET")' | base64 -d)\""
         echo "export KAKAO_TOKEN_ENCRYPTION_KEY=\"\$(printf %s '$(b64 "$KAKAO_TOKEN_ENCRYPTION_KEY")' | base64 -d)\""

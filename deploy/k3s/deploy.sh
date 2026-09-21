@@ -23,6 +23,9 @@ FE_IMAGE=${FE_IMAGE:-}
 # 카카오 로그인. fe 의 인가 시작 Route Handler 가 실행 시점에 읽습니다. 없으면 로그인이 500 입니다.
 : "${KAKAO_CLIENT_ID:?KAKAO_CLIENT_ID is required}"
 : "${KAKAO_REDIRECT_URI:?KAKAO_REDIRECT_URI is required}"
+# 백엔드를 직접 보는 확인용 FE(fe-be)의 Redirect URI. fe 와 주소가 다르므로 값을 따로 받습니다.
+# 카카오 콘솔에도 이 주소를 등록해야 로그인이 됩니다.
+: "${FE_BE_KAKAO_REDIRECT_URI:?FE_BE_KAKAO_REDIRECT_URI is required}"
 # service 인증. application-prod.yml 이 환경변수로만 받고 기본값이 없어, 없으면 service Pod 가 기동하지 않습니다.
 : "${KOMIT_USER_JWT_SECRET:?KOMIT_USER_JWT_SECRET is required}"
 : "${KAKAO_TOKEN_ENCRYPTION_KEY:?KAKAO_TOKEN_ENCRYPTION_KEY is required}"
@@ -199,6 +202,13 @@ EOF
   config_literal ESCROW_API_BASE_URL "$ESCROW_API_BASE_URL"
   config_literal KAKAO_CLIENT_ID "$KAKAO_CLIENT_ID"
   config_literal KAKAO_REDIRECT_URI "$KAKAO_REDIRECT_URI"
+  # 확인용 FE 는 목을 거치지 않고 클러스터 안의 service 를 직접 부릅니다.
+  # 주소가 클러스터 내부 DNS 라 CI/CD 변수로 받지 않고 여기 고정합니다.
+  printf '  - name: fe-be-config\n    namespace: komit\n    literals:\n'
+  config_literal BACKEND_API_BASE_URL "http://service.komit.svc.cluster.local:8080"
+  config_literal AI_API_BASE_URL "$AI_API_BASE_URL"
+  config_literal KAKAO_CLIENT_ID "$KAKAO_CLIENT_ID"
+  config_literal KAKAO_REDIRECT_URI "$FE_BE_KAKAO_REDIRECT_URI"
   # 백엔드가 자기 공개 주소를 알도록 넣습니다. 값이 바뀌면 해당 Pod만 새 값으로 다시 뜹니다.
   printf '  - name: service-config\n    namespace: komit\n    literals:\n'
   config_literal APP_PUBLIC_BASE_URL "$SERVICE_PUBLIC_BASE_URL"
@@ -239,4 +249,5 @@ rollout() {
 rollout service
 rollout escrow
 rollout fe
+rollout fe-be
 kubectl -n komit get pods -o wide

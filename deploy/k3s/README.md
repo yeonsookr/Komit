@@ -17,7 +17,7 @@ escrow Pod ×2 ──┬─ 일반 트랜잭션   → escrow-db-rw ── Primar
 | `platform/` | CloudNativePG 오퍼레이터, redis-operator (K3s HelmChart) |
 | `database/` | `service-db`, `escrow-db` Cluster, `service-redis` RedisReplication + RedisSentinel |
 | `base/` | `service`, `escrow`, `fe` 애플리케이션 |
-| `prod/` | 운영 overlay. `service`(30080), `escrow`(30081), `fe`(30082)를 nginx용 NodePort로 엽니다 |
+| `prod/` | 운영 overlay. `service`(30080), `escrow`(30081), `fe`(30082), `fe-be`(30083)를 nginx용 NodePort로 엽니다. 백엔드를 직접 보는 확인용 FE(`fe-be`)도 여기서만 만듭니다 |
 | `local/` | 로컬 실습용 Secret, NodePort, 이미지 태그 |
 
 CloudNativePG Cluster와 Redis 리소스는 각 오퍼레이터의 CRD가 설치된 뒤에만 만들 수 있습니다. 그래서 오퍼레이터 → DB·Redis → 애플리케이션 순서로 나눠 적용합니다.
@@ -88,8 +88,12 @@ K3s는 tar 이미지를 시작할 때만 가져옵니다. 이미지를 다시 �
 인터넷 ─ 80/443 ─ nginx 컨테이너 ─┬─ /mock/    ─ mock 컨테이너
                                   ├─ /service/ ─ 172.17.0.1:30080 ─ K3s service Pod
                                   ├─ /escrow/  ─ 172.17.0.1:30081 ─ K3s escrow Pod
-                                  └─ /         ─ 172.17.0.1:30082 ─ K3s fe Pod ─ (클러스터 내부) ─ service Pod
+                                  └─ /         ─ 172.17.0.1:30082 ─ K3s fe Pod ─ 목 서버
 ```
+
+확인용 FE(`fe-be`)가 NodePort `30083`에 하나 더 떠 있습니다. `fe`는 목 서버를 보고 2벌로 뜨고,
+`fe-be`는 클러스터 안의 `service`를 직접 보는 1벌입니다. 백엔드 기능을 붙이는 동안 화면에서
+바로 확인하는 용도라 HPA·PDB를 두지 않습니다. 밖으로 어떻게 낼지는 nginx 쪽에서 정합니다.
 
 ### 1. K3s 설치
 
@@ -108,7 +112,7 @@ sudo kubectl get nodes
 ```
 
 - `--secrets-encryption`: DB 비밀번호 Secret을 암호화해 저장합니다.
-- `nodeport-addresses`: `127.0.0.1`은 서버 자신, `172.17.0.1`은 nginx 컨테이너가 호스트로 들어오는 Docker 브리지 주소입니다. 이 두 주소에만 NodePort가 열려 인터넷에서 30080~30082로 직접 들어올 수 없습니다. `docker0` 주소가 다르면 그 값으로 바꿉니다.
+- `nodeport-addresses`: `127.0.0.1`은 서버 자신, `172.17.0.1`은 nginx 컨테이너가 호스트로 들어오는 Docker 브리지 주소입니다. 이 두 주소에만 NodePort가 열려 인터넷에서 30080~30083으로 직접 들어올 수 없습니다. `docker0` 주소가 다르면 그 값으로 바꿉니다.
 
 ### 2. 배포 계정 권한
 
@@ -159,6 +163,12 @@ upstream komit_service {
 
 upstream komit_escrow {
     server 172.17.0.1:30081;
+    keepalive 16;
+}
+
+# 백엔드를 직접 보는 확인용 FE.
+upstream komit_test {
+    server 172.17.0.1:30083;
     keepalive 16;
 }
 
@@ -232,6 +242,12 @@ server {
     }
 }
 ```
+
+#### 확인용 FE(`fe-be`)
+
+`fe-be`는 NodePort `30083`으로 열려 있고, 위 `komit_test` upstream이 그 주소입니다.
+어떻게 밖으로 낼지는 nginx 쪽에서 정합니다. 정한 주소의 `/api/auth/kakao/callback`을
+카카오 콘솔에 등록하고 같은 값을 `FE_BE_KAKAO_REDIRECT_URI`에 넣어야 로그인이 됩니다.
 
 문법 검사가 통과한 뒤에만 재시작합니다. 설정이 틀린 채로 재시작하면 nginx가 뜨지 않아 mock까지 접속이 끊깁니다.
 
@@ -545,6 +561,7 @@ fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
 | `SERVICE_PUBLIC_BASE_URL`, `ESCROW_PUBLIC_BASE_URL` | Visible | 각 백엔드의 공개 주소(`https://komit.site/service`, `https://komit.site/escrow`). `service-config`, `escrow-config` ConfigMap의 `APP_PUBLIC_BASE_URL`이 됩니다 |
 | `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` | FE 이미지 빌드와 공용 | fe 실행 환경(`fe-config`) |
 | `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI` | Masked | 카카오 로그인. fe 실행 환경(`fe-config`). Redirect URI 는 카카오 콘솔에 등록한 배포 주소(`https://komit.site/api/auth/kakao/callback`)와 글자까지 같아야 합니다 |
+| `FE_BE_KAKAO_REDIRECT_URI` | Masked | 확인용 FE(`fe-be`)의 카카오 Redirect URI. `fe`와 주소가 달라 값을 따로 받습니다. 이 주소도 카카오 콘솔에 등록해야 합니다. 없으면 `deploy.sh`가 시작 전에 멈춥니다 |
 | `CLIENT_API_KEY_HMAC_SECRET`, `SENSITIVE_DATA_HMAC_SECRET` | Masked, Protected | Escrow 내부 API 키와 민감정보 조회값을 위한 HMAC 비밀키. 각각 32자 이상이어야 합니다 |
 | `FIELD_ENCRYPTION_KEY_BASE64` | Masked, Protected | Escrow 복구용 민감정보 AES-256 키. 정확히 32바이트인 키의 Base64 값이어야 합니다 |
 | `OPERATOR_CLIENT_API_KEY` | Masked, Protected | Escrow 운영자 API 키. 32자 이상이어야 합니다 |
@@ -608,9 +625,10 @@ chmod +x deploy/k3s/deploy.sh
 | `SERVICE_DB_PASSWORD`, `ESCROW_DB_PASSWORD` | 예 | DB 소유자 계정 비밀번호. `service-db-app`, `escrow-db-app` Secret이 되어 CloudNativePG initdb와 Spring이 함께 읽습니다. |
 | `SERVICE_REDIS_PASSWORD` | 예 | Redis `requirepass`·`masterauth`와 Sentinel 접속 비밀번호. `service-redis-auth` Secret이 되어 오퍼레이터와 Spring이 함께 읽습니다. |
 | `SERVICE_PUBLIC_BASE_URL`, `ESCROW_PUBLIC_BASE_URL` | 예 | 각 백엔드가 밖에서 보이는 주소(nginx 경로 접두사 포함). Spring의 `app.public-base-url`이 되고, 없으면 앱이 기동하지 않습니다. 값이 바뀌면 해당 Pod만 다시 뜹니다. |
-| `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` | 예 | fe 서버가 백엔드·AI를 호출할 주소. GitLab CI/CD 변수와 같은 값을 넣습니다. 값이 바뀌면 fe Pod가 새 값으로 다시 뜹니다. |
+| `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` | 예 | fe 서버가 백엔드·AI를 호출할 주소. GitLab CI/CD 변수와 같은 값을 넣습니다. 값이 바뀌면 fe Pod가 새 값으로 다시 뜹니다. 확인용 `fe-be`는 이 값 대신 클러스터 안의 `http://service.komit.svc.cluster.local:8080`을 쓰고, `AI_API_BASE_URL`만 같이 씁니다. |
 | `ESCROW_API_BASE_URL` | 예 | GitLab CI/CD 값이 `service-config`에 주입됩니다. 현재 개발 배포에서는 Mock 주소를 사용합니다. |
 | `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI` | 예 | 카카오 로그인 REST API 키와 콜백 주소. fe 의 `/api/auth/kakao` 가 실행 시점에 읽습니다. 없으면 로그인만 500 으로 실패하고 다른 화면은 영향이 없습니다. |
+| `FE_BE_KAKAO_REDIRECT_URI` | 예 | 확인용 FE(`fe-be`)의 콜백 주소. nginx에서 정한 `fe-be` 주소를 넣습니다. 없으면 `deploy.sh`가 아무것도 적용하기 전에 멈춥니다. |
 | `CLIENT_API_KEY_HMAC_SECRET`, `SENSITIVE_DATA_HMAC_SECRET` | 예 | Escrow HMAC 비밀키. 각각 32자 이상이며 `escrow-security` Secret으로 주입됩니다. |
 | `FIELD_ENCRYPTION_KEY_BASE64` | 예 | Escrow AES-256 암호화 키. Base64 디코딩 결과가 정확히 32바이트여야 합니다. |
 | `OPERATOR_CLIENT_API_KEY` | 예 | Escrow 운영자 API 키. 32자 이상이며 `escrow-security` Secret으로 주입됩니다. |
@@ -632,6 +650,14 @@ kubectl -n komit get pods -o wide -L role,redis-role
 
 kubectl -n komit port-forward service/service 8080:8080
 curl http://localhost:8080/actuator/health
+```
+
+확인용 FE가 백엔드를 보고 있는지는 주입된 주소로 봅니다. `fe`는 목 주소, `fe-be`는
+클러스터 내부 주소가 나와야 합니다.
+
+```bash
+kubectl -n komit exec deploy/fe    -- env | grep BACKEND_API_BASE_URL
+kubectl -n komit exec deploy/fe-be -- env | grep BACKEND_API_BASE_URL
 ```
 
 WebSocket 경로는 프록시를 지나야 뜻이 있으므로 「4. nginx 연결」의 확인 명령으로 봅니다.
