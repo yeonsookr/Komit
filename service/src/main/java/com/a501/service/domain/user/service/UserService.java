@@ -10,6 +10,11 @@ import com.a501.service.domain.setting.service.SettingService;
 import com.a501.service.domain.user.dto.KakaoUserData;
 import com.a501.service.domain.user.dto.UserLoginResult;
 import com.a501.service.domain.user.dto.UserSnapshot;
+import com.a501.service.domain.user.dto.UserProfileView;
+import java.util.Collection;
+import java.util.Map;
+import java.util.stream.Collectors;
+
 import com.a501.service.domain.user.entity.User;
 import com.a501.service.domain.user.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +24,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @Transactional(readOnly = true)
 public class UserService {
+    /** 탈퇴한 사용자의 표시 이름. 목 명세 {@code ReviewResponse.clientName}과 같습니다. */
+    static final String WITHDRAWN_NAME = "탈퇴한 사용자";
+
     private final UserRepository userRepository;
     private final SettingService settingService;
     private final SecretStringCrypto stringCrypto;
@@ -62,6 +70,45 @@ public class UserService {
                 .filter(found -> !found.isWithdrawn())
                 .orElseThrow(() -> new BusinessException(CommonErrorCode.UNAUTHORIZED));
         return snapshot(user);
+    }
+
+    /** 프로필 화면이 쓰는 계정 표시 정보. 탈퇴했거나 없는 사용자는 인증 실패로 봅니다. */
+    public UserProfileView getProfile(Integer userId) {
+        User user = userRepository.findById(userId)
+                .filter(found -> !found.isWithdrawn())
+                .orElseThrow(() -> new BusinessException(CommonErrorCode.UNAUTHORIZED));
+        return new UserProfileView(user.getId(), user.getName(), user.getProfileImageFileId(), user.getKakaoProfileImageUrl());
+    }
+
+    /** 개발자 프로필을 처음 만들 때 개발자 역할을 더합니다. (R-ACC-08) */
+    @Transactional
+    public void markDevProfile(Integer userId) {
+        User user = userRepository.findById(userId)
+                .filter(found -> !found.isWithdrawn())
+                .orElseThrow(() -> new BusinessException(CommonErrorCode.UNAUTHORIZED));
+        user.markDevProfile();
+    }
+
+    /**
+     * 사용자 식별자별로 가린 표시 이름을 돌려줍니다. 리뷰 작성자처럼 남에게 보이는 이름에 씁니다.
+     * 첫 글자와 끝 글자만 남기고 가운데를 {@code O}로 바꾸며, 두 글자면 끝 글자를 바꿉니다. 탈퇴한 사용자는 {@code 탈퇴한 사용자}입니다. (R-ACC-07)
+     */
+    public Map<Integer, String> findMaskedNames(Collection<Integer> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Map.of();
+        }
+        return userRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(User::getId, user -> user.isWithdrawn() ? WITHDRAWN_NAME : mask(user.getName())));
+    }
+
+    static String mask(String name) {
+        if (name == null || name.length() <= 1) {
+            return name;
+        }
+        if (name.length() == 2) {
+            return name.charAt(0) + "O";
+        }
+        return name.charAt(0) + "O".repeat(name.length() - 2) + name.charAt(name.length() - 1);
     }
 
     public boolean isActive(Integer userId) {

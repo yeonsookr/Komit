@@ -34,4 +34,13 @@ public abstract class SoftDeleteEntity extends AuditedEntity {
         this.deletedAt = deletedAt;
         this.recordStatus = "DELETED";
     }
+
+    /**
+     * 소프트 삭제된 레코드를 다시 살립니다. 같은 자연키로 다시 등록하는 연결 테이블(개발자 기술 등)이 PK 충돌 대신 이 메서드를 씁니다.
+     */
+    protected void restore() {
+        this.deleted = false;
+        this.deletedAt = null;
+        this.recordStatus = "ACTIVE";
+    }
 }

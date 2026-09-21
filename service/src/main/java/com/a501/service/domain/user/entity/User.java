@@ -116,6 +116,11 @@ public class User extends SoftDeleteEntity {
         return isDeleted() || getDeletedAt() != null || unlinkedAt != null;
     }
 
+    /** 개발자 프로필을 처음 만들 때 개발자 역할을 더합니다. 의뢰인 역할은 그대로 남습니다. (R-ACC-08) */
+    public void markDevProfile() {
+        this.hasDevProfile = true;
+    }
+
     public boolean hasDevProfile() {
         return hasDevProfile;
     }

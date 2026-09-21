@@ -17,4 +17,12 @@ public class SettingService {
     public void createForNewUser(Integer userId) {
         settingRepository.save(Setting.forNewUser(userId));
     }
+
+    /** 개발자 프로필 생성과 같은 트랜잭션에서 판매자 약관 동의를 켭니다. 설정 행이 없으면 만들어서 켭니다. */
+    @Transactional
+    public void agreeSellerTerms(Integer userId) {
+        Setting setting = settingRepository.findByUserIdAndDeletedFalse(userId)
+                .orElseGet(() -> settingRepository.save(Setting.forNewUser(userId)));
+        setting.agreeSellerTerms();
+    }
 }
