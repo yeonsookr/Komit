@@ -14,20 +14,41 @@ import { INTERNAL } from "@/lib/api/endpoints";
 import { formatTime } from "@/lib/format";
 import { ROUTES } from "@/lib/routes";
 import { SESSION_PENDING_CONSENT_STATUS } from "@/lib/session";
+import {
+  usePeerConnection,
+  type CallStatus,
+  type PeerConnection,
+} from "@/hooks/usePeerConnection";
+import { useRealtimeConnection, type RealtimeStatus } from "@/hooks/useRealtimeConnection";
+import type { RealtimeEnvelope, RtcSignalType } from "@/types/realtime";
 import { ApiError } from "@/types/api";
 import type { ChatMessage } from "@/types/chat";
 
-/**
- * 장치 버튼.
- *
- * **아직 아무 일도 하지 않습니다.** 화상·마이크·화면 공유는 이 API가 다루지 않고
- * (목 명세 영역 4 — "화상 연결 자체는 이 API가 하지 않는다"), 무엇으로 이을지도
- * 정해지지 않았습니다. 자리만 두고 눌리지 않게 잠가 둡니다 — 눌리는데 아무 일도
- * 일어나지 않으면 고장으로 읽힙니다.
- */
-const DEVICE_CONTROLS = ["마이크", "카메라", "화면 공유"] as const;
+/** 통화가 어디까지 왔는지 사람 말로. */
+const CALL_NOTICE: Record<string, string> = {
+  NEED_PERMISSION: "카메라와 마이크를 쓸 수 있게 해 주세요",
+  PERMISSION_DENIED: "카메라와 마이크가 막혀 있습니다",
+  WAITING_PEER: "상대를 기다리는 중입니다",
+  CONNECTING: "연결하는 중입니다",
+  PEER_AWAY: "상대 연결이 끊겼습니다. 잠시 기다리는 중입니다",
+  ENDED: "통화를 마쳤습니다",
+};
 
-const NOT_CONNECTED_TITLE = "화상 연결이 아직 붙지 않았습니다";
+/**
+ * 화면 한가운데에 적을 말.
+ *
+ * 멈춘 때를 먼저 가립니다. 그러지 않으면 영영 오지 않을 연결을 「연결하는 중」이라고
+ * 적게 됩니다.
+ */
+function stageNotice(
+  call: CallStatus,
+  realtime: RealtimeStatus,
+  reason: string | undefined,
+): string {
+  if (realtime === "FAILED") return reason ?? "연결할 수 없습니다";
+  if (CALL_NOTICE[call]) return CALL_NOTICE[call];
+  return realtime === "RETRYING" ? "연결이 끊겨 다시 붙는 중입니다" : "연결하는 중입니다";
+}
 
 /**
  * 입장이 어디까지 왔는지.
@@ -60,6 +81,52 @@ const ENTRY_NOTICE: Record<Exclude<EntryState, "ENTERED">, { title: string; body
   },
 };
 
+/**
+ * 영상 한 칸.
+ *
+ * `srcObject` 는 속성으로 못 넘겨 element 를 직접 만져야 합니다. 내 화면은 스스로
+ * 들으면 소리가 되울리므로 반드시 음소거합니다.
+ */
+function VideoTile({
+  stream,
+  muted,
+  label,
+  placeholder,
+  className,
+}: Readonly<{
+  stream: MediaStream | null;
+  muted?: boolean;
+  label: string;
+  placeholder?: string;
+  className?: string;
+}>) {
+  const ref = React.useRef<HTMLVideoElement>(null);
+
+  React.useEffect(() => {
+    if (ref.current) ref.current.srcObject = stream;
+  }, [stream]);
+
+  return (
+    <div className={`relative overflow-hidden rounded-xl bg-ink ${className ?? ""}`}>
+      <video
+        ref={ref}
+        autoPlay
+        playsInline
+        muted={muted}
+        className={stream ? "h-full w-full object-cover" : "hidden"}
+      />
+      {!stream && (
+        <div className="flex h-full w-full items-center justify-center px-6 text-center">
+          <p className="text-[13px] leading-6 text-on-ink/70">{placeholder}</p>
+        </div>
+      )}
+      <p className="absolute bottom-2 left-2 rounded bg-ink/70 px-2 py-0.5 text-[11px] font-bold text-on-ink">
+        {label}
+      </p>
+    </div>
+  );
+}
+
 export interface SessionStageProps {
   sessionId: number;
   /** 끝낸 뒤 돌아갈 방. 세션 응답의 `contractId` 로 찾은 값입니다. */
@@ -71,6 +138,13 @@ export interface SessionStageProps {
   /** 세션 대화. 방 대화와 다른 `chatRefId` 를 씁니다. */
   chatRefId: string;
   initialMessages: ChatMessage[];
+  /**
+   * 통화 제안이 엇갈렸을 때 물러설 쪽인지.
+   *
+   * **두 사람이 서로 다른 값을 받아야 합니다.** 같으면 둘 다 물러서거나 둘 다 버팁니다.
+   * 의뢰인·개발자로 가르므로 누가 먼저 들어오든 값이 바뀌지 않습니다.
+   */
+  polite: boolean;
 }
 
 /**
@@ -92,6 +166,7 @@ export function SessionStage({
   myName,
   chatRefId,
   initialMessages,
+  polite,
 }: Readonly<SessionStageProps>) {
   const router = useRouter();
   const showToast = useToast();
@@ -155,6 +230,54 @@ export function SessionStage({
     };
   }, [entry, join]);
 
+  /*
+    양쪽이 모인 뒤에만 엽니다. 기다리는 동안에는 소켓도 카메라도 켜지 않습니다
+    (`R-CON-17`).
+  */
+  const joined = entry === "ENTERED";
+
+  // 훅끼리 서로를 참조해 순서가 꼬이지 않게, 받은 쪽지를 잠깐 맡아 두는 자리입니다.
+  const callRef = React.useRef<PeerConnection | null>(null);
+
+  const realtime = useRealtimeConnection({
+    channel: "CONSULTING_SESSION",
+    channelId: String(sessionId),
+    enabled: joined,
+    onMessage: React.useCallback((envelope: RealtimeEnvelope) => {
+      const call = callRef.current;
+      if (!call) return;
+
+      // 누가 붙고 떨어졌는지는 서버가 압니다. 통화 쪽지는 상대가 직접 보낸 것입니다.
+      if (envelope.type === "SYSTEM_PEER_JOINED") return call.peerPresent();
+      if (envelope.type === "SYSTEM_PEER_LEFT") return call.peerAway();
+
+      call.accept(envelope.type as RtcSignalType, envelope.payload);
+    }, []),
+  });
+
+  /*
+    소켓은 통화를 **시작할 때** 필요합니다. 한 번 붙고 나면 영상과 소리는 상대와 직접
+    흐르므로, 회선이 잠깐 튀어 다시 붙는 동안에도 카메라를 놓지 않습니다.
+  */
+  const [socketOpened, setSocketOpened] = React.useState(false);
+  React.useEffect(() => {
+    if (!joined) {
+      setSocketOpened(false);
+      return;
+    }
+    if (realtime.status === "OPEN") setSocketOpened(true);
+  }, [joined, realtime.status]);
+
+  const call = usePeerConnection({
+    enabled: joined && socketOpened,
+    polite,
+    send: realtime.send,
+  });
+
+  React.useEffect(() => {
+    callRef.current = call;
+  }, [call]);
+
   React.useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [messages.length]);
@@ -184,6 +307,8 @@ export function SessionStage({
 
     try {
       await clientApi.post(INTERNAL.SESSION_END(sessionId));
+      // 상대 화면이 얼어붙은 채 남지 않게, 방을 뜨기 전에 나간다고 알립니다.
+      call.hangUp();
       setAsking(false);
       showToast({
         tone: "success",
@@ -228,24 +353,27 @@ export function SessionStage({
     <>
       <div className="mt-4 flex flex-col gap-4 lg:flex-row">
         <div className="flex min-w-0 flex-1 flex-col gap-3">
-          <div className="flex min-h-[320px] flex-col items-center justify-center rounded-xl bg-ink px-6 py-16 text-center lg:min-h-[480px]">
-            <p className="text-sm font-semibold text-on-ink">{NOT_CONNECTED_TITLE}</p>
-            <p className="mt-2 max-w-md text-[13px] leading-6 text-on-ink/70">
-              {counterpartName}님과의 화면과 소리는 이 화면이 아직 잇지 못합니다. 무엇으로
-              이을지 정해지면 이 자리에 붙습니다.
-            </p>
-          </div>
+          <VideoTile
+            className="min-h-[320px] lg:min-h-[480px]"
+            stream={call.remoteStream}
+            label={counterpartName}
+            placeholder={stageNotice(call.status, realtime.status, realtime.error?.message)}
+          />
 
-          <div className="flex gap-3">
-            {[counterpartName, myName].map((name) => (
-              <div
-                key={name}
-                className="flex h-[108px] w-[220px] max-w-[45%] flex-col justify-end rounded-lg bg-surface-2 p-3"
-              >
-                <p className="truncate text-[11px] font-bold text-fg">{name}</p>
-                <p className="text-[11px] text-fg-subtle">연결 전</p>
-              </div>
-            ))}
+          <div className="flex items-center gap-3">
+            <VideoTile
+              className="h-[108px] w-[220px] max-w-[45%] shrink-0"
+              stream={call.localStream}
+              muted
+              label={`${myName} (나)`}
+              placeholder="카메라 꺼짐"
+            />
+            {call.status === "PERMISSION_DENIED" && (
+              <p className="text-[13px] leading-6 text-fg-muted">
+                브라우저 주소창의 자물쇠에서 카메라와 마이크를 허용한 뒤 새로고침해 주세요.
+                허용하지 않아도 대화는 쓸 수 있습니다.
+              </p>
+            )}
           </div>
         </div>
 
@@ -269,11 +397,26 @@ export function SessionStage({
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
-          {DEVICE_CONTROLS.map((label) => (
-            <Button key={label} variant="outline" disabled title={NOT_CONNECTED_TITLE}>
-              {label}
-            </Button>
-          ))}
+          <Button
+            variant="outline"
+            disabled={!call.localStream}
+            aria-pressed={!call.micOn}
+            onClick={call.toggleMic}
+          >
+            {call.micOn ? "마이크 끄기" : "마이크 켜기"}
+          </Button>
+          <Button
+            variant="outline"
+            disabled={!call.localStream}
+            aria-pressed={!call.cameraOn}
+            onClick={call.toggleCamera}
+          >
+            {call.cameraOn ? "카메라 끄기" : "카메라 켜기"}
+          </Button>
+          {/* 화면 공유는 아직입니다. 눌리는데 아무 일도 없으면 고장으로 읽힙니다. */}
+          <Button variant="outline" disabled title="아직 붙지 않았습니다">
+            화면 공유
+          </Button>
         </div>
 
         {/*

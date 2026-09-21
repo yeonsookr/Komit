@@ -5,6 +5,7 @@ import java.nio.charset.StandardCharsets;
 import com.a501.service.common.exception.BusinessException;
 import com.a501.service.common.exception.ErrorCode;
 import com.a501.service.common.realtime.presence.RealtimePresenceService;
+import com.a501.service.common.realtime.protocol.RealtimeCloseStatus;
 import com.a501.service.common.realtime.protocol.RealtimeEnvelope;
 import com.a501.service.common.realtime.protocol.RealtimeErrorCode;
 import com.a501.service.common.realtime.protocol.RealtimeEventFamily;
@@ -25,6 +26,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
     private final RealtimePresenceService presence;
     private final RealtimeDuplicateConnections duplicates;
     private final RealtimeMessageRateLimiter rateLimiter;
+    private final RealtimePeerNotices peerNotices;
     private final ObjectMapper objectMapper;
     private final int maxMessageBytes;
 
@@ -34,6 +36,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             RealtimePresenceService presence,
             RealtimeDuplicateConnections duplicates,
             RealtimeMessageRateLimiter rateLimiter,
+            RealtimePeerNotices peerNotices,
             ObjectMapper objectMapper,
             RealtimeProperties properties) {
         this.dispatcher = dispatcher;
@@ -41,6 +44,7 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
         this.presence = presence;
         this.duplicates = duplicates;
         this.rateLimiter = rateLimiter;
+        this.peerNotices = peerNotices;
         this.objectMapper = objectMapper;
         this.maxMessageBytes = properties.maxMessageBytes();
     }
@@ -62,16 +66,25 @@ public class RealtimeWebSocketHandler extends TextWebSocketHandler {
             // 대표 연결을 정하지 못한 상태에서 둘 다 살려 두면 협상 메시지가 갈라진다.
             // Redis가 회복된 뒤 새 티켓으로 다시 연결하게 하고, 방금 올린 로컬 상태도 치운다.
             registry.disconnect(connection, CloseStatus.SERVICE_OVERLOAD);
+            return;
         }
+        peerNotices.joined(principal);
     }
 
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         RealtimePrincipal principal = principal(session);
-        if (principal != null) {
-            rateLimiter.remove(principal.connectionId());
-            registry.forget(principal);
+        if (principal == null) {
+            return;
         }
+        rateLimiter.remove(principal.connectionId());
+        registry.forget(principal);
+
+        // 밀려난 연결이다. 그 사람은 새 탭으로 여전히 들어와 있으므로 나갔다고 알리지 않는다.
+        if (status.getCode() == RealtimeCloseStatus.DUPLICATE_CONNECTION.getCode()) {
+            return;
+        }
+        peerNotices.leftIfGone(principal);
     }
 
     @Override
