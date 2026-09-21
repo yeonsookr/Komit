@@ -139,6 +139,19 @@ export interface ConsultingSession {
   chatRefId: string;
 }
 
+/**
+ * 올라간 세션 녹음 하나.
+ *
+ * **참가자마다 한 건입니다.** 두 사람 소리를 한 파일로 합치지 않습니다 — 파일이 곧
+ * 화자라서 나중에 누가 말했는지 가리는 데 손이 들지 않습니다. (`R-CON-14`)
+ */
+export interface SessionRecording {
+  recordingId: number;
+  speaker: "CLIENT" | "DEVELOPER";
+  fileId: number;
+  uploadedAt: string;
+}
+
 /** 컨설팅 계약에만 있는 내용. 개발 계약이면 null 입니다. */
 export interface ConsultingAgreement {
   status: ConsultingStatus;

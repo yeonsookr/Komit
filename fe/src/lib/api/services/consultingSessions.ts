@@ -5,6 +5,7 @@ import { SESSION_PENDING_CONSENT_STATUS } from "@/lib/session";
 import type {
   ApplySummaryChangesRequest,
   ConsultingSession,
+  SessionRecording,
   SessionSummary,
 } from "@/types/contract";
 import { BACKEND } from "../endpoints";
@@ -72,6 +73,26 @@ export async function endConsultingSession(sessionId: number): Promise<Consultin
   const { data } = await backendApi().post<ConsultingSession>(
     BACKEND.SESSION_END(sessionId),
     undefined,
+    await bearerHeaders(),
+  );
+  return data;
+}
+
+/**
+ * 세션 녹음 올리기.
+ *
+ * **자기 마이크 트랙만 올립니다** (`R-CON-14`). 누가 올렸는지는 토큰으로 정해지므로
+ * 요청에 담지 않고, 서버가 화자를 붙여 돌려줍니다.
+ *
+ * 세션이 끝난 뒤에만 받습니다. 끝나기 전이면 400 입니다.
+ */
+export async function createSessionRecording(
+  sessionId: number,
+  body: { fileId: number },
+): Promise<SessionRecording> {
+  const { data } = await backendApi().post<SessionRecording>(
+    BACKEND.SESSION_RECORDINGS(sessionId),
+    body,
     await bearerHeaders(),
   );
   return data;

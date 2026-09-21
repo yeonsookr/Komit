@@ -39,7 +39,7 @@ test.describe('컨설팅 세션', () => {
     await expect(page.getByRole('button', { name: '마이크' })).toBeDisabled();
     await expect(page.getByRole('button', { name: '카메라' })).toBeDisabled();
 
-    // 화면 공유는 아직 붙지 않았습니다. 눌리면 고장으로 읽히므로 잠가 둡니다.
+    // 화면 공유도 통화가 열린 뒤에 할 수 있는 일이라 같은 이유로 잠깁니다.
     await expect(page.getByRole('button', { name: '화면 공유' })).toBeDisabled();
   });
 

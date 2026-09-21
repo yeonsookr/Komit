@@ -42,15 +42,27 @@ import { usePeerConnection } from "./usePeerConnection";
 class FakeTrack {
   enabled = true;
   stopped = false;
+  private readonly listeners = new Map<string, () => void>();
+
+  constructor(readonly kind: "audio" | "video") {}
 
   stop() {
     this.stopped = true;
   }
+
+  addEventListener(type: string, listener: () => void) {
+    this.listeners.set(type, listener);
+  }
+
+  /** 브라우저가 띄우는 「공유 중지」를 눌렀을 때 일어나는 일. */
+  end() {
+    this.listeners.get("ended")?.();
+  }
 }
 
 class FakeStream {
-  readonly audio = new FakeTrack();
-  readonly video = new FakeTrack();
+  readonly audio = new FakeTrack("audio");
+  readonly video = new FakeTrack("video");
 
   getTracks() {
     return [this.audio, this.video] as unknown as MediaStreamTrack[];
@@ -80,11 +92,29 @@ class FakePeerConnection {
   restarted = false;
   readonly events: string[] = [];
 
+  readonly senders: Array<{ track: unknown; replaced: unknown[]; replaceTrack: (next: unknown) => Promise<void> }> = [];
+
   constructor() {
     FakePeerConnection.instances.push(this);
   }
 
-  addTrack() {}
+  addTrack(track: unknown) {
+    const sender = {
+      track,
+      replaced: [] as unknown[],
+      replaceTrack: async (next: unknown) => {
+        sender.replaced.push(next);
+        sender.track = next;
+      },
+    };
+    this.senders.push(sender);
+    return sender;
+  }
+
+  /** 영상 자리의 sender. 화면 공유가 갈아 끼우는 자리다. */
+  videoSender() {
+    return this.senders.find((sender) => (sender.track as FakeTrack)?.kind === "video")!;
+  }
 
   async setLocalDescription() {
     const type = this.signalingState === "have-remote-offer" ? "answer" : "offer";
@@ -290,6 +320,60 @@ describe("usePeerConnection", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("화면 공유는 보내는 트랙만 갈아 끼우고 다시 협상하지 않는다", async () => {
+    const stream = new FakeStream();
+    const screen = new FakeStream();
+    vi.stubGlobal("navigator", {
+      mediaDevices: {
+        getUserMedia: vi.fn().mockResolvedValue(stream),
+        getDisplayMedia: vi.fn().mockResolvedValue(screen),
+      },
+    });
+    const sent: string[] = [];
+    const call = usePeerConnection({
+      enabled: true,
+      polite: true,
+      send: (type) => {
+        sent.push(type);
+        return true;
+      },
+    });
+    await flush();
+
+    const sender = FakePeerConnection.instances[0].videoSender();
+    const before = sent.length;
+
+    await call.toggleScreenShare();
+
+    expect(sender.track).toBe(screen.video);
+    // 갈아 끼우기만 하므로 SDP 를 주고받지 않는다.
+    expect(sent.length).toBe(before);
+  });
+
+  it("브라우저에서 공유를 멈추면 카메라로 돌아오고 꺼둔 상태를 지킨다", async () => {
+    const stream = new FakeStream();
+    const screen = new FakeStream();
+    vi.stubGlobal("navigator", {
+      mediaDevices: {
+        getUserMedia: vi.fn().mockResolvedValue(stream),
+        getDisplayMedia: vi.fn().mockResolvedValue(screen),
+      },
+    });
+    const call = usePeerConnection({ enabled: true, polite: true, send: () => true });
+    await flush();
+
+    const sender = FakePeerConnection.instances[0].videoSender();
+    await call.toggleScreenShare();
+    call.toggleCamera();
+
+    screen.video.end();
+    await flush();
+
+    expect(sender.track).toBe(stream.video);
+    expect(screen.video.stopped).toBe(true);
+    expect(stream.video.enabled).toBe(false);
   });
 
   it("기다리는 동안 상대가 돌아오면 통화를 이어 간다", async () => {

@@ -46,10 +46,13 @@ export interface PeerConnection {
   status: CallStatus;
   localStream: MediaStream | null;
   remoteStream: MediaStream | null;
+  /** 공유 중인 화면. 공유하지 않을 때는 `null` 입니다. */
+  screenStream: MediaStream | null;
   micOn: boolean;
   cameraOn: boolean;
   toggleMic: () => void;
   toggleCamera: () => void;
+  toggleScreenShare: () => Promise<void>;
   accept: (type: RtcSignalType, payload: unknown) => void;
   /** 상대 연결이 끊겼습니다. 돌아올 시간을 주고 그때까지 안 오면 접습니다. */
   peerAway: () => void;
@@ -76,6 +79,7 @@ export function usePeerConnection({
   const [remoteStream, setRemoteStream] = React.useState<MediaStream | null>(null);
   const [micOn, setMicOn] = React.useState(true);
   const [cameraOn, setCameraOn] = React.useState(true);
+  const [screenStream, setScreenStream] = React.useState<MediaStream | null>(null);
 
   const peerRef = React.useRef<RTCPeerConnection | null>(null);
   const localRef = React.useRef<MediaStream | null>(null);
@@ -93,6 +97,9 @@ export function usePeerConnection({
   const signalingQueue = React.useRef(Promise.resolve());
   const awayTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const peerIsAway = React.useRef(false);
+  const videoSender = React.useRef<RTCRtpSender | null>(null);
+  const screenRef = React.useRef<MediaStream | null>(null);
+  const cameraTrack = React.useRef<MediaStreamTrack | null>(null);
 
   const sendRef = React.useRef(send);
   React.useEffect(() => {
@@ -178,6 +185,11 @@ export function usePeerConnection({
 
   const teardown = React.useCallback(() => {
     stopWaitingForPeer();
+    screenRef.current?.getTracks().forEach((track) => track.stop());
+    screenRef.current = null;
+    cameraTrack.current = null;
+    videoSender.current = null;
+    setScreenStream(null);
     localRef.current?.getTracks().forEach((track) => track.stop());
     localRef.current = null;
     peerRef.current?.close();
@@ -249,7 +261,11 @@ export function usePeerConnection({
       const initialId = createRtcNegotiationId();
       replaceNegotiation(initialId);
 
-      stream.getTracks().forEach((track) => peer.addTrack(track, stream));
+      stream.getTracks().forEach((track) => {
+        const sender = peer.addTrack(track, stream);
+        // 화면 공유는 이 자리의 트랙만 갈아 끼웁니다. 그래야 다시 협상하지 않습니다.
+        if (track.kind === "video") videoSender.current = sender;
+      });
 
       peer.ontrack = (event) => {
         if (alive) setRemoteStream(event.streams[0] ?? null);
@@ -469,6 +485,61 @@ export function usePeerConnection({
     setCameraOn(next);
   }, []);
 
+  const stopScreenShare = React.useCallback(async () => {
+    const display = screenRef.current;
+    if (!display) return;
+
+    screenRef.current = null;
+    display.getTracks().forEach((track) => track.stop());
+    setScreenStream(null);
+
+    const camera = cameraTrack.current;
+    cameraTrack.current = null;
+    if (videoSender.current && camera) {
+      // 공유하는 동안 카메라 버튼을 눌렀을 수 있습니다. 돌아올 때 그 상태로 맞춥니다.
+      camera.enabled = cameraOnRef.current;
+      await videoSender.current.replaceTrack(camera);
+    }
+  }, []);
+
+  /**
+   * 화면 공유를 켜고 끕니다.
+   *
+   * 보내는 자리의 트랙만 갈아 끼우므로 다시 협상하지 않습니다. 상대는 SDP 를 한 번도
+   * 주고받지 않고 화면을 받습니다.
+   */
+  const toggleScreenShare = React.useCallback(async () => {
+    if (screenRef.current) {
+      await stopScreenShare();
+      return;
+    }
+    const sender = videoSender.current;
+    if (!sender) return;
+
+    let display: MediaStream;
+    try {
+      // 소리는 받지 않습니다. 녹음은 참가자마다 자기 마이크만 담습니다. (R-CON-14)
+      display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+    } catch {
+      // 고르는 창에서 취소한 것입니다. 알릴 일이 아닙니다.
+      return;
+    }
+
+    const track = display.getVideoTracks()[0];
+    if (!track) {
+      display.getTracks().forEach((stopping) => stopping.stop());
+      return;
+    }
+
+    screenRef.current = display;
+    cameraTrack.current = sender.track;
+    await sender.replaceTrack(track);
+    setScreenStream(display);
+
+    // 브라우저가 띄우는 「공유 중지」로 끝낼 수도 있습니다. 그 길도 같은 자리로 모읍니다.
+    track.addEventListener("ended", () => void stopScreenShare());
+  }, [stopScreenShare]);
+
   const hangUp = React.useCallback(() => {
     const id = activeNegotiationId.current;
     if (id) sendRef.current("RTC_PEER_LEFT", { negotiationId: id });
@@ -480,10 +551,12 @@ export function usePeerConnection({
     status,
     localStream,
     remoteStream,
+    screenStream,
     micOn,
     cameraOn,
     toggleMic,
     toggleCamera,
+    toggleScreenShare,
     accept,
     peerAway,
     peerPresent,

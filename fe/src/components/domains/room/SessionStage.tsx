@@ -20,6 +20,7 @@ import {
   type PeerConnection,
 } from "@/hooks/usePeerConnection";
 import { useRealtimeConnection, type RealtimeStatus } from "@/hooks/useRealtimeConnection";
+import { useSessionRecorder } from "@/hooks/useSessionRecorder";
 import type { RealtimeEnvelope, RtcSignalType } from "@/types/realtime";
 import { ApiError } from "@/types/api";
 import type { ChatMessage } from "@/types/chat";
@@ -278,6 +279,12 @@ export function SessionStage({
     callRef.current = call;
   }, [call]);
 
+  /*
+    통화가 열리면 자기 마이크만 담기 시작합니다. 입장 자체가 동의라 따로 묻지 않습니다
+    (`R-CON-17`). 파일은 세션을 마친 뒤에 올립니다.
+  */
+  const recorder = useSessionRecorder(call.localStream);
+
   React.useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [messages.length]);
@@ -301,6 +308,30 @@ export function SessionStage({
     ]);
   };
 
+  /**
+   * 담아 둔 녹음을 올립니다.
+   *
+   * 올리지 못해도 방을 떠나는 것을 막지 않습니다. 한쪽 녹음이 없어도 요약은 만들어지고
+   * (`R-CON-16`), 여기서 붙잡으면 사용자가 나갈 방법이 없습니다.
+   */
+  const uploadRecording = async () => {
+    const file = await recorder.stop();
+    if (!file) return;
+
+    const body = new FormData();
+    body.append("recording", file);
+
+    try {
+      await clientApi.post(INTERNAL.SESSION_RECORDINGS(sessionId), body);
+    } catch {
+      showToast({
+        tone: "danger",
+        title: "녹음을 올리지 못했습니다",
+        description: "요약이 내 이야기를 빼고 만들어질 수 있습니다.",
+      });
+    }
+  };
+
   const end = async () => {
     if (ending) return;
     setEnding(true);
@@ -310,6 +341,8 @@ export function SessionStage({
       // 상대 화면이 얼어붙은 채 남지 않게, 방을 뜨기 전에 나간다고 알립니다.
       call.hangUp();
       setAsking(false);
+      // 녹음은 세션이 끝난 뒤에만 받습니다. 순서를 바꾸면 400 입니다.
+      await uploadRecording();
       showToast({
         tone: "success",
         title: "세션을 마쳤습니다",
@@ -361,11 +394,12 @@ export function SessionStage({
           />
 
           <div className="flex items-center gap-3">
+            {/* 공유 중에는 내가 무엇을 보내고 있는지가 카메라보다 중요합니다. */}
             <VideoTile
               className="h-[108px] w-[220px] max-w-[45%] shrink-0"
-              stream={call.localStream}
+              stream={call.screenStream ?? call.localStream}
               muted
-              label={`${myName} (나)`}
+              label={call.screenStream ? `${myName} (화면 공유 중)` : `${myName} (나)`}
               placeholder="카메라 꺼짐"
             />
             {call.status === "PERMISSION_DENIED" && (
@@ -413,9 +447,13 @@ export function SessionStage({
           >
             {call.cameraOn ? "카메라 끄기" : "카메라 켜기"}
           </Button>
-          {/* 화면 공유는 아직입니다. 눌리는데 아무 일도 없으면 고장으로 읽힙니다. */}
-          <Button variant="outline" disabled title="아직 붙지 않았습니다">
-            화면 공유
+          <Button
+            variant="outline"
+            disabled={!call.localStream}
+            aria-pressed={Boolean(call.screenStream)}
+            onClick={() => void call.toggleScreenShare()}
+          >
+            {call.screenStream ? "화면 공유 중지" : "화면 공유"}
           </Button>
         </div>
 
