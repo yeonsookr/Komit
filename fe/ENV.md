@@ -1,74 +1,64 @@
 # FE 환경 변수
 
-## 값이 필요한 시점 — **빌드가 아니라 실행할 때**
+`fe/.env.example`이 프론트 실행 계약의 기준입니다. 기본 FE와 `/test` FE는 같은 소스를
+사용하지만, 별도 이미지와 별도 ConfigMap으로 배포합니다.
 
-서버 주소는 첫 요청에서 읽습니다. 그래서
+## 변수와 주입 시점
 
-- `npm run build` 는 변수 없이도 통과합니다.
-- 결과 이미지에 주소가 박히지 않아 **한 번 구운 이미지를 환경마다 그대로 씁니다.**
-- 값을 빠뜨린 채 실행하면 그 요청이 실패합니다. 안전하지 않은 기본값으로 돌지 않습니다.
+| 변수 | 기본 FE (`komit.site`) | test FE (`komit.site/test`) | 시점 |
+| --- | --- | --- | --- |
+| `BACKEND_API_BASE_URL` | 실제 Service | Mock의 `/service` | 빌드 + 실행 |
+| `AI_API_BASE_URL` | 현재 지정된 AI 주소 | Mock의 `/service` | 빌드 + 실행 |
+| `BASE_PATH` | 빈 값 | `/test` | 빌드 + 실행 |
+| `KAKAO_CLIENT_ID` | 배포 환경 값 | 배포 환경 값 | 실행 |
+| `KAKAO_REDIRECT_URI` | `/api/auth/kakao/callback` | `/test/api/auth/kakao/callback` | 실행 |
 
-GitLab CI/CD 변수는 **빌드 잡이 아니라 실행(배포) 단계**에 주입합니다.
+`BACKEND_API_BASE_URL`과 `AI_API_BASE_URL`은 정적 페이지를 만들 때도 서버 데이터를 읽을 수
+있어 Docker 빌드 인자와 실행 환경 양쪽에 같은 값을 넣습니다. `BASE_PATH`는 Next.js 빌드
+결과에 포함되므로 두 FE가 같은 이미지를 공유할 수 없습니다.
 
-```bash
-docker run -d \
-  -e BACKEND_API_BASE_URL="$BACKEND_API_BASE_URL" \
-  -e AI_API_BASE_URL="$AI_API_BASE_URL" \
-  -e KAKAO_CLIENT_ID="$KAKAO_CLIENT_ID" \
-  -e KAKAO_REDIRECT_URI="$KAKAO_REDIRECT_URI" \
-  -e NEXT_PUBLIC_SITE_URL="$NEXT_PUBLIC_SITE_URL" \
-  <이미지>
+카카오 값은 Route Handler가 실행할 때만 읽습니다. 자격증명이 없으면 로그인 요청만 실패하며,
+Service/Mock 연결과 일반 페이지 확인에는 영향을 주지 않습니다.
+
+## GitLab CI/CD 변수 매핑
+
+기본 FE 빌드와 `fe-config`는 아래 값을 그대로 받습니다.
+
+```text
+BACKEND_API_BASE_URL=https://komit.site/service
+AI_API_BASE_URL=<현재 AI 주소>
+KAKAO_REDIRECT_URI=https://komit.site/api/auth/kakao/callback
 ```
 
-## 변수 목록
+test FE 빌드 잡은 별도 변수를 애플리케이션이 읽는 이름으로 매핑하고,
+`fe-test-config`에도 같은 값을 넣습니다.
 
-| 변수 | 노출 | 필요 시점 | 값(현재) |
-| --- | --- | --- | --- |
-| `BACKEND_API_BASE_URL` | 서버 전용 | 실행 | `https://komit.site/mock/service` |
-| `AI_API_BASE_URL` | 서버 전용 | 실행 | `https://komit.site/mock/service` |
-| `ESCROW_API_BASE_URL` | 서버 전용 | 실행 | `https://komit.site/mock/escrow` |
-| `KAKAO_CLIENT_ID` | 서버 전용 | 실행 | 카카오 개발자 콘솔의 REST API 키 |
-| `KAKAO_REDIRECT_URI` | 서버 전용 | 실행 | `<배포 도메인>/api/auth/kakao/callback` |
-| `NEXT_PUBLIC_SITE_URL` | **공개** | **빌드** | 배포 도메인 |
+```text
+TEST_BACKEND_API_BASE_URL=https://komit.site/mock/service
+TEST_AI_API_BASE_URL=https://komit.site/mock/service
+TEST_KAKAO_REDIRECT_URI=https://komit.site/test/api/auth/kakao/callback
+BASE_PATH=/test
+```
 
-### 서버 전용 변수
+따라서 `TEST_*` 값을 기본 FE 변수에 넣거나, 기본 FE 값을 test ConfigMap에 재사용하지 않습니다.
+운영 Docker 빌더는 k3s 내부 DNS를 사용할 수 없으므로 `BACKEND_API_BASE_URL`에는
+`service.komit.svc.cluster.local`이 아니라 공개 실제 BE 주소를 넣습니다. 로컬 k3s 오버레이만
+클러스터 내부 Service 주소를 사용합니다.
 
-브라우저로 나가지 않습니다. 실제 호출은 Next Route Handler 가 대신합니다.
-**`NEXT_PUBLIC_` 접두사를 붙이지 마세요** — 붙이는 순간 브라우저 번들에 박힙니다.
+## 로컬 실행
 
-`ESCROW_API_BASE_URL` 은 아직 화면에서 쓰지 않지만, 에스크로 연동이 붙을 때
-같은 자리에서 읽도록 미리 적어 둡니다.
-
-### 카카오 로그인 두 변수
-
-인가 코드를 받아 오는 앞단은 프론트가 맡습니다(`/api/auth/kakao` → 카카오 → `/api/auth/kakao/callback`).
-그래서 REST API 키가 Next 서버에 필요합니다. 브라우저에는 나가지 않습니다.
-
-- `KAKAO_REDIRECT_URI` 는 카카오 콘솔에 등록한 값과 **글자까지 같아야** 합니다. 요청의 origin 에서
-  만들어 내지 않고 값으로 받는 이유입니다 — nginx 뒤에서는 origin 이 달라질 수 있습니다.
-- 로컬에서 로그인까지 확인하려면 카카오 개발자 콘솔에 앱을 하나 만들고 `http://localhost:3000/api/auth/kakao/callback`
-  을 Redirect URI 로 등록합니다. 코밋 서버는 목이라 어떤 인가 코드를 넘겨도 로그인됩니다.
-- 두 값이 없으면 「카카오로 시작하기」가 500 으로 실패합니다. 다른 화면은 영향이 없습니다.
-
-### `NEXT_PUBLIC_SITE_URL` 만 빌드 시점
-
-Next 는 `NEXT_PUBLIC_` 변수를 빌드할 때 번들에 넣습니다. 도메인이 바뀌면
-**다시 빌드해야** 합니다. 메타데이터·canonical URL 처럼 공개해도 되는 값만 둡니다.
-
-## 로컬에서
-
-`.env.example` 을 `.env.local` 로 복사해 씁니다. `.env.local` 은 커밋되지 않습니다.
+기본 FE는 `.env.example`을 `.env.local`로 복사하고 실제 Service를 8080 포트에 띄운 뒤 실행합니다.
 
 ```bash
 cp .env.example .env.local
+npm run dev
 ```
 
-목 명세를 고쳐 가며 작업할 때는 로컬 목 서버가 빠릅니다.
+Mock을 직접 보려면 별도 test 빌드에서 다음 값을 사용합니다.
 
-```bash
-# mock/ 에서
-uvicorn app.main:app --reload --port 8080
-
-# fe/.env.local
+```text
+BASE_PATH=/test
 BACKEND_API_BASE_URL=http://localhost:8080/service
+AI_API_BASE_URL=http://localhost:8080/service
+KAKAO_REDIRECT_URI=http://localhost:3001/test/api/auth/kakao/callback
 ```

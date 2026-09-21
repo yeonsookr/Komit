@@ -1,8 +1,9 @@
 #!/bin/sh
-# docker-compose의 deployer 컨테이너에서 실행합니다.
+# Docker Compose deployer와 일반 Linux k3s 호스트에서 모두 실행할 수 있습니다.
 set -eu
 
-K3S_DIR=/workspace/deploy/k3s
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+K3S_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 
 wait_for() {
   description=$1
@@ -47,5 +48,7 @@ kubectl -n komit rollout status statefulset/service-redis-sentinel --timeout=300
 kubectl apply -k "$K3S_DIR/local/apps"
 kubectl -n komit rollout status deployment/service --timeout=300s
 kubectl -n komit rollout status deployment/escrow --timeout=300s
+kubectl -n komit rollout status deployment/mock --timeout=300s
 kubectl -n komit rollout status deployment/fe --timeout=300s
+kubectl -n komit rollout status deployment/fe-test --timeout=300s
 kubectl -n komit get pods -o wide

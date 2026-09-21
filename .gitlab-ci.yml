@@ -666,17 +666,20 @@ fe-docker-build-push:
         - fe/**/*
     - when: never
 
-# 백엔드를 직접 보는 확인용 FE 도커 빌드/도커허브 푸시.
+# mock을 보는 테스트용 FE 도커 빌드/도커허브 푸시.
 # 같은 소스를 /test 접두사(basePath)로 구워 별도 이미지로 올립니다. basePath 는 빌드 시점 값이라
-# 목을 보는 fe 이미지와 같은 이미지를 쓸 수 없습니다.
-fe-be-docker-build-push:
+# 루트 fe 이미지와 같은 이미지를 쓸 수 없습니다. API 주소는 TEST_* CI/CD 변수를 빌드 인자 이름에
+# 맞춰 이 잡 안에서만 매핑하고, 배포 시에도 fe-test-config에 별도로 주입합니다.
+fe-test-docker-build-push:
   extends: .docker-build-push
   variables:
-    IMAGE_NAME: komit-fe-be
+    IMAGE_NAME: komit-fe-test
     BUILD_CONTEXT: fe
     BASE_PATH: /test
+    BACKEND_API_BASE_URL: "$TEST_BACKEND_API_BASE_URL"
+    AI_API_BASE_URL: "$TEST_AI_API_BASE_URL"
     BUILD_ARG_NAMES: BACKEND_API_BASE_URL AI_API_BASE_URL BASE_PATH
-    IMAGE_ENV_NAME: FE_BE_IMAGE
+    IMAGE_ENV_NAME: FE_TEST_IMAGE
   rules:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
       changes:
@@ -743,7 +746,7 @@ k3s-deploy:
       optional: true
     - job: fe-docker-build-push
       optional: true
-    - job: fe-be-docker-build-push
+    - job: fe-test-docker-build-push
       optional: true
   tags:
     - "CI/CD"
@@ -761,7 +764,7 @@ k3s-deploy:
   before_script:
     - apk add --no-cache openssh-client tar
     - |
-      for NAME in SSH_ADDRESS SSH_PRIVATE_KEY SERVICE_DB_PASSWORD ESCROW_DB_PASSWORD SERVICE_REDIS_PASSWORD SERVICE_PUBLIC_BASE_URL ESCROW_PUBLIC_BASE_URL BACKEND_API_BASE_URL AI_API_BASE_URL ESCROW_API_BASE_URL ESCROW_CLIENT_API_KEY ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE ESCROW_ADMIN_USERNAME ESCROW_ADMIN_PASSWORD_HASH KAKAO_CLIENT_ID KAKAO_REDIRECT_URI KOMIT_USER_JWT_SECRET KAKAO_TOKEN_ENCRYPTION_KEY KAKAO_CLIENT_SECRET CLIENT_API_KEY_HMAC_SECRET SENSITIVE_DATA_HMAC_SECRET FIELD_ENCRYPTION_KEY_BASE64 OPERATOR_CLIENT_API_KEY SSAFY_FINANCE_API_KEY SSAFY_DEMAND_DEPOSIT_PRODUCT_NO SSAFY_ESCROW_USER_KEY SSAFY_ESCROW_ACCOUNT_NO SSAFY_FEE_ACCOUNT_NO SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS; do
+      for NAME in SSH_ADDRESS SSH_PRIVATE_KEY SERVICE_DB_PASSWORD ESCROW_DB_PASSWORD SERVICE_REDIS_PASSWORD SERVICE_PUBLIC_BASE_URL ESCROW_PUBLIC_BASE_URL BACKEND_API_BASE_URL AI_API_BASE_URL TEST_BACKEND_API_BASE_URL TEST_AI_API_BASE_URL ESCROW_API_BASE_URL ESCROW_CLIENT_API_KEY ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE ESCROW_ADMIN_USERNAME ESCROW_ADMIN_PASSWORD_HASH KAKAO_CLIENT_ID KAKAO_REDIRECT_URI TEST_KAKAO_REDIRECT_URI KOMIT_USER_JWT_SECRET KAKAO_TOKEN_ENCRYPTION_KEY ACCOUNT_DATA_ENCRYPTION_KEY KAKAO_CLIENT_SECRET CLIENT_API_KEY_HMAC_SECRET SENSITIVE_DATA_HMAC_SECRET FIELD_ENCRYPTION_KEY_BASE64 OPERATOR_CLIENT_API_KEY SSAFY_FINANCE_API_KEY SSAFY_DEMAND_DEPOSIT_PRODUCT_NO SSAFY_ESCROW_USER_KEY SSAFY_ESCROW_ACCOUNT_NO SSAFY_FEE_ACCOUNT_NO SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS; do
         eval "VALUE=\${$NAME:-}"
         test -n "$VALUE" || {
           echo "$NAME CI/CD variable is required"
@@ -785,7 +788,7 @@ k3s-deploy:
       echo "service image: ${SERVICE_IMAGE:-(유지)}"
       echo "escrow image:  ${ESCROW_IMAGE:-(유지)}"
       echo "fe image:      ${FE_IMAGE:-(유지)}"
-      echo "fe-be image:   ${FE_BE_IMAGE:-(유지)}"
+      echo "fe-test image: ${FE_TEST_IMAGE:-(유지)}"
 
       # 서버에는 소스를 두지 않고 배포에 필요한 deploy/k3s만 매번 새로 올립니다.
       tar -C deploy -czf - k3s |
@@ -804,10 +807,12 @@ k3s-deploy:
         echo "export SERVICE_IMAGE='${SERVICE_IMAGE:-}'"
         echo "export ESCROW_IMAGE='${ESCROW_IMAGE:-}'"
         echo "export FE_IMAGE='${FE_IMAGE:-}'"
-        echo "export FE_BE_IMAGE='${FE_BE_IMAGE:-}'"
-        # fe 이미지 빌드에 쓰는 CI/CD 변수를 실행 환경(fe-config)에도 그대로 넣습니다.
+        echo "export FE_TEST_IMAGE='${FE_TEST_IMAGE:-}'"
+        # 루트 FE와 /test FE의 주소 변수를 서로 다른 ConfigMap에 넣습니다.
         echo "export BACKEND_API_BASE_URL=\"\$(printf %s '$(b64 "$BACKEND_API_BASE_URL")' | base64 -d)\""
         echo "export AI_API_BASE_URL=\"\$(printf %s '$(b64 "$AI_API_BASE_URL")' | base64 -d)\""
+        echo "export TEST_BACKEND_API_BASE_URL=\"\$(printf %s '$(b64 "$TEST_BACKEND_API_BASE_URL")' | base64 -d)\""
+        echo "export TEST_AI_API_BASE_URL=\"\$(printf %s '$(b64 "$TEST_AI_API_BASE_URL")' | base64 -d)\""
         echo "export ESCROW_API_BASE_URL=\"\$(printf %s '$(b64 "$ESCROW_API_BASE_URL")' | base64 -d)\""
         echo "export ESCROW_CLIENT_API_KEY=\"\$(printf %s '$(b64 "$ESCROW_CLIENT_API_KEY")' | base64 -d)\""
         echo "export ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE=\"\$(printf %s '$(b64 "$ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE")' | base64 -d)\""
@@ -816,8 +821,8 @@ k3s-deploy:
         # 카카오 로그인. fe 의 /api/auth/kakao 가 실행 시점에 읽습니다. 없으면 로그인이 500 으로 실패합니다.
         echo "export KAKAO_CLIENT_ID=\"\$(printf %s '$(b64 "$KAKAO_CLIENT_ID")' | base64 -d)\""
         echo "export KAKAO_REDIRECT_URI=\"\$(printf %s '$(b64 "$KAKAO_REDIRECT_URI")' | base64 -d)\""
-        # 백엔드를 직접 보는 확인용 FE(fe-be)의 Redirect URI. fe 와 주소가 달라 값을 따로 받습니다.
-        echo "export FE_BE_KAKAO_REDIRECT_URI=\"\$(printf %s '$(b64 "$FE_BE_KAKAO_REDIRECT_URI")' | base64 -d)\""
+        # /test FE의 Redirect URI. 루트 콜백과 섞이면 로그인 뒤 루트로 빠집니다.
+        echo "export TEST_KAKAO_REDIRECT_URI=\"\$(printf %s '$(b64 "$TEST_KAKAO_REDIRECT_URI")' | base64 -d)\""
         # service 인증. JWT 서명 키, 카카오 토큰 암호화 키(32바이트 Base64), 카카오 Client Secret. 없으면 service가 기동하지 않습니다.
         echo "export KOMIT_USER_JWT_SECRET=\"\$(printf %s '$(b64 "$KOMIT_USER_JWT_SECRET")' | base64 -d)\""
         echo "export KAKAO_TOKEN_ENCRYPTION_KEY=\"\$(printf %s '$(b64 "$KAKAO_TOKEN_ENCRYPTION_KEY")' | base64 -d)\""

@@ -9,5 +9,7 @@ resources:
   - escrow-service.yaml
   - fe-deployment.yaml
   - fe-service.yaml
+  - fe-test-deployment.yaml
+  - fe-test-service.yaml
   - pod-disruption-budgets.yaml
   - autoscalers.yaml

@@ -1,22 +1,25 @@
 #!/usr/bin/env sh
 set -eu
 
-# SERVICE_IMAGE, ESCROW_IMAGE, FE_IMAGE는 이번에 바뀐 모듈만 넘깁니다.
+# SERVICE_IMAGE, ESCROW_IMAGE, FE_IMAGE, FE_TEST_IMAGE는 이번에 바뀐 모듈만 넘깁니다.
 # 비어 있으면 클러스터에서 돌고 있는 이미지를 그대로 유지합니다. 모듈의 첫 배포에는 해당 이미지가 필요합니다.
 SERVICE_IMAGE=${SERVICE_IMAGE:-}
 ESCROW_IMAGE=${ESCROW_IMAGE:-}
 FE_IMAGE=${FE_IMAGE:-}
-# 확인용 FE. 같은 소스를 /test 접두사로 구운 별도 이미지입니다.
-FE_BE_IMAGE=${FE_BE_IMAGE:-}
+# mock을 보는 테스트용 FE. 같은 소스를 /test 접두사로 구운 별도 이미지입니다.
+FE_TEST_IMAGE=${FE_TEST_IMAGE:-}
 : "${SERVICE_DB_PASSWORD:?SERVICE_DB_PASSWORD is required}"
 : "${ESCROW_DB_PASSWORD:?ESCROW_DB_PASSWORD is required}"
 : "${SERVICE_REDIS_PASSWORD:?SERVICE_REDIS_PASSWORD is required}"
 # 각 백엔드가 밖에서 보이는 주소입니다. nginx 경로 접두사까지 포함합니다. (예: https://komit.site/service)
 : "${SERVICE_PUBLIC_BASE_URL:?SERVICE_PUBLIC_BASE_URL is required}"
 : "${ESCROW_PUBLIC_BASE_URL:?ESCROW_PUBLIC_BASE_URL is required}"
-# fe 서버가 백엔드를 호출할 주소입니다. 이미지 빌드와 같은 GitLab CI/CD 변수 값을 실행 환경에도 넣습니다.
+# 루트 fe가 호출할 실제 서버 주소입니다. GitLab CI/CD 변수 값을 실행 환경에 넣습니다.
 : "${BACKEND_API_BASE_URL:?BACKEND_API_BASE_URL is required}"
 : "${AI_API_BASE_URL:?AI_API_BASE_URL is required}"
+# /test fe가 호출할 mock 주소입니다. 루트와 변수 자체를 분리해 뒤바뀌지 않게 합니다.
+: "${TEST_BACKEND_API_BASE_URL:?TEST_BACKEND_API_BASE_URL is required}"
+: "${TEST_AI_API_BASE_URL:?TEST_AI_API_BASE_URL is required}"
 : "${ESCROW_API_BASE_URL:?ESCROW_API_BASE_URL is required}"
 : "${ESCROW_CLIENT_API_KEY:?ESCROW_CLIENT_API_KEY is required}"
 : "${ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE:?ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE is required}"
@@ -25,9 +28,9 @@ FE_BE_IMAGE=${FE_BE_IMAGE:-}
 # 카카오 로그인. fe 의 인가 시작 Route Handler 가 실행 시점에 읽습니다. 없으면 로그인이 500 입니다.
 : "${KAKAO_CLIENT_ID:?KAKAO_CLIENT_ID is required}"
 : "${KAKAO_REDIRECT_URI:?KAKAO_REDIRECT_URI is required}"
-# 백엔드를 직접 보는 확인용 FE(fe-be)의 Redirect URI. fe 와 주소가 다르므로 값을 따로 받습니다.
+# /test 전용 Redirect URI. 루트 주소와 섞이면 로그인 뒤 komit.site/로 빠집니다.
 # 카카오 콘솔에도 이 주소를 등록해야 로그인이 됩니다.
-: "${FE_BE_KAKAO_REDIRECT_URI:?FE_BE_KAKAO_REDIRECT_URI is required}"
+: "${TEST_KAKAO_REDIRECT_URI:?TEST_KAKAO_REDIRECT_URI is required}"
 # service 인증. application-prod.yml 이 환경변수로만 받고 기본값이 없어, 없으면 service Pod 가 기동하지 않습니다.
 : "${KOMIT_USER_JWT_SECRET:?KOMIT_USER_JWT_SECRET is required}"
 : "${KAKAO_TOKEN_ENCRYPTION_KEY:?KAKAO_TOKEN_ENCRYPTION_KEY is required}"
@@ -143,11 +146,11 @@ kubectl apply -f "$SCRIPT_DIR/base/namespace.yaml"
 SERVICE_IMAGE=$(resolve_image "$SERVICE_IMAGE" service)
 ESCROW_IMAGE=$(resolve_image "$ESCROW_IMAGE" escrow)
 FE_IMAGE=$(resolve_image "$FE_IMAGE" fe)
-FE_BE_IMAGE=$(resolve_image "$FE_BE_IMAGE" fe-be)
+FE_TEST_IMAGE=$(resolve_image "$FE_TEST_IMAGE" fe-test)
 echo "service image: $SERVICE_IMAGE"
 echo "escrow image:  $ESCROW_IMAGE"
 echo "fe image:      $FE_IMAGE"
-echo "fe-be image:   $FE_BE_IMAGE"
+echo "fe-test image: $FE_TEST_IMAGE"
 
 # 1. CloudNativePG 오퍼레이터
 kubectl apply -f "$SCRIPT_DIR/platform/cloudnative-pg.yaml"
@@ -194,9 +197,9 @@ images:
   - name: komit-fe
     newName: ${FE_IMAGE%:*}
     newTag: "${FE_IMAGE##*:}"
-  - name: komit-fe-be
-    newName: ${FE_BE_IMAGE%:*}
-    newTag: "${FE_BE_IMAGE##*:}"
+  - name: komit-fe-test
+    newName: ${FE_TEST_IMAGE%:*}
+    newTag: "${FE_TEST_IMAGE##*:}"
 # 값이 바뀌면 ConfigMap 이름의 해시가 바뀌어 fe Pod가 새 값으로 다시 뜹니다.
 configMapGenerator:
   - name: fe-config
@@ -206,16 +209,14 @@ EOF
 {
   config_literal BACKEND_API_BASE_URL "$BACKEND_API_BASE_URL"
   config_literal AI_API_BASE_URL "$AI_API_BASE_URL"
-  config_literal ESCROW_API_BASE_URL "$ESCROW_API_BASE_URL"
   config_literal KAKAO_CLIENT_ID "$KAKAO_CLIENT_ID"
   config_literal KAKAO_REDIRECT_URI "$KAKAO_REDIRECT_URI"
-  # 확인용 FE 는 목을 거치지 않고 클러스터 안의 service 를 직접 부릅니다.
-  # 주소가 클러스터 내부 DNS 라 CI/CD 변수로 받지 않고 여기 고정합니다.
-  printf '  - name: fe-be-config\n    namespace: komit\n    literals:\n'
-  config_literal BACKEND_API_BASE_URL "http://service.komit.svc.cluster.local:8080"
-  config_literal AI_API_BASE_URL "$AI_API_BASE_URL"
+  # `/test`는 mock 전용 변수만 받습니다. 루트 FE 변수와 공유하지 않습니다.
+  printf '  - name: fe-test-config\n    namespace: komit\n    literals:\n'
+  config_literal BACKEND_API_BASE_URL "$TEST_BACKEND_API_BASE_URL"
+  config_literal AI_API_BASE_URL "$TEST_AI_API_BASE_URL"
   config_literal KAKAO_CLIENT_ID "$KAKAO_CLIENT_ID"
-  config_literal KAKAO_REDIRECT_URI "$FE_BE_KAKAO_REDIRECT_URI"
+  config_literal KAKAO_REDIRECT_URI "$TEST_KAKAO_REDIRECT_URI"
   # 백엔드가 자기 공개 주소를 알도록 넣습니다. 값이 바뀌면 해당 Pod만 새 값으로 다시 뜹니다.
   printf '  - name: service-config\n    namespace: komit\n    literals:\n'
   config_literal APP_PUBLIC_BASE_URL "$SERVICE_PUBLIC_BASE_URL"
@@ -247,6 +248,9 @@ EOF
   config_literal KAKAO_CLIENT_SECRET "$KAKAO_CLIENT_SECRET"
   config_literal ESCROW_CLIENT_API_KEY "$ESCROW_CLIENT_API_KEY"
 } >> "$WORK_DIR/apps/kustomization.yaml"
+# 이전 역방향 구성의 Service가 같은 NodePort(30083)를 점유하므로 첫 전환 때만 제거합니다.
+# Deployment는 새 fe-test가 정상 기동한 뒤 제거해 전환 중 진단 로그를 남길 수 있게 합니다.
+kubectl -n komit delete service fe-be --ignore-not-found
 kubectl apply -k "$WORK_DIR/apps"
 rollout() {
   NAME=$1
@@ -264,5 +268,6 @@ rollout() {
 rollout service
 rollout escrow
 rollout fe
-rollout fe-be
+rollout fe-test
+kubectl -n komit delete deployment fe-be --ignore-not-found
 kubectl -n komit get pods -o wide

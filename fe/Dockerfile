@@ -21,17 +21,20 @@ ARG BACKEND_API_BASE_URL
 ARG AI_API_BASE_URL
 # 하위 경로로 서비스할 때만 넣습니다. next.config.ts 가 basePath 로 굽습니다. (예: /test)
 ARG BASE_PATH
-ENV NEXT_TELEMETRY_DISABLED=1
+ENV NEXT_TELEMETRY_DISABLED=1 \
+    BASE_PATH=${BASE_PATH}
 RUN npm run build
 
 FROM node:24-alpine AS runner
 
 WORKDIR /app
 
+ARG BASE_PATH
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
-    HOSTNAME=0.0.0.0
+    HOSTNAME=0.0.0.0 \
+    BASE_PATH=${BASE_PATH}
 
 RUN addgroup --system --gid 10001 komit \
     && adduser --system --uid 10001 --ingroup komit komit

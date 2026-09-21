@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 /**
  * 하위 경로로 서비스할 때 붙이는 접두사입니다. 빌드 시점에 굽는 값이라 실행 환경변수로는
- * 바꿀 수 없습니다. 백엔드를 직접 보는 확인용 FE(`/test`)만 값을 넣어 따로 빌드합니다.
+ * 바꿀 수 없습니다. mock을 보는 테스트용 FE(`/test`)만 값을 넣어 따로 빌드합니다.
  * 값은 `/`로 시작하고 `/`로 끝나지 않아야 합니다.
  */
 const basePath = process.env.BASE_PATH?.trim();
