@@ -47,7 +47,18 @@ export type RealtimeSystemType =
   | "SYSTEM_PING"
   | "SYSTEM_PONG"
   | "SYSTEM_ERROR"
-  | "SYSTEM_REPLACED";
+  | "SYSTEM_REPLACED"
+  | "SYSTEM_PEER_JOINED"
+  | "SYSTEM_PEER_LEFT";
+
+/**
+ * 채널에 누가 붙고 떨어졌는지 알리는 쪽지의 내용.
+ *
+ * `SYSTEM_PEER_LEFT` 는 **나갔다는 뜻이 아닙니다.** 회선이 잠깐 끊겨도 옵니다.
+ */
+export interface RealtimePeerPayload {
+  userId: number;
+}
 
 export type RealtimeType = RtcSignalType | RealtimeSystemType;
 

@@ -14,7 +14,11 @@ import { INTERNAL } from "@/lib/api/endpoints";
 import { formatTime } from "@/lib/format";
 import { ROUTES } from "@/lib/routes";
 import { SESSION_PENDING_CONSENT_STATUS } from "@/lib/session";
-import { usePeerConnection, type CallStatus } from "@/hooks/usePeerConnection";
+import {
+  usePeerConnection,
+  type CallStatus,
+  type PeerConnection,
+} from "@/hooks/usePeerConnection";
 import { useRealtimeConnection, type RealtimeStatus } from "@/hooks/useRealtimeConnection";
 import type { RealtimeEnvelope, RtcSignalType } from "@/types/realtime";
 import { ApiError } from "@/types/api";
@@ -26,6 +30,7 @@ const CALL_NOTICE: Record<string, string> = {
   PERMISSION_DENIED: "카메라와 마이크가 막혀 있습니다",
   WAITING_PEER: "상대를 기다리는 중입니다",
   CONNECTING: "연결하는 중입니다",
+  PEER_AWAY: "상대 연결이 끊겼습니다. 잠시 기다리는 중입니다",
   ENDED: "통화를 마쳤습니다",
 };
 
@@ -232,14 +237,21 @@ export function SessionStage({
   const joined = entry === "ENTERED";
 
   // 훅끼리 서로를 참조해 순서가 꼬이지 않게, 받은 쪽지를 잠깐 맡아 두는 자리입니다.
-  const acceptRef = React.useRef<((type: RtcSignalType, payload: unknown) => void) | null>(null);
+  const callRef = React.useRef<PeerConnection | null>(null);
 
   const realtime = useRealtimeConnection({
     channel: "CONSULTING_SESSION",
     channelId: String(sessionId),
     enabled: joined,
     onMessage: React.useCallback((envelope: RealtimeEnvelope) => {
-      acceptRef.current?.(envelope.type as RtcSignalType, envelope.payload);
+      const call = callRef.current;
+      if (!call) return;
+
+      // 누가 붙고 떨어졌는지는 서버가 압니다. 통화 쪽지는 상대가 직접 보낸 것입니다.
+      if (envelope.type === "SYSTEM_PEER_JOINED") return call.peerPresent();
+      if (envelope.type === "SYSTEM_PEER_LEFT") return call.peerAway();
+
+      call.accept(envelope.type as RtcSignalType, envelope.payload);
     }, []),
   });
 
@@ -263,8 +275,8 @@ export function SessionStage({
   });
 
   React.useEffect(() => {
-    acceptRef.current = call.accept;
-  }, [call.accept]);
+    callRef.current = call;
+  }, [call]);
 
   React.useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });

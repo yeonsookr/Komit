@@ -267,4 +267,51 @@ describe("usePeerConnection", () => {
     expect(stream.video.stopped).toBe(true);
     expect(reactHarness.states[0]).toBe("ENDED");
   });
+
+  it("상대 연결이 끊기면 기다렸다가 돌아오지 않을 때만 접는다", async () => {
+    const stream = new FakeStream();
+    vi.stubGlobal("navigator", {
+      mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+    });
+    const call = usePeerConnection({ enabled: true, polite: true, send: () => true });
+    await flush();
+    const peer = FakePeerConnection.instances[0];
+
+    vi.useFakeTimers();
+    try {
+      call.peerAway();
+      expect(reactHarness.states[0]).toBe("PEER_AWAY");
+      expect(peer.closed).toBe(false);
+
+      vi.advanceTimersByTime(15_000);
+      expect(peer.closed).toBe(true);
+      expect(stream.audio.stopped).toBe(true);
+      expect(reactHarness.states[0]).toBe("ENDED");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("기다리는 동안 상대가 돌아오면 통화를 이어 간다", async () => {
+    const stream = new FakeStream();
+    vi.stubGlobal("navigator", {
+      mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(stream) },
+    });
+    const call = usePeerConnection({ enabled: true, polite: true, send: () => true });
+    await flush();
+    const peer = FakePeerConnection.instances[0];
+
+    vi.useFakeTimers();
+    try {
+      call.peerAway();
+      call.peerPresent();
+      vi.advanceTimersByTime(30_000);
+
+      expect(peer.closed).toBe(false);
+      expect(stream.audio.stopped).toBe(false);
+      expect(reactHarness.states[0]).toBe("CONNECTING");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -16,6 +16,14 @@ const MEDIA: MediaStreamConstraints = {
   video: { width: { ideal: 1280 }, height: { ideal: 720 } },
 };
 
+/**
+ * 상대 연결이 끊겼을 때 기다려 주는 시간.
+ *
+ * 회선이 잠깐 튄 것과 정말 나간 것을 서버는 구분하지 못합니다. 다시 붙는 데 걸리는 시간
+ * (`useRealtimeConnection` 의 재시도는 최대 10초)보다 넉넉히 두고, 그때까지 안 오면 접습니다.
+ */
+const PEER_AWAY_GRACE_MS = 15_000;
+
 export type CallStatus =
   | "IDLE"
   | "NEED_PERMISSION"
@@ -23,6 +31,7 @@ export type CallStatus =
   | "WAITING_PEER"
   | "CONNECTING"
   | "CONNECTED"
+  | "PEER_AWAY"
   | "ENDED";
 
 export interface UsePeerConnectionOptions {
@@ -42,6 +51,10 @@ export interface PeerConnection {
   toggleMic: () => void;
   toggleCamera: () => void;
   accept: (type: RtcSignalType, payload: unknown) => void;
+  /** 상대 연결이 끊겼습니다. 돌아올 시간을 주고 그때까지 안 오면 접습니다. */
+  peerAway: () => void;
+  /** 상대가 (다시) 붙었습니다. */
+  peerPresent: () => void;
   hangUp: () => void;
 }
 
@@ -78,6 +91,8 @@ export function usePeerConnection({
   const waitingForInitialReady = React.useRef(true);
   const reuseNegotiationIdForNextOffer = React.useRef(false);
   const signalingQueue = React.useRef(Promise.resolve());
+  const awayTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const peerIsAway = React.useRef(false);
 
   const sendRef = React.useRef(send);
   React.useEffect(() => {
@@ -153,7 +168,16 @@ export function usePeerConnection({
     [enqueueSignaling, negotiate],
   );
 
+  const stopWaitingForPeer = React.useCallback(() => {
+    if (awayTimer.current !== undefined) {
+      clearTimeout(awayTimer.current);
+      awayTimer.current = undefined;
+    }
+    peerIsAway.current = false;
+  }, []);
+
   const teardown = React.useCallback(() => {
+    stopWaitingForPeer();
     localRef.current?.getTracks().forEach((track) => track.stop());
     localRef.current = null;
     peerRef.current?.close();
@@ -168,7 +192,32 @@ export function usePeerConnection({
     signalingQueue.current = Promise.resolve();
     setLocalStream(null);
     setRemoteStream(null);
-  }, []);
+  }, [stopWaitingForPeer]);
+
+  /*
+    상대 연결이 끊겼다는 서버 알림. **나갔다는 뜻은 아닙니다** — 회선이 잠깐 튀어도 옵니다.
+    다만 쪽지 길이 끊긴 동안에는 다시 협상할 방법이 없으므로, 기다려도 안 오면 접습니다.
+  */
+  const peerAway = React.useCallback(() => {
+    if (!peerRef.current || awayTimer.current !== undefined) return;
+
+    peerIsAway.current = true;
+    setStatus("PEER_AWAY");
+    awayTimer.current = setTimeout(() => {
+      awayTimer.current = undefined;
+      peerIsAway.current = false;
+      teardown();
+      setStatus("ENDED");
+    }, PEER_AWAY_GRACE_MS);
+  }, [teardown]);
+
+  const peerPresent = React.useCallback(() => {
+    const wasAway = peerIsAway.current;
+    stopWaitingForPeer();
+    if (!wasAway) return;
+    // 기다리는 동안 영상이 계속 흘렀을 수도, 끊겼을 수도 있습니다. 지금 상태를 그대로 적습니다.
+    setStatus(peerRef.current?.connectionState === "connected" ? "CONNECTED" : "CONNECTING");
+  }, [stopWaitingForPeer]);
 
   React.useEffect(() => {
     if (!enabled) return;
@@ -436,6 +485,8 @@ export function usePeerConnection({
     toggleMic,
     toggleCamera,
     accept,
+    peerAway,
+    peerPresent,
     hangUp,
   };
 }

@@ -13,6 +13,7 @@ import com.a501.service.common.exception.BusinessException;
 import com.a501.service.common.realtime.presence.RealtimePresenceService;
 import com.a501.service.common.realtime.presence.RealtimePresenceService.OwnershipClaimException;
 import com.a501.service.common.realtime.protocol.RealtimeChannelType;
+import com.a501.service.common.realtime.protocol.RealtimeCloseStatus;
 import com.a501.service.common.realtime.protocol.RealtimeErrorCode;
 import com.a501.service.config.RealtimeProperties;
 import tools.jackson.databind.JsonNode;
@@ -43,6 +44,7 @@ class RealtimeWebSocketHandlerTest {
     private RealtimePresenceService presence;
     private RealtimeDuplicateConnections duplicates;
     private RealtimeMessageRateLimiter rateLimiter;
+    private RealtimePeerNotices peerNotices;
     private RealtimeWebSocketHandler handler;
     private WebSocketSession session;
     private final List<String> sent = new ArrayList<>();
@@ -55,6 +57,7 @@ class RealtimeWebSocketHandlerTest {
         registry = new RealtimeConnectionRegistry(MAPPER, presence, properties);
         duplicates = mock(RealtimeDuplicateConnections.class);
         rateLimiter = mock(RealtimeMessageRateLimiter.class);
+        peerNotices = mock(RealtimePeerNotices.class);
         when(rateLimiter.acquire(PRINCIPAL.connectionId()))
                 .thenReturn(new RealtimeMessageRateLimiter.Decision(true, false));
         handler =
@@ -64,6 +67,7 @@ class RealtimeWebSocketHandlerTest {
                         presence,
                         duplicates,
                         rateLimiter,
+                        peerNotices,
                         MAPPER,
                         properties);
 
@@ -232,6 +236,29 @@ class RealtimeWebSocketHandlerTest {
     @Test
     void 들어오면_같은_사람의_앞선_연결을_정리한다() {
         verify(duplicates).closeOlderOf(PRINCIPAL);
+    }
+
+    @Test
+    void 들어온_것을_같은_채널의_나머지에게_알린다() {
+        verify(peerNotices).joined(PRINCIPAL);
+    }
+
+    @Test
+    void 끊긴_것을_같은_채널의_나머지에게_알린다() {
+        handler.afterConnectionClosed(session, CloseStatus.NORMAL);
+
+        // presence 에서 내린 뒤라야 그 사람이 정말 없는지 가릴 수 있다.
+        InOrder order = inOrder(presence, peerNotices);
+        order.verify(presence).leave(PRINCIPAL);
+        order.verify(peerNotices).leftIfGone(PRINCIPAL);
+    }
+
+    /** 탭을 새로 연 것이다. 그 사람은 여전히 있으므로 상대가 통화를 접으면 안 된다. */
+    @Test
+    void 밀려난_연결은_나갔다고_알리지_않는다() {
+        handler.afterConnectionClosed(session, RealtimeCloseStatus.DUPLICATE_CONNECTION);
+
+        verify(peerNotices, never()).leftIfGone(PRINCIPAL);
     }
 
     @Test
