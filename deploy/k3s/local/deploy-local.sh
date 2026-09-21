@@ -1,8 +1,9 @@
 #!/bin/sh
-# docker-compose의 deployer 컨테이너에서 실행합니다.
+# Docker Compose deployer와 일반 Linux k3s 호스트에서 모두 실행할 수 있습니다.
 set -eu
 
-K3S_DIR=/workspace/deploy/k3s
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+K3S_DIR=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 
 wait_for() {
   description=$1

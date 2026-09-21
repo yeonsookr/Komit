@@ -209,7 +209,6 @@ EOF
 {
   config_literal BACKEND_API_BASE_URL "$BACKEND_API_BASE_URL"
   config_literal AI_API_BASE_URL "$AI_API_BASE_URL"
-  config_literal ESCROW_API_BASE_URL "$ESCROW_API_BASE_URL"
   config_literal KAKAO_CLIENT_ID "$KAKAO_CLIENT_ID"
   config_literal KAKAO_REDIRECT_URI "$KAKAO_REDIRECT_URI"
   # `/test`는 mock 전용 변수만 받습니다. 루트 FE 변수와 공유하지 않습니다.

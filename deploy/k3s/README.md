@@ -364,7 +364,7 @@ DB 비밀번호는 한 번 정하면 바꾸지 않습니다. DB 계정은 첫 �
 |---|---|---|
 | `SERVICE_PUBLIC_BASE_URL` | `https://komit.site/service` | Visible |
 | `ESCROW_PUBLIC_BASE_URL` | `https://komit.site/escrow` | Visible |
-| `BACKEND_API_BASE_URL` | `http://service.komit.svc.cluster.local:8080` | Visible |
+| `BACKEND_API_BASE_URL` | `https://komit.site/service` | Visible |
 | `TEST_BACKEND_API_BASE_URL` | `https://komit.site/mock/service` | Visible |
 | `TEST_AI_API_BASE_URL` | `https://komit.site/mock/service` | Visible |
 | `KAKAO_REDIRECT_URI` | `https://komit.site/api/auth/kakao/callback` | Masked |
@@ -614,7 +614,7 @@ fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
 | `CLIENT_API_KEY_HMAC_SECRET`, `SENSITIVE_DATA_HMAC_SECRET` | Masked, Protected | Escrow 내부 API 키와 민감정보 조회값을 위한 HMAC 비밀키. 각각 32자 이상이어야 합니다 |
 | `FIELD_ENCRYPTION_KEY_BASE64` | Masked, Protected | Escrow 복구용 민감정보 AES-256 키. 정확히 32바이트인 키의 Base64 값이어야 합니다 |
 | `OPERATOR_CLIENT_API_KEY` | Masked, Protected | Escrow 운영자 API 키. 32자 이상이어야 합니다 |
-| `ESCROW_API_BASE_URL` | Visible, Protected | Backend가 호출할 Escrow 계약 서버 주소. 현재 개발 배포는 Mock 주소를 사용하고 실제 통합 시 `http://escrow:8081/api`로 교체합니다 |
+| `ESCROW_API_BASE_URL` | Visible, Protected | Service가 호출할 실제 Escrow 주소. k3s에서는 `http://escrow.komit.svc.cluster.local:8081`을 사용합니다. 클라이언트가 `/api/v1/...`를 붙이므로 `/api`를 중복해서 넣지 않습니다 |
 | `ESCROW_CLIENT_API_KEY` | Masked, Protected | 현재 Mock은 명세 고정값 `mock-client-api-key`를 사용합니다. 실제 Escrow 전환 시에는 32자 이상의 키를 사용하며 HMAC 해시만 `service_clients`에 등록됩니다 |
 | `ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE` | Visible, Protected | 해당 API 키의 `service_clients.one_won_auth_message`에 저장할 1원 인증 문구. 현재 권장값은 `KOMIT`입니다 |
 | `ESCROW_ADMIN_USERNAME` | Visible, Protected | Escrow 조회 전용 운영 페이지 로그인 아이디 |
@@ -680,7 +680,7 @@ chmod +x deploy/k3s/deploy.sh
 | `SERVICE_PUBLIC_BASE_URL`, `ESCROW_PUBLIC_BASE_URL` | 예 | 각 백엔드가 밖에서 보이는 주소(nginx 경로 접두사 포함). Spring의 `app.public-base-url`이 되고, 없으면 앱이 기동하지 않습니다. 값이 바뀌면 해당 Pod만 다시 뜹니다. |
 | `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` | 예 | 기본 `fe`가 호출할 실제 BE·AI 주소. GitLab CI/CD 변수와 같은 값을 넣으며 `fe-config`에만 들어갑니다. |
 | `TEST_BACKEND_API_BASE_URL`, `TEST_AI_API_BASE_URL` | 예 | `/test`의 `fe-test`가 호출할 mock 주소. `fe-test-config`에만 들어갑니다. |
-| `ESCROW_API_BASE_URL` | 예 | GitLab CI/CD 값이 `service-config`에 주입됩니다. 현재 개발 배포에서는 Mock 주소를 사용합니다. |
+| `ESCROW_API_BASE_URL` | 예 | GitLab CI/CD 값이 `service-config`에 주입됩니다. `http://escrow.komit.svc.cluster.local:8081`로 설정해 실제 Escrow를 사용합니다. |
 | `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI` | 예 | 카카오 로그인 REST API 키와 콜백 주소. fe 의 `/api/auth/kakao` 가 실행 시점에 읽습니다. 없으면 로그인만 500 으로 실패하고 다른 화면은 영향이 없습니다. |
 | `ACCOUNT_DATA_ENCRYPTION_KEY` | 예 | 계좌 데이터 AES-256 암호화 키. Base64 디코딩 결과가 정확히 32바이트여야 하며 `service-auth` Secret으로 주입됩니다. 이 Secret은 `secretGenerator`가 만들어 이름에 해시가 붙으므로, 값이 바뀌면 service Pod가 새 값으로 다시 뜹니다. 값을 바꾸면 기존 암호문을 복호화할 수 없습니다. |
 | `TEST_KAKAO_REDIRECT_URI` | 예 | `/test` 전용 콜백 주소. `https://komit.site/test/api/auth/kakao/callback`을 카카오 콘솔에도 등록해야 합니다. |
