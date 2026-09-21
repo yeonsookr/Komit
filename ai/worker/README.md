@@ -38,6 +38,36 @@ Copy-Item ai\worker\.env.example ai\worker\.env
 수정은 나아졌는지 판정할 골든셋을 만든 뒤에 한다. 위 세 가지가 골든셋에서 떨어뜨려야
 할 항목이다.
 
+## 무료 상담 계약 초안 (S15P21A201-224)
+
+`docs/ai/chat-contract-draft.md`에 따라 무료 상담방 하나의 메시지를 계약 유형별 초안으로
+정리한다. `223`의 GMS 클라이언트를 그대로 쓴다.
+
+| 구분 | 내용 |
+| --- | --- |
+| 입력 | `chatRefId` `authorRole`(`CLIENT`·`DEVELOPER`) `createdAt` `content` + 개발 계약이면 기존 요구사항 `issueId` `title` |
+| 컨설팅 출력 | `topic`(1~255자) `detail`(근거 없으면 `null`) |
+| 개발 출력 | `issueIds` `milestones[].title` `milestones[].qaCriteria` `rejectedIssues[].issueId` `.reason` |
+| 확인 문장 | `R-REQ-01` `R-REQ-04` `R-QA-01` `R-QA-05`. 작업마다 하나 이상, 문장마다 1~500자 |
+| 진행 안 함 | `proceed=false` → 초안 `None`. **오류가 아니다** |
+| 생성 실패 | 형식·식별자 검증 위반은 `InvalidGmsResponseError`. 빈 계약서를 대신 만들지 않는다 |
+
+일정·기간·금액·인계물·전달 메시지는 개발자 입력 필드다. 모델이 이 필드를 함께 내놓으면
+초안 전체를 실패로 처리한다. `issueIds`와 `rejectedIssues[].issueId`는 입력으로 받은
+요구사항 안에서만 고르고 같은 식별자를 양쪽에 함께 넣지 않는다. 서로 다른 `chatRefId`가
+섞이거나 작성 시각 순이 아닌 입력은 호출 전에 거른다.
+
+방 전환 성공 여부(`R-MATCH-03`), 채팅 저장·조회, 계약 제출·서명은 이 모듈 밖이다.
+
+```powershell
+.\.venv\Scripts\python.exe ai\worker\contract_draft.py <입력 JSON 경로>
+.\.venv\Scripts\python.exe -m unittest discover -s ai\worker\tests -p "test_contract_draft.py"
+```
+
+입력 JSON은 `targetType`, `messages`, 개발 계약이면 `issues`를 가진다. 단위 테스트는
+고정 응답을 쓰므로 키 없이 실행되고 외부 요청을 하지 않는다. 실제 채팅 저장·조회와
+전환 트리거는 BE 연동 전까지 확인할 수 없다.
+
 ## N7: 클로바 자동 전사와 STT 시험 비교
 
 ### 모델과 실행 엔진 선택
