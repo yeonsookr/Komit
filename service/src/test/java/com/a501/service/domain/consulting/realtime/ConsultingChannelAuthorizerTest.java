@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.a501.service.common.exception.BusinessException;
@@ -91,6 +93,18 @@ class ConsultingChannelAuthorizerTest {
     }
 
     @Test
+    void 당사자가_아니면_끝난_세션이라는_사실도_알리지_않는다() {
+        givenSession(LocalDateTime.ofInstant(NOW, ZoneOffset.UTC));
+        givenParticipants(CLIENT_ID, DEVELOPER_ID);
+
+        assertThatThrownBy(() -> authorizer.authorize(OUTSIDER_ID, "42"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ConsultingErrorCode.SESSION_NOT_FOUND);
+        verify(reservationRepository, never())
+                .findByConsultingSessionIdAndDeletedFalse(SESSION_ID);
+    }
+
+    @Test
     void 끝난_세션은_막는다() {
         givenSession(LocalDateTime.ofInstant(NOW, ZoneOffset.UTC));
         givenParticipants(CLIENT_ID, DEVELOPER_ID);
@@ -123,15 +137,17 @@ class ConsultingChannelAuthorizerTest {
                 .hasFieldOrPropertyWithValue("errorCode", ConsultingErrorCode.ENTRY_NOT_OPEN);
     }
 
-    /** 예약이 없으면 시각을 따질 근거가 없다. 그 이유로 막지 않는다. */
+    /** 예약이 없으면 입장 가능 시각을 검증할 수 없으므로 안전하게 막는다. */
     @Test
-    void 예약이_없으면_시각으로_막지_않는다() {
+    void 예약이_없으면_입장을_막는다() {
         givenSession(null);
         givenParticipants(CLIENT_ID, DEVELOPER_ID);
         when(reservationRepository.findByConsultingSessionIdAndDeletedFalse(SESSION_ID))
                 .thenReturn(Optional.empty());
 
-        assertThatCode(() -> authorizer.authorize(CLIENT_ID, "42")).doesNotThrowAnyException();
+        assertThatThrownBy(() -> authorizer.authorize(CLIENT_ID, "42"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ConsultingErrorCode.ENTRY_NOT_OPEN);
     }
 
     private void givenSession(LocalDateTime endedAt) {

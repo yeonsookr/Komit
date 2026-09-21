@@ -11679,6 +11679,26 @@ REALTIME_CHANNEL_FORBIDDEN_EXAMPLE = {
     "code": REALTIME_CHANNEL_FORBIDDEN[0],
     "message": REALTIME_CHANNEL_FORBIDDEN[1],
 }
+REALTIME_SESSION_NOT_FOUND = (
+    "SESSION_NOT_FOUND",
+    "세션을 찾을 수 없습니다.",
+)
+REALTIME_SESSION_NOT_FOUND_EXAMPLE = {
+    "code": REALTIME_SESSION_NOT_FOUND[0],
+    "message": REALTIME_SESSION_NOT_FOUND[1],
+}
+REALTIME_SESSION_ENDED = (
+    "SESSION_ENDED",
+    "이미 끝난 세션입니다.",
+)
+REALTIME_CONSENT_REQUIRED = (
+    "CONSENT_REQUIRED",
+    "상대가 아직 들어오지 않았습니다. 양쪽이 모두 동의해야 시작할 수 있습니다.",
+)
+REALTIME_ENTRY_NOT_OPEN = (
+    "ENTRY_NOT_OPEN",
+    "아직 입장할 수 있는 시각이 아닙니다.",
+)
 
 
 @router.post(
@@ -11701,9 +11721,47 @@ REALTIME_CHANNEL_FORBIDDEN_EXAMPLE = {
         },
         403: {
             "model": ErrorResponse,
-            "description": "요청한 세션 또는 채팅방에 참여할 권한이 없음",
+            "description": "요청한 채널 대상에 접근할 권한이 없음(예: 채팅방)",
             "content": {
                 "application/json": {"example": REALTIME_CHANNEL_FORBIDDEN_EXAMPLE}
+            },
+        },
+        404: {
+            "model": ErrorResponse,
+            "description": "컨설팅 세션이 없거나 요청자가 그 세션의 참가자가 아님",
+            "content": {
+                "application/json": {"example": REALTIME_SESSION_NOT_FOUND_EXAMPLE}
+            },
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "컨설팅 세션 상태상 아직 입장할 수 없거나 이미 종료됨",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "sessionEnded": {
+                            "summary": "이미 종료된 세션",
+                            "value": {
+                                "code": REALTIME_SESSION_ENDED[0],
+                                "message": REALTIME_SESSION_ENDED[1],
+                            },
+                        },
+                        "consentRequired": {
+                            "summary": "상대 참가자의 동의 대기",
+                            "value": {
+                                "code": REALTIME_CONSENT_REQUIRED[0],
+                                "message": REALTIME_CONSENT_REQUIRED[1],
+                            },
+                        },
+                        "entryNotOpen": {
+                            "summary": "입장 가능 시각 전 또는 예약 확인 불가",
+                            "value": {
+                                "code": REALTIME_ENTRY_NOT_OPEN[0],
+                                "message": REALTIME_ENTRY_NOT_OPEN[1],
+                            },
+                        },
+                    }
+                }
             },
         },
         422: {
@@ -11729,8 +11787,16 @@ REALTIME_CHANNEL_FORBIDDEN_EXAMPLE = {
         "폐기된다. (R-RT-01)\n\n"
         "- **200**: 요청한 세션 또는 채팅방에 참여할 수 있을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았거나 액세스 토큰이 만료되었을 때\n"
-        "- **403 / CHANNEL_FORBIDDEN**: 요청한 세션 또는 채팅방의 참가자가 아닐 때. "
+        "- **403 / CHANNEL_FORBIDDEN**: 요청한 채널 대상에 접근할 권한이 없을 때. "
         "목에서는 `channelId`가 `403`이면 재현한다\n"
+        "- **404 / SESSION_NOT_FOUND**: 컨설팅 세션이 없거나 참가자가 아니어서 존재를 "
+        "숨길 때. CONSULTING_SESSION의 `channelId`가 `404`이면 재현한다\n"
+        "- **409 / SESSION_ENDED**: 컨설팅 세션이 이미 끝났을 때. CONSULTING_SESSION의 "
+        "`channelId`가 `409`이면 재현한다\n"
+        "- **409 / CONSENT_REQUIRED**: 상대 참가자의 동의를 기다릴 때. CONSULTING_SESSION의 "
+        "`channelId`가 `410`이면 재현한다\n"
+        "- **409 / ENTRY_NOT_OPEN**: 입장 가능 시각 전이거나 예약을 확인할 수 없을 때. "
+        "CONSULTING_SESSION의 `channelId`가 `411`이면 재현한다\n"
         "- **422 / INVALID_REQUEST**: 채널이 허용된 값이 아니거나 channelId가 비었거나 "
         "50자를 초과했을 때"
     ),
@@ -11740,6 +11806,15 @@ def issue_realtime_ticket(
 ) -> RealtimeTicketResponse | JSONResponse:
     if payload.channelId == "403":
         return _error_response(403, REALTIME_CHANNEL_FORBIDDEN)
+    if payload.channel == "CONSULTING_SESSION":
+        if payload.channelId == "404":
+            return _error_response(404, REALTIME_SESSION_NOT_FOUND)
+        if payload.channelId == "409":
+            return _error_response(409, REALTIME_SESSION_ENDED)
+        if payload.channelId == "410":
+            return _error_response(409, REALTIME_CONSENT_REQUIRED)
+        if payload.channelId == "411":
+            return _error_response(409, REALTIME_ENTRY_NOT_OPEN)
     return RealtimeTicketResponse(ticket="mock-realtime-ticket-once")
 
 # 개발자가 상담 요청을 수락·거절하는 기능은 만들지 않기로 했다.

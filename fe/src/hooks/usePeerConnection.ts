@@ -1,24 +1,21 @@
 "use client";
 
 import * as React from "react";
-import type { RtcSignalType } from "@/types/realtime";
+import type {
+  RtcDescriptionPayload,
+  RtcIceCandidatePayload,
+  RtcNegotiationId,
+  RtcPeerPayload,
+  RtcSignalType,
+} from "@/types/realtime";
 
-/**
- * 길을 찾아 주는 공개 서버.
- *
- * 공유기 뒤에 있는 내 주소가 바깥에서 어떻게 보이는지 물어보는 곳입니다.
- * 회사망처럼 막힌 곳에서는 이것만으로 길이 안 나고 **중계해 줄 서버**가 따로
- * 필요한데, 그건 아직 없습니다. (계획서 4단계)
- */
 const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 
-/** 카메라·마이크를 어떤 품질로 잡을지. 통화라 화질보다 끊기지 않는 쪽이 낫습니다. */
 const MEDIA: MediaStreamConstraints = {
   audio: { echoCancellation: true, noiseSuppression: true },
   video: { width: { ideal: 1280 }, height: { ideal: 720 } },
 };
 
-/** 통화가 어디까지 왔는지. */
 export type CallStatus =
   | "IDLE"
   | "NEED_PERMISSION"
@@ -31,14 +28,8 @@ export type CallStatus =
 export interface UsePeerConnectionOptions {
   /** 거짓이면 카메라도 켜지 않습니다. 양쪽이 동의하기 전에는 켜면 안 됩니다. (R-CON-17) */
   enabled: boolean;
-  /**
-   * 둘 중 누가 먼저 제안할지. 양쪽이 같은 값을 쓰면 안 됩니다.
-   *
-   * 동시에 제안하면 한쪽이 물러서야 하는데, 물러설 쪽을 미리 정해 두지 않으면
-   * 둘 다 물러서거나 둘 다 버팁니다.
-   */
+  /** 동시에 제안했을 때 자기 제안을 버리고 상대 제안을 받을 쪽인지. */
   polite: boolean;
-  /** 쪽지를 상대에게 보냅니다. 연결이 안 열렸으면 거짓을 돌려줍니다. */
   send: (type: RtcSignalType, payload?: unknown) => boolean;
 }
 
@@ -50,18 +41,18 @@ export interface PeerConnection {
   cameraOn: boolean;
   toggleMic: () => void;
   toggleCamera: () => void;
-  /** 받은 쪽지를 넣습니다. 연결 훅의 `onMessage` 에서 부릅니다. */
   accept: (type: RtcSignalType, payload: unknown) => void;
-  /** 통화를 접습니다. 상대에게도 알립니다. */
   hangUp: () => void;
 }
 
-/**
- * 두 사람 사이의 통화를 맡습니다.
- *
- * 쪽지를 어떻게 나르는지는 모릅니다. `send` 로 내보내고 `accept` 로 받을 뿐이라
- * 나르는 길이 바뀌어도 이 훅은 그대로입니다.
- */
+/** UUID가 없는 테스트 브라우저에서도 협상 세대가 겹치지 않게 만듭니다. */
+export function createRtcNegotiationId(): RtcNegotiationId {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 export function usePeerConnection({
   enabled,
   polite,
@@ -75,18 +66,18 @@ export function usePeerConnection({
 
   const peerRef = React.useRef<RTCPeerConnection | null>(null);
   const localRef = React.useRef<MediaStream | null>(null);
-
-  /** 제안을 만드는 중인지. 이때 들어온 상대 제안은 물러설지 버틸지 따져야 합니다. */
+  const micOnRef = React.useRef(true);
+  const cameraOnRef = React.useRef(true);
+  const activeNegotiationId = React.useRef<RtcNegotiationId | null>(null);
+  const retiredNegotiationIds = React.useRef(new Set<RtcNegotiationId>());
+  const acknowledgedReadyIds = React.useRef(new Set<RtcNegotiationId>());
+  const pendingCandidates = React.useRef(new Map<RtcNegotiationId, RTCIceCandidateInit[]>());
   const makingOffer = React.useRef(false);
-  /** 물러서는 중인지. 이 동안 들어오는 답은 버립니다. */
-  const ignoringOffer = React.useRef(false);
-  /**
-   * 상대를 알기 전에 먼저 도착한 길 후보.
-   *
-   * 후보는 제안보다 먼저 올 수 있습니다. 그때 그냥 넣으면 예외가 나므로 쌓아 두었다가
-   * 제안을 받은 뒤 한꺼번에 넣습니다.
-   */
-  const pendingCandidates = React.useRef<RTCIceCandidateInit[]>([]);
+  const ignoreOffer = React.useRef(false);
+  const remoteReady = React.useRef(false);
+  const waitingForInitialReady = React.useRef(true);
+  const reuseNegotiationIdForNextOffer = React.useRef(false);
+  const signalingQueue = React.useRef(Promise.resolve());
 
   const sendRef = React.useRef(send);
   React.useEffect(() => {
@@ -98,7 +89,86 @@ export function usePeerConnection({
     politeRef.current = polite;
   }, [polite]);
 
-  /* ---------------------------------------------------------------- 시작 */
+  const replaceNegotiation = React.useCallback((nextId: RtcNegotiationId) => {
+    const previousId = activeNegotiationId.current;
+    if (previousId === nextId) return;
+    if (previousId) {
+      retiredNegotiationIds.current.add(previousId);
+      pendingCandidates.current.delete(previousId);
+    }
+    retiredNegotiationIds.current.delete(nextId);
+    activeNegotiationId.current = nextId;
+    ignoreOffer.current = false;
+  }, []);
+
+  const enqueueSignaling = React.useCallback((operation: () => Promise<void>) => {
+    const run = signalingQueue.current.then(operation, operation);
+    signalingQueue.current = run.catch(() => undefined);
+    return run;
+  }, []);
+
+  const sendDescription = React.useCallback(
+    (type: "RTC_OFFER" | "RTC_ANSWER", peer: RTCPeerConnection, id: RtcNegotiationId) => {
+      const description = peer.localDescription?.toJSON();
+      if (description) sendRef.current(type, { negotiationId: id, description });
+    },
+    [],
+  );
+
+  /** 같은 세대의 READY 를 서로 되받으면 메아리가 됩니다. 한 세대에 한 번만 답합니다. */
+  const announceReady = React.useCallback((id: RtcNegotiationId) => {
+    if (acknowledgedReadyIds.current.has(id)) return;
+    acknowledgedReadyIds.current.add(id);
+    sendRef.current("RTC_PEER_READY", { negotiationId: id });
+  }, []);
+
+  const negotiate = React.useCallback(
+    async (peer: RTCPeerConnection, rotateId: boolean) => {
+      if (!remoteReady.current || peer.signalingState === "closed") return;
+
+      try {
+        makingOffer.current = true;
+        if (rotateId || !activeNegotiationId.current) {
+          replaceNegotiation(createRtcNegotiationId());
+        }
+        const id = activeNegotiationId.current;
+        if (!id) return;
+        await peer.setLocalDescription();
+        if (peer.localDescription?.type === "offer") sendDescription("RTC_OFFER", peer, id);
+      } finally {
+        makingOffer.current = false;
+      }
+    },
+    [replaceNegotiation, sendDescription],
+  );
+
+  const requestNegotiation = React.useCallback(
+    (peer: RTCPeerConnection) => {
+      if (!remoteReady.current) return;
+      // 길만 다시 뚫는 재협상이면 세대를 그대로 씁니다. 상대가 세대를 이미 알고 있습니다.
+      const reuseId = reuseNegotiationIdForNextOffer.current;
+      reuseNegotiationIdForNextOffer.current = false;
+      enqueueSignaling(() => negotiate(peer, !reuseId)).catch(() => setStatus("CONNECTING"));
+    },
+    [enqueueSignaling, negotiate],
+  );
+
+  const teardown = React.useCallback(() => {
+    localRef.current?.getTracks().forEach((track) => track.stop());
+    localRef.current = null;
+    peerRef.current?.close();
+    peerRef.current = null;
+    activeNegotiationId.current = null;
+    pendingCandidates.current.clear();
+    retiredNegotiationIds.current.clear();
+    acknowledgedReadyIds.current.clear();
+    remoteReady.current = false;
+    waitingForInitialReady.current = true;
+    reuseNegotiationIdForNextOffer.current = false;
+    signalingQueue.current = Promise.resolve();
+    setLocalStream(null);
+    setRemoteStream(null);
+  }, []);
 
   React.useEffect(() => {
     if (!enabled) return;
@@ -111,7 +181,6 @@ export function usePeerConnection({
       try {
         stream = await navigator.mediaDevices.getUserMedia(MEDIA);
       } catch {
-        // 거부는 오류가 아니라 사람의 선택입니다. 화면은 그 상태를 그대로 보여 줍니다.
         if (alive) setStatus("PERMISSION_DENIED");
         return;
       }
@@ -121,11 +190,15 @@ export function usePeerConnection({
         return;
       }
 
+      stream.getAudioTracks().forEach((track) => (track.enabled = micOnRef.current));
+      stream.getVideoTracks().forEach((track) => (track.enabled = cameraOnRef.current));
       localRef.current = stream;
       setLocalStream(stream);
 
       const peer = new RTCPeerConnection({ iceServers: ICE_SERVERS });
       peerRef.current = peer;
+      const initialId = createRtcNegotiationId();
+      replaceNegotiation(initialId);
 
       stream.getTracks().forEach((track) => peer.addTrack(track, stream));
 
@@ -134,38 +207,35 @@ export function usePeerConnection({
       };
 
       peer.onicecandidate = (event) => {
-        if (event.candidate) {
-          sendRef.current("RTC_ICE_CANDIDATE", event.candidate.toJSON());
+        const id = activeNegotiationId.current;
+        if (event.candidate && id) {
+          sendRef.current("RTC_ICE_CANDIDATE", {
+            negotiationId: id,
+            candidate: event.candidate.toJSON(),
+          });
         }
       };
 
-      /*
-        내 쪽 사정이 바뀌면(트랙을 넣거나 길을 다시 찾으면) 브라우저가 알려 줍니다.
-        그때 제안을 만들어 보냅니다. 언제 만들지 직접 고르지 않는 편이 안전합니다.
-      */
-      peer.onnegotiationneeded = async () => {
-        try {
-          makingOffer.current = true;
-          await peer.setLocalDescription();
-          sendRef.current("RTC_OFFER", peer.localDescription?.toJSON());
-        } finally {
-          makingOffer.current = false;
-        }
-      };
+      peer.onnegotiationneeded = () => requestNegotiation(peer);
 
       peer.onconnectionstatechange = () => {
         if (!alive) return;
-        if (peer.connectionState === "connected") setStatus("CONNECTED");
-        else if (peer.connectionState === "failed") {
-          // 길이 끊겼습니다. 처음부터 다시 찾습니다.
+        if (peer.connectionState === "connected") {
+          setStatus("CONNECTED");
+        } else if (peer.connectionState === "failed") {
+          const id = createRtcNegotiationId();
+          replaceNegotiation(id);
+          reuseNegotiationIdForNextOffer.current = true;
           peer.restartIce();
-          sendRef.current("RTC_ICE_RESTART");
+          sendRef.current("RTC_ICE_RESTART", { negotiationId: id });
           setStatus("CONNECTING");
-        } else if (peer.connectionState === "disconnected") setStatus("CONNECTING");
+        } else if (peer.connectionState === "disconnected") {
+          setStatus("CONNECTING");
+        }
       };
 
       setStatus("WAITING_PEER");
-      sendRef.current("RTC_PEER_READY");
+      sendRef.current("RTC_PEER_READY", { negotiationId: initialId });
     };
 
     void start();
@@ -175,114 +245,184 @@ export function usePeerConnection({
       teardown();
       setStatus("ENDED");
     };
-    // teardown 은 ref 만 만져 매 렌더 같은 일을 하므로 의존성에 넣지 않습니다.
-  }, [enabled]);
+  }, [enabled, replaceNegotiation, requestNegotiation, teardown]);
 
-  /* ---------------------------------------------------------- 받는 쪽지 */
+  const acceptPeerReady = React.useCallback(
+    async (peer: RTCPeerConnection, id: RtcNegotiationId) => {
+      if (retiredNegotiationIds.current.has(id)) return;
+      remoteReady.current = true;
 
-  const accept = React.useCallback((type: RtcSignalType, payload: unknown) => {
-    const peer = peerRef.current;
-    if (!peer) return;
-
-    void (async () => {
-      switch (type) {
-        case "RTC_PEER_READY":
-          /*
-            상대가 들어왔습니다. 내가 먼저 들어와 보낸 제안은 상대가 듣기 전이라
-            사라졌을 수 있으니 다시 만들어 보냅니다.
-
-            되받아 READY 를 보내면 둘이 영원히 주고받습니다. **먼저 거는 쪽만**
-            움직이고 물러서는 쪽은 기다립니다 — 누가 먼저 들어왔든 한 번만 옵니다.
-          */
-          if (!politeRef.current && peer.signalingState === "stable") {
-            await peer.setLocalDescription();
-            sendRef.current("RTC_OFFER", peer.localDescription?.toJSON());
-          }
-          break;
-
-        case "RTC_OFFER":
-        case "RTC_ANSWER": {
-          const description = payload as RTCSessionDescriptionInit;
-
-          /*
-            둘이 동시에 제안했을 때입니다. 미리 정해 둔 「물러설 쪽」만 자기 제안을
-            버리고 상대 것을 받습니다. 양쪽이 같은 판단을 하니 엇갈리지 않습니다.
-          */
-          const collision =
-            description.type === "offer" &&
-            (makingOffer.current || peer.signalingState !== "stable");
-
-          ignoringOffer.current = !politeRef.current && collision;
-          if (ignoringOffer.current) return;
-
-          await peer.setRemoteDescription(description);
-
-          // 상대를 알게 됐으니 쌓아 둔 길 후보를 이제 넣습니다.
-          for (const candidate of pendingCandidates.current) {
-            await peer.addIceCandidate(candidate).catch(() => undefined);
-          }
-          pendingCandidates.current = [];
-
-          if (description.type === "offer") {
-            await peer.setLocalDescription();
-            sendRef.current("RTC_ANSWER", peer.localDescription?.toJSON());
-          }
-          break;
-        }
-
-        case "RTC_ICE_CANDIDATE": {
-          const candidate = payload as RTCIceCandidateInit;
-          if (!peer.remoteDescription) {
-            pendingCandidates.current.push(candidate);
-            return;
-          }
-          // 물러서는 중에 들어온 후보는 버려도 됩니다. 곧 새 제안이 옵니다.
-          await peer.addIceCandidate(candidate).catch(() => {
-            if (!ignoringOffer.current) throw new Error("길 후보를 넣지 못했습니다");
-          });
-          break;
-        }
-
-        case "RTC_ICE_RESTART":
-          peer.restartIce();
-          break;
-
-        case "RTC_PEER_LEFT":
-          setRemoteStream(null);
-          setStatus("WAITING_PEER");
-          break;
+      // 물러설 쪽은 되받기만 합니다. 제안은 버티는 쪽이 한 번만 냅니다.
+      if (politeRef.current) {
+        replaceNegotiation(id);
+        announceReady(id);
+        return;
       }
-    })();
-  }, []);
 
-  /* ------------------------------------------------------------ 장치·종료 */
+      const firstReady = waitingForInitialReady.current;
+      const remoteReconnected = !firstReady && id !== activeNegotiationId.current;
+      if (!firstReady && !remoteReconnected) return;
+
+      const ownId = remoteReconnected
+        ? createRtcNegotiationId()
+        : (activeNegotiationId.current ?? createRtcNegotiationId());
+      replaceNegotiation(ownId);
+      if (id !== ownId) announceReady(ownId);
+      if (peer.signalingState === "stable") {
+        waitingForInitialReady.current = false;
+        await negotiate(peer, false);
+      }
+    },
+    [announceReady, negotiate, replaceNegotiation],
+  );
+
+  const applyRemoteDescription = React.useCallback(
+    async (
+      peer: RTCPeerConnection,
+      description: RTCSessionDescriptionInit,
+      id: RtcNegotiationId,
+    ) => {
+      await peer.setRemoteDescription(description);
+      const queued = pendingCandidates.current.get(id) ?? [];
+      pendingCandidates.current.delete(id);
+      for (const candidate of queued) await peer.addIceCandidate(candidate);
+    },
+    [],
+  );
+
+  const acceptDescription = React.useCallback(
+    async (type: "RTC_OFFER" | "RTC_ANSWER", peer: RTCPeerConnection, payload: unknown) => {
+      const message = asDescriptionPayload(payload);
+      const expectedType = type === "RTC_OFFER" ? "offer" : "answer";
+      if (message?.description.type !== expectedType) return;
+
+      const id = message.negotiationId;
+      // 답은 내가 낸 제안에만 붙습니다. 세대가 다르면 지난 통화의 답입니다.
+      if (type === "RTC_ANSWER" && id !== activeNegotiationId.current) return;
+      if (retiredNegotiationIds.current.has(id)) return;
+
+      const collision =
+        expectedType === "offer" &&
+        (makingOffer.current || peer.signalingState !== "stable");
+      ignoreOffer.current = !politeRef.current && collision;
+      if (ignoreOffer.current) {
+        pendingCandidates.current.delete(id);
+        retiredNegotiationIds.current.add(id);
+        return;
+      }
+
+      if (expectedType === "offer") replaceNegotiation(id);
+      await applyRemoteDescription(peer, message.description, id);
+
+      if (expectedType === "offer") {
+        await peer.setLocalDescription();
+        sendDescription("RTC_ANSWER", peer, id);
+      }
+    },
+    [applyRemoteDescription, replaceNegotiation, sendDescription],
+  );
+
+  const acceptIceCandidate = React.useCallback(
+    async (peer: RTCPeerConnection, payload: unknown) => {
+      const message = asIceCandidatePayload(payload);
+      if (!message) return;
+
+      const id = message.negotiationId;
+      if (retiredNegotiationIds.current.has(id)) return;
+
+      // 설명보다 먼저 온 후보는 아직 넣을 수 없습니다. 세대별로 모아 둡니다.
+      if (id !== activeNegotiationId.current || !peer.remoteDescription) {
+        const queued = pendingCandidates.current.get(id) ?? [];
+        queued.push(message.candidate);
+        pendingCandidates.current.set(id, queued);
+        return;
+      }
+
+      try {
+        await peer.addIceCandidate(message.candidate);
+      } catch {
+        if (!ignoreOffer.current) throw new Error("길 후보를 넣지 못했습니다");
+      }
+    },
+    [],
+  );
+
+  const acceptIceRestart = React.useCallback(
+    (peer: RTCPeerConnection, id: RtcNegotiationId) => {
+      if (retiredNegotiationIds.current.has(id)) return;
+      replaceNegotiation(id);
+      reuseNegotiationIdForNextOffer.current = true;
+      peer.restartIce();
+      setStatus("CONNECTING");
+    },
+    [replaceNegotiation],
+  );
+
+  const acceptPeerLeft = React.useCallback(
+    (id: RtcNegotiationId) => {
+      if (id !== activeNegotiationId.current) return;
+      teardown();
+      setStatus("ENDED");
+    },
+    [teardown],
+  );
+
+  const accept = React.useCallback(
+    (type: RtcSignalType, payload: unknown) => {
+      const peer = peerRef.current;
+      const peerPayload = asPeerPayload(payload);
+      if (!peer || !peerPayload) return;
+      const id = peerPayload.negotiationId;
+
+      enqueueSignaling(async () => {
+        // 훅이 새로 열린 뒤에 닿은 쪽지는 지난 통화의 것입니다.
+        if (peer !== peerRef.current || peer.signalingState === "closed") return;
+
+        switch (type) {
+          case "RTC_PEER_READY":
+            return acceptPeerReady(peer, id);
+          case "RTC_OFFER":
+          case "RTC_ANSWER":
+            return acceptDescription(type, peer, payload);
+          case "RTC_ICE_CANDIDATE":
+            return acceptIceCandidate(peer, payload);
+          case "RTC_ICE_RESTART":
+            return acceptIceRestart(peer, id);
+          case "RTC_PEER_LEFT":
+            return acceptPeerLeft(id);
+        }
+      }).catch(() => {
+        // 쪽지 하나가 어긋나도 통화를 접지는 않습니다. 다음 협상에서 따라잡습니다.
+        if (peer === peerRef.current) setStatus("CONNECTING");
+      });
+    },
+    [
+      acceptDescription,
+      acceptIceCandidate,
+      acceptIceRestart,
+      acceptPeerLeft,
+      acceptPeerReady,
+      enqueueSignaling,
+    ],
+  );
 
   const toggleMic = React.useCallback(() => {
-    const tracks = localRef.current?.getAudioTracks() ?? [];
-    const next = !tracks.every((track) => track.enabled);
-    tracks.forEach((track) => (track.enabled = next));
+    const next = !micOnRef.current;
+    micOnRef.current = next;
+    localRef.current?.getAudioTracks().forEach((track) => (track.enabled = next));
     setMicOn(next);
   }, []);
 
   const toggleCamera = React.useCallback(() => {
-    const tracks = localRef.current?.getVideoTracks() ?? [];
-    const next = !tracks.every((track) => track.enabled);
-    tracks.forEach((track) => (track.enabled = next));
+    const next = !cameraOnRef.current;
+    cameraOnRef.current = next;
+    localRef.current?.getVideoTracks().forEach((track) => (track.enabled = next));
     setCameraOn(next);
   }, []);
 
-  const teardown = React.useCallback(() => {
-    localRef.current?.getTracks().forEach((track) => track.stop());
-    localRef.current = null;
-    peerRef.current?.close();
-    peerRef.current = null;
-    pendingCandidates.current = [];
-    setLocalStream(null);
-    setRemoteStream(null);
-  }, []);
-
   const hangUp = React.useCallback(() => {
-    sendRef.current("RTC_PEER_LEFT");
+    const id = activeNegotiationId.current;
+    if (id) sendRef.current("RTC_PEER_LEFT", { negotiationId: id });
     teardown();
     setStatus("ENDED");
   }, [teardown]);
@@ -298,4 +438,26 @@ export function usePeerConnection({
     accept,
     hangUp,
   };
+}
+
+function asPeerPayload(payload: unknown): RtcPeerPayload | null {
+  if (!payload || typeof payload !== "object") return null;
+  const negotiationId = (payload as { negotiationId?: unknown }).negotiationId;
+  return typeof negotiationId === "string" && negotiationId.length > 0 ? { negotiationId } : null;
+}
+
+function asDescriptionPayload(payload: unknown): RtcDescriptionPayload | null {
+  const peerPayload = asPeerPayload(payload);
+  const description = (payload as { description?: unknown } | null)?.description;
+  if (!peerPayload || !description || typeof description !== "object") return null;
+  const type = (description as { type?: unknown }).type;
+  if (type !== "offer" && type !== "answer") return null;
+  return { ...peerPayload, description: description as RTCSessionDescriptionInit };
+}
+
+function asIceCandidatePayload(payload: unknown): RtcIceCandidatePayload | null {
+  const peerPayload = asPeerPayload(payload);
+  const candidate = (payload as { candidate?: unknown } | null)?.candidate;
+  if (!peerPayload || !candidate || typeof candidate !== "object") return null;
+  return { ...peerPayload, candidate: candidate as RTCIceCandidateInit };
 }

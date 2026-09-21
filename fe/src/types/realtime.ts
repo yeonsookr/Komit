@@ -16,6 +16,32 @@ export type RtcSignalType =
   | "RTC_ICE_RESTART"
   | "RTC_PEER_LEFT";
 
+/** 브라우저를 다시 열었을 때 이전 연결의 SDP/ICE를 섞지 않기 위한 협상 세대입니다. */
+export type RtcNegotiationId = string;
+
+export interface RtcPeerPayload {
+  negotiationId: RtcNegotiationId;
+}
+
+export interface RtcDescriptionPayload extends RtcPeerPayload {
+  description: RTCSessionDescriptionInit;
+}
+
+export interface RtcIceCandidatePayload extends RtcPeerPayload {
+  candidate: RTCIceCandidateInit;
+}
+
+export interface RtcSignalPayloadByType {
+  RTC_PEER_READY: RtcPeerPayload;
+  RTC_OFFER: RtcDescriptionPayload;
+  RTC_ANSWER: RtcDescriptionPayload;
+  RTC_ICE_CANDIDATE: RtcIceCandidatePayload;
+  RTC_ICE_RESTART: RtcPeerPayload;
+  RTC_PEER_LEFT: RtcPeerPayload;
+}
+
+export type RtcSignalPayload = RtcSignalPayloadByType[RtcSignalType];
+
 /** 연결 자체를 돌보는 쪽지. 서버가 보내는 것도 있습니다. */
 export type RealtimeSystemType =
   | "SYSTEM_PING"

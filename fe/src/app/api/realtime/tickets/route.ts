@@ -43,7 +43,7 @@ export async function POST(request: Request) {
       channel: channel as RealtimeChannel,
       channelId,
     });
-    return NextResponse.json(ticket, { status: 201 });
+    return NextResponse.json(ticket, { status: 200 });
   } catch (error) {
     return toErrorResponse(error);
   }

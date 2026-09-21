@@ -3,6 +3,7 @@
 import * as React from "react";
 import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
+import { ApiError } from "@/types/api";
 import {
   REALTIME_VERSION,
   type RealtimeChannel,
@@ -22,7 +23,19 @@ const RETRY_BASE_MS = 500;
 const RETRY_MAX_MS = 10_000;
 
 /** 연결이 어디까지 왔는지. 화면은 이 값으로 무엇을 보여줄지 정합니다. */
-export type RealtimeStatus = "IDLE" | "CONNECTING" | "OPEN" | "RETRYING" | "CLOSED";
+export type RealtimeStatus =
+  | "IDLE"
+  | "CONNECTING"
+  | "OPEN"
+  | "RETRYING"
+  | "FAILED"
+  | "CLOSED";
+
+export interface RealtimeConnectionError {
+  status: number;
+  code: string;
+  message: string;
+}
 
 export interface UseRealtimeConnectionOptions {
   channel: RealtimeChannel;
@@ -35,6 +48,8 @@ export interface UseRealtimeConnectionOptions {
 
 export interface RealtimeConnection {
   status: RealtimeStatus;
+  /** 재시도로 회복되지 않는 티켓 발급 실패. 화면에서 안내할 때 씁니다. */
+  error: RealtimeConnectionError | null;
   /** 상대에게 쪽지를 보냅니다. 아직 안 열렸으면 거짓을 돌려줍니다. */
   send: (type: RealtimeType, payload?: unknown) => boolean;
 }
@@ -55,6 +70,7 @@ export function useRealtimeConnection({
   onMessage,
 }: UseRealtimeConnectionOptions): RealtimeConnection {
   const [status, setStatus] = React.useState<RealtimeStatus>("IDLE");
+  const [error, setError] = React.useState<RealtimeConnectionError | null>(null);
   const socketRef = React.useRef<WebSocket | null>(null);
 
   // 쪽지를 받을 때마다 effect 를 다시 돌리면 연결이 끊깁니다. 최신 함수만 갈아 끼웁니다.
@@ -66,12 +82,16 @@ export function useRealtimeConnection({
   React.useEffect(() => {
     if (!enabled) {
       setStatus("IDLE");
+      setError(null);
       return;
     }
 
     let alive = true;
+    let terminal = false;
     let attempt = 0;
     let retryTimer: ReturnType<typeof setTimeout> | undefined;
+
+    setError(null);
 
     const connect = async () => {
       if (!alive) return;
@@ -84,9 +104,13 @@ export function useRealtimeConnection({
           channelId,
         });
         ticket = data.ticket;
-      } catch {
-        // 티켓을 못 받는 이유는 회선일 수도, 아직 들어갈 때가 아닌 것일 수도 있습니다.
-        // 어느 쪽이든 화면이 할 일은 같아서 나누지 않고 다시 시도합니다.
+      } catch (caught) {
+        if (isPermanentTicketError(caught)) {
+          terminal = true;
+          setError({ status: caught.status, code: caught.code, message: caught.message });
+          setStatus("FAILED");
+          return;
+        }
         scheduleRetry();
         return;
       }
@@ -121,12 +145,25 @@ export function useRealtimeConnection({
         }
         if (envelope.type === "SYSTEM_PONG") return;
 
+        if (isTerminalRealtimeType(envelope.type)) {
+          terminal = true;
+          setStatus("CLOSED");
+          handlerRef.current?.(envelope);
+          socket.close();
+          return;
+        }
+
         handlerRef.current?.(envelope);
       };
 
-      socket.onclose = () => {
+      socket.onclose = (event) => {
         socketRef.current = null;
         if (!alive) return;
+        if (terminal || isTerminalRealtimeCloseCode(event.code)) {
+          terminal = true;
+          setStatus("CLOSED");
+          return;
+        }
         scheduleRetry();
       };
 
@@ -135,7 +172,7 @@ export function useRealtimeConnection({
     };
 
     const scheduleRetry = () => {
-      if (!alive) return;
+      if (!alive || terminal) return;
       setStatus("RETRYING");
       // 같은 순간에 끊긴 사람들이 한꺼번에 돌아오지 않게 흔들어 둡니다.
       const backoff = Math.min(RETRY_BASE_MS * 2 ** attempt, RETRY_MAX_MS);
@@ -177,7 +214,22 @@ export function useRealtimeConnection({
     [channel, channelId],
   );
 
-  return { status, send };
+  return { status, error, send };
+}
+
+/** 4xx 는 같은 요청을 반복해도 회복되지 않습니다. 회선 실패와 5xx 만 다시 시도합니다. */
+export function isPermanentTicketError(error: unknown): error is ApiError {
+  return error instanceof ApiError && error.status >= 400 && error.status < 500;
+}
+
+/** 새 연결로 교체된 소켓은 스스로 다시 붙으면 안 됩니다. */
+export function isTerminalRealtimeType(type: RealtimeType): boolean {
+  return type === "SYSTEM_REPLACED";
+}
+
+/** 4001은 서버가 중복 연결을 교체하며 닫았다는 뜻입니다. */
+export function isTerminalRealtimeCloseCode(code: number): boolean {
+  return code === 4001;
 }
 
 function reply(socket: WebSocket, type: RealtimeType, to: RealtimeEnvelope) {

@@ -73,10 +73,6 @@ public class ConsultingChannelAuthorizer implements RealtimeChannelAuthorizer {
                         .orElseThrow(
                                 () -> new BusinessException(ConsultingErrorCode.SESSION_NOT_FOUND));
 
-        if (session.getEndedAt() != null) {
-            throw new BusinessException(ConsultingErrorCode.SESSION_ENDED);
-        }
-
         List<ParticipationRecord> records =
                 participationRepository.findAllByConsultingSessionIdAndDeletedFalse(sessionId);
 
@@ -87,6 +83,10 @@ public class ConsultingChannelAuthorizer implements RealtimeChannelAuthorizer {
             throw new BusinessException(ConsultingErrorCode.SESSION_NOT_FOUND);
         }
 
+        if (session.getEndedAt() != null) {
+            throw new BusinessException(ConsultingErrorCode.SESSION_ENDED);
+        }
+
         // 먼저 동의한 사람은 상대를 기다립니다. 행은 동의할 때 생기므로 수가 곧 동의 수입니다. (R-CON-17)
         if (records.size() < REQUIRED_PARTICIPANTS) {
             throw new BusinessException(ConsultingErrorCode.CONSENT_REQUIRED);
@@ -95,16 +95,19 @@ public class ConsultingChannelAuthorizer implements RealtimeChannelAuthorizer {
         requireEntryOpen(sessionId);
     }
 
-    /** 예약 시각보다 너무 이르면 막습니다. 예약이 없으면 시각을 따질 근거가 없어 통과시킵니다. */
+    /** 예약 시각보다 너무 이르거나 예약을 확인할 수 없으면 막습니다. */
     private void requireEntryOpen(Integer sessionId) {
         LocalDateTime opensAt =
                 reservationRepository
                         .findByConsultingSessionIdAndDeletedFalse(sessionId)
                         .map(Reservation::getScheduledAt)
                         .map(scheduledAt -> scheduledAt.minus(ENTRY_OPENS_BEFORE))
-                        .orElse(null);
+                        .orElseThrow(
+                                () ->
+                                        new BusinessException(
+                                                ConsultingErrorCode.ENTRY_NOT_OPEN));
 
-        if (opensAt != null && LocalDateTime.now(clock).isBefore(opensAt)) {
+        if (LocalDateTime.now(clock).isBefore(opensAt)) {
             throw new BusinessException(ConsultingErrorCode.ENTRY_NOT_OPEN);
         }
     }

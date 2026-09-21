@@ -14,8 +14,8 @@ import { INTERNAL } from "@/lib/api/endpoints";
 import { formatTime } from "@/lib/format";
 import { ROUTES } from "@/lib/routes";
 import { SESSION_PENDING_CONSENT_STATUS } from "@/lib/session";
-import { usePeerConnection } from "@/hooks/usePeerConnection";
-import { useRealtimeConnection } from "@/hooks/useRealtimeConnection";
+import { usePeerConnection, type CallStatus } from "@/hooks/usePeerConnection";
+import { useRealtimeConnection, type RealtimeStatus } from "@/hooks/useRealtimeConnection";
 import type { RealtimeEnvelope, RtcSignalType } from "@/types/realtime";
 import { ApiError } from "@/types/api";
 import type { ChatMessage } from "@/types/chat";
@@ -28,6 +28,22 @@ const CALL_NOTICE: Record<string, string> = {
   CONNECTING: "연결하는 중입니다",
   ENDED: "통화를 마쳤습니다",
 };
+
+/**
+ * 화면 한가운데에 적을 말.
+ *
+ * 멈춘 때를 먼저 가립니다. 그러지 않으면 영영 오지 않을 연결을 「연결하는 중」이라고
+ * 적게 됩니다.
+ */
+function stageNotice(
+  call: CallStatus,
+  realtime: RealtimeStatus,
+  reason: string | undefined,
+): string {
+  if (realtime === "FAILED") return reason ?? "연결할 수 없습니다";
+  if (CALL_NOTICE[call]) return CALL_NOTICE[call];
+  return realtime === "RETRYING" ? "연결이 끊겨 다시 붙는 중입니다" : "연결하는 중입니다";
+}
 
 /**
  * 입장이 어디까지 왔는지.
@@ -227,9 +243,21 @@ export function SessionStage({
     }, []),
   });
 
+  /*
+    소켓은 통화를 **시작할 때** 필요합니다. 한 번 붙고 나면 영상과 소리는 상대와 직접
+    흐르므로, 회선이 잠깐 튀어 다시 붙는 동안에도 카메라를 놓지 않습니다.
+  */
+  const [socketOpened, setSocketOpened] = React.useState(false);
+  React.useEffect(() => {
+    if (!joined) {
+      setSocketOpened(false);
+      return;
+    }
+    if (realtime.status === "OPEN") setSocketOpened(true);
+  }, [joined, realtime.status]);
+
   const call = usePeerConnection({
-    // 소켓이 열린 뒤에 카메라를 잡습니다. 먼저 잡으면 보낼 길이 없는 제안이 생깁니다.
-    enabled: joined && realtime.status === "OPEN",
+    enabled: joined && socketOpened,
     polite,
     send: realtime.send,
   });
@@ -317,12 +345,7 @@ export function SessionStage({
             className="min-h-[320px] lg:min-h-[480px]"
             stream={call.remoteStream}
             label={counterpartName}
-            placeholder={
-              CALL_NOTICE[call.status] ??
-              (realtime.status === "RETRYING"
-                ? "연결이 끊겨 다시 붙는 중입니다"
-                : "연결하는 중입니다")
-            }
+            placeholder={stageNotice(call.status, realtime.status, realtime.error?.message)}
           />
 
           <div className="flex items-center gap-3">
