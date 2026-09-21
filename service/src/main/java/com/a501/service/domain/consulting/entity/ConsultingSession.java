@@ -40,9 +40,6 @@ public class ConsultingSession extends SoftDeleteEntity {
     @Column(name = "ended_at")
     private LocalDateTime endedAt;
 
-    @Column(name = "file_id")
-    private Integer fileId;
-
     @Column(name = "price", nullable = false)
     private Integer price;
 
