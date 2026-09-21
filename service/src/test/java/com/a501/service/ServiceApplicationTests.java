@@ -34,10 +34,11 @@ class ServiceApplicationTests {
     void contextLoads() {
     }
 
+    /** 시드를 늘리면 이 개수도 같은 MR에서 함께 고칩니다. */
     @Test
     void seedsAllDesignedStatusCodes() {
-        assertThat(count("system_enum_groups")).isEqualTo(26);
-        assertThat(count("system_enums")).isEqualTo(87);
+        assertThat(count("system_enum_groups")).isEqualTo(27);
+        assertThat(count("system_enums")).isEqualTo(91);
 
         String reportResolvedName = jdbcClient.sql("""
                         SELECT code_name
@@ -47,6 +48,17 @@ class ServiceApplicationTests {
                 .query(String.class)
                 .single();
         assertThat(reportResolvedName).isEqualTo("해결됨");
+
+        // R-ACC-13: 회원 발급 계좌의 진행 상태.
+        Integer memberAccountStatusCount = jdbcClient.sql("""
+                        SELECT COUNT(*)
+                        FROM system_enums
+                        WHERE group_code = 'MEMBER_ACCOUNT_STATUS'
+                          AND code_key IN ('PENDING', 'ISSUED', 'FAILED')
+                        """)
+                .query(Integer.class)
+                .single();
+        assertThat(memberAccountStatusCount).isEqualTo(3);
 
         Integer koreanNotificationCodeCount = jdbcClient.sql("""
                         SELECT COUNT(*)
