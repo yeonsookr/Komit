@@ -9,10 +9,12 @@ import { Callout, useToast } from "@/components/feedback";
 import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
 import { finishSignup } from "@/lib/api/services/signup";
+import { DEMO_BANK_CODE, findBank } from "@/lib/bank";
 import { ROUTES } from "@/lib/routes";
 import type {
   AccountVerification,
   ConfirmAccountVerificationResponse,
+  MemberAccount,
 } from "@/types/account";
 import { ApiError } from "@/types/api";
 import type { CodeItem } from "@/types/developer";
@@ -43,16 +45,41 @@ export function AccountVerificationForm({
 }: Readonly<AccountVerificationFormProps>) {
   const router = useRouter();
   const showToast = useToast();
-  const [bankCodeId, setBankCodeId] = React.useState("");
+  // R-ACC-10: 데모 계좌는 은행 한 곳으로만 열려 고를 여지가 없습니다.
+  const bank = findBank(banks, DEMO_BANK_CODE);
+  const bankCodeId = bank === null ? "" : String(bank.codeId);
   const [accountNumber, setAccountNumber] = React.useState("");
   const [accountHolder, setAccountHolder] = React.useState("");
   const [sending, setSending] = React.useState(false);
+  const [linking, setLinking] = React.useState(false);
   const [verification, setVerification] = React.useState<AccountVerification | null>(null);
   const [authCode, setAuthCode] = React.useState("");
   const [confirming, setConfirming] = React.useState(false);
 
   const canSubmit =
     bankCodeId !== "" && /^\d{16}$/.test(accountNumber) && accountHolder.trim().length > 0;
+
+  /**
+   * 은행 앱이 없는 데모라 회원이 자기 계좌번호를 알 방법이 없습니다. 가입 때 발급된
+   * 번호를 받아 계좌번호 칸을 채웁니다. (R-ACC-14)
+   */
+  const link = async () => {
+    if (linking || sending) return;
+
+    setLinking(true);
+    try {
+      const { data } = await clientApi.post<MemberAccount>(INTERNAL.MEMBER_ACCOUNT);
+      setAccountNumber(data.accountNumber);
+      showToast({ tone: "success", title: "발급된 계좌를 불러왔습니다." });
+    } catch (error) {
+      showToast({
+        tone: "danger",
+        title: error instanceof ApiError ? error.message : "계좌를 불러오지 못했습니다.",
+      });
+    } finally {
+      setLinking(false);
+    }
+  };
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -228,32 +255,51 @@ export function AccountVerificationForm({
         </div>
 
         <Card padding="lg" className="mt-3 flex flex-col gap-4">
-          <Field label="은행" layout="horizontal" required>
+          <Field
+            label="은행"
+            layout="horizontal"
+            required
+            error={bank === null ? "지금은 계좌를 등록할 수 있는 은행이 없습니다." : undefined}
+          >
             <Dropdown
-              options={banks.map((bank) => ({
-                value: String(bank.codeId),
-                label: bank.codeName,
-              }))}
+              options={bank === null ? [] : [{ value: bankCodeId, label: bank.codeName }]}
               value={bankCodeId}
-              onChange={setBankCodeId}
               placeholder="은행을 선택해 주세요"
-              disabled={sending}
+              disabled={sending || bank === null}
               className="max-w-[240px]"
             />
           </Field>
 
-          <Field label="계좌번호" layout="horizontal" required htmlFor="account-number">
-            <Input
-              id="account-number"
-              type="text"
-              inputMode="numeric"
-              autoComplete="off"
-              value={accountNumber}
-              placeholder="하이픈 없이 숫자만 적어주세요"
-              maxLength={16}
-              disabled={sending}
-              onChange={(event) => setAccountNumber(event.target.value.replace(/\D/g, ""))}
-            />
+          <Field
+            label="계좌번호"
+            layout="horizontal"
+            required
+            htmlFor="account-number"
+            helper="은행 앱이 없어도 「계좌 연동하기」로 가입할 때 발급된 계좌를 불러올 수 있습니다."
+          >
+            <div className="flex items-center gap-2">
+              <Input
+                id="account-number"
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                value={accountNumber}
+                placeholder="하이픈 없이 숫자만 적어주세요"
+                maxLength={16}
+                disabled={sending}
+                onChange={(event) => setAccountNumber(event.target.value.replace(/\D/g, ""))}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="md"
+                disabled={linking || sending}
+                onClick={link}
+                className="shrink-0"
+              >
+                {linking ? "불러오는 중" : "계좌 연동하기"}
+              </Button>
+            </div>
           </Field>
 
           <Field label="예금주" layout="horizontal" required htmlFor="account-holder">

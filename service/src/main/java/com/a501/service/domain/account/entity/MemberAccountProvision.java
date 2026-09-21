@@ -11,6 +11,7 @@ import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.ColumnDefault;
 
 @Getter
 @Entity
@@ -18,6 +19,12 @@ import lombok.NoArgsConstructor;
         @UniqueConstraint(name = "uk_member_account_provision_user", columnNames = "user_id"))
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class MemberAccountProvision extends AuditedEntity {
+    /** 코드북 그룹. 값은 data.sql의 system_enums에 있다. */
+    public static final String STATUS_GROUP = "MEMBER_ACCOUNT_STATUS";
+    public static final String PENDING = "PENDING";
+    public static final String ISSUED = "ISSUED";
+    public static final String FAILED = "FAILED";
+
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
@@ -39,6 +46,14 @@ public class MemberAccountProvision extends AuditedEntity {
     @Column(name = "account_no_encrypted", length = 255)
     private String accountNoEncrypted;
 
+    @ColumnDefault("'" + PENDING + "'")
+    @Column(name = "status", nullable = false, length = 50)
+    private String status = PENDING;
+
+    @ColumnDefault("'" + STATUS_GROUP + "'")
+    @Column(name = "status_group", nullable = false, length = 50)
+    private String statusGroup = STATUS_GROUP;
+
     public static MemberAccountProvision pending(Integer userId, String idempotencyKey) {
         MemberAccountProvision provision = new MemberAccountProvision();
         provision.userId = userId;
@@ -53,5 +68,14 @@ public class MemberAccountProvision extends AuditedEntity {
         this.userKeyEncrypted = userKeyEncrypted;
         this.bankCode = bankCode;
         this.accountNoEncrypted = accountNoEncrypted;
+        this.status = ISSUED;
+    }
+
+    /**
+     * 발급이 실패한 채로 남았음을 적습니다. 행과 멱등 키는 그대로 두어
+     * 다음 시도가 같은 발급 요청을 이어받습니다. (R-ACC-13)
+     */
+    public void fail() {
+        if (!isComplete()) this.status = FAILED;
     }
 }

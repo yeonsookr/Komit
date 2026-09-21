@@ -47,6 +47,9 @@ public class SignupAccessFilter extends OncePerRequestFilter {
         if (path.equals("/api/settings/terms") || path.equals("/api/auth/signup/completion")
                 || path.equals("/api/auth/logout")) return true;
         if (HttpMethod.GET.matches(method) && path.startsWith("/api/codes/")) return true;
-        return HttpMethod.POST.matches(method) && path.startsWith("/api/accounts/verifications");
+        if (!HttpMethod.POST.matches(method)) return false;
+        // 계좌 연동과 1원 인증은 가입 절차의 일부다. (R-ACC-13, R-ACC-14)
+        return path.equals("/api/accounts/member-account")
+                || path.startsWith("/api/accounts/verifications");
     }
 }

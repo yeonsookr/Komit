@@ -28,7 +28,8 @@ VALUES
     ('ISSUE_STATUS', '이슈 상태', '진단 이슈의 처리 상태'),
     ('ISSUE_SEVERITY', '이슈 심각도', '진단 이슈의 위험도'),
     ('QA_CRITERION_STATUS', 'QA 기준 상태', 'QA 확인 결과'),
-    ('FILE_STATUS', '파일 상태', '파일 업로드 검증 상태')
+    ('FILE_STATUS', '파일 상태', '파일 업로드 검증 상태'),
+    ('MEMBER_ACCOUNT_STATUS', '회원 발급 계좌 상태', '회원가입 때 에스크로에 요청한 계좌 발급의 진행 상태')
 ON CONFLICT (group_code) DO UPDATE
 SET group_name = EXCLUDED.group_name,
     description = EXCLUDED.description;
@@ -154,12 +155,25 @@ VALUES
 
     ('PENDING', 'FILE_STATUS', '발급됨, 검증 전', 1, FALSE, NULL),
     ('COMPLETED', 'FILE_STATUS', '검증 통과', 2, FALSE, NULL),
-    ('FAILED', 'FILE_STATUS', '크기·해시 불일치로 거부', 3, FALSE, NULL)
+    ('FAILED', 'FILE_STATUS', '크기·해시 불일치로 거부', 3, FALSE, NULL),
+
+    -- R-ACC-09, R-ACC-13: 회원 발급 계좌는 한 번만 발급하고 상태로 진행을 남긴다.
+    ('PENDING', 'MEMBER_ACCOUNT_STATUS', '발급 대기', 1, FALSE, NULL),
+    ('ISSUED', 'MEMBER_ACCOUNT_STATUS', '발급됨', 2, FALSE, NULL),
+    ('FAILED', 'MEMBER_ACCOUNT_STATUS', '발급 실패', 3, FALSE, NULL)
 ON CONFLICT (code_key, group_code) DO UPDATE
 SET code_name = EXCLUDED.code_name,
     sort_order = EXCLUDED.sort_order,
     is_deprecated = EXCLUDED.is_deprecated,
     meta_json = EXCLUDED.meta_json;
+
+-- R-ACC-09: 상태 컬럼이 새로 붙은 회원 계좌 행을 실제 발급 상태로 맞춘다.
+-- 발급이 끝난 행은 기본값 PENDING 으로 남아 있을 수 있다.
+UPDATE member_account_provisions
+SET status = 'ISSUED'
+WHERE status <> 'ISSUED'
+  AND user_key_encrypted IS NOT NULL
+  AND account_no_encrypted IS NOT NULL;
 
 -- 기준(default) API 예시 레코드. domain/defaults 참고.
 -- 목이 id=1 에서 200 을 돌려주는 것과 같은 결과가 실서버에서도 나오도록 한 건만 심는다.
@@ -195,6 +209,8 @@ FROM (VALUES
     (53, 'BANK_CODE', '우리은행', 3), (54, 'BANK_CODE', '하나은행', 4),
     (55, 'BANK_CODE', '농협은행', 5), (56, 'BANK_CODE', '카카오뱅크', 6),
     (57, 'BANK_CODE', '토스뱅크', 7),
+    -- R-ACC-10: 데모 계좌를 여는 은행. 에스크로 은행코드 001이다.
+    (58, 'BANK_CODE', '싸피은행', 8),
     (61, 'CARD_COMPANY', '우리카드', 1), (62, 'CARD_COMPANY', '국민카드', 2),
     (63, 'CARD_COMPANY', '신한카드', 3), (64, 'CARD_COMPANY', '삼성카드', 4),
     (65, 'CARD_COMPANY', '현대카드', 5), (66, 'CARD_COMPANY', '롯데카드', 6),

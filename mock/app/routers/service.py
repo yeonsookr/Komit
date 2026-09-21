@@ -3566,7 +3566,7 @@ CONVERTED_ROOM_ID = 409
 #
 #   21~29  TECH_CATEGORY   기술
 #   41~48  DEV_FIELD       분야
-#   51~57  BANK_CODE       은행
+#   51~58  BANK_CODE       은행
 #   61~68  CARD_COMPANY    카드사 (영역 8)
 #   71~74  ISSUE_CATEGORY  결함 분류 (영역 2)
 #
@@ -3586,6 +3586,7 @@ BANK_CODES = [
     {"codeId": 55, "codeName": "농협은행"},
     {"codeId": 56, "codeName": "카카오뱅크"},
     {"codeId": 57, "codeName": "토스뱅크"},
+    {"codeId": 58, "codeName": "싸피은행"},
 ]
 
 FIELD_CODES = [
@@ -8401,6 +8402,9 @@ REVIEW_NOT_FOUND_EXAMPLE = {
 
 # 목에서 실패 응답을 보고 싶을 때 쓰는 값.
 REJECTED_ACCOUNT_NUMBER = "0000000000000000"
+# R-ACC-09: 회원가입 때 그 회원 몫으로 발급된 계좌번호.
+MEMBER_ACCOUNT_NO = "0011012345678842"
+ACCOUNT_NO_PATTERN = r"^\d{16}$"
 NOT_FOUND_VERIFICATION_ID = 404
 NOT_FOUND_NOTIFICATION_ID = 404
 
@@ -8483,6 +8487,62 @@ PAYMENT_METHODS = [
 )
 def get_payment_methods() -> PaymentMethodListResponse:
     return PaymentMethodListResponse(content=PAYMENT_METHODS)
+
+
+class MemberAccountResponse(BaseModel):
+    """회원가입 때 발급한 데모 계좌."""
+
+    bankCode: str = Field(
+        description="에스크로가 계좌를 연 은행코드. 데모는 001 한 곳뿐이다. (`R-ACC-10`)",
+        examples=["001"],
+    )
+    accountNumber: str = Field(
+        description=(
+            "발급된 계좌번호 16자리. 은행 앱이 없는 데모라 본인에게는 가리지 않고 준다. "
+            "(`R-ACC-14`) 등록이 끝난 계좌를 보여줄 때는 가린 번호를 쓴다."
+        ),
+        pattern=ACCOUNT_NO_PATTERN,
+        examples=[MEMBER_ACCOUNT_NO],
+    )
+
+
+MEMBER_ACCOUNT_EXAMPLE = {"bankCode": "001", "accountNumber": MEMBER_ACCOUNT_NO}
+
+
+@router.post(
+    "/accounts/member-account",
+    response_model=MemberAccountResponse,
+    tags=[AREA8_TAG],
+    responses={
+        200: {"content": {"application/json": {"example": MEMBER_ACCOUNT_EXAMPLE}}},
+        503: {
+            "model": ErrorResponse,
+            "description": "에스크로 서버에 연결하지 못함",
+            "content": {"application/json": {"example": ESCROW_UNAVAILABLE_EXAMPLE}},
+        },
+        **AREA1_UNAUTHORIZED,
+        **AREA1_ERRORS,
+    },
+    summary="내 발급 계좌 연동",
+    description=(
+        "**화면 — `8_계좌등록` › 계좌 연동하기**\n\n"
+        "회원가입 때 그 회원 몫으로 발급한 계좌번호를 돌려준다. 은행 앱이 없는 데모에서는 "
+        "회원이 자기 계좌번호를 확인할 방법이 없어, 화면이 이 번호로 계좌번호 칸을 채운다. "
+        "(`R-ACC-14`)\n\n"
+        "**대상 회원을 요청에 담지 않는다.** 액세스 토큰을 검증해 `sub`를 꺼내고 그 사람의 "
+        "계좌만 돌려준다. 남의 번호를 가리킬 자리가 없어 403도 나오지 않는다.\n\n"
+        "**가입 진행 중에도 부를 수 있다.** 계좌 연동은 가입 절차의 일부다. (`R-ACC-13`)\n\n"
+        "**멱등하다.** 아직 발급되지 않았으면 이때 에스크로에 발급을 요청하고, 이미 발급된 "
+        "회원에게는 보관 중인 같은 번호를 그대로 준다. 가입을 중간에 그만둔 회원이 다시 "
+        "들어와도 계좌를 새로 만들지 않는다. (`R-ACC-13`)\n\n"
+        "- **200**: 발급된 계좌번호\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **500 / INTERNAL_ERROR**: 계좌를 읽지 못했을 때\n"
+        "- **503 / ESCROW_UNAVAILABLE**: 에스크로 서버에 연결하지 못했을 때"
+    ),
+)
+def issue_member_account() -> MemberAccountResponse:
+    return MemberAccountResponse(**MEMBER_ACCOUNT_EXAMPLE)
 
 
 @router.post(

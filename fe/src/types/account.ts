@@ -1,5 +1,13 @@
 import type { SettlementAccount } from "./mypage";
 
+/** POST /api/accounts/member-account — 회원가입 때 발급된 내 계좌. (R-ACC-14) */
+export interface MemberAccount {
+  /** 에스크로가 계좌를 연 은행코드. 데모는 001 한 곳뿐입니다. */
+  bankCode: string;
+  /** 가리지 않은 계좌번호 16자리. 본인에게만 내려옵니다. */
+  accountNumber: string;
+}
+
 /** POST /api/accounts/verifications — 1원 보내기. */
 export interface RequestAccountVerificationBody {
   bankCodeId: number;

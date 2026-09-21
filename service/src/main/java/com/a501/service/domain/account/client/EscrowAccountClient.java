@@ -9,7 +9,8 @@ import java.util.Map;
 
 import com.a501.service.common.exception.BusinessException;
 import com.a501.service.domain.account.AccountErrorCode;
-import com.fasterxml.jackson.databind.JsonNode;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -93,7 +94,7 @@ public class EscrowAccountClient {
     private BusinessException mapFailure(RestClientResponseException exception, String operation) {
         String code = "";
         try {
-            JsonNode error = new com.fasterxml.jackson.databind.ObjectMapper()
+            JsonNode error = new ObjectMapper()
                     .readTree(exception.getResponseBodyAsByteArray());
             code = error.path("Header").path("responseCode").asText();
         } catch (Exception ignored) {

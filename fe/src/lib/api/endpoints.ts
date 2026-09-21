@@ -42,6 +42,8 @@ export const BACKEND = {
   RECOMMENDATIONS: (projectId: number) => `/api/projects/${projectId}/recommendations`,
   MYPAGE: "/api/mypage",
   MY_SESSIONS: "/api/users/me/sessions",
+  /** 회원가입 때 발급한 계좌. 계좌 등록 화면의 「계좌 연동하기」가 씁니다. (R-ACC-14) */
+  MEMBER_ACCOUNT: "/api/accounts/member-account",
   ACCOUNT_VERIFICATIONS: "/api/accounts/verifications",
   ACCOUNT_VERIFICATION_CONFIRM: (verificationId: number) =>
     `/api/accounts/verifications/${verificationId}/confirm`,
@@ -135,6 +137,8 @@ export const INTERNAL = {
   RECOMMENDATIONS: (projectId: number) => `/api/projects/${projectId}/recommendations`,
   SCAN_FILE: (diagnosisId: number) => `/api/diagnoses/${diagnosisId}/scan-file`,
   MY_NAME: "/api/users/me",
+  /** 회원가입 때 발급한 계좌. 계좌 등록 화면의 「계좌 연동하기」가 씁니다. (R-ACC-14) */
+  MEMBER_ACCOUNT: "/api/accounts/member-account",
   ACCOUNT_VERIFICATIONS: "/api/accounts/verifications",
   ACCOUNT_VERIFICATION_CONFIRM: (verificationId: number) =>
     `/api/accounts/verifications/${verificationId}/confirm`,

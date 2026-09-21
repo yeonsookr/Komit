@@ -163,15 +163,34 @@ public class MemberAccountService {
     }
 
     private void saveAccount(MemberAccountProvision provision, FinanceClient.DemandDepositAccount account) {
-        if (!isConfiguredAccount(account)) {
+        if (!matchesConfiguredProduct(account)) {
             throw new IllegalStateException("설정한 입출금 상품과 다른 계좌가 반환되었습니다.");
         }
         repository.accountOpened(provision.id(), account.bankCode(), encryption.encrypt(account.accountNo()));
     }
 
+    /**
+     * 계좌 목록에서 발급 대상을 고를 때 쓰는 기준. 목록 항목은 상품 속성을 모두 담으므로
+     * 네 가지를 다 본다. (R-ACC-10)
+     */
     private boolean isConfiguredAccount(FinanceClient.DemandDepositAccount account) {
         return BANK_CODE.equals(account.bankCode()) && ACCOUNT_NAME.equals(account.accountName())
                 && "1".equals(account.accountTypeCode()) && "KRW".equals(account.currency());
+    }
+
+    /**
+     * 받은 계좌가 설정한 상품인지 본다. 개설 응답은 상품명·계좌종류·통화를 담지 않을 수
+     * 있으므로, 담겨 온 값만 대조한다. 없는 값을 틀렸다고 보면 정상 개설이 모두 막힌다.
+     */
+    private boolean matchesConfiguredProduct(FinanceClient.DemandDepositAccount account) {
+        return BANK_CODE.equals(account.bankCode())
+                && matchesIfPresent(account.accountName(), ACCOUNT_NAME)
+                && matchesIfPresent(account.accountTypeCode(), "1")
+                && matchesIfPresent(account.currency(), "KRW");
+    }
+
+    private static boolean matchesIfPresent(String value, String expected) {
+        return value == null || value.isBlank() || expected.equals(value);
     }
 
     private MemberAccountDtos.CreateRecord result(MemberAccountProvision provision) {

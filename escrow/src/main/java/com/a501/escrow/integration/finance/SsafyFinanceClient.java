@@ -76,8 +76,11 @@ public class SsafyFinanceClient implements FinanceClient {
     public DemandDepositAccount openDemandDepositAccount(String userKey, String accountTypeUniqueNo) {
         JsonNode accountRecord = requiredRecord(postWithHeader("createDemandDepositAccount", userKey,
                 Map.of("accountTypeUniqueNo", accountTypeUniqueNo)));
+        // 상품명·계좌종류·통화는 개설 응답에 실릴 때만 채운다. 값을 지어내면 호출 측 확인이
+        // 자기가 적은 값을 검사하게 되어 확인 구실을 못 한다.
         return new DemandDepositAccount(text(accountRecord, BANK_CODE), text(accountRecord, ACCOUNT_NO),
-                "Komit demo demand deposit", "1", text(accountRecord.path(CURRENCY), CURRENCY));
+                optionalText(accountRecord, "accountName"), optionalText(accountRecord, "accountTypeCode"),
+                optionalText(accountRecord.path(CURRENCY), CURRENCY));
     }
 
     @Override
