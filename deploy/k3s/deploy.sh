@@ -163,15 +163,7 @@ kubectl -n ot-operators wait --for=condition=Available deployment/redis-operator
 apply_basic_auth_secret service-db-app service "$SERVICE_DB_PASSWORD"
 apply_basic_auth_secret escrow-db-app escrow "$ESCROW_DB_PASSWORD"
 apply_password_secret service-redis-auth "$SERVICE_REDIS_PASSWORD"
-# service 인증 Secret. service Pod 가 envFrom 으로 그대로 환경변수로 읽습니다. 값이 바뀌면 service rollout restart 가 필요합니다.
-kubectl -n komit create secret generic service-auth \
-  --from-literal=KOMIT_USER_JWT_SECRET="$KOMIT_USER_JWT_SECRET" \
-  --from-literal=KAKAO_TOKEN_ENCRYPTION_KEY="$KAKAO_TOKEN_ENCRYPTION_KEY" \
-  --from-literal=ACCOUNT_DATA_ENCRYPTION_KEY="$ACCOUNT_DATA_ENCRYPTION_KEY" \
-  --from-literal=KAKAO_CLIENT_ID="$KAKAO_CLIENT_ID" \
-  --from-literal=KAKAO_CLIENT_SECRET="$KAKAO_CLIENT_SECRET" \
-  --from-literal=ESCROW_CLIENT_API_KEY="$ESCROW_CLIENT_API_KEY" \
-  --dry-run=client -o yaml | kubectl apply -f -
+# service 인증 Secret 은 아래 Kustomize secretGenerator 가 만듭니다. 이름에 해시가 붙어 값이 바뀌면 Pod 가 새 값으로 다시 뜹니다.
 kubectl apply -k "$SCRIPT_DIR/database"
 kubectl -n komit wait --for=condition=Ready cluster/service-db cluster/escrow-db --timeout=600s
 # Redis 노드가 모두 뜬 뒤 Sentinel이 Primary를 찾아 기동합니다.
@@ -239,6 +231,14 @@ EOF
   config_literal SSAFY_ESCROW_USER_KEY "$SSAFY_ESCROW_USER_KEY"
   config_literal SSAFY_ESCROW_ACCOUNT_NO "$SSAFY_ESCROW_ACCOUNT_NO"
   config_literal SSAFY_FEE_ACCOUNT_NO "$SSAFY_FEE_ACCOUNT_NO"
+  # service 인증·암호화 키. 값이 바뀌면 이름 해시와 Pod template 이 함께 바뀌어 service 가 자동 재시작됩니다.
+  printf '  - name: service-auth\n    namespace: komit\n    literals:\n'
+  config_literal KOMIT_USER_JWT_SECRET "$KOMIT_USER_JWT_SECRET"
+  config_literal KAKAO_TOKEN_ENCRYPTION_KEY "$KAKAO_TOKEN_ENCRYPTION_KEY"
+  config_literal ACCOUNT_DATA_ENCRYPTION_KEY "$ACCOUNT_DATA_ENCRYPTION_KEY"
+  config_literal KAKAO_CLIENT_ID "$KAKAO_CLIENT_ID"
+  config_literal KAKAO_CLIENT_SECRET "$KAKAO_CLIENT_SECRET"
+  config_literal ESCROW_CLIENT_API_KEY "$ESCROW_CLIENT_API_KEY"
 } >> "$WORK_DIR/apps/kustomization.yaml"
 kubectl apply -k "$WORK_DIR/apps"
 rollout() {
