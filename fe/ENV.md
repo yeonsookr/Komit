@@ -24,8 +24,8 @@ docker run -d \
 
 | 변수 | 노출 | 필요 시점 | 값(현재) |
 | --- | --- | --- | --- |
-| `BACKEND_API_BASE_URL` | 서버 전용 | 실행 | `https://komit.site/mock/service` |
-| `AI_API_BASE_URL` | 서버 전용 | 실행 | `https://komit.site/mock/service` |
+| `BACKEND_API_BASE_URL` | 서버 전용 | 실행 | 배포별 Komit API 주소. 운영 루트는 실제 BE, `/test`는 mock |
+| `AI_API_BASE_URL` | 서버 전용 | 실행 | 배포별 AI API 주소. 운영 루트와 `/test` 값을 CI/CD에서 분리 |
 | `ESCROW_API_BASE_URL` | 서버 전용 | 실행 | `https://komit.site/mock/escrow` |
 | `KAKAO_CLIENT_ID` | 서버 전용 | 실행 | 카카오 개발자 콘솔의 REST API 키 |
 | `KAKAO_REDIRECT_URI` | 서버 전용 | 실행 | `<배포 도메인>/api/auth/kakao/callback` |
@@ -49,6 +49,11 @@ docker run -d \
 - 로컬에서 로그인까지 확인하려면 카카오 개발자 콘솔에 앱을 하나 만들고 `http://localhost:3000/api/auth/kakao/callback`
   을 Redirect URI 로 등록합니다. 코밋 서버는 목이라 어떤 인가 코드를 넘겨도 로그인됩니다.
 - 두 값이 없으면 「카카오로 시작하기」가 500 으로 실패합니다. 다른 화면은 영향이 없습니다.
+
+운영에서는 루트와 `/test`가 같은 호스트에 있어도 별도 배포입니다. GitLab에는 루트용
+`BACKEND_API_BASE_URL`, `AI_API_BASE_URL`, `KAKAO_REDIRECT_URI`와 테스트용
+`TEST_BACKEND_API_BASE_URL`, `TEST_AI_API_BASE_URL`, `TEST_KAKAO_REDIRECT_URI`를 각각
+등록합니다. `/test` 이미지는 쿠키 이름과 Path도 분리하므로 두 로그인 세션이 섞이지 않습니다.
 
 ### `NEXT_PUBLIC_SITE_URL` 만 빌드 시점
 

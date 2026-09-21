@@ -14,15 +14,24 @@ services:
       - |
         docker build --tag komit-service:local ./service
         docker build --tag komit-escrow:local ./escrow
+        docker build --tag komit-mock:local ./mock
         # fe Dockerfile은 next build 중 서버 API 모듈을 불러오므로 값이 비어 있으면 안 됩니다.
         # 로컬 실습용 값이며, 실행 시에는 local/apps의 fe-config ConfigMap 값으로 다시 넣습니다.
         docker build --tag komit-fe:local \
           --build-arg BACKEND_API_BASE_URL=http://service.komit.svc.cluster.local:8080 \
           --build-arg AI_API_BASE_URL=http://ai.local.invalid \
           ./fe
+        # `/test`는 별도 basePath가 번들에 들어가므로 전용 이미지가 필요합니다.
+        docker build --tag komit-fe-test:local \
+          --build-arg BASE_PATH=/test \
+          --build-arg BACKEND_API_BASE_URL=http://mock.komit.svc.cluster.local:8080/service \
+          --build-arg AI_API_BASE_URL=http://mock.komit.svc.cluster.local:8080/service \
+          ./fe
         docker image save --output /images/komit-service.tar komit-service:local
         docker image save --output /images/komit-escrow.tar komit-escrow:local
+        docker image save --output /images/komit-mock.tar komit-mock:local
         docker image save --output /images/komit-fe.tar komit-fe:local
+        docker image save --output /images/komit-fe-test.tar komit-fe-test:local
 
   k3s:
     image: rancher/k3s:v1.35.2-k3s1
@@ -42,6 +51,7 @@ services:
       - "8080:30080"
       - "8081:30081"
       - "3000:30082"
+      - "3001:30083"
     volumes:
       - k3s-data:/var/lib/rancher/k3s
       - k3s-config:/etc/rancher/k3s

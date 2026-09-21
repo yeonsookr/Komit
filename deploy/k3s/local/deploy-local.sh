@@ -47,5 +47,7 @@ kubectl -n komit rollout status statefulset/service-redis-sentinel --timeout=300
 kubectl apply -k "$K3S_DIR/local/apps"
 kubectl -n komit rollout status deployment/service --timeout=300s
 kubectl -n komit rollout status deployment/escrow --timeout=300s
+kubectl -n komit rollout status deployment/mock --timeout=300s
 kubectl -n komit rollout status deployment/fe --timeout=300s
+kubectl -n komit rollout status deployment/fe-test --timeout=300s
 kubectl -n komit get pods -o wide

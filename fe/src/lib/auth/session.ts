@@ -10,8 +10,10 @@ import { UNAUTHORIZED_CODE, type TokenResponse } from "@/types/auth";
  */
 import {
   ACCESS_TOKEN_COOKIE,
+  AUTH_COOKIE_PATH,
   OAUTH_HANDOFF_COOKIE,
   REFRESH_TOKEN_COOKIE,
+  SESSION_COOKIE_PATH,
 } from "./cookies";
 
 /**
@@ -25,9 +27,6 @@ import {
  * - 인가 진행값: 인가 시작 → 콜백 사이에만 살고, 콜백에서 바로 지웁니다.
  */
 export { ACCESS_TOKEN_COOKIE, REFRESH_TOKEN_COOKIE, OAUTH_HANDOFF_COOKIE };
-
-/** 재발급·로그아웃 Route Handler 가 있는 곳. 리프레시 쿠키는 여기로만 갑니다. */
-const AUTH_COOKIE_PATH = "/api/auth";
 
 /** R-AUTH-02: 코밋 리프레시 토큰과 쿠키는 같은 시점에 만료합니다. */
 const REFRESH_TOKEN_MAX_AGE_SECONDS = 14 * 24 * 60 * 60;
@@ -59,7 +58,7 @@ function baseOptions(path: string) {
  */
 export function setSessionCookies(store: CookieStore, tokens: TokenResponse): void {
   store.set(ACCESS_TOKEN_COOKIE, tokens.accessToken, {
-    ...baseOptions("/"),
+    ...baseOptions(SESSION_COOKIE_PATH),
     maxAge: tokens.expiresIn,
   });
   store.set(REFRESH_TOKEN_COOKIE, tokens.refreshToken, {
@@ -70,7 +69,7 @@ export function setSessionCookies(store: CookieStore, tokens: TokenResponse): vo
 
 /** 로그아웃과 재발급 실패에서 부릅니다. 지울 때도 넣을 때와 같은 path 여야 지워집니다. */
 export function clearSessionCookies(store: CookieStore): void {
-  store.set(ACCESS_TOKEN_COOKIE, "", { ...baseOptions("/"), maxAge: 0 });
+  store.set(ACCESS_TOKEN_COOKIE, "", { ...baseOptions(SESSION_COOKIE_PATH), maxAge: 0 });
   store.set(REFRESH_TOKEN_COOKIE, "", { ...baseOptions(AUTH_COOKIE_PATH), maxAge: 0 });
 }
 

@@ -2,10 +2,13 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../../base
+  - mock-deployment.yaml
+  - mock-service.yaml
 patches:
   - path: service-nodeport.yaml
   - path: escrow-nodeport.yaml
   - path: fe-nodeport.yaml
+  - path: fe-test-nodeport.yaml
 images:
   - name: komit-service
     newName: komit-service
@@ -16,6 +19,9 @@ images:
   - name: komit-fe
     newName: komit-fe
     newTag: local
+  - name: komit-fe-test
+    newName: komit-fe-test
+    newTag: local
 # 로컬 실습 전용 값입니다. 운영은 deploy.sh가 GitLab CI/CD 변수로 만듭니다.
 # 로컬에는 AI 서버가 없어 AI 호출은 실패합니다.
 configMapGenerator:
@@ -24,6 +30,15 @@ configMapGenerator:
     literals:
       - BACKEND_API_BASE_URL=http://service.komit.svc.cluster.local:8080
       - AI_API_BASE_URL=http://ai.local.invalid
+      - KAKAO_CLIENT_ID=local-kakao-client-id
+      - KAKAO_REDIRECT_URI=http://localhost:3000/api/auth/kakao/callback
+  - name: fe-test-config
+    namespace: komit
+    literals:
+      - BACKEND_API_BASE_URL=http://mock.komit.svc.cluster.local:8080/service
+      - AI_API_BASE_URL=http://mock.komit.svc.cluster.local:8080/service
+      - KAKAO_CLIENT_ID=local-kakao-client-id
+      - KAKAO_REDIRECT_URI=http://localhost:3001/test/api/auth/kakao/callback
   # docker-compose가 NodePort 30080/30081을 호스트 8080/8081에 매핑합니다.
   - name: service-config
     namespace: komit
