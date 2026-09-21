@@ -629,7 +629,7 @@ chmod +x deploy/k3s/deploy.sh
 | `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` | 예 | fe 서버가 백엔드·AI를 호출할 주소. GitLab CI/CD 변수와 같은 값을 넣습니다. 값이 바뀌면 fe Pod가 새 값으로 다시 뜹니다. 확인용 `fe-be`는 이 값 대신 클러스터 안의 `http://service.komit.svc.cluster.local:8080`을 쓰고, `AI_API_BASE_URL`만 같이 씁니다. |
 | `ESCROW_API_BASE_URL` | 예 | GitLab CI/CD 값이 `service-config`에 주입됩니다. 현재 개발 배포에서는 Mock 주소를 사용합니다. |
 | `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI` | 예 | 카카오 로그인 REST API 키와 콜백 주소. fe 의 `/api/auth/kakao` 가 실행 시점에 읽습니다. 없으면 로그인만 500 으로 실패하고 다른 화면은 영향이 없습니다. |
-| `ACCOUNT_DATA_ENCRYPTION_KEY` | 예 | 계좌 데이터 AES-256 암호화 키. Base64 디코딩 결과가 정확히 32바이트여야 하며 `service-auth` Secret으로 주입됩니다. 값을 바꾸면 기존 암호문을 복호화할 수 없습니다. |
+| `ACCOUNT_DATA_ENCRYPTION_KEY` | 예 | 계좌 데이터 AES-256 암호화 키. Base64 디코딩 결과가 정확히 32바이트여야 하며 `service-auth` Secret으로 주입됩니다. 이 Secret은 `secretGenerator`가 만들어 이름에 해시가 붙으므로, 값이 바뀌면 service Pod가 새 값으로 다시 뜹니다. 값을 바꾸면 기존 암호문을 복호화할 수 없습니다. |
 | `FE_BE_KAKAO_REDIRECT_URI` | 예 | 확인용 FE(`fe-be`)의 콜백 주소. nginx에서 정한 `fe-be` 주소를 넣습니다. 없으면 `deploy.sh`가 아무것도 적용하기 전에 멈춥니다. |
 | `CLIENT_API_KEY_HMAC_SECRET`, `SENSITIVE_DATA_HMAC_SECRET` | 예 | Escrow HMAC 비밀키. 각각 32자 이상이며 `escrow-security` Secret으로 주입됩니다. |
 | `FIELD_ENCRYPTION_KEY_BASE64` | 예 | Escrow AES-256 암호화 키. Base64 디코딩 결과가 정확히 32바이트여야 합니다. |
