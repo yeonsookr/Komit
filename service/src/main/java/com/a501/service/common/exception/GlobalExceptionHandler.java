@@ -161,9 +161,13 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
             Class<?> target = databind instanceof MismatchedInputException mismatched ? mismatched.getTargetType() : null;
             return invalid(List.of(field.isEmpty()
                     ? new FieldErrorResponse(BODY, INVALID)
-                    : new FieldErrorResponse(field, typeReason(target))));
+                    : new FieldErrorResponse(field, isMissingRequired(databind) ? MISSING : typeReason(target))));
         }
         return invalid(List.of(new FieldErrorResponse(BODY, MISSING)));
+    }
+
+    private static boolean isMissingRequired(DatabindException exception) {
+        return String.valueOf(exception.getOriginalMessage()).startsWith("Missing required creator property");
     }
 
     /** JSON이 아닌 Content-Type. 목은 본문을 모델로 읽지 못한 것으로 보고 422를 냅니다. */

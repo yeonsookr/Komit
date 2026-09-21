@@ -30,7 +30,7 @@ public class PriceCatalog extends SoftDeleteEntity {
     private String taskName;
 
     @Column(name = "price", nullable = false)
-    private Integer price;
+    private Long price;
 
     @Column(name = "period_days")
     private Short periodDays;
@@ -44,14 +44,14 @@ public class PriceCatalog extends SoftDeleteEntity {
     @Column(name = "task_type_group", nullable = false, length = 50)
     private String taskTypeGroup = TASK_TYPE_GROUP;
 
-    public static PriceCatalog create(Integer developerId, String taskType, String taskName, Integer price, Short periodDays) {
+    public static PriceCatalog create(Integer developerId, String taskType, String taskName, Long price, Short periodDays) {
         PriceCatalog row = new PriceCatalog();
         row.developerId = developerId;
         row.update(taskType, taskName, price, periodDays);
         return row;
     }
 
-    public void update(String taskType, String taskName, Integer price, Short periodDays) {
+    public void update(String taskType, String taskName, Long price, Short periodDays) {
         this.taskType = taskType;
         this.taskTypeGroup = TASK_TYPE_GROUP;
         this.taskName = taskName;

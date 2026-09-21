@@ -31,7 +31,8 @@ from fastapi.exception_handlers import (
 )
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
+from pydantic_core import PydanticCustomError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import scan_result
@@ -192,6 +193,10 @@ def _reason(error: dict) -> str:
         return f"{context.get('max_length')}개 이하여야 합니다."
     if error_type == "string_pattern_mismatch":
         return "형식이 올바르지 않습니다."
+    if error_type == "invalid_calendar_date":
+        return "형식이 올바르지 않습니다."
+    if error_type == "career_period":
+        return CAREER_PERIOD_REASON
     if error_type == "literal_error":
         expected = context.get("expected")
         return f"{expected} 중 하나여야 합니다." if expected else "허용되지 않는 값입니다."
@@ -9377,6 +9382,29 @@ class WriteCareerRequest(BaseModel):
         examples=[512],
     )
 
+    @field_validator("startDate", "endDate")
+    @classmethod
+    def validate_calendar_date(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            datetime.strptime(value, "%Y-%m-%d")
+        except ValueError as exception:
+            raise PydanticCustomError(
+                "invalid_calendar_date", "invalid calendar date"
+            ) from exception
+        return value
+
+    @field_validator("endDate")
+    @classmethod
+    def validate_period(cls, value: str | None, info: ValidationInfo) -> str | None:
+        start = info.data.get("startDate")
+        if value is not None and start is not None and value < start:
+            raise PydanticCustomError(
+                "career_period", "career end date precedes start date"
+            )
+        return value
+
 
 class WritePortfolioItemRequest(BaseModel):
     """저장할 작업물 하나."""
@@ -9428,7 +9456,8 @@ class WritePriceRequest(BaseModel):
     price: int = Field(ge=1, description="가격. 원 단위 정수다. 1 이상.", examples=[400000])
     periodDays: int | None = Field(
         ge=1,
-        description="예상 작업 기간(일). 1 이상. 컨설팅 세션이면 비운다.",
+        le=32767,
+        description="예상 작업 기간(일). 1 이상 32767 이하. 컨설팅 세션이면 비운다.",
         examples=[4],
     )
 
@@ -9480,7 +9509,7 @@ class WriteDeveloperProfileRequest(BaseModel):
     careers: list[WriteCareerRequest] = Field(
         description=(
             "경력 전부. 보낸 목록에 없는 기존 경력은 지운 것으로 본다. 확인이 끝난 "
-            "경력의 확인 표시는 저장해도 그대로 남는다."
+            "경력은 증빙과 표시 내용이 어긋나지 않도록 삭제 외의 수정을 반영하지 않는다."
         ),
     )
     portfolioItems: list[WritePortfolioItemRequest] = Field(
@@ -10525,7 +10554,8 @@ def get_my_developer_profile() -> MyDeveloperProfileResponse:
         "작업물 썸네일은 기존 파일 식별자를 다시 보내면 유지되고, 새 식별자를 보내면 "
         "교체되며, null을 보내면 제거된다. 확인 전 경력 증빙도 기존 식별자를 다시 "
         "보내면 유지되고 새 식별자를 보내면 교체된다. 확인을 마친 경력은 증빙 원본이 "
-        "이미 삭제되어 null을 보내도 확인 상태와 확인 시각이 유지된다.\n\n"
+        "이미 삭제되어 null을 보내도 확인 상태와 확인 시각이 유지된다. "
+        "확인된 경력의 회사·역할·기간은 증빙과 어긋나지 않도록 저장 요청으로 바뀌지 않는다.\n\n"
         "작업물 공개 여부와 순서를 따로 저장하는 값은 받지 않는다. 작업물은 등록한 "
         "순서로 고정이며 새 줄은 뒤에 붙는다. 개발자 목록 카드에는 작업물을 보여주지 "
         "않는다.\n\n"
@@ -10547,16 +10577,14 @@ def get_my_developer_profile() -> MyDeveloperProfileResponse:
         "- **404 / CODE_NOT_FOUND**: `fieldCodeId`·`techCodeIds`에 404가 있을 때. "
         "없는 코드거나 그 분류의 코드가 아니다\n"
         "- **422 / INVALID_REQUEST**: `intro`가 비었거나 길이·형식 제약을 어겼거나, "
-        "경력의 종료일이 시작일보다 빠르거나(`careers.N.endDate`), 가격이 0 이하일 때\n"
+        "경력 날짜가 실제 달력에 없거나, 종료일이 시작일보다 빠르거나"
+        "(`careers.N.endDate`), 가격이 0 이하이거나 작업 기간이 32767일을 넘을 때\n"
         "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
     ),
 )
 def write_my_developer_profile(
     request: WriteDeveloperProfileRequest,
 ) -> MyDeveloperProfileResponse | JSONResponse:
-    for index, career in enumerate(request.careers):
-        if career.endDate is not None and career.endDate < career.startDate:
-            return _field_error(f"careers.{index}.endDate", CAREER_PERIOD_REASON)
     file_ids = [item.thumbnailFileId for item in request.portfolioItems] + [
         career.evidenceFileId for career in request.careers
     ]

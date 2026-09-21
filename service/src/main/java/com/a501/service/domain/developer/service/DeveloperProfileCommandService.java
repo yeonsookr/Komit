@@ -16,7 +16,6 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,7 +36,6 @@ public class DeveloperProfileCommandService {
 
     private final DeveloperRepository developerRepository;
     private final DeveloperProfileRepository developerProfileRepository;
-    private final DeveloperRegistrar developerRegistrar;
     private final DeveloperProfileQueryService queryService;
     private final UserService userService;
     private final SettingService settingService;
@@ -52,7 +50,6 @@ public class DeveloperProfileCommandService {
     public DeveloperProfileCommandService(
             DeveloperRepository developerRepository,
             DeveloperProfileRepository developerProfileRepository,
-            DeveloperRegistrar developerRegistrar,
             DeveloperProfileQueryService queryService,
             UserService userService,
             SettingService settingService,
@@ -61,14 +58,13 @@ public class DeveloperProfileCommandService {
             PortfolioItemService portfolioItemService,
             PriceCatalogService priceCatalogService,
             DeveloperTechCategoryService techCategoryService) {
-        this(developerRepository, developerProfileRepository, developerRegistrar, queryService, userService, settingService,
+        this(developerRepository, developerProfileRepository, queryService, userService, settingService,
                 codeQueryService, careerService, portfolioItemService, priceCatalogService, techCategoryService, Clock.systemUTC());
     }
 
     DeveloperProfileCommandService(
             DeveloperRepository developerRepository,
             DeveloperProfileRepository developerProfileRepository,
-            DeveloperRegistrar developerRegistrar,
             DeveloperProfileQueryService queryService,
             UserService userService,
             SettingService settingService,
@@ -80,7 +76,6 @@ public class DeveloperProfileCommandService {
             Clock clock) {
         this.developerRepository = developerRepository;
         this.developerProfileRepository = developerProfileRepository;
-        this.developerRegistrar = developerRegistrar;
         this.queryService = queryService;
         this.userService = userService;
         this.settingService = settingService;
@@ -100,13 +95,15 @@ public class DeveloperProfileCommandService {
      */
     @Transactional
     public DeveloperProfileSaveResult save(Integer userId, WriteDeveloperProfileRequest request) {
-        UserProfileView user = userService.getProfile(userId);
+        // 프로필은 여러 목록을 전체 치환하므로 사용자 행을 잠그고 같은 사용자의 저장을 직렬화합니다.
+        UserProfileView user = userService.getProfileForUpdate(userId);
         codeQueryService.requireCodes(DeveloperProfileQueryService.DEV_FIELD,
                 request.fieldCodeId() == null ? List.of() : List.of(request.fieldCodeId()));
         codeQueryService.requireCodes(TECH_CATEGORY, request.techCodeIds());
         LocalDateTime now = LocalDateTime.now(clock.withZone(ZoneOffset.UTC));
 
-        Developer developer = developerRepository.findByUserIdAndDeletedFalse(userId).orElseGet(() -> registerDeveloper(userId));
+        Developer developer = developerRepository.findByUserIdAndDeletedFalse(userId)
+                .orElseGet(() -> developerRepository.save(Developer.register(userId)));
         Optional<DeveloperProfile> found = developerProfileRepository.findByDeveloperIdAndDeletedFalse(developer.getId());
         boolean created = found.isEmpty();
         DeveloperProfile profile = found.orElseGet(() -> createProfile(userId, developer.getId(), request));
@@ -121,16 +118,6 @@ public class DeveloperProfileCommandService {
         priceCatalogService.replaceAll(developer.getId(), request.prices(), now);
 
         return new DeveloperProfileSaveResult(created, queryService.assemble(developer, profile, user, now));
-    }
-
-    /** 개발자 행을 만들되, 동시에 다른 인스턴스가 먼저 만들었으면 그 행을 씁니다. */
-    private Developer registerDeveloper(Integer userId) {
-        try {
-            Integer developerId = developerRegistrar.register(userId);
-            return developerRepository.findById(developerId).orElseThrow();
-        } catch (DataIntegrityViolationException raced) {
-            return developerRepository.findByUserIdAndDeletedFalse(userId).orElseThrow(() -> raced);
-        }
     }
 
     private DeveloperProfile createProfile(Integer userId, Integer developerId, WriteDeveloperProfileRequest request) {

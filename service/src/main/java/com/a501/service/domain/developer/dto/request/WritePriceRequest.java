@@ -1,6 +1,8 @@
 package com.a501.service.domain.developer.dto.request;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -15,7 +17,7 @@ public record WritePriceRequest(
         @Schema(description = "작업 이름. 50자까지.", example = "로그인 붙이기")
         @NotNull @Size(max = 50) String taskName,
         @Schema(description = "가격. 원 단위 정수다. 1 이상.", example = "400000")
-        @NotNull @Min(1) Integer price,
-        @Schema(description = "예상 작업 기간(일). 1 이상. 컨설팅 세션이면 비운다.", example = "4")
-        @Min(1) Integer periodDays) {
+        @NotNull @Min(1) Long price,
+        @Schema(description = "예상 작업 기간(일). 1 이상 32767 이하. 컨설팅 세션이면 비운다.", example = "4")
+        @JsonProperty(required = true) @Min(1) @Max(Short.MAX_VALUE) Integer periodDays) {
 }

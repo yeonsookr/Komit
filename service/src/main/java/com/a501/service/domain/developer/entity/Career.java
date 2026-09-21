@@ -58,16 +58,17 @@ public class Career extends SoftDeleteEntity {
     }
 
     /**
-     * 저장 요청의 값으로 맞춥니다. 확인을 마친 경력은 증빙 원본이 이미 삭제되어 있으므로 요청의 증빙 식별자를 무시하고 확인 상태를 그대로 둡니다.
+     * 저장 요청의 값으로 맞춥니다. 확인을 마친 경력은 증빙과 표시 내용이 어긋나지 않도록 내용과 확인 상태를 모두 그대로 둡니다.
      */
     public void update(String company, String role, LocalDate startDate, LocalDate endDate, Integer evidenceFileId) {
+        if (verified) {
+            return;
+        }
         this.company = company;
         this.role = role;
         this.startDate = startDate;
         this.endDate = endDate;
-        if (!verified) {
-            this.fileId = evidenceFileId;
-        }
+        this.fileId = evidenceFileId;
     }
 
     public void remove(LocalDateTime now) {

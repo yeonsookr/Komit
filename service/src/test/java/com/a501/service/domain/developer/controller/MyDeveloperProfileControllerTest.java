@@ -62,7 +62,8 @@ class MyDeveloperProfileControllerTest {
                          "startDate":"2021-03-01","endDate":"2024-08-31","isVerified":true,
                          "verifiedAt":"2026-03-04T10:00:00+09:00","evidenceFileId":null,"evidenceFileName":null}],
              "portfolioItems":[{"portfolioItemId":7,"title":"미미헤어샵 예약","description":"예약이 저장되지 않던 문제를 고쳤습니다.",
-                                "linkUrl":"https://hairshop-mimi.com","thumbnailFileId":512,"thumbnailUrl":null},
+                                "linkUrl":"https://hairshop-mimi.com","thumbnailFileId":512,
+                                "thumbnailUrl":"https://cdn.komit.example.com/portfolio/512.png"},
                                {"portfolioItemId":9,"title":"사내 재고 관리","description":null,"linkUrl":null,
                                 "thumbnailFileId":null,"thumbnailUrl":null}],
              "priceCatalog":[{"priceId":60,"taskType":"CONSULT","taskName":"30분 · 한 가지 주제","price":50000,"periodDays":null},
@@ -95,10 +96,10 @@ class MyDeveloperProfileControllerTest {
                         LocalDate.of(2021, 3, 1), LocalDate.of(2024, 8, 31), true,
                         OffsetDateTime.parse("2026-03-04T10:00:00+09:00"), null, null)),
                 List.of(new MyPortfolioItemResponse(7, "미미헤어샵 예약", "예약이 저장되지 않던 문제를 고쳤습니다.",
-                                "https://hairshop-mimi.com", 512, null),
+                                "https://hairshop-mimi.com", 512, "https://cdn.komit.example.com/portfolio/512.png"),
                         new MyPortfolioItemResponse(9, "사내 재고 관리", null, null, null, null)),
-                List.of(new PriceCatalogItemResponse(60, "CONSULT", "30분 · 한 가지 주제", 50000, null),
-                        new PriceCatalogItemResponse(62, "DEVELOP", "인터넷에 올리기", 200000, 1)),
+                List.of(new PriceCatalogItemResponse(60, "CONSULT", "30분 · 한 가지 주제", 50000L, null),
+                        new PriceCatalogItemResponse(62, "DEVELOP", "인터넷에 올리기", 200000L, 1)),
                 List.of(new ReviewResponse(88, "김O미", "DEVELOPMENT", 5, 5, "말이 잘 통했습니다.", "감사합니다.",
                         OffsetDateTime.parse("2026-08-19T14:20:00+09:00"))),
                 1,
@@ -174,6 +175,39 @@ class MyDeveloperProfileControllerTest {
                         {"code":"INVALID_REQUEST","message":"요청 형식이 올바르지 않습니다.",
                          "errors":[{"field":"prices.0.taskType","reason":"'CONSULT' or 'DEVELOP' 중 하나여야 합니다."}]}
                         """, true));
+    }
+
+    @Test
+    void putRejectsMissingNullableRequiredField() throws Exception {
+        String body = VALID_REQUEST.replace(",\"thumbnailFileId\":null", "");
+
+        mockMvc.perform(put(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(12))
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(content().json("""
+                        {"code":"INVALID_REQUEST","message":"요청 형식이 올바르지 않습니다.",
+                         "errors":[{"field":"portfolioItems.0.thumbnailFileId","reason":"필수 항목입니다."}]}
+                        """, true));
+
+        verify(commandService, never()).save(any(), any());
+    }
+
+    @Test
+    void putRejectsImpossibleCalendarDateAndPeriodThatDoesNotFitTheDatabase() throws Exception {
+        String body = VALID_REQUEST
+                .replace("2021-03-01", "2024-02-31")
+                .replace("\"periodDays\":4", "\"periodDays\":32768");
+
+        mockMvc.perform(put(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(12))
+                        .contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(content().json("""
+                        {"code":"INVALID_REQUEST","message":"요청 형식이 올바르지 않습니다.",
+                         "errors":[{"field":"careers.0.startDate","reason":"형식이 올바르지 않습니다."},
+                                   {"field":"prices.0.periodDays","reason":"32767 이하여야 합니다."}]}
+                        """, true));
+
+        verify(commandService, never()).save(any(), any());
     }
 
     @Test

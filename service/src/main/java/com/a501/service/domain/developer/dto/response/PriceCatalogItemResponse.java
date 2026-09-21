@@ -10,7 +10,7 @@ public record PriceCatalogItemResponse(
         @Schema(description = "작업 종류. CONSULT는 컨설팅 세션, DEVELOP은 개발 작업이다.", allowableValues = {"CONSULT", "DEVELOP"}, example = "DEVELOP")
         String taskType,
         @Schema(description = "작업 이름.", example = "로그인 붙이기") String taskName,
-        @Schema(description = "가격. 원 단위 정수다.", example = "400000") Integer price,
+        @Schema(description = "가격. 원 단위 정수다.", example = "400000") Long price,
         @Schema(description = "예상 작업 기간(일). 컨설팅 세션은 언제나 null이다.", example = "4") Integer periodDays) {
 
     public static PriceCatalogItemResponse from(PriceCatalog row) {

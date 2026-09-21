@@ -7,4 +7,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface CareerRepository extends JpaRepository<Career, Integer> {
     /** 개발자의 살아 있는 경력. 시작일이 늦은 것, 곧 최근 경력이 먼저입니다. */
     List<Career> findByDeveloperIdAndDeletedFalseOrderByStartDateDescIdDesc(Integer developerId);
+
+    boolean existsByDeveloperIdAndDeletedFalseAndVerifiedTrue(Integer developerId);
 }

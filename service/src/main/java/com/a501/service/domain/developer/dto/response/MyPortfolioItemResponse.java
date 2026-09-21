@@ -6,7 +6,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 /**
  * 내 프로필 편집 화면이 쓰는 작업물 하나. 목 명세 {@code MyPortfolioItemResponse}와 같습니다.
  *
- * <p>{@code thumbnailUrl}은 저장된 값이 아니라 응답을 만들 때마다 새로 만드는 임시 주소입니다. 파일 API가 붙기 전까지는 null입니다.
+ * <p>{@code thumbnailUrl}은 저장된 값이 아니라 응답을 만들 때마다 새로 만드는 임시 주소입니다.
  */
 @Schema(description = "내 프로필 편집 화면이 쓰는 작업물 하나.")
 public record MyPortfolioItemResponse(

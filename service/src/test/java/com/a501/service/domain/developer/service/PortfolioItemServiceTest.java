@@ -16,6 +16,7 @@ import com.a501.service.domain.developer.repository.PortfolioItemRepository;
 import com.a501.service.domain.file.service.FileLookupService;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -78,13 +79,18 @@ class PortfolioItemServiceTest {
     }
 
     @Test
-    void listMineKeepsRegistrationOrderAndLeavesThumbnailUrlNullUntilFileApi() {
+    void listMineKeepsRegistrationOrderAndIncludesTemporaryThumbnailUrl() {
+        PortfolioItem first = existing(7, "첫째");
+        ReflectionTestUtils.setField(first, "thumbnailId", 512);
         when(portfolioItemRepository.findByDeveloperIdAndDeletedFalseOrderByIdAsc(3))
-                .thenReturn(List.of(existing(7, "첫째"), existing(9, "둘째")));
+                .thenReturn(List.of(first, existing(9, "둘째")));
+        when(fileLookupService.findReadUrls(List.of(512)))
+                .thenReturn(Map.of(512, "https://storage.example.com/portfolio/512.png?signature=test"));
 
         var items = service.listMine(3);
 
         assertThat(items).extracting("portfolioItemId").containsExactly(7, 9);
-        assertThat(items).extracting("thumbnailUrl").containsOnlyNulls();
+        assertThat(items).extracting("thumbnailUrl")
+                .containsExactly("https://storage.example.com/portfolio/512.png?signature=test", null);
     }
 }

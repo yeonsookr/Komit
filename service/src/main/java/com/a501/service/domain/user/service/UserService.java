@@ -80,6 +80,18 @@ public class UserService {
         return new UserProfileView(user.getId(), user.getName(), user.getProfileImageFileId(), user.getKakaoProfileImageUrl());
     }
 
+    /**
+     * 개발자 프로필을 통째로 저장하는 동안 같은 사용자의 다른 저장을 기다리게 합니다.
+     * 개발자·프로필·하위 목록을 하나의 요청 결과로 남기기 위한 DB 잠금입니다. (BACKEND_CONVENTIONS 16)
+     */
+    @Transactional
+    public UserProfileView getProfileForUpdate(Integer userId) {
+        User user = userRepository.findByIdForUpdate(userId)
+                .filter(found -> !found.isWithdrawn())
+                .orElseThrow(() -> new BusinessException(CommonErrorCode.UNAUTHORIZED));
+        return new UserProfileView(user.getId(), user.getName(), user.getProfileImageFileId(), user.getKakaoProfileImageUrl());
+    }
+
     /** 개발자 프로필을 처음 만들 때 개발자 역할을 더합니다. (R-ACC-08) */
     @Transactional
     public void markDevProfile(Integer userId) {

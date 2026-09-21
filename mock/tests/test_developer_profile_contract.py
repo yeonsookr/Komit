@@ -50,25 +50,39 @@ class DeveloperProfileContractTest(unittest.TestCase):
             _request(intro="")
 
     def test_reversed_career_period_is_a_field_error(self):
-        request = _request(
-            careers=[
-                service.WriteCareerRequest(
-                    company="A",
-                    role="B",
-                    startDate="2024-01-01",
-                    endDate="2023-12-31",
-                    evidenceFileId=None,
-                )
-            ]
-        )
-        response = service.write_my_developer_profile(request)
-        self.assertIsInstance(response, JSONResponse)
-        self.assertEqual(response.status_code, 422)
-        body = json.loads(response.body)
-        self.assertEqual(
-            body["errors"],
-            [{"field": "careers.0.endDate", "reason": service.CAREER_PERIOD_REASON}],
-        )
+        with self.assertRaises(ValidationError) as raised:
+            service.WriteCareerRequest(
+                company="A",
+                role="B",
+                startDate="2024-01-01",
+                endDate="2023-12-31",
+                evidenceFileId=None,
+            )
+        error = raised.exception.errors()[0]
+        self.assertEqual(error["loc"], ("endDate",))
+        self.assertEqual(service._reason(error), service.CAREER_PERIOD_REASON)
+
+    def test_impossible_calendar_date_is_a_field_error(self):
+        with self.assertRaises(ValidationError) as raised:
+            service.WriteCareerRequest(
+                company="A",
+                role="B",
+                startDate="2024-02-31",
+                endDate=None,
+                evidenceFileId=None,
+            )
+        error = raised.exception.errors()[0]
+        self.assertEqual(error["loc"], ("startDate",))
+        self.assertEqual(service._reason(error), "형식이 올바르지 않습니다.")
+
+    def test_period_days_must_fit_the_database_column(self):
+        with self.assertRaises(ValidationError):
+            service.WritePriceRequest(
+                taskType="DEVELOP",
+                taskName="작업",
+                price=1,
+                periodDays=32768,
+            )
 
     def test_reserved_values_reproduce_file_and_code_failures(self):
         not_attachable = _request(

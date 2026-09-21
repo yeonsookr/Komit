@@ -22,7 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 개발자 작업물(포트폴리오). 순서는 등록순으로 고정이며 개발자 목록 카드에는 노출하지 않습니다.
  *
  * <p>저장은 전체 치환입니다. 요청에 없는 기존 줄은 소프트 삭제하고, 식별자가 null인 줄은 새로 만들며, 새 줄은 id가 커서 자연히
- * 뒤에 붙습니다. 썸네일 주소는 파일 API가 붙을 때 채워지며 그때까지 null입니다.
+ * 뒤에 붙습니다. 썸네일이 있으면 저장소에서 짧게 사용할 수 있는 읽기 주소를 만들어 응답합니다.
  */
 @Service
 @RequiredArgsConstructor
@@ -33,8 +33,11 @@ public class PortfolioItemService {
 
     /** 내 프로필 편집 화면용 작업물. 등록순입니다. */
     public List<MyPortfolioItemResponse> listMine(Integer developerId) {
-        return portfolioItemRepository.findByDeveloperIdAndDeletedFalseOrderByIdAsc(developerId).stream()
-                .map(item -> MyPortfolioItemResponse.of(item, null))
+        List<PortfolioItem> items = portfolioItemRepository.findByDeveloperIdAndDeletedFalseOrderByIdAsc(developerId);
+        Map<Integer, String> thumbnailUrls = fileLookupService.findReadUrls(
+                items.stream().map(PortfolioItem::getThumbnailId).filter(Objects::nonNull).toList());
+        return items.stream()
+                .map(item -> MyPortfolioItemResponse.of(item, thumbnailUrls.get(item.getThumbnailId())))
                 .toList();
     }
 

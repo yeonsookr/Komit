@@ -40,8 +40,7 @@ public class CareerService {
 
     /** 증빙이 확인된 경력을 하나라도 가지고 있는지. */
     public boolean hasVerified(Integer developerId) {
-        return careerRepository.findByDeveloperIdAndDeletedFalseOrderByStartDateDescIdDesc(developerId).stream()
-                .anyMatch(Career::isVerified);
+        return careerRepository.existsByDeveloperIdAndDeletedFalseAndVerifiedTrue(developerId);
     }
 
     /**

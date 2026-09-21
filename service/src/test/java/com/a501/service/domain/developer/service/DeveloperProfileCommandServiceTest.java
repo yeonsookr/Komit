@@ -27,7 +27,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -38,7 +37,6 @@ class DeveloperProfileCommandServiceTest {
 
     @Mock private DeveloperRepository developerRepository;
     @Mock private DeveloperProfileRepository developerProfileRepository;
-    @Mock private DeveloperRegistrar developerRegistrar;
     @Mock private DeveloperProfileQueryService queryService;
     @Mock private UserService userService;
     @Mock private SettingService settingService;
@@ -52,10 +50,10 @@ class DeveloperProfileCommandServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new DeveloperProfileCommandService(developerRepository, developerProfileRepository, developerRegistrar,
+        service = new DeveloperProfileCommandService(developerRepository, developerProfileRepository,
                 queryService, userService, settingService, codeQueryService, careerService, portfolioItemService,
                 priceCatalogService, techCategoryService, CLOCK);
-        when(userService.getProfile(12)).thenReturn(new UserProfileView(12, "이준", null, null));
+        when(userService.getProfileForUpdate(12)).thenReturn(new UserProfileView(12, "이준", null, null));
     }
 
     private static Developer developer(Integer id) {
@@ -67,8 +65,7 @@ class DeveloperProfileCommandServiceTest {
     @Test
     void firstSaveCreatesDeveloperProfileRoleAndSellerTermsAndReports201() {
         when(developerRepository.findByUserIdAndDeletedFalse(12)).thenReturn(Optional.empty());
-        when(developerRegistrar.register(12)).thenReturn(3);
-        when(developerRepository.findById(3)).thenReturn(Optional.of(developer(3)));
+        when(developerRepository.save(any())).thenReturn(developer(3));
         when(developerProfileRepository.findByDeveloperIdAndDeletedFalse(3)).thenReturn(Optional.empty());
         when(developerProfileRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -98,22 +95,19 @@ class DeveloperProfileCommandServiceTest {
         assertThat(profile.getFieldCodeId()).isEqualTo(42);
         verify(userService, never()).markDevProfile(any());
         verify(settingService, never()).agreeSellerTerms(any());
-        verify(developerRegistrar, never()).register(any());
+        verify(developerRepository, never()).save(any());
     }
 
     @Test
-    void racedRegistrationFallsBackToTheRowAnotherInstanceCreated() {
-        Developer raced = developer(5);
-        when(developerRepository.findByUserIdAndDeletedFalse(12))
-                .thenReturn(Optional.empty())
-                .thenReturn(Optional.of(raced));
-        when(developerRegistrar.register(12)).thenThrow(new DataIntegrityViolationException("duplicate user_id"));
-        when(developerProfileRepository.findByDeveloperIdAndDeletedFalse(5)).thenReturn(Optional.empty());
-        when(developerProfileRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+    void everySaveLocksTheUserBeforeReplacingTheProfile() {
+        Developer developer = developer(5);
+        when(developerRepository.findByUserIdAndDeletedFalse(12)).thenReturn(Optional.of(developer));
+        when(developerProfileRepository.findByDeveloperIdAndDeletedFalse(5))
+                .thenReturn(Optional.of(DeveloperProfile.create(5, "예전", null, null, null, null, null)));
 
-        DeveloperProfileSaveResult result = service.save(12, REQUEST);
+        service.save(12, REQUEST);
 
-        assertThat(result.created()).isTrue();
+        verify(userService).getProfileForUpdate(12);
         verify(priceCatalogService).replaceAll(eq(5), anyList(), any());
     }
 }
