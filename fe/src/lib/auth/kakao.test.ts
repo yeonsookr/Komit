@@ -5,7 +5,37 @@ import {
   createOauthState,
   parseOauthHandoff,
   serializeOauthHandoff,
+  siteBaseUrl,
+  siteUrl,
 } from "./kakao";
+
+describe("siteBaseUrl", () => {
+  it("콜백 경로를 걷어내 공개 기준 주소를 만든다", () => {
+    expect(siteBaseUrl("https://komit.site/api/auth/kakao/callback").toString()).toBe(
+      "https://komit.site/",
+    );
+  });
+
+  it("하위 경로 배포에서는 접두사를 지킨다", () => {
+    expect(siteBaseUrl("https://komit.site/test/api/auth/kakao/callback").toString()).toBe(
+      "https://komit.site/test/",
+    );
+  });
+});
+
+describe("siteUrl", () => {
+  it("앞에 슬래시가 붙은 경로도 접두사 아래로 붙인다", () => {
+    const base = siteBaseUrl("https://komit.site/test/api/auth/kakao/callback");
+    expect(siteUrl("/login?error=KAKAO_AUTH_FAILED", base).toString()).toBe(
+      "https://komit.site/test/login?error=KAKAO_AUTH_FAILED",
+    );
+  });
+
+  it("접두사가 없으면 그대로 뿌리에 붙인다", () => {
+    const base = siteBaseUrl("https://komit.site/api/auth/kakao/callback");
+    expect(siteUrl("/signup/terms", base).toString()).toBe("https://komit.site/signup/terms");
+  });
+});
 
 describe("buildKakaoAuthorizeUrl", () => {
   it("카카오 인가 주소에 필요한 파라미터를 전부 싣는다", () => {

@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { type NextRequest, NextResponse } from "next/server";
 import { requireServerEnv } from "@/lib/env";
 import { OAUTH_HANDOFF_COOKIE, clearOauthHandoffCookie, setSessionCookies } from "@/lib/auth/session";
-import { parseOauthHandoff } from "@/lib/auth/kakao";
+import { parseOauthHandoff, siteBaseUrl, siteUrl } from "@/lib/auth/kakao";
 import { loginWithKakao } from "@/lib/api/services/auth";
 import { getRequiredTerms } from "@/lib/api/services/terms";
 import { toErrorResponse } from "@/lib/api/route";
@@ -23,9 +23,11 @@ const STATE_MISMATCH_CODE = "KAKAO_AUTH_FAILED";
  * 실패는 전부 로그인 화면으로 돌려보내고 `error` 에 코드만 싣습니다.
  * 문구는 화면이 코드로 정합니다 — 주소에 문장을 실어 보내지 않습니다.
  *
- * **돌아갈 절대 주소는 `KAKAO_REDIRECT_URI` 의 origin 으로 만듭니다.** 배포에서는
- * Next 가 프록시 뒤 `0.0.0.0:3000` 에서 돌아 `request.nextUrl.origin` 이 공개 주소가
- * 아닙니다. 카카오가 실제로 사용자를 돌려보낸 주소가 곧 우리 공개 주소입니다.
+ * **돌아갈 절대 주소는 `KAKAO_REDIRECT_URI` 로 만듭니다.** 배포에서는 Next 가 프록시 뒤
+ * `0.0.0.0:3000` 에서 돌아 `request.nextUrl.origin` 이 공개 주소가 아닙니다. 카카오가 실제로
+ * 사용자를 돌려보낸 주소가 곧 우리 공개 주소입니다. origin 만 떼면 하위 경로로 서비스하는
+ * 배포(`basePath`)에서 접두사가 날아가 로그인 뒤 다른 배포로 떨어지므로, 콜백 경로를 걷어낸
+ * 기준 주소를 씁니다.
  */
 export async function GET(request: NextRequest) {
   let redirectUri: string;
@@ -34,7 +36,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     return toErrorResponse(error);
   }
-  const siteOrigin = new URL(redirectUri).origin;
+  const siteBase = siteBaseUrl(redirectUri);
 
   const store = await cookies();
   const handoff = parseOauthHandoff(store.get(OAUTH_HANDOFF_COOKIE)?.value);
@@ -45,7 +47,7 @@ export async function GET(request: NextRequest) {
   const state = params.get("state");
 
   const fail = (errorCode: string) =>
-    NextResponse.redirect(new URL(ROUTES.loginFailed(errorCode), siteOrigin));
+    NextResponse.redirect(siteUrl(ROUTES.loginFailed(errorCode), siteBase));
 
   // 사용자가 카카오 화면에서 취소했거나 카카오가 오류를 돌려준 경우.
   if (params.get("error") || !code) return fail(STATE_MISMATCH_CODE);
@@ -60,7 +62,7 @@ export async function GET(request: NextRequest) {
     const destination = needsAgreement
       ? ROUTES.signupTerms(handoff.next)
       : login.isNewUser ? ROUTES.signupAccount(handoff.next) : handoff.next ?? ROUTES.home;
-    return NextResponse.redirect(new URL(destination, siteOrigin));
+    return NextResponse.redirect(siteUrl(destination, siteBase));
   } catch (error) {
     if (error instanceof ApiError && error.status > 0) {
       // 401 KAKAO_AUTH_FAILED · 503 KAKAO_UNAVAILABLE — 화면이 코드로 문구를 고릅니다.
