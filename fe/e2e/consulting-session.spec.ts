@@ -32,9 +32,14 @@ test.describe('컨설팅 세션', () => {
     await expect(page.getByRole('link', { name: '← 컨설팅 방' })).toBeVisible();
     await expect(page.getByRole('button', { name: '세션 종료' })).toBeVisible();
 
-    // 화상·마이크·화면 공유는 아직 잇지 않았습니다. 눌리면 고장으로 읽히므로 잠가 둡니다.
+    /*
+      카메라를 잡기 전에는 끌 것이 없어 잠가 둡니다. 이 환경에는 카메라가 없어
+      늘 잠긴 채입니다 — 실제로 켜지는 것은 가짜 미디어를 물린 브라우저 둘로 봅니다.
+    */
     await expect(page.getByRole('button', { name: '마이크' })).toBeDisabled();
     await expect(page.getByRole('button', { name: '카메라' })).toBeDisabled();
+
+    // 화면 공유는 아직 붙지 않았습니다. 눌리면 고장으로 읽히므로 잠가 둡니다.
     await expect(page.getByRole('button', { name: '화면 공유' })).toBeDisabled();
   });
 

@@ -103,6 +103,8 @@ export default async function SessionPage({
           myName={me.name}
           chatRefId={session.chatRefId}
           initialMessages={await getChatMessages(session.chatRefId)}
+          /* 두 사람이 서로 다른 값을 받아야 합니다. 의뢰인이 물러서는 쪽입니다. */
+          polite={!isReceived(room, me)}
         />
       )}
     </Container>

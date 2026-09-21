@@ -80,6 +80,7 @@ export const BACKEND = {
   MILESTONE_CONFIRMATION: (milestoneId: number) =>
     `/api/milestones/${milestoneId}/confirmation`,
   DELIVERABLE_FILE: (deliverableId: number) => `/api/deliverables/${deliverableId}/file`,
+  REALTIME_TICKETS: "/api/realtime/tickets",
   PAYMENT_METHODS: "/api/payment-methods",
   UPLOADS: "/api/uploads",
   UPLOAD_COMPLETE: (uploadId: number) => `/api/uploads/${uploadId}/complete`,
@@ -165,6 +166,7 @@ export const INTERNAL = {
   MILESTONE_CONFIRMATION: (milestoneId: number) =>
     `/api/milestones/${milestoneId}/confirmation`,
   DELIVERABLE_FILE: (deliverableId: number) => `/api/deliverables/${deliverableId}/file`,
+  REALTIME_TICKETS: "/api/realtime/tickets",
   /**
    * 운영 콘솔. **누른 뒤에야 생기는 요청만 있습니다** — 목록·상세·본문은 서버
    * 컴포넌트가 직접 읽어 내려보내므로 브라우저가 부를 일이 없고, 부를 일이 없는

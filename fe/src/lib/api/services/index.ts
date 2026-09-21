@@ -9,6 +9,7 @@ export * from "./milestones";
 export * from "./mypage";
 export * from "./notifications";
 export * from "./diagnoses";
+export * from "./realtime";
 export * from "./recommendations";
 export * from "./reports";
 export * from "./rooms";
