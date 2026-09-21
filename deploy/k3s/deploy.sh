@@ -6,6 +6,8 @@ set -eu
 SERVICE_IMAGE=${SERVICE_IMAGE:-}
 ESCROW_IMAGE=${ESCROW_IMAGE:-}
 FE_IMAGE=${FE_IMAGE:-}
+# 확인용 FE. 같은 소스를 /test 접두사로 구운 별도 이미지입니다.
+FE_BE_IMAGE=${FE_BE_IMAGE:-}
 : "${SERVICE_DB_PASSWORD:?SERVICE_DB_PASSWORD is required}"
 : "${ESCROW_DB_PASSWORD:?ESCROW_DB_PASSWORD is required}"
 : "${SERVICE_REDIS_PASSWORD:?SERVICE_REDIS_PASSWORD is required}"
@@ -141,9 +143,11 @@ kubectl apply -f "$SCRIPT_DIR/base/namespace.yaml"
 SERVICE_IMAGE=$(resolve_image "$SERVICE_IMAGE" service)
 ESCROW_IMAGE=$(resolve_image "$ESCROW_IMAGE" escrow)
 FE_IMAGE=$(resolve_image "$FE_IMAGE" fe)
+FE_BE_IMAGE=$(resolve_image "$FE_BE_IMAGE" fe-be)
 echo "service image: $SERVICE_IMAGE"
 echo "escrow image:  $ESCROW_IMAGE"
 echo "fe image:      $FE_IMAGE"
+echo "fe-be image:   $FE_BE_IMAGE"
 
 # 1. CloudNativePG 오퍼레이터
 kubectl apply -f "$SCRIPT_DIR/platform/cloudnative-pg.yaml"
@@ -190,6 +194,9 @@ images:
   - name: komit-fe
     newName: ${FE_IMAGE%:*}
     newTag: "${FE_IMAGE##*:}"
+  - name: komit-fe-be
+    newName: ${FE_BE_IMAGE%:*}
+    newTag: "${FE_BE_IMAGE##*:}"
 # 값이 바뀌면 ConfigMap 이름의 해시가 바뀌어 fe Pod가 새 값으로 다시 뜹니다.
 configMapGenerator:
   - name: fe-config

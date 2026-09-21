@@ -666,6 +666,23 @@ fe-docker-build-push:
         - fe/**/*
     - when: never
 
+# 백엔드를 직접 보는 확인용 FE 도커 빌드/도커허브 푸시.
+# 같은 소스를 /test 접두사(basePath)로 구워 별도 이미지로 올립니다. basePath 는 빌드 시점 값이라
+# 목을 보는 fe 이미지와 같은 이미지를 쓸 수 없습니다.
+fe-be-docker-build-push:
+  extends: .docker-build-push
+  variables:
+    IMAGE_NAME: komit-fe-be
+    BUILD_CONTEXT: fe
+    BASE_PATH: /test
+    BUILD_ARG_NAMES: BACKEND_API_BASE_URL AI_API_BASE_URL BASE_PATH
+    IMAGE_ENV_NAME: FE_BE_IMAGE
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
+      changes:
+        - fe/**/*
+    - when: never
+
 # SSH로 배포 서버에 접속 후 Docker Compose
 mock-docker-deploy:
   stage: deploy
@@ -726,6 +743,8 @@ k3s-deploy:
       optional: true
     - job: fe-docker-build-push
       optional: true
+    - job: fe-be-docker-build-push
+      optional: true
   tags:
     - "CI/CD"
   allow_failure: false
@@ -766,6 +785,7 @@ k3s-deploy:
       echo "service image: ${SERVICE_IMAGE:-(유지)}"
       echo "escrow image:  ${ESCROW_IMAGE:-(유지)}"
       echo "fe image:      ${FE_IMAGE:-(유지)}"
+      echo "fe-be image:   ${FE_BE_IMAGE:-(유지)}"
 
       # 서버에는 소스를 두지 않고 배포에 필요한 deploy/k3s만 매번 새로 올립니다.
       tar -C deploy -czf - k3s |
@@ -784,6 +804,7 @@ k3s-deploy:
         echo "export SERVICE_IMAGE='${SERVICE_IMAGE:-}'"
         echo "export ESCROW_IMAGE='${ESCROW_IMAGE:-}'"
         echo "export FE_IMAGE='${FE_IMAGE:-}'"
+        echo "export FE_BE_IMAGE='${FE_BE_IMAGE:-}'"
         # fe 이미지 빌드에 쓰는 CI/CD 변수를 실행 환경(fe-config)에도 그대로 넣습니다.
         echo "export BACKEND_API_BASE_URL=\"\$(printf %s '$(b64 "$BACKEND_API_BASE_URL")' | base64 -d)\""
         echo "export AI_API_BASE_URL=\"\$(printf %s '$(b64 "$AI_API_BASE_URL")' | base64 -d)\""
