@@ -4,6 +4,8 @@ resources:
   - ../../base
   - mock-deployment.yaml
   - mock-service.yaml
+  # 로컬 전용 파일 저장소. service-config의 STORAGE_* 주소가 이 Service를 가리킵니다.
+  - minio.yaml
 patches:
   - path: service-nodeport.yaml
   - path: escrow-nodeport.yaml
@@ -46,6 +48,9 @@ configMapGenerator:
     literals:
       - APP_PUBLIC_BASE_URL=http://localhost:8080
       - ESCROW_API_BASE_URL=http://escrow.komit.svc.cluster.local:8081
+      - STORAGE_INTERNAL_ENDPOINT=http://minio.komit.svc.cluster.local:9000
+      - STORAGE_PUBLIC_ENDPOINT=http://localhost:9000
+      - STORAGE_BUCKET=komit
   - name: escrow-config
     namespace: komit
     literals:
@@ -70,3 +75,9 @@ secretGenerator:
       - SSAFY_ESCROW_USER_KEY=disabled-local-escrow-user-key
       - SSAFY_ESCROW_ACCOUNT_NO=0010000000000000
       - SSAFY_FEE_ACCOUNT_NO=0010000000000001
+  # 로컬 개발 전용 MinIO 자격. 운영 값은 deploy.sh가 별도 Secret으로 만듭니다.
+  - name: service-storage
+    namespace: komit
+    literals:
+      - STORAGE_ACCESS_KEY=minioadmin
+      - STORAGE_SECRET_KEY=minioadmin

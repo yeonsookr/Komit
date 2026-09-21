@@ -46,6 +46,8 @@ kubectl -n komit rollout status statefulset/service-redis-sentinel --timeout=300
 
 # 3. 애플리케이션
 kubectl apply -k "$K3S_DIR/local/apps"
+kubectl -n komit rollout status deployment/minio --timeout=300s
+kubectl -n komit wait --for=condition=Complete job/minio-init --timeout=300s
 kubectl -n komit rollout status deployment/service --timeout=300s
 kubectl -n komit rollout status deployment/escrow --timeout=300s
 kubectl -n komit rollout status deployment/mock --timeout=300s

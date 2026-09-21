@@ -5,11 +5,8 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.a501.service.config.StorageProperties;
 import com.a501.service.domain.file.entity.StoredFile;
 import com.a501.service.domain.file.repository.StoredFileRepository;
-import io.minio.MinioClient;
-import java.time.Duration;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -23,7 +20,7 @@ class FileLookupServiceTest {
     @Mock
     private StoredFileRepository storedFileRepository;
     @Mock
-    private MinioClient minioClient;
+    private ObjectStorageService objectStorageService;
 
     @Test
     void findReadUrlsIssuesAnUrlOnlyForCompletedFiles() throws Exception {
@@ -31,18 +28,23 @@ class FileLookupServiceTest {
         StoredFile pending = file(513L, "PENDING", "portfolio", "12/513.png");
         when(storedFileRepository.findByFileIdInAndDeletedFalse(any()))
                 .thenReturn(List.of(completed, pending));
-        when(minioClient.getPresignedObjectUrl(any()))
+        when(objectStorageService.issueReadUrl(completed))
                 .thenReturn("http://localhost:9000/portfolio/12/512.png?signature=test");
-        FileLookupService service = new FileLookupService(
-                storedFileRepository,
-                minioClient,
-                new StorageProperties("http://localhost:9000", "access", "secret", Duration.ofMinutes(15)));
+        FileLookupService service = new FileLookupService(storedFileRepository, objectStorageService);
 
         var urls = service.findReadUrls(List.of(512, 513));
 
         assertThat(urls).containsExactlyEntriesOf(
                 java.util.Map.of(512, "http://localhost:9000/portfolio/12/512.png?signature=test"));
-        verify(minioClient).getPresignedObjectUrl(any());
+        verify(objectStorageService).issueReadUrl(completed);
+    }
+
+    @Test
+    void emptyLookupsTolerateNullKeysSoCallersCanLookUpItemsWithoutFiles() {
+        FileLookupService service = new FileLookupService(storedFileRepository, objectStorageService);
+
+        assertThat(service.findReadUrls(List.of()).get(null)).isNull();
+        assertThat(service.findOriginalNames(List.of()).get(null)).isNull();
     }
 
     private static StoredFile file(Long id, String status, String bucketName, String storageKey) {

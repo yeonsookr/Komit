@@ -22,7 +22,8 @@ app:
   instance-role: ${APP_INSTANCE_ROLE:WRITER}
   public-base-url: ${APP_PUBLIC_BASE_URL:http://localhost:8080}
   storage:
-    endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
+    internal-endpoint: ${STORAGE_INTERNAL_ENDPOINT:http://localhost:9000}
+    public-endpoint: ${STORAGE_PUBLIC_ENDPOINT:http://localhost:9000}
     access-key: ${STORAGE_ACCESS_KEY:minioadmin}
     secret-key: ${STORAGE_SECRET_KEY:minioadmin}
   auth:

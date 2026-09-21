@@ -9597,10 +9597,14 @@ class CreateUploadRequest(BaseModel):
     """올릴 파일을 미리 알리는 요청. 파일 자체는 아직 보내지 않는다."""
 
     originalName: str = Field(
+        min_length=1,
+        max_length=255,
         description="올릴 파일 이름. 화면에 보여줄 이름으로 그대로 남는다.",
         examples=["재직증명서.pdf"],
     )
     contentType: str = Field(
+        min_length=1,
+        max_length=100,
         description=(
             "파일 종류. 올릴 때 같은 값을 `Content-Type`으로 보내야 하며, 다르면 "
             "완료 요청에서 거절된다."
@@ -9608,6 +9612,7 @@ class CreateUploadRequest(BaseModel):
         examples=["application/pdf"],
     )
     sizeBytes: int = Field(
+        ge=1,
         description="파일 크기(바이트). 완료할 때 실제 크기와 맞는지 본다.",
         examples=[284193],
     )
@@ -9738,9 +9743,42 @@ UPLOAD_NOT_FOUND_EXAMPLE = {
     "code": UPLOAD_NOT_FOUND[0],
     "message": UPLOAD_NOT_FOUND[1],
 }
+UNSUPPORTED_FILE_TYPE_EXAMPLE = {
+    "code": UNSUPPORTED_FILE_TYPE[0],
+    "message": UNSUPPORTED_FILE_TYPE[1],
+}
 UPLOAD_NOT_COMPLETED_EXAMPLE = {
     "code": UPLOAD_NOT_COMPLETED[0],
     "message": UPLOAD_NOT_COMPLETED[1],
+}
+UPLOAD_SIZE_MISMATCH_EXAMPLE = {
+    "code": UPLOAD_SIZE_MISMATCH[0],
+    "message": UPLOAD_SIZE_MISMATCH[1],
+}
+UPLOAD_TYPE_MISMATCH_EXAMPLE = {
+    "code": UPLOAD_TYPE_MISMATCH[0],
+    "message": UPLOAD_TYPE_MISMATCH[1],
+}
+UPLOAD_EXPIRED_EXAMPLE = {
+    "code": UPLOAD_EXPIRED[0],
+    "message": UPLOAD_EXPIRED[1],
+}
+
+# R-FILE-01, R-FILE-02. 목과 실서버가 같은 정책 판정을 하도록 한 곳에 둔다.
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+UPLOAD_CONTENT_TYPES = {
+    "PROFILE_IMAGE": {"image/png", "image/jpeg", "image/webp"},
+    "CAREER_EVIDENCE": {"application/pdf", "image/png", "image/jpeg"},
+    "PORTFOLIO_IMAGE": {"image/png", "image/jpeg", "image/webp"},
+    "SIGNATURE": {"image/png"},
+    "DELIVERABLE": {
+        "application/zip",
+        "application/x-zip-compressed",
+        "application/pdf",
+        "application/octet-stream",
+    },
+    "SESSION_RECORDING": {"audio/webm", "audio/mp4"},
+    "REPORT_EVIDENCE": {"application/pdf", "image/png", "image/jpeg", "image/webp"},
 }
 FILE_NOT_ATTACHABLE_EXAMPLE = {
     "code": FILE_NOT_ATTACHABLE[0],
@@ -10698,7 +10736,16 @@ def get_my_sessions() -> MySessionListResponse:
         400: {
             "model": ErrorResponse,
             "description": "파일이 너무 크거나 형식이 맞지 않음",
-            "content": {"application/json": {"example": FILE_TOO_LARGE_EXAMPLE}},
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "FILE_TOO_LARGE": {"value": FILE_TOO_LARGE_EXAMPLE},
+                        "UNSUPPORTED_FILE_TYPE": {
+                            "value": UNSUPPORTED_FILE_TYPE_EXAMPLE
+                        },
+                    }
+                }
+            },
         },
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
@@ -10711,7 +10758,7 @@ def get_my_sessions() -> MySessionListResponse:
         "**파일은 이 서버로 보내지 않는다.** 올릴 파일을 먼저 알리면 파일을 보낼 주소를 "
         "돌려주고, 화면이 그 주소로 파일을 직접 보낸다. 다 보낸 뒤 완료 API를 불러야 "
         "파일이 쓸 수 있는 상태가 된다.\n\n"
-        "형식과 크기는 이 단계에서 본다. 여기서 걸리면 주소를 내주지 않으므로 파일이 "
+        "형식과 크기는 이 단계에서 본다(`R-FILE-01`, `R-FILE-02`). 여기서 걸리면 주소를 내주지 않으므로 파일이 "
         "올라가지도 않는다. `contentType`과 `sizeBytes`는 완료할 때 실제로 올라온 "
         "파일과 맞는지 다시 본다.\n\n"
         "**올리기만 해서는 어디에도 붙지 않는다.** 완료까지 마친 뒤 `fileId`를 프로필 "
@@ -10730,13 +10777,18 @@ def get_my_sessions() -> MySessionListResponse:
         "`purpose`가 비었거나 `purpose`가 허용된 값이 아닐 때\n"
         "- **500 / INTERNAL_ERROR**: 주소를 만들지 못했을 때\n\n"
         "**실서버의 `uploadUrl`은 저장소가 내주는 주소다.** 이 목 서버는 그 자리에 "
-        "자기 주소를 넣어 주고 받은 본문을 버린다. 화면이 3콜 구조를 그대로 돌려볼 "
+        "자기 주소를 넣어 주고 받은 본문을 버린다. 주소 만료 기준은 `R-FILE-03`이다. 화면이 3콜 구조를 그대로 돌려볼 "
         "수 있게 하려는 것이며, 올린 파일이 남지는 않는다."
     ),
 )
 def create_upload(
     request: CreateUploadRequest, http: Request
-) -> UploadTargetResponse:
+) -> UploadTargetResponse | JSONResponse:
+    if request.sizeBytes > MAX_UPLOAD_BYTES:
+        return _error_response(400, FILE_TOO_LARGE)
+    base_content_type = request.contentType.partition(";")[0].strip().lower()
+    if base_content_type not in UPLOAD_CONTENT_TYPES[request.purpose]:
+        return _error_response(400, UNSUPPORTED_FILE_TYPE)
     upload_id = UPLOAD_TARGET_EXAMPLE["uploadId"]
     return UploadTargetResponse(
         **{
@@ -10765,7 +10817,20 @@ async def put_upload_binary(uploadId: int, http: Request) -> Response:
             "model": ErrorResponse,
             "description": "올라오지 않았거나 알린 것과 다름",
             "content": {
-                "application/json": {"example": UPLOAD_NOT_COMPLETED_EXAMPLE}
+                "application/json": {
+                    "examples": {
+                        "UPLOAD_NOT_COMPLETED": {
+                            "value": UPLOAD_NOT_COMPLETED_EXAMPLE
+                        },
+                        "UPLOAD_SIZE_MISMATCH": {
+                            "value": UPLOAD_SIZE_MISMATCH_EXAMPLE
+                        },
+                        "UPLOAD_TYPE_MISMATCH": {
+                            "value": UPLOAD_TYPE_MISMATCH_EXAMPLE
+                        },
+                        "UPLOAD_EXPIRED": {"value": UPLOAD_EXPIRED_EXAMPLE},
+                    }
+                }
             },
         },
         **AREA8_FORBIDDEN,
@@ -10780,7 +10845,7 @@ async def put_upload_binary(uploadId: int, http: Request) -> Response:
     summary="파일 올리기 완료",
     description=(
         "**화면 — 파일 올리기 시작으로 받은 주소에 파일을 다 보낸 뒤**\n\n"
-        "파일이 제대로 올라왔는지 확인하고 쓸 수 있는 상태로 바꾼다. 이 API를 부르기 "
+        "파일이 제대로 올라왔는지 확인하고 쓸 수 있는 상태로 바꾼다(`R-FILE-04`). 이 API를 부르기 "
         "전까지 `fileId`는 어디에도 붙일 수 없다.\n\n"
         "화면이 '다 보냈다'고 알려도 그대로 믿지 않는다. 저장소에 실제로 그 파일이 "
         "있는지, 크기와 형식이 시작할 때 알린 것과 같은지 서버가 직접 확인한다. 하나라도 "

@@ -37,7 +37,9 @@ public class PortfolioItemService {
         Map<Integer, String> thumbnailUrls = fileLookupService.findReadUrls(
                 items.stream().map(PortfolioItem::getThumbnailId).filter(Objects::nonNull).toList());
         return items.stream()
-                .map(item -> MyPortfolioItemResponse.of(item, thumbnailUrls.get(item.getThumbnailId())))
+                // 썸네일 없는 줄은 조회하지 않습니다. 불변 Map은 null 키 조회에 NPE를 던집니다.
+                .map(item -> MyPortfolioItemResponse.of(
+                        item, item.getThumbnailId() == null ? null : thumbnailUrls.get(item.getThumbnailId())))
                 .toList();
     }
 

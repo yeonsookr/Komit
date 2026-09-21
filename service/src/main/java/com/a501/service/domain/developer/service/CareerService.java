@@ -34,7 +34,9 @@ public class CareerService {
         Map<Integer, String> names = fileLookupService.findOriginalNames(
                 careers.stream().filter(career -> !career.isVerified()).map(Career::getFileId).filter(Objects::nonNull).toList());
         return careers.stream()
-                .map(career -> MyCareerResponse.of(career, names.get(career.getFileId())))
+                // 증빙 없는 줄은 조회하지 않습니다. 불변 Map은 null 키 조회에 NPE를 던집니다.
+                .map(career -> MyCareerResponse.of(
+                        career, career.getFileId() == null ? null : names.get(career.getFileId())))
                 .toList();
     }
 
