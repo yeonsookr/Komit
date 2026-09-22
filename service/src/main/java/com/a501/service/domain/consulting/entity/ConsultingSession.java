@@ -45,4 +45,26 @@ public class ConsultingSession extends SoftDeleteEntity {
 
     @Column(name = "duration_minutes", nullable = false)
     private Integer durationMinutes;
+
+    /** 양쪽이 모여 처음 들어간 시각. 나갔다 다시 들어와도 처음 시각을 지킨다. (R-CON-09) */
+    public void startConsulting(LocalDateTime startedAt) {
+        if (this.startedAt == null) {
+            this.startedAt = startedAt;
+        }
+    }
+
+    /**
+     * 세션을 마친다.
+     *
+     * <p>같은 요청이 다시 와도 최초 종료 시각이 바뀌지 않는다. 종료는 한 번만 확정된다. (R-CON-15)
+     */
+    public void completeConsulting(LocalDateTime endedAt) {
+        if (this.endedAt == null) {
+            this.endedAt = endedAt;
+        }
+    }
+
+    public boolean isEnded() {
+        return endedAt != null;
+    }
 }

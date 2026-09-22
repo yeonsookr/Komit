@@ -3,6 +3,7 @@ package com.a501.service.domain.consulting.realtime;
 import com.a501.service.common.exception.BusinessException;
 import com.a501.service.common.realtime.RealtimeChannelAuthorizer;
 import com.a501.service.common.realtime.protocol.RealtimeChannelType;
+import com.a501.service.domain.consulting.ConsultingEntryPolicy;
 import com.a501.service.domain.consulting.ConsultingErrorCode;
 import com.a501.service.domain.consulting.entity.ConsultingSession;
 import com.a501.service.domain.consulting.entity.ParticipationRecord;
@@ -11,7 +12,6 @@ import com.a501.service.domain.consulting.repository.ConsultingSessionRepository
 import com.a501.service.domain.consulting.repository.ParticipationRecordRepository;
 import com.a501.service.domain.consulting.repository.ReservationRepository;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Objects;
@@ -27,9 +27,6 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Component
 public class ConsultingChannelAuthorizer implements RealtimeChannelAuthorizer {
-    /** 세션 시작 전 몇 분부터 들어갈 수 있는지. (R-CON-08) */
-    private static final Duration ENTRY_OPENS_BEFORE = Duration.ofMinutes(10);
-
     /** 세션 하나에 참가자는 의뢰인과 개발자 둘입니다. */
     private static final int REQUIRED_PARTICIPANTS = 2;
 
@@ -97,17 +94,17 @@ public class ConsultingChannelAuthorizer implements RealtimeChannelAuthorizer {
 
     /** 예약 시각보다 너무 이르거나 예약을 확인할 수 없으면 막습니다. */
     private void requireEntryOpen(Integer sessionId) {
-        LocalDateTime opensAt =
+        LocalDateTime scheduledAt =
                 reservationRepository
                         .findByConsultingSessionIdAndDeletedFalse(sessionId)
                         .map(Reservation::getScheduledAt)
-                        .map(scheduledAt -> scheduledAt.minus(ENTRY_OPENS_BEFORE))
                         .orElseThrow(
                                 () ->
                                         new BusinessException(
                                                 ConsultingErrorCode.ENTRY_NOT_OPEN));
 
-        if (LocalDateTime.now(clock).isBefore(opensAt)) {
+        // 입장 API 와 같은 값을 봐야 합니다. 갈리면 화면은 들여보내는데 소켓이 막힙니다.
+        if (!ConsultingEntryPolicy.isOpen(scheduledAt, LocalDateTime.now(clock))) {
             throw new BusinessException(ConsultingErrorCode.ENTRY_NOT_OPEN);
         }
     }

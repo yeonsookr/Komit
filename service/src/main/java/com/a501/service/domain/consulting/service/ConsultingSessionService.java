@@ -1,0 +1,198 @@
+package com.a501.service.domain.consulting.service;
+
+import com.a501.service.common.exception.BusinessException;
+import com.a501.service.domain.consulting.ConsultingEntryPolicy;
+import com.a501.service.domain.consulting.ConsultingErrorCode;
+import com.a501.service.domain.consulting.dto.response.ConsultingSessionResponse;
+import com.a501.service.domain.consulting.entity.ConsultingSession;
+import com.a501.service.domain.consulting.entity.ParticipationRecord;
+import com.a501.service.domain.consulting.entity.Reservation;
+import com.a501.service.domain.consulting.repository.ConsultingSessionRepository;
+import com.a501.service.domain.consulting.repository.ParticipationRecordRepository;
+import com.a501.service.domain.consulting.repository.ReservationRepository;
+import com.a501.service.domain.contract.dto.ContractParties;
+import com.a501.service.domain.contract.service.ContractQueryService;
+import java.time.Clock;
+import java.time.LocalDateTime;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * 컨설팅 세션 유스케이스 — 조회·입장·종료.
+ *
+ * <p>화상 연결 자체는 여기서 하지 않습니다. 들어갈 수 있는지 판정하고 기록만 남깁니다.
+ *
+ * <p><b>404 에 대해.</b> 세션은 존재 자체가 민감한 리소스라, 당사자가 아닌 사람에게는 403 이 아니라
+ * 404 로 답해 있다는 사실도 알리지 않습니다. (BACKEND_CONVENTIONS 12.1)
+ *
+ * <p><b>당사자 판정.</b> 세션은 두 사람을 직접 들고 있지 않습니다. 컨설팅 합의 → 계약 → 방 →
+ * 프로젝트로 내려가야 하는데, 그 길은 계약 도메인이 알고 있어 {@link ContractQueryService} 에
+ * 묻습니다. 다른 도메인의 엔티티나 리포지터리를 직접 보지 않습니다. (BACKEND_CONVENTIONS 7.1)
+ */
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class ConsultingSessionService {
+    /** 세션 하나에 참가자는 의뢰인과 개발자 둘입니다. */
+    private static final int REQUIRED_PARTICIPANTS = 2;
+
+    /** 지금 보여 주는 안내문 판. 문구가 바뀌면 올립니다. (R-CON-17) */
+    private static final short NOTICE_VERSION = 1;
+
+    private final ConsultingSessionRepository sessionRepository;
+    private final ParticipationRecordRepository participationRepository;
+    private final ReservationRepository reservationRepository;
+    private final ContractQueryService contractQueryService;
+    private final Clock clock;
+
+    @Autowired
+    public ConsultingSessionService(
+            ConsultingSessionRepository sessionRepository,
+            ParticipationRecordRepository participationRepository,
+            ReservationRepository reservationRepository,
+            ContractQueryService contractQueryService) {
+        this(
+                sessionRepository,
+                participationRepository,
+                reservationRepository,
+                contractQueryService,
+                Clock.systemUTC());
+    }
+
+    /**
+     * 세션 한 건을 조회합니다.
+     *
+     * @param userId 인증된 사용자
+     * @param sessionId 세션 id
+     * @return 세션 응답
+     * @throws BusinessException {@link ConsultingErrorCode#SESSION_NOT_FOUND} — 없거나 지워진 세션,
+     *     또는 요청자가 당사자가 아닌 경우
+     */
+    public ConsultingSessionResponse getSession(Integer userId, Integer sessionId) {
+        ConsultingSession session = findSession(sessionId);
+        ContractParties parties = findParties(session, userId);
+        return ConsultingSessionResponse.of(
+                session, parties.contractId(), findReservation(sessionId));
+    }
+
+    /**
+     * 세션에 들어갑니다.
+     *
+     * <p><b>이 요청 하나가 동의와 입장을 겸합니다.</b> 양쪽이 모두 보내기 전에는 실제로
+     * 들여보내지 않고, 먼저 보낸 쪽은 상대를 기다립니다. 같은 사람이 기다리는 동안 다시 보내도
+     * 동의는 한 번만 기록합니다. (R-CON-17)
+     *
+     * <p>양쪽이 모이면 그때 들어간 시각이 참여 기록에 남고, 최초 입장이 세션 시작이 됩니다.
+     * (R-CON-09)
+     *
+     * @param userId 인증된 사용자
+     * @param sessionId 세션 id
+     * @return 실제로 들어갔는지와 세션 응답
+     * @throws BusinessException {@link ConsultingErrorCode#SESSION_NOT_FOUND} — 없거나 지워진 세션,
+     *     또는 요청자가 당사자가 아닌 경우
+     * @throws BusinessException {@link ConsultingErrorCode#SESSION_NOT_OPEN} — 아직 이른 시각이거나
+     *     이미 끝난 세션인 경우
+     */
+    @Transactional
+    public SessionEntry join(Integer userId, Integer sessionId) {
+        ConsultingSession session = findSession(sessionId);
+        ContractParties parties = findParties(session, userId);
+        Reservation reservation = findReservation(sessionId);
+
+        LocalDateTime now = LocalDateTime.now(clock);
+        requireOpen(session, reservation, now);
+
+        recordConsent(sessionId, userId, now);
+
+        List<ParticipationRecord> records =
+                participationRepository.findAllByConsultingSessionIdAndDeletedFalse(sessionId);
+        if (records.size() < REQUIRED_PARTICIPANTS) {
+            return new SessionEntry(false, response(session, parties, reservation));
+        }
+
+        records.forEach(record -> record.enter(now));
+        session.startConsulting(now);
+        return new SessionEntry(true, response(session, parties, reservation));
+    }
+
+    /**
+     * 세션을 마칩니다.
+     *
+     * <p>같은 요청을 다시 보내도 최초 종료 시각과 같은 결과가 돌아옵니다. (R-CON-15)
+     *
+     * @param userId 인증된 사용자
+     * @param sessionId 세션 id
+     * @return 종료 시각이 담긴 세션 응답
+     * @throws BusinessException {@link ConsultingErrorCode#SESSION_NOT_FOUND} — 없거나 지워진 세션,
+     *     또는 요청자가 당사자가 아닌 경우
+     */
+    @Transactional
+    public ConsultingSessionResponse end(Integer userId, Integer sessionId) {
+        ConsultingSession session = findSession(sessionId);
+        ContractParties parties = findParties(session, userId);
+
+        session.completeConsulting(LocalDateTime.now(clock));
+        return response(session, parties, findReservation(sessionId));
+    }
+
+    /** 행이 생기는 것이 곧 동의입니다. 이미 있으면 그대로 둡니다. */
+    private void recordConsent(Integer sessionId, Integer userId, LocalDateTime now) {
+        participationRepository
+                .findByConsultingSessionIdAndUserIdAndDeletedFalse(sessionId, userId)
+                .orElseGet(
+                        () ->
+                                participationRepository.save(
+                                        ParticipationRecord.consent(
+                                                sessionId, userId, NOTICE_VERSION, now)));
+    }
+
+    private void requireOpen(
+            ConsultingSession session, Reservation reservation, LocalDateTime now) {
+        if (session.isEnded()
+                || !ConsultingEntryPolicy.isOpen(reservation.getScheduledAt(), now)) {
+            throw new BusinessException(ConsultingErrorCode.SESSION_NOT_OPEN);
+        }
+    }
+
+    private ConsultingSessionResponse response(
+            ConsultingSession session, ContractParties parties, Reservation reservation) {
+        return ConsultingSessionResponse.of(session, parties.contractId(), reservation);
+    }
+
+    private ConsultingSession findSession(Integer sessionId) {
+        return sessionRepository
+                .findByIdAndDeletedFalse(sessionId)
+                .orElseThrow(() -> new BusinessException(ConsultingErrorCode.SESSION_NOT_FOUND));
+    }
+
+    private Reservation findReservation(Integer sessionId) {
+        return reservationRepository
+                .findByConsultingSessionIdAndDeletedFalse(sessionId)
+                .orElseThrow(() -> new BusinessException(ConsultingErrorCode.SESSION_NOT_FOUND));
+    }
+
+    private ContractParties findParties(ConsultingSession session, Integer userId) {
+        ContractParties parties =
+                contractQueryService
+                        .findPartiesByConsultingAgreementId(session.getConsultingAgreementId())
+                        .orElseThrow(
+                                () ->
+                                        new BusinessException(
+                                                ConsultingErrorCode.SESSION_NOT_FOUND));
+        if (!parties.includes(userId)) {
+            throw new BusinessException(ConsultingErrorCode.SESSION_NOT_FOUND);
+        }
+        return parties;
+    }
+
+    /**
+     * 입장 결과.
+     *
+     * @param entered 양쪽이 모여 실제로 들어갔으면 참. 거짓이면 상대 동의를 기다리는 중
+     * @param session 세션 응답
+     */
+    public record SessionEntry(boolean entered, ConsultingSessionResponse session) {}
+}
