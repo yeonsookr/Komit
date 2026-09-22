@@ -6828,12 +6828,44 @@ DRAFT_CLIENT_CONTRACT_EXAMPLE = _draft_contract(DRAFT_CLIENT_CONTRACT_ID, 106)
 # 이 자리에 둔다. 초안 전용 응답을 따로 만들지 않는다 — 초안은 가계약 계약서다.
 # --------------------------------------------------------------------------- #
 
-DRAFT_CONSULTING_CONTRACT_EXAMPLE = copy.deepcopy(CONSULTING_CONTRACT_EXAMPLE)
+def _blank_developer_input(draft: dict) -> dict:
+    """AI가 채우지 않는 칸을 비운다.
+
+    일정·기간·금액·인계물·전달 메시지는 합의와 검수가 필요해 개발자가 직접 넣는다.
+    가계약 예시를 그대로 쓰면 이 값들이 차 있어 「AI가 금액까지 정했다」로 읽힌다.
+    남기는 것은 AI가 만드는 것뿐이다 — 작업 이름, 확인 문장, 맡기로 한 요구사항, 다룰 항목.
+    """
+    draft["detail"] = None
+    draft["messages"] = []
+    development = draft.get("development")
+    if development is not None:
+        development["startDate"] = None
+        development["dueDate"] = None
+        development["freeRepairDays"] = 0
+        development["totalAmount"] = 0
+        development["deliverables"] = []
+        for milestone in development["milestones"]:
+            milestone["price"] = 0
+            milestone["workDate"] = None
+    consulting = draft.get("consulting")
+    if consulting is not None:
+        consulting["sessions"] = []
+        consulting["totalAmount"] = 0
+    return draft
+
+
+DRAFT_CONSULTING_CONTRACT_EXAMPLE = _blank_developer_input(
+    copy.deepcopy(CONSULTING_CONTRACT_EXAMPLE)
+)
 DRAFT_CONSULTING_CONTRACT_EXAMPLE["roomId"] = CONVERTED_CONSULTING_ROOM_ID
 DRAFT_CONSULTING_CONTRACT_EXAMPLE["consulting"]["status"] = "PRE_SIGNED"
-DRAFT_CONSULTING_CONTRACT_EXAMPLE["consulting"]["sessions"] = []
-DRAFT_CONSULTING_CONTRACT_EXAMPLE["consulting"]["totalAmount"] = 0
-DRAFT_CONSULTING_CONTRACT_EXAMPLE["messages"] = []
+
+# 가계약 예시(DRAFT_DEV_CONTRACT_EXAMPLE)는 개발자가 써서 보낸 계약서라 금액과 일정이
+# 차 있다. 초안은 그 앞 단계이므로 같은 예시를 쓰지 않고 비운 판을 따로 둔다.
+DRAFT_DEVELOPMENT_CONTRACT_EXAMPLE = _blank_developer_input(
+    copy.deepcopy(DRAFT_DEV_CONTRACT_EXAMPLE)
+)
+DRAFT_DEVELOPMENT_CONTRACT_EXAMPLE["roomId"] = CONVERTED_DEVELOPMENT_ROOM_ID
 
 
 @router.post(
@@ -6843,7 +6875,7 @@ DRAFT_CONSULTING_CONTRACT_EXAMPLE["messages"] = []
     responses={
         200: {
             "content": {
-                "application/json": {"example": DRAFT_DEV_CONTRACT_EXAMPLE}
+                "application/json": {"example": DRAFT_DEVELOPMENT_CONTRACT_EXAMPLE}
             }
         },
         403: {
@@ -6943,7 +6975,7 @@ def draft_contract(
     example = (
         DRAFT_CONSULTING_CONTRACT_EXAMPLE
         if room["type"] == "CONSULTING"
-        else DRAFT_DEV_CONTRACT_EXAMPLE
+        else DRAFT_DEVELOPMENT_CONTRACT_EXAMPLE
     )
     return ContractResponse(**{**example, "roomId": roomId})
 
