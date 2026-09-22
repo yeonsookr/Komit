@@ -44,7 +44,7 @@ class FakeRecorder {
 
   constructor(
     readonly stream: { tracks: unknown[] },
-    readonly options: { mimeType: string },
+    readonly options: { mimeType: string; audioBitsPerSecond?: number },
   ) {
     FakeRecorder.instances.push(this);
   }
