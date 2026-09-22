@@ -1,0 +1,14 @@
+# 로컬 docker-compose가 NodePort 30090을 호스트 9000으로 매핑합니다.
+# service-config의 STORAGE_PUBLIC_ENDPOINT(http://localhost:9000)와 같아야 프리사인 URL이 열립니다.
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: komit
+spec:
+  type: NodePort
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: s3
+      nodePort: 30090

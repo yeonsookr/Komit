@@ -45,6 +45,8 @@ wait_for "service-redis-sentinel statefulset" kubectl -n komit get statefulset s
 kubectl -n komit rollout status statefulset/service-redis-sentinel --timeout=300s
 
 # 3. 애플리케이션
+# minio-init Job은 service-config 이름 해시가 바뀌면 template이 달라져 다시 apply할 수 없으므로 먼저 지웁니다.
+kubectl -n komit delete job minio-init --ignore-not-found
 kubectl apply -k "$K3S_DIR/local/apps"
 kubectl -n komit rollout status deployment/minio --timeout=300s
 kubectl -n komit wait --for=condition=Complete job/minio-init --timeout=300s

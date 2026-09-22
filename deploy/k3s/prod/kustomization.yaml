@@ -7,3 +7,6 @@ patches:
   - path: escrow-nodeport.yaml
   - path: fe-nodeport.yaml
   - path: fe-test-nodeport.yaml
+  # 파일 저장소. nginx가 file.komit.site를 30090으로 넘깁니다.
+  - path: minio-nodeport.yaml
+  - path: minio-storage.yaml

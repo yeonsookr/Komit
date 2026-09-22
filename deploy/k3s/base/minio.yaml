@@ -1,6 +1,8 @@
-# 로컬 실습 전용 MinIO. 운영은 deploy.sh가 STORAGE_INTERNAL_ENDPOINT로 받는 외부 저장소를 씁니다.
-# service Pod는 minio.komit.svc.cluster.local:9000으로 붙고, 브라우저는 docker-compose가 NodePort 30090을
-# 호스트 9000으로 매핑한 주소(STORAGE_PUBLIC_ENDPOINT)로 프리사인 URL을 호출합니다.
+# 파일 저장소 MinIO. 로컬과 운영이 같은 매니페스트를 쓰고, overlay가 NodePort(30090)와 디스크 크기만 덧씌웁니다.
+# service Pod는 minio.komit.svc.cluster.local:9000(STORAGE_INTERNAL_ENDPOINT)으로 붙습니다.
+# 브라우저가 여는 프리사인 URL의 호스트(STORAGE_PUBLIC_ENDPOINT)는 운영에서는 nginx가 받는 file.komit.site,
+# 로컬에서는 docker-compose가 NodePort 30090을 매핑한 localhost:9000입니다.
+# S3 서명 규격상 하위 경로(komit.site/file/ 같은 형태)로는 서비스할 수 없어 별도 호스트를 씁니다.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -24,6 +26,7 @@ metadata:
     app.kubernetes.io/name: minio
     app.kubernetes.io/part-of: komit
 spec:
+  # 단일 디스크 단일 노드입니다. PVC가 ReadWriteOnce라 복제본을 늘릴 수 없고, 교체할 때는 내렸다 올립니다.
   replicas: 1
   strategy:
     type: Recreate
@@ -50,10 +53,12 @@ spec:
           ports:
             - name: s3
               containerPort: 9000
+            # 콘솔은 Service로 열지 않습니다. 필요하면 kubectl port-forward로 봅니다.
             - name: console
               containerPort: 9001
           env:
-            # service가 쓰는 자격과 같은 Secret을 루트 계정으로 씁니다.
+            # service가 쓰는 자격(service-storage)을 그대로 루트 계정으로 씁니다.
+            # MinIO 규칙상 사용자 이름은 3자 이상, 비밀번호는 8자 이상이어야 기동합니다.
             - name: MINIO_ROOT_USER
               valueFrom:
                 secretKeyRef:
@@ -109,16 +114,16 @@ metadata:
     app.kubernetes.io/name: minio
     app.kubernetes.io/part-of: komit
 spec:
-  type: NodePort
   selector:
     app.kubernetes.io/name: minio
   ports:
     - name: s3
       port: 9000
       targetPort: s3
-      nodePort: 30090
 ---
-# 버킷을 만듭니다. service는 버킷이 있다고 가정하고 기동합니다.
+# 버킷과 임시 객체 만료 규칙을 만듭니다. service는 버킷이 있다고 가정하고 기동합니다.
+# service-config의 이름 해시가 바뀌면 이 Job의 template도 바뀌어 다시 apply할 수 없으므로,
+# 배포 스크립트가 apply 전에 지난 Job을 지웁니다. 버킷은 --ignore-existing이라 몇 번 돌아도 안전합니다.
 apiVersion: batch/v1
 kind: Job
 metadata:
