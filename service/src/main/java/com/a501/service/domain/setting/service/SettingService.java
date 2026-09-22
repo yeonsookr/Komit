@@ -25,4 +25,11 @@ public class SettingService {
                 .orElseGet(() -> settingRepository.save(Setting.forNewUser(userId)));
         setting.agreeSellerTerms();
     }
+
+    /** 마이페이지가 알림 수신 설정을 조회하는 창구입니다. */
+    public boolean isNotificationEnabled(Integer userId) {
+        return settingRepository.findByUserIdAndDeletedFalse(userId)
+                .map(Setting::isNotificationEnabled)
+                .orElseThrow(() -> new IllegalStateException("사용자 설정을 찾을 수 없습니다."));
+    }
 }

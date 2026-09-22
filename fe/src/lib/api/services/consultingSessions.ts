@@ -1,6 +1,5 @@
 import "server-only";
 
-import { bearerHeaders } from "@/lib/auth/session";
 import { SESSION_PENDING_CONSENT_STATUS } from "@/lib/session";
 import type {
   ApplySummaryChangesRequest,
@@ -9,7 +8,7 @@ import type {
   SessionSummary,
 } from "@/types/contract";
 import { BACKEND } from "../endpoints";
-import { backendApi } from "../server";
+import { authenticatedBackendApi } from "../server";
 
 /**
  * 컨설팅 세션(영역 4).
@@ -24,9 +23,8 @@ import { backendApi } from "../server";
 
 /** 세션 하나. 잡힌 일정과 시작·종료 시각이 들어 있습니다. */
 export async function getConsultingSession(sessionId: number): Promise<ConsultingSession> {
-  const { data } = await backendApi().get<ConsultingSession>(
+  const { data } = await authenticatedBackendApi().get<ConsultingSession>(
     BACKEND.CONSULTING_SESSION(sessionId),
-    await bearerHeaders(),
   );
   return data;
 }
@@ -50,10 +48,9 @@ export interface SessionJoinResult {
  * 아직 열리지 않았거나 이미 끝난 세션이면 409 입니다.
  */
 export async function joinConsultingSession(sessionId: number): Promise<SessionJoinResult> {
-  const response = await backendApi().post<ConsultingSession>(
+  const response = await authenticatedBackendApi().post<ConsultingSession>(
     BACKEND.SESSION_PARTICIPATIONS(sessionId),
     undefined,
-    await bearerHeaders(),
   );
 
   // 202 만 대기로 봅니다. 그 밖의 2xx 는 들어간 것으로 다룹니다 — 이미 들어와 있는
@@ -70,10 +67,9 @@ export async function joinConsultingSession(sessionId: number): Promise<SessionJ
  * 끝내면 녹음을 바탕으로 요약이 만들어집니다. 만들어지기 전에 요약을 읽으면 409 입니다.
  */
 export async function endConsultingSession(sessionId: number): Promise<ConsultingSession> {
-  const { data } = await backendApi().post<ConsultingSession>(
+  const { data } = await authenticatedBackendApi().post<ConsultingSession>(
     BACKEND.SESSION_END(sessionId),
     undefined,
-    await bearerHeaders(),
   );
   return data;
 }
@@ -90,10 +86,9 @@ export async function createSessionRecording(
   sessionId: number,
   body: { fileId: number },
 ): Promise<SessionRecording> {
-  const { data } = await backendApi().post<SessionRecording>(
+  const { data } = await authenticatedBackendApi().post<SessionRecording>(
     BACKEND.SESSION_RECORDINGS(sessionId),
     body,
-    await bearerHeaders(),
   );
   return data;
 }
@@ -105,9 +100,8 @@ export async function createSessionRecording(
  * 동안에는 **409 `SUMMARY_NOT_READY`** 입니다. 없는 세션(404)과 갈라 다뤄야 합니다.
  */
 export async function getSessionSummary(sessionId: number): Promise<SessionSummary> {
-  const { data } = await backendApi().get<SessionSummary>(
+  const { data } = await authenticatedBackendApi().get<SessionSummary>(
     BACKEND.SESSION_SUMMARY(sessionId),
-    await bearerHeaders(),
   );
   return data;
 }
@@ -122,10 +116,9 @@ export async function applySummaryChanges(
   sessionId: number,
   body: ApplySummaryChangesRequest,
 ): Promise<SessionSummary> {
-  const { data } = await backendApi().post<SessionSummary>(
+  const { data } = await authenticatedBackendApi().post<SessionSummary>(
     BACKEND.SESSION_SUMMARY_CHANGES(sessionId),
     body,
-    await bearerHeaders(),
   );
   return data;
 }

@@ -9,7 +9,7 @@ import {
 } from './mypage';
 
 /**
- * 서버 전용 모듈이라 `server-only` 와 axios 인스턴스, 토큰 헤더를 가짜로 바꿔 둡니다.
+ * 서버 전용 모듈이라 `server-only` 와 인증 axios 인스턴스를 가짜로 바꿔 둡니다.
  * 여기서 보는 것은 어느 주소를 어떤 방법으로 부르고 무엇을 돌려주는지입니다.
  */
 const { get, patch, post, put } = vi.hoisted(() => ({
@@ -19,12 +19,7 @@ const { get, patch, post, put } = vi.hoisted(() => ({
   put: vi.fn(),
 }));
 vi.mock('server-only', () => ({}));
-vi.mock('../server', () => ({ backendApi: () => ({ get, patch, post, put }) }));
-vi.mock('@/lib/auth/session', () => ({
-  bearerHeaders: async () => ({ headers: { Authorization: 'Bearer t' } }),
-}));
-
-const AUTH = { headers: { Authorization: 'Bearer t' } };
+vi.mock('../server', () => ({ authenticatedBackendApi: () => ({ get, patch, post, put }) }));
 
 beforeEach(() => {
   get.mockReset();
@@ -34,12 +29,12 @@ beforeEach(() => {
 });
 
 describe('getMyPage', () => {
-  it('마이페이지를 그대로 돌려주고 토큰을 싣는다', async () => {
+  it('마이페이지를 그대로 돌려준다', async () => {
     const page = { account: { name: '김미미' }, projects: [] };
     get.mockResolvedValueOnce({ data: page });
 
     await expect(getMyPage()).resolves.toEqual(page);
-    expect(get).toHaveBeenCalledWith('/api/mypage', AUTH);
+    expect(get).toHaveBeenCalledWith('/api/mypage');
   });
 });
 
@@ -50,7 +45,7 @@ describe('updateMyName', () => {
     patch.mockResolvedValueOnce({ data: account });
 
     await expect(updateMyName({ name: '김미미' })).resolves.toEqual(account);
-    expect(patch).toHaveBeenCalledWith('/api/users/me', { name: '김미미' }, AUTH);
+    expect(patch).toHaveBeenCalledWith('/api/users/me', { name: '김미미' });
   });
 });
 
@@ -64,7 +59,7 @@ describe('updateMyProfileImage', () => {
     put.mockResolvedValueOnce({ data: account });
 
     await expect(updateMyProfileImage({ fileId: 512 })).resolves.toEqual(account);
-    expect(put).toHaveBeenCalledWith('/api/users/me/profile-image', { fileId: 512 }, AUTH);
+    expect(put).toHaveBeenCalledWith('/api/users/me/profile-image', { fileId: 512 });
   });
 });
 
@@ -78,7 +73,6 @@ describe('updateNotificationSetting', () => {
     expect(patch).toHaveBeenCalledWith(
       '/api/settings/notification',
       { notificationEnabled: false },
-      AUTH,
     );
   });
 });
@@ -92,7 +86,7 @@ describe('checkWithdrawal', () => {
     get.mockResolvedValueOnce({ data: check });
 
     await expect(checkWithdrawal()).resolves.toEqual(check);
-    expect(get).toHaveBeenCalledWith('/api/users/me/withdrawal', AUTH);
+    expect(get).toHaveBeenCalledWith('/api/users/me/withdrawal');
   });
 });
 
@@ -101,6 +95,6 @@ describe('withdraw', () => {
     post.mockResolvedValueOnce({ data: { isDeleted: true, deletedAt: '2026-09-14T10:05:00+09:00' } });
 
     await expect(withdraw()).resolves.toMatchObject({ isDeleted: true });
-    expect(post).toHaveBeenCalledWith('/api/users/me/withdrawal', undefined, AUTH);
+    expect(post).toHaveBeenCalledWith('/api/users/me/withdrawal', undefined);
   });
 });

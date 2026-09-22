@@ -36,4 +36,8 @@ public class ReviewQueryService {
                 .map(review -> ReviewResponse.of(review, names.get(review.getClientId()), types.get(review.getContractId())))
                 .toList();
     }
+
+    public int countByDeveloper(Integer developerId) {
+        return Math.toIntExact(reviewRepository.countByDeveloperIdAndDeletedFalse(developerId));
+    }
 }

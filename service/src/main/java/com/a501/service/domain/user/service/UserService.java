@@ -8,6 +8,7 @@ import com.a501.service.common.exception.CommonErrorCode;
 import com.a501.service.common.security.SecretStringCrypto;
 import com.a501.service.domain.setting.service.SettingService;
 import com.a501.service.domain.user.dto.KakaoUserData;
+import com.a501.service.domain.user.dto.MyPageUserView;
 import com.a501.service.domain.user.dto.UserLoginResult;
 import com.a501.service.domain.user.dto.UserSnapshot;
 import com.a501.service.domain.user.dto.UserProfileView;
@@ -78,6 +79,18 @@ public class UserService {
                 .filter(found -> !found.isWithdrawn())
                 .orElseThrow(() -> new BusinessException(CommonErrorCode.UNAUTHORIZED));
         return new UserProfileView(user.getId(), user.getName(), user.getProfileImageFileId(), user.getKakaoProfileImageUrl());
+    }
+
+    /** 마이페이지 계정 칸에 필요한 값. 탈퇴했거나 없는 사용자는 인증 실패로 봅니다. */
+    public MyPageUserView getMyPageUser(Integer userId) {
+        User user = userRepository.findById(userId)
+                .filter(found -> !found.isWithdrawn())
+                .orElseThrow(() -> new BusinessException(CommonErrorCode.UNAUTHORIZED));
+        return new MyPageUserView(
+                user.getName(),
+                user.getEmail(),
+                user.getProfileImageFileId(),
+                user.getKakaoProfileImageUrl());
     }
 
     /**
