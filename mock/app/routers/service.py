@@ -2549,8 +2549,9 @@ def complete_survey(
         "- **201**: 파일을 받아 검사가 열렸을 때. 이어서 설문 조회로 설문4 문항을 받는다\n"
         "- **400 / SCAN_FILE_INVALID**: 받은 형식이 아닌 파일을 올렸을 때. 내려받은 파일을 "
         "그대로 올리도록 안내한다\n"
-        "- **400 / DIAGNOSIS_MISMATCH**: 파일 내용의 진단 번호가 URL의 `diagnosisId`와 "
-        "다를 때. 이 진단에서 받은 검사 파일로 다시 검사하도록 안내한다\n"
+        "- **400 / DIAGNOSIS_MISMATCH**: 파일 내용에 진단 번호가 적혀 있고 그것이 URL의 "
+        "`diagnosisId`와 다를 때. 이 진단에서 받은 검사 파일로 다시 검사하도록 안내한다. "
+        "번호가 적혀 있지 않은 파일은 받는다\n"
         "- **400 / SCAN_VERSION_OUTDATED**: 파일 내용의 검사 버전이 현재 지원하는 버전과 "
         "다를 때. 새 검사 파일을 내려받아 다시 검사하도록 안내한다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
@@ -2590,7 +2591,10 @@ def upload_scan_result(
     parsed = scan_result.parse(file.file.read())
     if parsed is None:
         return _error_response(400, SCAN_FILE_INVALID)
-    if parsed.get("diagnosisId") != diagnosisId:
+    # 번호가 적혀 있을 때만 대조한다. 검사 파일을 받아 만든 결과 파일에는 번호가
+    # 항상 들어 있어(SKILL.md 1단계) 다른 진단의 파일은 그대로 걸린다. 손으로 만든
+    # 예시 파일에는 번호가 없는데, 그것까지 막으면 데모를 돌릴 수 없다.
+    if parsed.get("diagnosisId") is not None and parsed["diagnosisId"] != diagnosisId:
         return _error_response(400, DIAGNOSIS_MISMATCH)
     if parsed.get("scanVersion") != SCAN_VERSION:
         return _error_response(400, SCAN_VERSION_OUTDATED)
