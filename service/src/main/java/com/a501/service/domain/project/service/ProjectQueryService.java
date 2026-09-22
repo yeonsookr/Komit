@@ -2,7 +2,11 @@ package com.a501.service.domain.project.service;
 
 import com.a501.service.domain.project.entity.Project;
 import com.a501.service.domain.project.repository.ProjectRepository;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,5 +43,45 @@ public class ProjectQueryService {
      */
     public Optional<String> findName(Integer projectId) {
         return projectRepository.findByIdAndDeletedFalse(projectId).map(Project::getName);
+    }
+
+    /**
+     * 이 의뢰인이 맡긴 프로젝트.
+     *
+     * @param clientId 의뢰인 사용자 id
+     * @return 프로젝트 id 목록
+     */
+    public List<Integer> findProjectIds(Integer clientId) {
+        return projectRepository.findAllByClientIdAndDeletedFalse(clientId).stream()
+                .map(Project::getId)
+                .toList();
+    }
+
+    /**
+     * 프로젝트 식별자별 의뢰인. 없거나 지워진 프로젝트는 결과에서 빠집니다.
+     *
+     * @param projectIds 프로젝트 id 목록
+     * @return 프로젝트 id → 의뢰인 사용자 id
+     */
+    public Map<Integer, Integer> findClientIds(Collection<Integer> projectIds) {
+        if (projectIds.isEmpty()) {
+            return Map.of();
+        }
+        return projectRepository.findAllByIdInAndDeletedFalse(projectIds).stream()
+                .collect(Collectors.toMap(Project::getId, Project::getClientId));
+    }
+
+    /**
+     * 프로젝트 식별자별 이름. 없거나 지워진 프로젝트는 결과에서 빠집니다.
+     *
+     * @param projectIds 프로젝트 id 목록
+     * @return 프로젝트 id → 이름
+     */
+    public Map<Integer, String> findNames(Collection<Integer> projectIds) {
+        if (projectIds.isEmpty()) {
+            return Map.of();
+        }
+        return projectRepository.findAllByIdInAndDeletedFalse(projectIds).stream()
+                .collect(Collectors.toMap(Project::getId, Project::getName));
     }
 }
