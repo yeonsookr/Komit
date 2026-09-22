@@ -38,7 +38,7 @@ class ServiceApplicationTests {
     @Test
     void seedsAllDesignedStatusCodes() {
         assertThat(count("system_enum_groups")).isEqualTo(27);
-        assertThat(count("system_enums")).isEqualTo(91);
+        assertThat(count("system_enums")).isEqualTo(92);
 
         String reportResolvedName = jdbcClient.sql("""
                         SELECT code_name
