@@ -200,7 +200,7 @@ INSERT INTO dynamic_codes (code_id, group_id, code_name, sort_order, is_active)
 SELECT source.code_id, groups.group_id, source.code_name, source.sort_order, TRUE
 FROM (VALUES
     (21, 'TECH_CATEGORY', 'Next.js', 1), (22, 'TECH_CATEGORY', 'Supabase', 2),
-    (23, 'TECH_CATEGORY', 'TypeScript', 3),
+    (23, 'TECH_CATEGORY', 'TypeScript', 3), (24, 'TECH_CATEGORY', 'React', 4),
     (41, 'DEV_FIELD', '인터넷에 올리기', 1), (42, 'DEV_FIELD', 'DB 연결', 2),
     (43, 'DEV_FIELD', '도메인 연결', 3), (44, 'DEV_FIELD', '로그인 붙이기', 4),
     (45, 'DEV_FIELD', '알림 보내기', 5), (46, 'DEV_FIELD', '비용 진단', 6),
