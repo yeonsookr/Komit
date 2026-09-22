@@ -72,6 +72,20 @@ async function hasMovingVideo(page: Page, index: number): Promise<boolean> {
   }, index);
 }
 
+/**
+ * 양쪽에 서로가 보일 때까지 기다립니다.
+ *
+ * 붙고 난 뒤 화면에는 큰 무대(상대)가 먼저, 작은 타일(나)이 그다음에 놓입니다. 둘 다 그림이
+ * 흘러야 통화가 오간 것입니다 — 내 것만 흐르면 카메라만 켜진 것이고, 상대 것만 흐르면 내
+ * 트랙이 실리지 않은 것입니다.
+ */
+async function expectTwoWayVideo(pages: Page[]): Promise<void> {
+  for (const page of pages) {
+    await expect.poll(() => hasMovingVideo(page, 0), { timeout: CONNECT_TIMEOUT_MS }).toBe(true);
+    await expect.poll(() => hasMovingVideo(page, 1), { timeout: CONNECT_TIMEOUT_MS }).toBe(true);
+  }
+}
+
 test('먼저 동의한 사람은 미리보기만 보고, 둘 다 동의하면 통화가 붙는다', async ({ browser }) => {
   const client = await openAs(browser, requiredToken('E2E_TOKEN_CLIENT'), '의뢰인');
   const developer = await openAs(browser, requiredToken('E2E_TOKEN_DEVELOPER'), '개발자');
@@ -84,7 +98,8 @@ test('먼저 동의한 사람은 미리보기만 보고, 둘 다 동의하면 �
       timeout: CONNECT_TIMEOUT_MS,
     });
 
-    // 자기 카메라는 켜진다. 상대는 아직 채널에 없어 이 화면을 받지 못한다.
+    // 자기 카메라는 켜진다. 기다리는 화면에는 미리보기 하나뿐이라 첫 자리가 내 화면이다.
+    // 상대는 아직 채널에 없어 이 화면을 받지 못한다.
     await expect
       .poll(() => hasMovingVideo(client.page, 0), { timeout: CONNECT_TIMEOUT_MS })
       .toBe(true);
@@ -98,10 +113,66 @@ test('먼저 동의한 사람은 미리보기만 보고, 둘 다 동의하면 �
     });
 
     // --- 양방향 영상 -------------------------------------------------------
-    for (const side of [client.page, developer.page]) {
-      await expect.poll(() => hasMovingVideo(side, 0), { timeout: CONNECT_TIMEOUT_MS }).toBe(true);
-      await expect.poll(() => hasMovingVideo(side, 1), { timeout: CONNECT_TIMEOUT_MS }).toBe(true);
-    }
+    await expectTwoWayVideo([client.page, developer.page]);
+  } finally {
+    await client.context.close();
+    await developer.context.close();
+  }
+});
+
+test('마이크와 카메라를 껐다 켜도 통화는 끊기지 않는다', async ({ browser }) => {
+  const client = await openAs(browser, requiredToken('E2E_TOKEN_CLIENT'), '의뢰인');
+  const developer = await openAs(browser, requiredToken('E2E_TOKEN_DEVELOPER'), '개발자');
+
+  try {
+    await client.page.goto(`/sessions/${SESSION_ID}`);
+    await developer.page.goto(`/sessions/${SESSION_ID}`);
+    await expectTwoWayVideo([client.page, developer.page]);
+
+    const mic = client.page.getByRole('button', { name: /마이크/ });
+    const camera = client.page.getByRole('button', { name: /카메라/ });
+
+    // 끄면 트랙을 없애지 않고 소리만 비웁니다. 없애면 다시 협상해야 합니다.
+    await mic.click();
+    await expect(mic).toHaveAttribute('aria-pressed', 'true');
+    await expect(mic).toHaveText('마이크 켜기');
+
+    await camera.click();
+    await expect(camera).toHaveAttribute('aria-pressed', 'true');
+    await expect(camera).toHaveText('카메라 켜기');
+
+    await mic.click();
+    await camera.click();
+    await expect(mic).toHaveAttribute('aria-pressed', 'false');
+    await expect(camera).toHaveAttribute('aria-pressed', 'false');
+
+    // 끄고 켜는 동안 연결이 살아 있어야 합니다.
+    await expectTwoWayVideo([client.page, developer.page]);
+  } finally {
+    await client.context.close();
+    await developer.context.close();
+  }
+});
+
+test('한쪽이 새로고침해도 다시 붙는다', async ({ browser }) => {
+  const client = await openAs(browser, requiredToken('E2E_TOKEN_CLIENT'), '의뢰인');
+  const developer = await openAs(browser, requiredToken('E2E_TOKEN_DEVELOPER'), '개발자');
+
+  try {
+    await client.page.goto(`/sessions/${SESSION_ID}`);
+    await developer.page.goto(`/sessions/${SESSION_ID}`);
+    await expectTwoWayVideo([client.page, developer.page]);
+
+    // 새로고침하면 표도 소켓도 통화도 처음부터 다시 만든다.
+    await client.page.reload();
+
+    // 이미 양쪽이 동의한 세션이라 기다리지 않고 바로 들어간다.
+    await expect(client.page.getByText('상대방의 동의를 기다리고 있습니다')).toBeHidden({
+      timeout: CONNECT_TIMEOUT_MS,
+    });
+
+    // 남아 있던 쪽도 새 제안을 받아 다시 협상한다.
+    await expectTwoWayVideo([client.page, developer.page]);
   } finally {
     await client.context.close();
     await developer.context.close();
