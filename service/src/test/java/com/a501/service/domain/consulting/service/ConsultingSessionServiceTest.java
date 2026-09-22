@@ -13,12 +13,14 @@ import com.a501.service.domain.consulting.ConsultingErrorCode;
 import com.a501.service.domain.consulting.entity.ConsultingSession;
 import com.a501.service.domain.consulting.entity.ParticipationRecord;
 import com.a501.service.domain.consulting.entity.Reservation;
+import com.a501.service.domain.consulting.realtime.ConsultingSessionEnded;
 import com.a501.service.domain.consulting.repository.ConsultingSessionRepository;
 import com.a501.service.domain.consulting.repository.ParticipationRecordRepository;
 import com.a501.service.domain.consulting.repository.ReservationRepository;
 import com.a501.service.domain.contract.dto.ContractParties;
 import com.a501.service.domain.contract.service.ContractQueryService;
 import com.a501.service.domain.file.service.FileLookupService;
+import org.springframework.context.ApplicationEventPublisher;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -52,6 +54,7 @@ class ConsultingSessionServiceTest {
     private final ReservationRepository reservationRepository = mock(ReservationRepository.class);
     private final ContractQueryService contractQueryService = mock(ContractQueryService.class);
     private final FileLookupService fileLookupService = mock(FileLookupService.class);
+    private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
 
     private final ConsultingSessionService service =
             new ConsultingSessionService(
@@ -60,6 +63,7 @@ class ConsultingSessionServiceTest {
                     reservationRepository,
                     contractQueryService,
                     fileLookupService,
+                    events,
                     Clock.fixed(NOW, ZoneOffset.UTC));
 
     @BeforeEach
@@ -193,6 +197,31 @@ class ConsultingSessionServiceTest {
         var response = service.end(CLIENT_ID, SESSION_ID);
 
         assertThat(response.endedAt()).isEqualTo(NOW_AT.atOffset(ZoneOffset.UTC));
+    }
+
+    /**
+     * 커밋 뒤에 나가야 한다. 먼저 보내면 상대가 받자마자 올리는 녹음을 서버가
+     * 「아직 안 끝난 세션」으로 거절한다.
+     */
+    @Test
+    void 종료를_마치면_세션_채널에_알린다() {
+        givenParticipants(CLIENT_ID, DEVELOPER_ID);
+
+        service.end(CLIENT_ID, SESSION_ID);
+
+        verify(events).publishEvent(new ConsultingSessionEnded(SESSION_ID, NOW_AT));
+    }
+
+    /** 종료가 한 번만 확정되므로 알림도 최초 시각 그대로다. (R-CON-15) */
+    @Test
+    void 다시_종료해도_알림은_최초_시각을_싣는다() {
+        LocalDateTime firstEnd = NOW_AT.minusMinutes(3);
+        givenSession(firstEnd);
+        givenParticipants(CLIENT_ID, DEVELOPER_ID);
+
+        service.end(DEVELOPER_ID, SESSION_ID);
+
+        verify(events).publishEvent(new ConsultingSessionEnded(SESSION_ID, firstEnd));
     }
 
     @Test

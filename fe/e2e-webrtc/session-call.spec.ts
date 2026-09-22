@@ -175,3 +175,47 @@ test('한쪽이 새로고침해도 다시 붙는다', async ({ browser }) => {
     await developer.context.close();
   }
 });
+
+/**
+ * 한 사람이 끝내면 양쪽이 안다. 이 쪽지가 없으면 끝낸 사람만 녹음을 마감하고, 상대는 자기도
+ * 종료를 누르기 전까지 올리지 않는다.
+ *
+ * **맨 마지막에 둔다.** 세션을 실제로 끝내므로, 뒤에 오는 시험은 끝난 세션을 열게 되어
+ * 요약 화면으로 넘어간다.
+ */
+test('한쪽이 세션을 끝내면 양쪽에 종료가 전해진다', async ({ browser }) => {
+  const client = await openAs(browser, requiredToken('E2E_TOKEN_CLIENT'), '의뢰인');
+  const developer = await openAs(browser, requiredToken('E2E_TOKEN_DEVELOPER'), '개발자');
+
+  // 두 사람이 받은 쪽지를 모아 둔다. 화면이 아직 이 쪽지를 쓰지 않으므로 회선에서 직접 본다.
+  const ended: Record<string, string[]> = { 의뢰인: [], 개발자: [] };
+  for (const [who, page] of [['의뢰인', client.page], ['개발자', developer.page]] as const) {
+    page.on('websocket', (socket) => {
+      if (!socket.url().includes('/service/ws/')) return;
+      socket.on('framereceived', (frame) => {
+        const text = String(frame.payload);
+        if (text.includes('SYSTEM_SESSION_ENDED')) ended[who].push(text);
+      });
+    });
+  }
+
+  try {
+    await client.page.goto(`/sessions/${SESSION_ID}`);
+    await developer.page.goto(`/sessions/${SESSION_ID}`);
+    await expectTwoWayVideo([client.page, developer.page]);
+
+    // 의뢰인만 끝낸다.
+    await client.page.getByRole('button', { name: '세션 종료' }).click();
+    await client.page.getByRole('button', { name: '세션 종료' }).last().click();
+
+    await expect.poll(() => ended.개발자.length, { timeout: CONNECT_TIMEOUT_MS }).toBeGreaterThan(0);
+    await expect.poll(() => ended.의뢰인.length, { timeout: CONNECT_TIMEOUT_MS }).toBeGreaterThan(0);
+
+    // 양쪽이 같은 종료 시각을 받는다.
+    const endedAt = (text: string) => JSON.parse(text).payload.endedAt as string;
+    expect(endedAt(ended.개발자[0])).toBe(endedAt(ended.의뢰인[0]));
+  } finally {
+    await client.context.close();
+    await developer.context.close();
+  }
+});

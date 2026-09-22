@@ -8,6 +8,7 @@ import com.a501.service.domain.consulting.dto.response.SessionRecordingResponse;
 import com.a501.service.domain.consulting.entity.ConsultingSession;
 import com.a501.service.domain.consulting.entity.ParticipationRecord;
 import com.a501.service.domain.consulting.entity.Reservation;
+import com.a501.service.domain.consulting.realtime.ConsultingSessionEnded;
 import com.a501.service.domain.consulting.repository.ConsultingSessionRepository;
 import com.a501.service.domain.consulting.repository.ParticipationRecordRepository;
 import com.a501.service.domain.consulting.repository.ReservationRepository;
@@ -21,6 +22,7 @@ import java.util.List;
 import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -51,6 +53,7 @@ public class ConsultingSessionService {
     private final ReservationRepository reservationRepository;
     private final ContractQueryService contractQueryService;
     private final FileLookupService fileLookupService;
+    private final ApplicationEventPublisher events;
     private final Clock clock;
 
     @Autowired
@@ -59,13 +62,15 @@ public class ConsultingSessionService {
             ParticipationRecordRepository participationRepository,
             ReservationRepository reservationRepository,
             ContractQueryService contractQueryService,
-            FileLookupService fileLookupService) {
+            FileLookupService fileLookupService,
+            ApplicationEventPublisher events) {
         this(
                 sessionRepository,
                 participationRepository,
                 reservationRepository,
                 contractQueryService,
                 fileLookupService,
+                events,
                 Clock.systemUTC());
     }
 
@@ -144,6 +149,11 @@ public class ConsultingSessionService {
         ContractParties parties = findParties(session, userId);
 
         session.completeConsulting(LocalDateTime.now(clock));
+
+        // 알림은 이 트랜잭션이 커밋된 뒤에 나갑니다. 먼저 보내면 상대가 받자마자 올리는 녹음을
+        // 서버가 「아직 안 끝난 세션」으로 거절합니다.
+        events.publishEvent(new ConsultingSessionEnded(sessionId, session.getEndedAt()));
+
         return response(session, parties, findReservation(sessionId));
     }
 
