@@ -4,13 +4,13 @@ resources:
   - ../../base
   - mock-deployment.yaml
   - mock-service.yaml
-  # 로컬 전용 파일 저장소. service-config의 STORAGE_* 주소가 이 Service를 가리킵니다.
-  - minio.yaml
 patches:
   - path: service-nodeport.yaml
   - path: escrow-nodeport.yaml
   - path: fe-nodeport.yaml
   - path: fe-test-nodeport.yaml
+  # 파일 저장소. docker-compose가 30090을 호스트 9000으로 매핑합니다.
+  - path: minio-nodeport.yaml
 images:
   - name: komit-service
     newName: komit-service
