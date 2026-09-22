@@ -21,8 +21,10 @@ export interface LandingSummary {
 export interface FeaturedDeveloper {
   developerId: number;
   name: string;
-  /** 올린 사진이 없으면 null. 그때 화면은 이름 첫 글자를 씁니다. */
+  /** 올린 사진이 없으면 null. */
   profileImageFileId: number | null;
+  /** 프로필 사진 주소. 직접 올린 사진의 임시 주소이거나 카카오 사진 주소. 둘 다 없으면 null 이고 화면은 이름 첫 글자를 씁니다. */
+  profileImageUrl: string | null;
   intro: string;
   /** 등록하지 않았으면 null. */
   yearsOfExperience: number | null;

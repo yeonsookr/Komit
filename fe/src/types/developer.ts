@@ -32,10 +32,13 @@ export interface DeveloperSummary {
   developerId: number;
   name: string;
   profileImageFileId: number | null;
+  /** 프로필 사진 주소. 직접 올린 사진의 임시 주소이거나 카카오 사진 주소, 둘 다 없으면 null 입니다. */
+  profileImageUrl: string | null;
   intro: string;
   /** 잘하는 분야. 한 명에 하나이고 거르는 기준이 됩니다. */
   field: CodeItem | null;
-  yearsOfExperience: number;
+  /** 경력 연차. 등록하지 않았으면 null 입니다. */
+  yearsOfExperience: number | null;
   isCareerVerified: boolean;
   devRating: Rating;
   explanatoryRating: Rating;
@@ -96,6 +99,8 @@ export interface PortfolioItem {
   description: string | null;
   linkUrl: string | null;
   thumbnailFileId: number | null;
+  /** 화면에 그대로 거는 사진 주소. 한동안만 쓸 수 있는 임시 주소이고, 사진이 없으면 null 입니다. */
+  thumbnailUrl: string | null;
 }
 
 /** 가격표 한 줄. 컨설팅은 세션, 개발은 작업 단위입니다. */
@@ -113,10 +118,11 @@ export interface PriceCatalogItem {
  * 로그인하지 않아도 볼 수 있는 공개 프로필입니다.
  */
 export interface DeveloperDetail extends DeveloperSummary {
-  description: string;
-  /** 주요 활동 시간대. "10:00" 처럼 옵니다. */
-  activeFrom: string;
-  activeTo: string;
+  /** 소개 글. 적지 않았으면 null 입니다. */
+  description: string | null;
+  /** 주요 활동 시간대. "10:00" 처럼 오고, 정하지 않았으면 null 입니다. */
+  activeFrom: string | null;
+  activeTo: string | null;
   careers: Career[];
   portfolioItems: PortfolioItem[];
   priceCatalog: PriceCatalogItem[];
@@ -151,10 +157,8 @@ export interface MyCareer extends Career {
   evidenceFileName: string | null;
 }
 
-/** 내 프로필 편집 화면에서만 필요한 작업물 사진 정보. */
-export interface MyPortfolioItem extends PortfolioItem {
-  thumbnailUrl: string | null;
-}
+/** 내 프로필 편집 화면의 작업물. 공개 프로필과 같은 모양이며 썸네일 주소도 함께 옵니다. */
+export type MyPortfolioItem = PortfolioItem;
 
 export interface MyDeveloperProfile {
   developerId: number;

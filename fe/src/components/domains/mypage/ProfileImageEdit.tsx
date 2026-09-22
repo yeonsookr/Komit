@@ -79,7 +79,7 @@ export function ProfileImageEdit({
           <input
             ref={inputRef}
             type="file"
-            accept="image/*"
+            accept="image/png,image/jpeg,image/webp"
             aria-label="새 프로필 사진"
             className="sr-only"
             disabled={uploading}

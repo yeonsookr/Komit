@@ -31,7 +31,8 @@ from fastapi.exception_handlers import (
 )
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
+from pydantic_core import PydanticCustomError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import scan_result
@@ -192,6 +193,10 @@ def _reason(error: dict) -> str:
         return f"{context.get('max_length')}개 이하여야 합니다."
     if error_type == "string_pattern_mismatch":
         return "형식이 올바르지 않습니다."
+    if error_type == "invalid_calendar_date":
+        return "형식이 올바르지 않습니다."
+    if error_type == "career_period":
+        return CAREER_PERIOD_REASON
     if error_type == "literal_error":
         expected = context.get("expected")
         return f"{expected} 중 하나여야 합니다." if expected else "허용되지 않는 값입니다."
@@ -543,7 +548,17 @@ class FeaturedDeveloperResponse(BaseModel):
     profileImageFileId: int | None = Field(
         description=(
             "직접 올린 프로필 사진의 파일 식별자. 올린 사진이 없으면 null이고, "
-            "그때 화면은 이름 첫 글자를 동그라미에 넣어 보여준다."
+            "그때 화면은 `profileImageUrl`의 카카오 사진이나 이름 첫 글자를 보여준다."
+        ),
+        examples=[None],
+    )
+    profileImageUrl: str | None = Field(
+        description=(
+            "화면에 그대로 거는 프로필 사진 주소. 계정의 `profileImageUrl`과 같은 방식으로, "
+            "저장된 값이 아니라 응답을 만들 때마다 새로 만든다. 직접 올린 사진이 있으면 그 "
+            "사진의 임시 주소, 없으면 카카오 프로필 사진 주소, 둘 다 없으면 null이다.\n\n"
+            "임시 주소는 한동안만 쓸 수 있다. 만료되면 다시 받아야 하므로 저장해 두고 "
+            "오래 쓰지 않는다."
         ),
         examples=[None],
     )
@@ -790,6 +805,7 @@ FEATURED_DEVELOPERS = [
         "developerId": 3,
         "name": "이준",
         "profileImageFileId": None,
+        "profileImageUrl": None,
         "intro": "간단한 상담도 받습니다.",
         "yearsOfExperience": 5.0,
         "field": {"codeId": 42, "codeName": "DB 연결"},
@@ -804,6 +820,7 @@ FEATURED_DEVELOPERS = [
         "developerId": 7,
         "name": "한서",
         "profileImageFileId": None,
+        "profileImageUrl": None,
         "intro": "급한 장애 대응 잘합니다.",
         "yearsOfExperience": 6.0,
         "field": {"codeId": 47, "codeName": "버그 잡기"},
@@ -818,6 +835,7 @@ FEATURED_DEVELOPERS = [
         "developerId": 11,
         "name": "박선",
         "profileImageFileId": None,
+        "profileImageUrl": None,
         "intro": "상담으로 먼저 방향을 잡아드립니다.",
         "yearsOfExperience": 8.0,
         "field": {"codeId": 46, "codeName": "비용 진단"},
@@ -3056,6 +3074,16 @@ class DeveloperSummaryResponse(BaseModel):
         description="직접 올린 프로필 사진의 파일 식별자. 없으면 null이다.",
         examples=[None],
     )
+    profileImageUrl: str | None = Field(
+        description=(
+            "화면에 그대로 거는 프로필 사진 주소. 계정의 `profileImageUrl`과 같은 방식으로, "
+            "저장된 값이 아니라 응답을 만들 때마다 새로 만든다. 직접 올린 사진이 있으면 그 "
+            "사진의 임시 주소, 없으면 카카오 프로필 사진 주소, 둘 다 없으면 null이다.\n\n"
+            "임시 주소는 한동안만 쓸 수 있다. 만료되면 다시 받아야 하므로 저장해 두고 "
+            "오래 쓰지 않는다."
+        ),
+        examples=[None],
+    )
     intro: str = Field(
         description="개발자가 적은 한 줄 소개.",
         examples=["간단한 상담도 받습니다. 용어부터 풀어서 설명합니다."],
@@ -3164,6 +3192,14 @@ class PortfolioItemResponse(BaseModel):
     )
     thumbnailFileId: int | None = Field(
         description="썸네일 파일 식별자. 올리지 않았으면 null이다.",
+        examples=[None],
+    )
+    thumbnailUrl: str | None = Field(
+        description=(
+            "화면에 그대로 거는 사진 주소. 내 프로필의 `thumbnailUrl`과 같은 방식으로, "
+            "저장된 값이 아니라 응답을 만들 때마다 새로 만드는 임시 주소다. 사진을 "
+            "올리지 않았으면 null이고, 화면은 그 자리에 빈 칸을 둔다."
+        ),
         examples=[None],
     )
 
@@ -3641,6 +3677,7 @@ DEVELOPERS = [
         "developerId": 3,
         "name": "이준",
         "profileImageFileId": None,
+        "profileImageUrl": None,
         "intro": "간단한 상담도 받습니다. 용어부터 풀어서 설명합니다.",
         "field": {"codeId": 42, "codeName": "DB 연결"},
         "yearsOfExperience": 5.0,
@@ -3658,6 +3695,7 @@ DEVELOPERS = [
         "developerId": 5,
         "name": "정하",
         "profileImageFileId": None,
+        "profileImageUrl": None,
         "intro": "짧게 방향만 잡아드려요.",
         "field": {"codeId": 41, "codeName": "인터넷에 올리기"},
         "yearsOfExperience": 4.0,
@@ -3675,6 +3713,7 @@ DEVELOPERS = [
         "developerId": 7,
         "name": "한서",
         "profileImageFileId": None,
+        "profileImageUrl": None,
         "intro": "급한 장애 대응 잘합니다. 새벽도 괜찮습니다.",
         "field": {"codeId": 47, "codeName": "버그 잡기"},
         "yearsOfExperience": 6.0,
@@ -3790,6 +3829,7 @@ DEVELOPER_DETAIL = {
             "description": None,
             "linkUrl": "https://example.com",
             "thumbnailFileId": None,
+            "thumbnailUrl": None,
         }
     ],
 }
@@ -9233,6 +9273,10 @@ class MyDeveloperProfileResponse(BaseModel):
     )
 
 
+DATE_PATTERN = r"^\d{4}-\d{2}-\d{2}$"
+TIME_PATTERN = r"^([01]\d|2[0-3]):[0-5]\d$"
+
+
 class WriteCareerRequest(BaseModel):
     """저장할 경력 한 줄."""
 
@@ -9241,11 +9285,21 @@ class WriteCareerRequest(BaseModel):
         description="이미 있는 경력이면 그 식별자, 새로 추가하는 줄이면 null이다.",
         examples=[41],
     )
-    company: str = Field(description="회사 이름.", examples=["카카오스타일"])
-    role: str = Field(description="맡았던 일.", examples=["백엔드 · 주문/정산 서비스"])
-    startDate: str = Field(description="시작일.", examples=["2021-03-01"])
+    company: str = Field(
+        max_length=50, description="회사 이름. 50자까지.", examples=["카카오스타일"]
+    )
+    role: str = Field(
+        max_length=100, description="맡았던 일. 100자까지.", examples=["백엔드 · 주문/정산 서비스"]
+    )
+    startDate: str = Field(
+        pattern=DATE_PATTERN, description="시작일. `YYYY-MM-DD`.", examples=["2021-03-01"]
+    )
     endDate: str | None = Field(
-        description="종료일. 지금도 다니는 중이면 null이다.",
+        pattern=DATE_PATTERN,
+        description=(
+            "종료일. `YYYY-MM-DD`. 지금도 다니는 중이면 null이다. 시작일보다 빠르면 "
+            "422다."
+        ),
         examples=["2024-08-31"],
     )
     evidenceFileId: int | None = Field(
@@ -9258,6 +9312,29 @@ class WriteCareerRequest(BaseModel):
         examples=[512],
     )
 
+    @field_validator("startDate", "endDate")
+    @classmethod
+    def validate_calendar_date(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            datetime.strptime(value, "%Y-%m-%d")
+        except ValueError as exception:
+            raise PydanticCustomError(
+                "invalid_calendar_date", "invalid calendar date"
+            ) from exception
+        return value
+
+    @field_validator("endDate")
+    @classmethod
+    def validate_period(cls, value: str | None, info: ValidationInfo) -> str | None:
+        start = info.data.get("startDate")
+        if value is not None and start is not None and value < start:
+            raise PydanticCustomError(
+                "career_period", "career end date precedes start date"
+            )
+        return value
+
 
 class WritePortfolioItemRequest(BaseModel):
     """저장할 작업물 하나."""
@@ -9267,21 +9344,25 @@ class WritePortfolioItemRequest(BaseModel):
         description="이미 있는 작업물이면 그 식별자, 새로 추가하면 null이다.",
         examples=[7],
     )
-    title: str = Field(description="작업물 제목.", examples=["미미헤어샵 예약"])
+    title: str = Field(
+        max_length=200, description="작업물 제목. 200자까지.", examples=["미미헤어샵 예약"]
+    )
     description: str | None = Field(
         max_length=500,
         description="설명. 500자까지 적을 수 있고, 적지 않으면 null이다.",
         examples=["예약이 저장되지 않던 문제를 고쳤습니다."],
     )
     linkUrl: str | None = Field(
-        description="배포 사이트나 저장소 주소. 없으면 null이다.",
+        max_length=2048,
+        description="배포 사이트나 저장소 주소. 2048자까지. 없으면 null이다.",
         examples=["https://hairshop-mimi.com"],
     )
     thumbnailFileId: int | None = Field(
         description=(
             "올려 둔 사진의 파일 식별자. 조회에서 받은 기존 식별자를 보내면 사진을 "
             "유지하고, 새 식별자를 보내면 교체하며, null을 보내면 사진을 제거한다. "
-            "응답에는 이 식별자와 바로 걸 수 있는 `thumbnailUrl`이 함께 담긴다."
+            "응답에는 이 식별자와 바로 걸 수 있는 `thumbnailUrl`이 함께 담긴다. "
+            "올리기를 마치지 않았거나 남이 올린 파일이면 400 `FILE_NOT_ATTACHABLE`이다."
         ),
         examples=[512],
     )
@@ -9299,10 +9380,14 @@ class WritePriceRequest(BaseModel):
         description="작업 종류. 코드 분류 `TASK_TYPE`의 코드값이다.",
         examples=["DEVELOP"],
     )
-    taskName: str = Field(description="작업 이름.", examples=["로그인 붙이기"])
-    price: int = Field(description="가격. 원 단위 정수다.", examples=[400000])
+    taskName: str = Field(
+        max_length=50, description="작업 이름. 50자까지.", examples=["로그인 붙이기"]
+    )
+    price: int = Field(ge=1, description="가격. 원 단위 정수다. 1 이상.", examples=[400000])
     periodDays: int | None = Field(
-        description="예상 작업 기간(일). 컨설팅 세션이면 비운다.",
+        ge=1,
+        le=32767,
+        description="예상 작업 기간(일). 1 이상 32767 이하. 컨설팅 세션이면 비운다.",
         examples=[4],
     )
 
@@ -9311,39 +9396,50 @@ class WriteDeveloperProfileRequest(BaseModel):
     """내 프로필 저장 요청. 화면의 저장 버튼 하나가 이 요청 하나를 보낸다."""
 
     intro: str = Field(
-        description="한 줄 소개.",
+        min_length=1,
+        max_length=100,
+        description="한 줄 소개. 1자 이상 100자까지.",
         examples=["간단한 상담도 받습니다. 용어부터 풀어서 설명합니다."],
     )
     description: str | None = Field(
-        description="소개 글.",
+        max_length=1000,
+        description="소개 글. 1000자까지.",
         examples=["AI로 만든 걸 실제로 돌아가게 만드는 일을 주로 합니다."],
     )
     fieldCodeId: int | None = Field(
         description=(
-            "주로 담당하는 개발 분야 코드 식별자. 코드 분류 `DEV_FIELD`의 항목이다."
+            "주로 담당하는 개발 분야 코드 식별자. 코드 분류 `DEV_FIELD`의 항목이다. "
+            "없는 코드면 404 `CODE_NOT_FOUND`다."
         ),
         examples=[42],
     )
     yearsOfExperience: float | None = Field(
-        description="경력 연차.",
+        ge=0,
+        le=99.9,
+        description="경력 연차. 0 이상 99.9 이하, 소수점 한 자리.",
         examples=[5.0],
     )
     activeFrom: str | None = Field(
-        description="주로 활동하는 시간대의 시작.",
+        pattern=TIME_PATTERN,
+        description="주로 활동하는 시간대의 시작. `HH:MM`.",
         examples=["10:00"],
     )
     activeTo: str | None = Field(
-        description="주로 활동하는 시간대의 끝.",
+        pattern=TIME_PATTERN,
+        description="주로 활동하는 시간대의 끝. `HH:MM`.",
         examples=["19:00"],
     )
     techCodeIds: list[int] = Field(
-        description="다룰 수 있는 기술의 코드 식별자. 보낸 목록이 그대로 저장된다.",
+        description=(
+            "다룰 수 있는 기술의 코드 식별자. 코드 분류 `TECH_CATEGORY`의 항목이며 보낸 "
+            "목록이 그대로 저장된다. 없는 코드가 섞여 있으면 404 `CODE_NOT_FOUND`다."
+        ),
         examples=[[21, 22, 23]],
     )
     careers: list[WriteCareerRequest] = Field(
         description=(
             "경력 전부. 보낸 목록에 없는 기존 경력은 지운 것으로 본다. 확인이 끝난 "
-            "경력의 확인 표시는 저장해도 그대로 남는다."
+            "경력은 증빙과 표시 내용이 어긋나지 않도록 삭제 외의 수정을 반영하지 않는다."
         ),
     )
     portfolioItems: list[WritePortfolioItemRequest] = Field(
@@ -9431,10 +9527,14 @@ class CreateUploadRequest(BaseModel):
     """올릴 파일을 미리 알리는 요청. 파일 자체는 아직 보내지 않는다."""
 
     originalName: str = Field(
+        min_length=1,
+        max_length=255,
         description="올릴 파일 이름. 화면에 보여줄 이름으로 그대로 남는다.",
         examples=["재직증명서.pdf"],
     )
     contentType: str = Field(
+        min_length=1,
+        max_length=100,
         description=(
             "파일 종류. 올릴 때 같은 값을 `Content-Type`으로 보내야 하며, 다르면 "
             "완료 요청에서 거절된다."
@@ -9442,6 +9542,7 @@ class CreateUploadRequest(BaseModel):
         examples=["application/pdf"],
     )
     sizeBytes: int = Field(
+        ge=1,
         description="파일 크기(바이트). 완료할 때 실제 크기와 맞는지 본다.",
         examples=[284193],
     )
@@ -9558,6 +9659,7 @@ UPLOAD_EXPIRED = (
     "올릴 수 있는 시간이 지났습니다. 처음부터 다시 올려 주세요.",
 )
 FILE_NOT_ATTACHABLE = ("FILE_NOT_ATTACHABLE", "쓸 수 없는 파일입니다.")
+CODE_NOT_FOUND = ("CODE_NOT_FOUND", "없는 코드입니다.")
 
 WITHDRAWAL_BLOCKED_EXAMPLE = {
     "code": WITHDRAWAL_BLOCKED[0],
@@ -9571,19 +9673,60 @@ UPLOAD_NOT_FOUND_EXAMPLE = {
     "code": UPLOAD_NOT_FOUND[0],
     "message": UPLOAD_NOT_FOUND[1],
 }
+UNSUPPORTED_FILE_TYPE_EXAMPLE = {
+    "code": UNSUPPORTED_FILE_TYPE[0],
+    "message": UNSUPPORTED_FILE_TYPE[1],
+}
 UPLOAD_NOT_COMPLETED_EXAMPLE = {
     "code": UPLOAD_NOT_COMPLETED[0],
     "message": UPLOAD_NOT_COMPLETED[1],
 }
+UPLOAD_SIZE_MISMATCH_EXAMPLE = {
+    "code": UPLOAD_SIZE_MISMATCH[0],
+    "message": UPLOAD_SIZE_MISMATCH[1],
+}
+UPLOAD_TYPE_MISMATCH_EXAMPLE = {
+    "code": UPLOAD_TYPE_MISMATCH[0],
+    "message": UPLOAD_TYPE_MISMATCH[1],
+}
+UPLOAD_EXPIRED_EXAMPLE = {
+    "code": UPLOAD_EXPIRED[0],
+    "message": UPLOAD_EXPIRED[1],
+}
+
+# R-FILE-01, R-FILE-02. 목과 실서버가 같은 정책 판정을 하도록 한 곳에 둔다.
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+UPLOAD_CONTENT_TYPES = {
+    "PROFILE_IMAGE": {"image/png", "image/jpeg", "image/webp"},
+    "CAREER_EVIDENCE": {"application/pdf", "image/png", "image/jpeg"},
+    "PORTFOLIO_IMAGE": {"image/png", "image/jpeg", "image/webp"},
+    "SIGNATURE": {"image/png"},
+    "DELIVERABLE": {
+        "application/zip",
+        "application/x-zip-compressed",
+        "application/pdf",
+        "application/octet-stream",
+    },
+    "SESSION_RECORDING": {"audio/webm", "audio/mp4"},
+    "REPORT_EVIDENCE": {"application/pdf", "image/png", "image/jpeg", "image/webp"},
+}
 FILE_NOT_ATTACHABLE_EXAMPLE = {
     "code": FILE_NOT_ATTACHABLE[0],
     "message": FILE_NOT_ATTACHABLE[1],
+}
+CODE_NOT_FOUND_EXAMPLE = {
+    "code": CODE_NOT_FOUND[0],
+    "message": CODE_NOT_FOUND[1],
 }
 
 # 목에서 실패 응답을 보고 싶을 때 쓰는 값.
 NOT_FOUND_UPLOAD_ID = 404
 NOT_COMPLETED_UPLOAD_ID = 400
 NOT_ATTACHABLE_FILE_ID = 400
+NOT_FOUND_CODE_ID = 404
+
+# 스키마로 거를 수 없는 검증 실패 문구. 실서버 messages.properties 의 komit.careerPeriod 와 같다.
+CAREER_PERIOD_REASON = "시작일보다 빠를 수 없습니다."
 
 # 개발자 프로필이 있어야 부를 수 있는 API 가 함께 쓰는 실패 응답.
 # 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 없으므로 FORBIDDEN 은 싣지 않는다.
@@ -10344,7 +10487,17 @@ def get_my_developer_profile() -> MyDeveloperProfileResponse:
                 "application/json": {"example": MY_DEVELOPER_PROFILE_EXAMPLE}
             },
         },
+        400: {
+            "model": ErrorResponse,
+            "description": "붙일 수 없는 파일",
+            "content": {"application/json": {"example": FILE_NOT_ATTACHABLE_EXAMPLE}},
+        },
         **AREA8_FORBIDDEN,
+        404: {
+            "model": ErrorResponse,
+            "description": "없는 코드",
+            "content": {"application/json": {"example": CODE_NOT_FOUND_EXAMPLE}},
+        },
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -10369,9 +10522,11 @@ def get_my_developer_profile() -> MyDeveloperProfileResponse:
         "작업물 썸네일은 기존 파일 식별자를 다시 보내면 유지되고, 새 식별자를 보내면 "
         "교체되며, null을 보내면 제거된다. 확인 전 경력 증빙도 기존 식별자를 다시 "
         "보내면 유지되고 새 식별자를 보내면 교체된다. 확인을 마친 경력은 증빙 원본이 "
-        "이미 삭제되어 null을 보내도 확인 상태와 확인 시각이 유지된다.\n\n"
-        "작업물 공개 여부와 순서를 따로 저장하는 값은 받지 않는다. 공개 스위치나 순서 "
-        "변경은 이 계약의 범위가 아니다.\n\n"
+        "이미 삭제되어 null을 보내도 확인 상태와 확인 시각이 유지된다. "
+        "확인된 경력의 회사·역할·기간은 증빙과 어긋나지 않도록 저장 요청으로 바뀌지 않는다.\n\n"
+        "작업물 공개 여부와 순서를 따로 저장하는 값은 받지 않는다. 작업물은 등록한 "
+        "순서로 고정이며 새 줄은 뒤에 붙는다. 개발자 목록 카드에는 작업물을 보여주지 "
+        "않는다.\n\n"
         "**저장되는 곳은 토큰의 주인의 프로필이다.** 액세스 토큰을 검증해 `sub`를 꺼내 "
         "그 사용자의 개발자 프로필에 저장하며, 대상을 요청에 담지 않는다. 요청에 실린 "
         "`careerId`·`portfolioItemId`·`priceId`가 그 프로필의 것인지도 확인하고, 남의 "
@@ -10382,16 +10537,29 @@ def get_my_developer_profile() -> MyDeveloperProfileResponse:
         "저장이 곧 공개이며 따로 감출 수 없다.\n\n"
         "- **200**: 이미 있던 프로필을 고쳤을 때. 저장된 뒤의 프로필을 그대로 준다\n"
         "- **201**: 프로필이 없어 새로 만들었을 때. 만들어진 프로필을 준다\n"
+        "- **400 / FILE_NOT_ATTACHABLE**: `thumbnailFileId`·`evidenceFileId`가 400일 "
+        "때. 올리기를 마치지 않았거나 남이 올린 파일이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **403 / FORBIDDEN**: 토큰의 주인이 아닌 프로필에 저장하려 할 때\n"
-        "- **422 / INVALID_REQUEST**: `intro`가 비었거나, 경력의 시작일이 종료일보다 "
-        "늦거나, 가격이 0 이하일 때\n"
+        "- **403 / FORBIDDEN**: 요청의 `careerId`·`portfolioItemId`·`priceId`가 내 "
+        "프로필의 줄이 아닐 때\n"
+        "- **404 / CODE_NOT_FOUND**: `fieldCodeId`·`techCodeIds`에 404가 있을 때. "
+        "없는 코드거나 그 분류의 코드가 아니다\n"
+        "- **422 / INVALID_REQUEST**: `intro`가 비었거나 길이·형식 제약을 어겼거나, "
+        "경력 날짜가 실제 달력에 없거나, 종료일이 시작일보다 빠르거나"
+        "(`careers.N.endDate`), 가격이 0 이하이거나 작업 기간이 32767일을 넘을 때\n"
         "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
     ),
 )
 def write_my_developer_profile(
     request: WriteDeveloperProfileRequest,
-) -> MyDeveloperProfileResponse:
+) -> MyDeveloperProfileResponse | JSONResponse:
+    file_ids = [item.thumbnailFileId for item in request.portfolioItems] + [
+        career.evidenceFileId for career in request.careers
+    ]
+    if NOT_ATTACHABLE_FILE_ID in file_ids:
+        return _error_response(400, FILE_NOT_ATTACHABLE)
+    if request.fieldCodeId == NOT_FOUND_CODE_ID or NOT_FOUND_CODE_ID in request.techCodeIds:
+        return _error_response(404, CODE_NOT_FOUND)
     return MyDeveloperProfileResponse(
         **{
             **MY_DEVELOPER_PROFILE_EXAMPLE,
@@ -10498,7 +10666,16 @@ def get_my_sessions() -> MySessionListResponse:
         400: {
             "model": ErrorResponse,
             "description": "파일이 너무 크거나 형식이 맞지 않음",
-            "content": {"application/json": {"example": FILE_TOO_LARGE_EXAMPLE}},
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "FILE_TOO_LARGE": {"value": FILE_TOO_LARGE_EXAMPLE},
+                        "UNSUPPORTED_FILE_TYPE": {
+                            "value": UNSUPPORTED_FILE_TYPE_EXAMPLE
+                        },
+                    }
+                }
+            },
         },
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
@@ -10511,7 +10688,7 @@ def get_my_sessions() -> MySessionListResponse:
         "**파일은 이 서버로 보내지 않는다.** 올릴 파일을 먼저 알리면 파일을 보낼 주소를 "
         "돌려주고, 화면이 그 주소로 파일을 직접 보낸다. 다 보낸 뒤 완료 API를 불러야 "
         "파일이 쓸 수 있는 상태가 된다.\n\n"
-        "형식과 크기는 이 단계에서 본다. 여기서 걸리면 주소를 내주지 않으므로 파일이 "
+        "형식과 크기는 이 단계에서 본다(`R-FILE-01`, `R-FILE-02`). 여기서 걸리면 주소를 내주지 않으므로 파일이 "
         "올라가지도 않는다. `contentType`과 `sizeBytes`는 완료할 때 실제로 올라온 "
         "파일과 맞는지 다시 본다.\n\n"
         "**올리기만 해서는 어디에도 붙지 않는다.** 완료까지 마친 뒤 `fileId`를 프로필 "
@@ -10519,8 +10696,6 @@ def get_my_sessions() -> MySessionListResponse:
         "붙지 않은 채로 남다가 정리된다.\n\n"
         "**증빙 서류는 경력 확인에만 쓴다.** 운영에서 확인이 끝나면 원본을 지우고 "
         "프로필에는 확인 표시만 남는다.\n\n"
-        "작업물 사진은 의뢰인이 공개에 동의한 것만 올릴 수 있다. 동의 여부는 계약에 "
-        "적혀 있고 서버가 확인한다.\n\n"
         "**403은 나오지 않는다.** 대상을 요청에 담지 않아 남의 것을 가리킬 자리가 "
         "없고, 토큰을 고쳐 남의 `sub`를 넣으면 서명이 깨져 401이 된다.\n\n"
         "- **201**: 보낼 주소를 내줬을 때\n"
@@ -10532,13 +10707,18 @@ def get_my_sessions() -> MySessionListResponse:
         "`purpose`가 비었거나 `purpose`가 허용된 값이 아닐 때\n"
         "- **500 / INTERNAL_ERROR**: 주소를 만들지 못했을 때\n\n"
         "**실서버의 `uploadUrl`은 저장소가 내주는 주소다.** 이 목 서버는 그 자리에 "
-        "자기 주소를 넣어 주고 받은 본문을 버린다. 화면이 3콜 구조를 그대로 돌려볼 "
+        "자기 주소를 넣어 주고 받은 본문을 버린다. 주소 만료 기준은 `R-FILE-03`이다. 화면이 3콜 구조를 그대로 돌려볼 "
         "수 있게 하려는 것이며, 올린 파일이 남지는 않는다."
     ),
 )
 def create_upload(
     request: CreateUploadRequest, http: Request
-) -> UploadTargetResponse:
+) -> UploadTargetResponse | JSONResponse:
+    if request.sizeBytes > MAX_UPLOAD_BYTES:
+        return _error_response(400, FILE_TOO_LARGE)
+    base_content_type = request.contentType.partition(";")[0].strip().lower()
+    if base_content_type not in UPLOAD_CONTENT_TYPES[request.purpose]:
+        return _error_response(400, UNSUPPORTED_FILE_TYPE)
     upload_id = UPLOAD_TARGET_EXAMPLE["uploadId"]
     return UploadTargetResponse(
         **{
@@ -10567,7 +10747,20 @@ async def put_upload_binary(uploadId: int, http: Request) -> Response:
             "model": ErrorResponse,
             "description": "올라오지 않았거나 알린 것과 다름",
             "content": {
-                "application/json": {"example": UPLOAD_NOT_COMPLETED_EXAMPLE}
+                "application/json": {
+                    "examples": {
+                        "UPLOAD_NOT_COMPLETED": {
+                            "value": UPLOAD_NOT_COMPLETED_EXAMPLE
+                        },
+                        "UPLOAD_SIZE_MISMATCH": {
+                            "value": UPLOAD_SIZE_MISMATCH_EXAMPLE
+                        },
+                        "UPLOAD_TYPE_MISMATCH": {
+                            "value": UPLOAD_TYPE_MISMATCH_EXAMPLE
+                        },
+                        "UPLOAD_EXPIRED": {"value": UPLOAD_EXPIRED_EXAMPLE},
+                    }
+                }
             },
         },
         **AREA8_FORBIDDEN,
@@ -10582,7 +10775,7 @@ async def put_upload_binary(uploadId: int, http: Request) -> Response:
     summary="파일 올리기 완료",
     description=(
         "**화면 — 파일 올리기 시작으로 받은 주소에 파일을 다 보낸 뒤**\n\n"
-        "파일이 제대로 올라왔는지 확인하고 쓸 수 있는 상태로 바꾼다. 이 API를 부르기 "
+        "파일이 제대로 올라왔는지 확인하고 쓸 수 있는 상태로 바꾼다(`R-FILE-04`). 이 API를 부르기 "
         "전까지 `fileId`는 어디에도 붙일 수 없다.\n\n"
         "화면이 '다 보냈다'고 알려도 그대로 믿지 않는다. 저장소에 실제로 그 파일이 "
         "있는지, 크기와 형식이 시작할 때 알린 것과 같은지 서버가 직접 확인한다. 하나라도 "

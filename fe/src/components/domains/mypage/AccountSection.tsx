@@ -11,7 +11,7 @@ export interface AccountSectionProps {
 }
 
 /**
- * AccountSection — 계정 칸. 프로필 사진 · 이름 · 카카오 계정.
+ * AccountSection — 계정 칸. 프로필 사진 · 이름.
  */
 export function AccountSection({ account }: Readonly<AccountSectionProps>) {
   return (
@@ -22,9 +22,6 @@ export function AccountSection({ account }: Readonly<AccountSectionProps>) {
       />
 
       <NameEditRow name={account.name} />
-
-      {/* 카카오 계정은 우리가 바꿀 수 없는 값이라 보여주기만 합니다. */}
-      <KeyValueRow label="카카오 계정" value={account.email ?? "동의하지 않아 받지 못했습니다"} />
     </SectionCard>
   );
 }

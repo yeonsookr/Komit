@@ -2,7 +2,7 @@
  * 개발자 프로필의 표시 규칙.
  * 화면에서 분기하지 않도록 순수 함수로 빼 둡니다.
  */
-import type { PriceCatalogItem, TaskType } from "@/types/developer";
+import type { CodeItem, PriceCatalogItem, TaskType } from "@/types/developer";
 
 /** "2021.03 – 2024.08" · 지금도 이어지면 "2024.09 – 현재". */
 export function formatCareerPeriod(startDate: string, endDate: string | null): string {
@@ -15,9 +15,22 @@ function toYearMonth(date: string): string {
   return `${year}.${month}`;
 }
 
-/** "10:00 – 19:00". */
-export function formatActiveHours(from: string, to: string): string {
+/** "10:00 – 19:00". 시작이나 끝을 정하지 않았으면(null) 비웁니다. */
+export function formatActiveHours(from: string | null, to: string | null): string | null {
+  if (from === null || to === null) return null;
   return `${from} – ${to}`;
+}
+
+/**
+ * 카드·프로필 머리의 "DB 연결 5년".
+ * 분야는 등록하지 않았으면 "분야 미설정", 연차는 목이 4.0 처럼 소수로 주지만 정수로 적고 없으면(null) 비웁니다.
+ */
+export function formatFieldAndYears(field: CodeItem | null, yearsOfExperience: number | null): string {
+  const parts = [
+    field?.codeName ?? "분야 미설정",
+    yearsOfExperience === null ? undefined : `${Math.floor(yearsOfExperience)}년`,
+  ].filter(Boolean);
+  return parts.join(" ");
 }
 
 /** 경력 확인 상태. 목 명세가 정한 두 가지뿐입니다. */

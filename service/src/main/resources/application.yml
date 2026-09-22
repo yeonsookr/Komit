@@ -32,6 +32,13 @@ app:
   auth:
     access-token-ttl: 15m
     refresh-token-ttl: 14d
+  storage:
+    # R-FILE-01, R-FILE-03. MinIO 프리사인 URL 자체의 상한은 7일입니다.
+    bucket: ${STORAGE_BUCKET:komit}
+    region: ${STORAGE_REGION:us-east-1}
+    max-file-bytes: 10485760
+    upload-url-ttl: 5m
+    read-url-ttl: 15m
   logging:
     # 이 시간을 넘긴 컨트롤러·서비스 호출은 WARN으로 남깁니다. (common/logging/LoggingAspect)
     slow-call-threshold: 1s

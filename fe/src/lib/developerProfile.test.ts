@@ -3,6 +3,7 @@ import {
   careerStatusLabel,
   formatActiveHours,
   formatCareerPeriod,
+  formatFieldAndYears,
   formatPeriodDays,
   splitPriceCatalog,
 } from './developerProfile';
@@ -33,6 +34,22 @@ describe('careerStatusLabel', () => {
 describe('formatActiveHours', () => {
   it('활동 시간대를 잇는다', () => {
     expect(formatActiveHours('10:00', '19:00')).toBe('10:00 – 19:00');
+  });
+
+  it('정하지 않은 시간대(null)는 비운다', () => {
+    expect(formatActiveHours(null, '19:00')).toBeNull();
+    expect(formatActiveHours('10:00', null)).toBeNull();
+  });
+});
+
+describe('formatFieldAndYears', () => {
+  it('분야와 정수 연차를 잇는다', () => {
+    expect(formatFieldAndYears({ codeId: 42, codeName: 'DB 연결' }, 5.0)).toBe('DB 연결 5년');
+  });
+
+  it('분야가 없으면 미설정으로, 연차가 없으면 분야만 적는다', () => {
+    expect(formatFieldAndYears(null, 4.5)).toBe('분야 미설정 4년');
+    expect(formatFieldAndYears({ codeId: 42, codeName: 'DB 연결' }, null)).toBe('DB 연결');
   });
 });
 

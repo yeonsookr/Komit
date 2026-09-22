@@ -1,0 +1,186 @@
+# 로컬 실습 전용 MinIO. 운영은 deploy.sh가 STORAGE_INTERNAL_ENDPOINT로 받는 외부 저장소를 씁니다.
+# service Pod는 minio.komit.svc.cluster.local:9000으로 붙고, 브라우저는 docker-compose가 NodePort 30090을
+# 호스트 9000으로 매핑한 주소(STORAGE_PUBLIC_ENDPOINT)로 프리사인 URL을 호출합니다.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  namespace: komit
+  labels:
+    app.kubernetes.io/name: minio
+    app.kubernetes.io/part-of: komit
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: komit
+  labels:
+    app.kubernetes.io/name: minio
+    app.kubernetes.io/part-of: komit
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: minio
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: minio
+        app.kubernetes.io/part-of: komit
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: minio
+          image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+          args: ["server", "/data", "--console-address", ":9001"]
+          ports:
+            - name: s3
+              containerPort: 9000
+            - name: console
+              containerPort: 9001
+          env:
+            # service가 쓰는 자격과 같은 Secret을 루트 계정으로 씁니다.
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: service-storage
+                  key: STORAGE_ACCESS_KEY
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: service-storage
+                  key: STORAGE_SECRET_KEY
+            - name: HOME
+              value: /tmp
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: s3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: s3
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: "500m"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: minio-data
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: komit
+  labels:
+    app.kubernetes.io/name: minio
+    app.kubernetes.io/part-of: komit
+spec:
+  type: NodePort
+  selector:
+    app.kubernetes.io/name: minio
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: s3
+      nodePort: 30090
+---
+# 버킷을 만듭니다. service는 버킷이 있다고 가정하고 기동합니다.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-init
+  namespace: komit
+  labels:
+    app.kubernetes.io/name: minio-init
+    app.kubernetes.io/part-of: komit
+spec:
+  backoffLimit: 20
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: minio-init
+        app.kubernetes.io/part-of: komit
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mc
+          image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
+              mc mb --ignore-existing "local/$STORAGE_BUCKET"
+              # 완료되지 않은 임시 객체(pending/)는 R-FILE-03의 업로드 기한이 지나면 쓸모가 없어 하루 뒤 자동으로 지웁니다.
+              case "$(mc ilm rule ls "local/$STORAGE_BUCKET" 2>/dev/null)" in
+                *pending/*) ;;
+                *) mc ilm rule add --expire-days 1 --prefix pending/ "local/$STORAGE_BUCKET" ;;
+              esac
+          env:
+            - name: MC_CONFIG_DIR
+              value: /tmp/.mc
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: service-storage
+                  key: STORAGE_ACCESS_KEY
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: service-storage
+                  key: STORAGE_SECRET_KEY
+            - name: STORAGE_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: service-config
+                  key: STORAGE_BUCKET
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

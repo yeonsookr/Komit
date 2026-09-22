@@ -54,6 +54,9 @@ spec:
             # 운영은 deploy.sh가 GitLab 변수로, 로컬은 local/database/secrets.yaml이 만듭니다.
             - secretRef:
                 name: service-auth
+            # MinIO/S3 호환 저장소 자격. 저장소 배포와 Service 연결 주소는 환경별 설정이 소유합니다.
+            - secretRef:
+                name: service-storage
           env:
             # 일반 트랜잭션은 Primary(-rw), readOnly 트랜잭션은 Standby(-ro)로 접속합니다.
             - name: DB_URL

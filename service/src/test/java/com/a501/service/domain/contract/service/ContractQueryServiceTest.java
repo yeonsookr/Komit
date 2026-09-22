@@ -8,6 +8,7 @@ import com.a501.service.domain.contract.entity.ConsultingAgreement;
 import com.a501.service.domain.contract.entity.Contract;
 import com.a501.service.domain.contract.repository.ConsultingAgreementRepository;
 import com.a501.service.domain.contract.repository.ContractRepository;
+import com.a501.service.domain.contract.repository.DevelopmentContractRepository;
 import com.a501.service.domain.room.dto.RoomParties;
 import com.a501.service.domain.room.service.RoomQueryService;
 import java.util.Optional;
@@ -26,10 +27,13 @@ class ContractQueryServiceTest {
     private final ConsultingAgreementRepository agreementRepository =
             mock(ConsultingAgreementRepository.class);
     private final ContractRepository contractRepository = mock(ContractRepository.class);
+    private final DevelopmentContractRepository developmentContractRepository =
+            mock(DevelopmentContractRepository.class);
     private final RoomQueryService roomQueryService = mock(RoomQueryService.class);
 
     private final ContractQueryService service =
-            new ContractQueryService(agreementRepository, contractRepository, roomQueryService);
+            new ContractQueryService(
+                    agreementRepository, contractRepository, developmentContractRepository, roomQueryService);
 
     @BeforeEach
     void setUp() {

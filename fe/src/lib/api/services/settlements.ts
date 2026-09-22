@@ -1,8 +1,7 @@
 import "server-only";
 
-import { backendApi } from "../server";
+import { authenticatedBackendApi } from "../server";
 import { BACKEND } from "../endpoints";
-import { authorized } from "@/lib/auth/session";
 import type {
   ContractLedger,
   DepositsResponse,
@@ -23,8 +22,7 @@ import type {
  * 다를 수 있습니다.
  */
 export async function getSpending(month?: string): Promise<SpendingResponse> {
-  const { data } = await backendApi().get<SpendingResponse>(BACKEND.SETTLEMENT_SPENDING, {
-    ...(await authorized()),
+  const { data } = await authenticatedBackendApi().get<SpendingResponse>(BACKEND.SETTLEMENT_SPENDING, {
     ...(month ? { params: { month } } : {}),
   });
   return data;
@@ -36,9 +34,8 @@ export async function getSpending(month?: string): Promise<SpendingResponse> {
  * 달을 받지 않습니다. 목 명세에 파라미터가 없어 언제나 현재 기준입니다.
  */
 export async function getIncome(): Promise<IncomeResponse> {
-  const { data } = await backendApi().get<IncomeResponse>(
+  const { data } = await authenticatedBackendApi().get<IncomeResponse>(
     BACKEND.SETTLEMENT_INCOME,
-    await authorized(),
   );
   return data;
 }
@@ -49,9 +46,8 @@ export async function getIncome(): Promise<IncomeResponse> {
  * 달을 받지 않습니다. 예치금은 특정 달의 집계가 아니라 지금의 잔액입니다.
  */
 export async function getDeposits(): Promise<DepositsResponse> {
-  const { data } = await backendApi().get<DepositsResponse>(
+  const { data } = await authenticatedBackendApi().get<DepositsResponse>(
     BACKEND.SETTLEMENT_DEPOSITS,
-    await authorized(),
   );
   return data;
 }
@@ -77,9 +73,8 @@ export async function getSettlementOverview(month?: string): Promise<{
 
 /** 계약 하나의 예치금 원장. 없거나 남의 계약이면 404. */
 export async function getContractLedger(contractId: number): Promise<ContractLedger> {
-  const { data } = await backendApi().get<ContractLedger>(
+  const { data } = await authenticatedBackendApi().get<ContractLedger>(
     BACKEND.CONTRACT_LEDGER(contractId),
-    await authorized(),
   );
   return data;
 }

@@ -15,6 +15,11 @@ spring:
 app:
   datasource:
     read-url: ${DB_READ_URL}
+  storage:
+    internal-endpoint: ${STORAGE_INTERNAL_ENDPOINT}
+    public-endpoint: ${STORAGE_PUBLIC_ENDPOINT}
+    access-key: ${STORAGE_ACCESS_KEY}
+    secret-key: ${STORAGE_SECRET_KEY}
   auth:
     user-jwt-secret: ${KOMIT_USER_JWT_SECRET}
     kakao-token-encryption-key: ${KAKAO_TOKEN_ENCRYPTION_KEY}

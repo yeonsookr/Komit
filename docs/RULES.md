@@ -306,6 +306,27 @@ Komit의 **정책 값과 불변식**을 모아 놓은 단일 출처다.
 | `R-RT-04` | 서버는 연결 상태를 주기적으로 확인하고 응답이 제한 시간 동안 없으면 연결을 종료한다. | 확인 **20초**, 응답 제한 **60초** | API, FE, 운영 |
 | `R-RT-05` | 같은 사용자는 같은 채널에 대표 WebSocket 연결을 하나만 유지한다. 새 연결이 대표가 되며 이전 연결은 더 이상 presence를 갱신하지 못한다. Redis 장애로 대표를 안전하게 정할 수 없으면 새 연결을 받지 않고 재시도 가능한 종료 코드로 닫는다. | 채널별 **1개**, 판정 실패 close code `1013` | API, Redis, FE |
 
+## 13. 파일 저장소
+
+| 번호 | 규칙 | 값 | 영향 범위 |
+| --- | --- | --- | --- |
+| `R-FILE-01` | 파일을 올리기 전에 용도·이름·형식·크기를 알리고 임시 업로드 주소를 받는다. 모든 용도의 파일 크기는 같은 상한을 적용한다. | 용도별 **10MiB** (`10,485,760`바이트) | Service, Mock API, 저장소, FE |
+| `R-FILE-02` | 용도별로 허용하는 파일 형식을 제한한다. `PROFILE_IMAGE`·`PORTFOLIO_IMAGE`는 PNG·JPEG·WebP, `CAREER_EVIDENCE`는 PDF·PNG·JPEG, `SIGNATURE`는 PNG, `DELIVERABLE`은 ZIP·PDF·일반 바이너리, `SESSION_RECORDING`은 WebM·MP4 오디오, `REPORT_EVIDENCE`는 PDF·PNG·JPEG·WebP만 받는다. | 아래 「용도별 허용 형식」 | Service, Mock API, FE |
+| `R-FILE-03` | 업로드 주소와 읽기 주소는 짧게 만료되는 임시 주소로 발급한다. 주소에 접근 키를 직접 노출하지 않는다. | 업로드 **5분** / 읽기 **15분** | Service, 저장소, FE, 운영 |
+| `R-FILE-04` | 업로드 완료 요청에서는 저장소에 실제 객체가 있는지와 시작 때 알린 크기·형식이 같은지 확인한다. 다르면 객체를 지우고 실패로 남긴다. 완료 요청은 멱등하며, 완료된 파일은 기존 업로드 주소로 바꿀 수 없게 최종 객체로 확정한다. | 완료 전 첨부 불가 / 완료 후 불변 | Service, 저장소, API |
+
+### 용도별 허용 형식 (`R-FILE-02`)
+
+| 용도 | 허용 `Content-Type` |
+| --- | --- |
+| `PROFILE_IMAGE` | `image/png`, `image/jpeg`, `image/webp` |
+| `CAREER_EVIDENCE` | `application/pdf`, `image/png`, `image/jpeg` |
+| `PORTFOLIO_IMAGE` | `image/png`, `image/jpeg`, `image/webp` |
+| `SIGNATURE` | `image/png` |
+| `DELIVERABLE` | `application/zip`, `application/x-zip-compressed`, `application/pdf`, `application/octet-stream` |
+| `SESSION_RECORDING` | `audio/webm`, `audio/mp4` |
+| `REPORT_EVIDENCE` | `application/pdf`, `image/png`, `image/jpeg`, `image/webp` |
+
 ---
 
 ## 기간 값 모음
@@ -329,6 +350,8 @@ Komit의 **정책 값과 불변식**을 모아 놓은 단일 출처다.
 | WebSocket 연결 티켓 만료 | `R-RT-01` | 30초 |
 | WebSocket heartbeat 간격 | `R-RT-04` | 20초 |
 | WebSocket 무응답 제한 | `R-RT-04` | 60초 |
+| 파일 업로드 주소 만료 | `R-FILE-03` | 5분 |
+| 파일 읽기 주소 만료 | `R-FILE-03` | 15분 |
 
 `R-QA-02`와 `R-RPT-01`은 값이 같지만 서로 다른 규칙이다. 한쪽을 바꿔도 다른 쪽이 따라가지 않는다.
 
@@ -339,7 +362,6 @@ Komit의 **정책 값과 불변식**을 모아 놓은 단일 출처다.
 | 항목 | 상태 |
 | --- | --- |
 | 결함 지문의 세부 구성 방식 | 하위 분류 포함 여부, 대상 경로 범위, HTTP 메서드 포함 여부, 대소문자·구분자 표준화는 재진단 비교 구현 전에 확정 필요 (`R-SCAN-20`) |
-| 파일 업로드 제한 | 프로필·서명·경력 증빙·산출물·신고 증거·세션 녹화 등 용도별 허용 형식과 최대 크기의 근거가 없다. 저장소·Next·Service의 제한을 함께 확인해 확정해야 한다 |
 | 추천 점수 세부 기준 | 규칙 기반 추천과 알고리즘 판·점수 근거 보관은 `R-MATCH-05`로 확정했다. 기술 일치·가격·평점·경력의 가중치와 동점 정렬 기준은 구현 전에 합의해야 한다 |
 | 지급 소요 단축 | 3영업일 → 2영업일 공지가 화면에 있으나 적용 시점 미정 (`R-PAY-02`) |
 | 갈래 선택 후 상담방 잠금 | MVP 범위에서 제외 (`R-MATCH-03`) |

@@ -8,7 +8,8 @@ const NOT_FOUND = { code: "CONTRACT_NOT_FOUND", message: "계약서를 찾을 �
 /** 서명 그림은 캔버스가 만든 PNG 입니다. 다른 형식은 받지 않습니다. */
 const SIGNATURE_TYPE = "image/png";
 /** 캔버스 한 장이라 이보다 클 이유가 없습니다. */
-const MAX_BYTES = 1_000_000;
+// R-FILE-01: 모든 파일 용도의 공통 상한.
+const MAX_BYTES = 10 * 1024 * 1024;
 
 /**
  * POST /api/contracts/{contractId}/signatures — 계약서 서명.

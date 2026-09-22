@@ -1,6 +1,6 @@
 import "server-only";
 
-import { backendApi } from "../server";
+import { authenticatedBackendApi } from "../server";
 import { BACKEND } from "../endpoints";
 import { ApiError, UNKNOWN_ERROR_CODE } from "@/types/api";
 import type {
@@ -15,13 +15,13 @@ const PUT_TIMEOUT_MS = 15_000;
 
 /** 올리기 시작. 형식·크기가 맞지 않으면 주소를 받지 못합니다. */
 async function createUpload(body: CreateUploadRequest): Promise<UploadTarget> {
-  const { data } = await backendApi().post<UploadTarget>(BACKEND.UPLOADS, body);
+  const { data } = await authenticatedBackendApi().post<UploadTarget>(BACKEND.UPLOADS, body);
   return data;
 }
 
 /** 올리기 완료. 여기까지 마쳐야 `fileId` 를 어딘가에 붙일 수 있습니다. */
 async function completeUpload(uploadId: number): Promise<UploadedFile> {
-  const { data } = await backendApi().post<UploadedFile>(
+  const { data } = await authenticatedBackendApi().post<UploadedFile>(
     BACKEND.UPLOAD_COMPLETE(uploadId),
     {},
   );

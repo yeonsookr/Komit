@@ -1,8 +1,7 @@
 import "server-only";
 
-import { backendApi } from "../server";
+import { authenticatedBackendApi, backendApi } from "../server";
 import { BACKEND } from "../endpoints";
-import { authorized } from "@/lib/auth/session";
 import type {
   KakaoLoginRequest,
   KakaoLoginResponse,
@@ -33,15 +32,15 @@ export async function refreshTokens(body: RefreshTokenRequest): Promise<TokenRes
  * 이미 로그아웃된 상태로 다시 불러도 204 라 화면은 성공으로 다루면 됩니다.
  */
 export async function logoutOnServer(): Promise<void> {
-  await backendApi().post(BACKEND.AUTH_LOGOUT, undefined, await authorized());
+  await authenticatedBackendApi().post(BACKEND.AUTH_LOGOUT);
 }
 
 /** 가입 완료 상태 확인. 진행 중이면 409(SIGNUP_PENDING). */
 export async function getSignupCompletion(): Promise<void> {
-  await backendApi().get(BACKEND.SIGNUP_COMPLETION, await authorized());
+  await authenticatedBackendApi().get(BACKEND.SIGNUP_COMPLETION);
 }
 
 /** 약관과 회원 발급 계좌가 준비된 경우에만 가입을 완료합니다. */
 export async function completeSignup(): Promise<void> {
-  await backendApi().post(BACKEND.SIGNUP_COMPLETION, undefined, await authorized());
+  await authenticatedBackendApi().post(BACKEND.SIGNUP_COMPLETION);
 }
