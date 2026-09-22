@@ -5,6 +5,7 @@ import com.a501.service.common.exception.CommonErrorCode;
 import com.a501.service.domain.diagnosis.DiagnosisErrorCode;
 import com.a501.service.domain.diagnosis.SurveyAnswerType;
 import com.a501.service.domain.diagnosis.dto.request.SaveSurveyAnswersRequest.SurveyAnswerRequest;
+import com.a501.service.domain.diagnosis.dto.request.ScanResult;
 import com.a501.service.domain.diagnosis.dto.response.SurveyOptionResponse;
 import com.a501.service.domain.diagnosis.dto.response.SurveyQuestionResponse;
 import com.a501.service.domain.diagnosis.dto.response.SurveyResponse;
@@ -29,6 +30,9 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class SurveyService {
+    /** 검사 결과에서 만든 문항 수 상한. (R-SCAN-16) */
+    private static final int MAX_SCAN_QUESTIONS = 5;
+
     private final SurveyRepository surveyRepository;
     private final SurveyQuestionRepository surveyQuestionRepository;
     private final SurveyOptionRepository surveyOptionRepository;
@@ -45,6 +49,36 @@ public class SurveyService {
                     .forEach(surveyOptionRepository::save);
         }
         return survey;
+    }
+
+    /**
+     * 마지막 설문 문항을 검사 결과에서 나온 것으로 갈아 끼운다. 고정 문항 뒤에 이어 붙이면 다시 검사했을 때 지난 문항과 겹쳐 같은 것을 두 번 묻는다. (R-SCAN-14)
+     *
+     * @param questions 검사 결과의 문항. 다섯 개까지만 쓴다 (R-SCAN-16)
+     */
+    @Transactional
+    public void replaceScanQuestions(
+            Integer diagnosisId, Short diagnosisVersion, List<ScanResult.Question> questions) {
+        if (questions == null || questions.isEmpty()) {
+            return;
+        }
+        Survey survey = load(diagnosisId, diagnosisVersion);
+        List<SurveyQuestion> existing = questionsOf(survey);
+        existing.stream()
+                .skip(FixedSurveyQuestions.ALL.size())
+                .forEach(question -> surveyQuestionRepository.delete(question));
+
+        questions.stream().limit(MAX_SCAN_QUESTIONS).forEach(raw -> {
+            SurveyQuestion question = surveyQuestionRepository.save(SurveyQuestion.of(
+                    survey.getId(),
+                    raw.content(),
+                    raw.answerType() == null ? SurveyAnswerType.TEXT : raw.answerType()));
+            if (raw.options() != null) {
+                raw.options().stream()
+                        .map(content -> SurveyOption.of(question.getId(), content))
+                        .forEach(surveyOptionRepository::save);
+            }
+        });
     }
 
     public SurveyResponse getSurvey(Integer diagnosisId, Short diagnosisVersion) {

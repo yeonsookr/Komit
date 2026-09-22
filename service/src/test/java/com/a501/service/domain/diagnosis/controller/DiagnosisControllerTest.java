@@ -3,13 +3,16 @@ package com.a501.service.domain.diagnosis.controller;
 import static com.a501.service.common.security.SecuritySliceTestSupport.expiredToken;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -22,11 +25,13 @@ import com.a501.service.domain.diagnosis.dto.request.SaveSurveyAnswersRequest.Su
 import com.a501.service.domain.diagnosis.dto.request.StartDiagnosisRequest;
 import com.a501.service.domain.diagnosis.dto.response.DiagnosisProjectResponse;
 import com.a501.service.domain.diagnosis.dto.response.DiagnosisResponse;
+import com.a501.service.domain.diagnosis.dto.response.InspectionResponse;
 import com.a501.service.domain.diagnosis.dto.response.SurveyOptionResponse;
 import com.a501.service.domain.diagnosis.dto.response.SurveyQuestionResponse;
 import com.a501.service.domain.diagnosis.dto.response.SurveyResponse;
 import com.a501.service.domain.diagnosis.dto.response.TechCategoryResponse;
 import com.a501.service.domain.diagnosis.service.DiagnosisService;
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -36,6 +41,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -210,6 +216,69 @@ class DiagnosisControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(content().json(
                         "{\"code\":\"SURVEY_NOT_COMPLETABLE\",\"message\":\"아직 끝내지 않은 문항이 있습니다.\"}", true));
+    }
+
+    @Test
+    @DisplayName("검사 파일은 본문이 파일 내용이고 파일 이름은 Content-Disposition 에 담긴다")
+    void downloadScanFileReturnsMarkdown() throws Exception {
+        when(diagnosisService.getScanFile(31, USER_ID))
+                .thenReturn("# Komit 검사 파일\n\n- 진단 번호: 31\n".getBytes(StandardCharsets.UTF_8));
+
+        mockMvc.perform(authenticated(get("/api/diagnoses/31/scan-file")))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CONTENT_TYPE, "text/markdown;charset=UTF-8"))
+                .andExpect(header().string(
+                        HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"komit-scan.md\""))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("진단 번호: 31")));
+    }
+
+    @Test
+    @DisplayName("검사 결과 파일을 올리면 201로 검사 한 건을 돌려준다")
+    void uploadScanResultReturnsCreated() throws Exception {
+        when(diagnosisService.uploadScanResult(eq(31), eq(USER_ID), any()))
+                .thenReturn(new InspectionResponse(
+                        27, 2, "IN_PROGRESS", 11,
+                        OffsetDateTime.of(2026, 8, 17, 0, 12, 0, 0, ZoneOffset.UTC)));
+
+        mockMvc.perform(multipart("/api/diagnoses/31/inspections")
+                        .file(new MockMultipartFile(
+                                "file", "komit-result.md", "text/markdown", "```json\n{}\n```".getBytes(StandardCharsets.UTF_8)))
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID)))
+                .andExpect(status().isCreated())
+                .andExpect(content().json("""
+                        {"inspectionId":27,"diagnosisVersion":2,"status":"IN_PROGRESS",
+                         "readinessScore":11,"scannedAt":"2026-08-17T00:12:00Z"}
+                        """, true));
+    }
+
+    @Test
+    @DisplayName("읽을 수 없는 결과 파일은 400 SCAN_FILE_INVALID다")
+    void uploadRejectsUnreadableFile() throws Exception {
+        when(diagnosisService.uploadScanResult(eq(31), eq(USER_ID), any()))
+                .thenThrow(new BusinessException(DiagnosisErrorCode.SCAN_FILE_INVALID));
+
+        mockMvc.perform(multipart("/api/diagnoses/31/inspections")
+                        .file(new MockMultipartFile(
+                                "file", "komit-result.md", "text/markdown", "hello".getBytes(StandardCharsets.UTF_8)))
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID)))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().json(
+                        "{\"code\":\"SCAN_FILE_INVALID\","
+                                + "\"message\":\"검사 결과 파일을 읽지 못했습니다. 받은 파일 그대로 올려주세요.\"}", true));
+    }
+
+    @Test
+    @DisplayName("다른 진단의 결과 파일은 400 DIAGNOSIS_MISMATCH다")
+    void uploadRejectsOtherDiagnosisFile() throws Exception {
+        when(diagnosisService.uploadScanResult(eq(31), eq(USER_ID), any()))
+                .thenThrow(new BusinessException(DiagnosisErrorCode.DIAGNOSIS_MISMATCH));
+
+        mockMvc.perform(multipart("/api/diagnoses/31/inspections")
+                        .file(new MockMultipartFile(
+                                "file", "komit-result.md", "text/markdown", "{}".getBytes(StandardCharsets.UTF_8)))
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("DIAGNOSIS_MISMATCH"));
     }
 
     private static SurveyResponse survey(boolean done) {

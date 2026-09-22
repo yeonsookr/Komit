@@ -38,6 +38,21 @@ public class CodeQueryService {
      * @throws BusinessException {@link CodeErrorCode#CODE_NOT_FOUND} 하나라도 없거나 비활성이거나 다른 분류의 코드일 때,
      *                           {@link CodeErrorCode#CODE_GROUP_NOT_FOUND} 분류 자체가 없을 때
      */
+    /**
+     * 이름으로 코드 식별자를 찾습니다. 밖에서 이름으로만 오는 값을 저장하기 전에 부릅니다.
+     *
+     * @return 이름별 코드 식별자. 시드에 없는 이름은 결과에 빠지므로 부르는 쪽이 건너뛸지 거절할지 정합니다
+     */
+    public Map<String, Integer> findCodeIdsByName(String groupKey, Collection<String> codeNames) {
+        if (codeNames == null || codeNames.isEmpty()) {
+            return Map.of();
+        }
+        DynamicCodeGroup group = groups.findByGroupKeyAndActiveTrue(groupKey)
+                .orElseThrow(() -> new BusinessException(CodeErrorCode.CODE_GROUP_NOT_FOUND));
+        return codes.findByGroupIdAndCodeNameInAndActiveTrue(group.getGroupId(), Set.copyOf(codeNames)).stream()
+                .collect(Collectors.toMap(DynamicCode::getCodeName, DynamicCode::getCodeId, (first, ignored) -> first));
+    }
+
     /** 코드 식별자별 표시 정보. 없는 코드는 결과에 빠집니다. 저장된 식별자를 화면에 보여줄 때 씁니다. */
     public Map<Integer, CodeResponse> findCodes(Collection<Integer> codeIds) {
         if (codeIds == null || codeIds.isEmpty()) {

@@ -7,6 +7,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -59,4 +60,40 @@ public class Issue extends CreatedSoftDeleteEntity {
 
     @Column(name = "fingerprint", length = 120)
     private String fingerprint;
+
+    public static Issue of(
+            Integer inspectionId,
+            String title,
+            String detail,
+            String location,
+            Integer categoryCodeId,
+            String severity,
+            boolean input,
+            String fingerprint) {
+        Issue entity = new Issue();
+        entity.inspectionId = Objects.requireNonNull(inspectionId, "inspectionId");
+        entity.title = Objects.requireNonNull(title, "title");
+        entity.detail = detail;
+        entity.location = location;
+        entity.categoryCodeId = Objects.requireNonNull(categoryCodeId, "categoryCodeId");
+        entity.severity = Objects.requireNonNull(severity, "severity");
+        entity.severityGroup = "ISSUE_SEVERITY";
+        entity.input = input;
+        entity.fingerprint = fingerprint;
+        entity.status = "UNRESOLVED";
+        entity.statusGroup = "ISSUE_STATUS";
+        return entity;
+    }
+
+    /** 지난 회차에서 이어진 결함임을 남긴다. 최초로 발견한 결함을 가리켜 회차를 거슬러 올라갈 수 있게 한다. (R-SCAN-05) */
+    public void continueFrom(Integer originIssueId) {
+        this.originIssueId = Objects.requireNonNull(originIssueId, "originIssueId");
+    }
+
+    /**
+     * 이 결함이 사라진 것을 확인한 회차를 적는다. 발견한 회차의 행에 적으므로 지난 회차 기록은 그대로 남는다.
+     */
+    public void markFixedAt(Short diagnosisVersion) {
+        fixedVersion = Objects.requireNonNull(diagnosisVersion, "diagnosisVersion");
+    }
 }

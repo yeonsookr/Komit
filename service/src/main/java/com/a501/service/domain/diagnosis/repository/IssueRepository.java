@@ -10,6 +10,8 @@ import org.springframework.data.repository.query.Param;
 public interface IssueRepository extends JpaRepository<Issue, Integer> {
     List<Issue> findAllByIdInAndDeletedFalse(Collection<Integer> ids);
 
+    List<Issue> findByInspectionIdAndDeletedFalseOrderByIdAsc(Integer inspectionId);
+
     long countByInspectionIdAndDeletedFalse(Integer inspectionId);
 
     long countByInspectionIdAndDeletedFalseAndStatus(Integer inspectionId, String status);

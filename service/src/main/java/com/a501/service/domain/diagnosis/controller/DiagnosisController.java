@@ -5,8 +5,10 @@ import com.a501.service.common.security.AuthenticatedUser;
 import com.a501.service.domain.diagnosis.dto.request.SaveSurveyAnswersRequest;
 import com.a501.service.domain.diagnosis.dto.request.StartDiagnosisRequest;
 import com.a501.service.domain.diagnosis.dto.response.DiagnosisResponse;
+import com.a501.service.domain.diagnosis.dto.response.InspectionResponse;
 import com.a501.service.domain.diagnosis.dto.response.SurveyResponse;
 import com.a501.service.domain.diagnosis.service.DiagnosisService;
+import com.a501.service.domain.diagnosis.service.ScanFileWriter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -17,7 +19,11 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -25,14 +31,22 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 @Tag(name = "2 사전점검", description = "프로젝트를 검사해 출시 준비 상태를 알아보고 요청서까지 만드는 구간.")
 @RestController
 @RequestMapping("/api/diagnoses")
 @RequiredArgsConstructor
 public class DiagnosisController {
+    /**
+     * 검사 파일은 사람이 읽는 마크다운이다. 매핑의 produces 로 걸면 협상 단계에서 걸려 컨트롤러까지 오지 못한다. 한글이 담기므로 문자 집합을 함께 밝힌다.
+     */
+    private static final MediaType SCAN_FILE_MEDIA_TYPE =
+            MediaType.parseMediaType("text/markdown; charset=UTF-8");
+
     private final DiagnosisService diagnosisService;
 
     @Operation(
@@ -84,6 +98,66 @@ public class DiagnosisController {
             @Parameter(description = "진단 식별자.", example = "31") @PathVariable Integer diagnosisId,
             @AuthenticationPrincipal AuthenticatedUser user) {
         return diagnosisService.getDiagnosis(diagnosisId, user.userId());
+    }
+
+    @Operation(
+            summary = "검사 파일 내려받기",
+            description = "**화면 — `2_설문3` › ① 검사 파일 받기 · 내려받기**\n\n"
+                    + "의뢰인이 자기 AI 도구에서 돌릴 검사 파일을 내려받는다. 이 파일을 도구에 읽히면 결과 파일이 만들어지고, 그 결과 파일만 다시 올린다. 소스 코드는 올리지 않는다.\n\n"
+                    + "파일에는 이 진단의 번호가 들어 있다. 검사 도구가 그 번호를 결과 파일에 옮겨 적고, 올릴 때 서버가 대조한다.\n\n"
+                    + "- **200**: 내려받았을 때. 본문이 파일 내용이고 파일 이름은 `Content-Disposition`에 담긴다\n"
+                    + "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+                    + "- **404 / DIAGNOSIS_NOT_FOUND**: 없는 진단이거나 남의 진단일 때\n"
+                    + "- **500 / INTERNAL_ERROR**: 내려주지 못했을 때",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "검사 파일. 본문이 파일 내용이다.",
+                    content = @Content(mediaType = "text/markdown",
+                            schema = @Schema(type = "string", format = "binary"))),
+            @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "진단 없음", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/{diagnosisId}/scan-file")
+    ResponseEntity<byte[]> downloadScanFile(
+            @Parameter(description = "진단 식별자.", example = "31") @PathVariable Integer diagnosisId,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        byte[] body = diagnosisService.getScanFile(diagnosisId, user.userId());
+        return ResponseEntity.ok()
+                .contentType(SCAN_FILE_MEDIA_TYPE)
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment().filename(ScanFileWriter.FILE_NAME).build().toString())
+                .body(body);
+    }
+
+    @Operation(
+            summary = "검사 결과 파일 올리기",
+            description = "**화면 — `2_설문3` › ③ 만들어진 결과 파일 올리기**\n\n"
+                    + "사용자가 자기 AI 도구로 돌린 검사 결과 파일을 올린다. 코드 자체는 올라오지 않고 결과 파일만 받는다.\n\n"
+                    + "올린 결과 파일에는 발견한 문제뿐 아니라, 코드만으로는 판단할 수 없어 사용자에게 물어야 할 질문도 함께 들어 있다. 이 요청으로 그 질문들이 설문4 문항이 된다.\n\n"
+                    + "- **201**: 파일을 받아 검사가 열렸을 때. 이어서 설문 조회로 설문4 문항을 받는다\n"
+                    + "- **400 / SCAN_FILE_INVALID**: 받은 형식이 아닌 파일을 올렸을 때\n"
+                    + "- **400 / DIAGNOSIS_MISMATCH**: 파일에 진단 번호가 적혀 있고 그것이 `diagnosisId`와 다를 때. 번호가 없는 파일은 받는다\n"
+                    + "- **400 / SCAN_VERSION_OUTDATED**: 파일의 검사 지시문 판이 지금 지원하는 판과 다를 때\n"
+                    + "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+                    + "- **404 / DIAGNOSIS_NOT_FOUND**: 없는 진단이거나 남의 진단일 때\n"
+                    + "- **500 / INTERNAL_ERROR**: 검사를 시작하지 못했을 때",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "검사 열림"),
+            @ApiResponse(responseCode = "400", description = "결과 파일을 받지 못함", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "진단 없음", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @ResponseStatus(HttpStatus.CREATED)
+    @PostMapping(value = "/{diagnosisId}/inspections", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    InspectionResponse uploadScanResult(
+            @Parameter(description = "진단 식별자.", example = "31") @PathVariable Integer diagnosisId,
+            @Parameter(description = "AI 도구가 만든 검사 결과 파일.") @RequestPart("file") MultipartFile file,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return diagnosisService.uploadScanResult(diagnosisId, user.userId(), file);
     }
 
     @Operation(

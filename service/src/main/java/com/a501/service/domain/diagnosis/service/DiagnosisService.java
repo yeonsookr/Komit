@@ -5,7 +5,9 @@ import com.a501.service.domain.diagnosis.DiagnosisErrorCode;
 import com.a501.service.domain.diagnosis.dto.request.SaveSurveyAnswersRequest.SurveyAnswerRequest;
 import com.a501.service.domain.diagnosis.dto.request.StartDiagnosisRequest;
 import com.a501.service.domain.diagnosis.dto.response.DiagnosisProjectResponse;
+import com.a501.service.domain.diagnosis.dto.request.ScanResult;
 import com.a501.service.domain.diagnosis.dto.response.DiagnosisResponse;
+import com.a501.service.domain.diagnosis.dto.response.InspectionResponse;
 import com.a501.service.domain.diagnosis.dto.response.SurveyResponse;
 import com.a501.service.domain.diagnosis.entity.Diagnosis;
 import com.a501.service.domain.diagnosis.entity.Inspection;
@@ -20,6 +22,7 @@ import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @RequiredArgsConstructor
@@ -32,10 +35,30 @@ public class DiagnosisService {
     private final IssueRepository issueRepository;
     private final SurveyService surveyService;
     private final ProjectService projectService;
+    private final ScanFileWriter scanFileWriter;
+    private final ScanResultReader scanResultReader;
+    private final InspectionService inspectionService;
 
     public DiagnosisResponse getDiagnosis(Integer diagnosisId, Integer userId) {
         Diagnosis diagnosis = ownedDiagnosis(diagnosisId, userId);
         return toResponse(diagnosis, ownedProject(diagnosis.getProjectId(), userId));
+    }
+
+    /** 의뢰인이 자기 AI 도구에서 돌릴 검사 파일. 이 진단의 번호와 적은 증상이 담긴다. */
+    public byte[] getScanFile(Integer diagnosisId, Integer userId) {
+        Diagnosis diagnosis = ownedDiagnosis(diagnosisId, userId);
+        ProjectSummary project = ownedProject(diagnosis.getProjectId(), userId);
+        return scanFileWriter.write(diagnosis.getId(), project.name(), diagnosis.getUserInput());
+    }
+
+    /** 의뢰인이 자기 AI 도구로 돌린 검사 결과를 받는다. 코드는 올라오지 않고 결과 파일만 온다. */
+    @Transactional
+    public InspectionResponse uploadScanResult(
+            Integer diagnosisId, Integer userId, MultipartFile file) {
+        Diagnosis diagnosis = ownedDiagnosis(diagnosisId, userId);
+        ScanResult result = scanResultReader.read(file, diagnosis.getId());
+        return inspectionService.record(
+                diagnosis.getId(), diagnosis.getProjectId(), diagnosis.getVersion(), result);
     }
 
     public SurveyResponse getSurvey(Integer diagnosisId, Integer userId) {
