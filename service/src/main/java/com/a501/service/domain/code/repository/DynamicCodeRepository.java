@@ -9,4 +9,6 @@ public interface DynamicCodeRepository extends JpaRepository<DynamicCode, Intege
     List<DynamicCode> findByGroupIdAndActiveTrueOrderBySortOrderAscCodeIdAsc(Integer groupId);
 
     List<DynamicCode> findByCodeIdInAndGroupIdAndActiveTrue(Collection<Integer> codeIds, Integer groupId);
+
+    List<DynamicCode> findByGroupIdAndCodeNameInAndActiveTrue(Integer groupId, Collection<String> codeNames);
 }

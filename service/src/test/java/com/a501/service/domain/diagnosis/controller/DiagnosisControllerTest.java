@@ -3,13 +3,17 @@ package com.a501.service.domain.diagnosis.controller;
 import static com.a501.service.common.security.SecuritySliceTestSupport.expiredToken;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -17,16 +21,25 @@ import com.a501.service.common.exception.BusinessException;
 import com.a501.service.common.security.JwtTokenProvider;
 import com.a501.service.common.security.WebMvcSecurityTest;
 import com.a501.service.domain.diagnosis.DiagnosisErrorCode;
+import com.a501.service.domain.diagnosis.IssueSeverity;
 import com.a501.service.domain.diagnosis.SurveyAnswerType;
+import com.a501.service.domain.diagnosis.dto.request.CreateIssueRequest;
 import com.a501.service.domain.diagnosis.dto.request.SaveSurveyAnswersRequest.SurveyAnswerRequest;
 import com.a501.service.domain.diagnosis.dto.request.StartDiagnosisRequest;
 import com.a501.service.domain.diagnosis.dto.response.DiagnosisProjectResponse;
 import com.a501.service.domain.diagnosis.dto.response.DiagnosisResponse;
+import com.a501.service.domain.code.dto.CodeResponse;
+import com.a501.service.domain.diagnosis.dto.response.InspectionResponse;
+import com.a501.service.domain.diagnosis.dto.response.IssueListResponse;
+import com.a501.service.domain.diagnosis.dto.response.IssueResponse;
 import com.a501.service.domain.diagnosis.dto.response.SurveyOptionResponse;
 import com.a501.service.domain.diagnosis.dto.response.SurveyQuestionResponse;
 import com.a501.service.domain.diagnosis.dto.response.SurveyResponse;
+import com.a501.service.domain.diagnosis.dto.response.UnfinishedSurveyListResponse;
+import com.a501.service.domain.diagnosis.dto.response.UnfinishedSurveyListResponse.UnfinishedSurveyResponse;
 import com.a501.service.domain.diagnosis.dto.response.TechCategoryResponse;
 import com.a501.service.domain.diagnosis.service.DiagnosisService;
+import java.nio.charset.StandardCharsets;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -36,6 +49,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
@@ -210,6 +224,235 @@ class DiagnosisControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(content().json(
                         "{\"code\":\"SURVEY_NOT_COMPLETABLE\",\"message\":\"아직 끝내지 않은 문항이 있습니다.\"}", true));
+    }
+
+    @Test
+    @DisplayName("검사 파일은 본문이 파일 내용이고 파일 이름은 Content-Disposition 에 담긴다")
+    void downloadScanFileReturnsMarkdown() throws Exception {
+        when(diagnosisService.getScanFile(31, USER_ID))
+                .thenReturn("# Komit 검사 파일\n\n- 진단 번호: 31\n".getBytes(StandardCharsets.UTF_8));
+
+        mockMvc.perform(authenticated(get("/api/diagnoses/31/scan-file")))
+                .andExpect(status().isOk())
+                .andExpect(header().string(HttpHeaders.CONTENT_TYPE, "text/markdown;charset=UTF-8"))
+                .andExpect(header().string(
+                        HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"komit-scan.md\""))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("진단 번호: 31")));
+    }
+
+    @Test
+    @DisplayName("검사 결과 파일을 올리면 201로 검사 한 건을 돌려준다")
+    void uploadScanResultReturnsCreated() throws Exception {
+        when(diagnosisService.uploadScanResult(eq(31), eq(USER_ID), any()))
+                .thenReturn(new InspectionResponse(
+                        27, 2, "IN_PROGRESS", 11,
+                        OffsetDateTime.of(2026, 8, 17, 0, 12, 0, 0, ZoneOffset.UTC)));
+
+        mockMvc.perform(multipart("/api/diagnoses/31/inspections")
+                        .file(new MockMultipartFile(
+                                "file", "komit-result.md", "text/markdown", "```json\n{}\n```".getBytes(StandardCharsets.UTF_8)))
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID)))
+                .andExpect(status().isCreated())
+                .andExpect(content().json("""
+                        {"inspectionId":27,"diagnosisVersion":2,"status":"IN_PROGRESS",
+                         "readinessScore":11,"scannedAt":"2026-08-17T00:12:00Z"}
+                        """, true));
+    }
+
+    @Test
+    @DisplayName("읽을 수 없는 결과 파일은 400 SCAN_FILE_INVALID다")
+    void uploadRejectsUnreadableFile() throws Exception {
+        when(diagnosisService.uploadScanResult(eq(31), eq(USER_ID), any()))
+                .thenThrow(new BusinessException(DiagnosisErrorCode.SCAN_FILE_INVALID));
+
+        mockMvc.perform(multipart("/api/diagnoses/31/inspections")
+                        .file(new MockMultipartFile(
+                                "file", "komit-result.md", "text/markdown", "hello".getBytes(StandardCharsets.UTF_8)))
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID)))
+                .andExpect(status().isBadRequest())
+                .andExpect(content().json(
+                        "{\"code\":\"SCAN_FILE_INVALID\","
+                                + "\"message\":\"검사 결과 파일을 읽지 못했습니다. 받은 파일 그대로 올려주세요.\"}", true));
+    }
+
+    @Test
+    @DisplayName("다른 진단의 결과 파일은 400 DIAGNOSIS_MISMATCH다")
+    void uploadRejectsOtherDiagnosisFile() throws Exception {
+        when(diagnosisService.uploadScanResult(eq(31), eq(USER_ID), any()))
+                .thenThrow(new BusinessException(DiagnosisErrorCode.DIAGNOSIS_MISMATCH));
+
+        mockMvc.perform(multipart("/api/diagnoses/31/inspections")
+                        .file(new MockMultipartFile(
+                                "file", "komit-result.md", "text/markdown", "{}".getBytes(StandardCharsets.UTF_8)))
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("DIAGNOSIS_MISMATCH"));
+    }
+
+    @Test
+    @DisplayName("결함 목록은 content와 페이지 정보로 감싼다")
+    void getIssuesReturnsPagedContract() throws Exception {
+        when(diagnosisService.getIssues(31, USER_ID, null, null, 1, 20))
+                .thenReturn(new IssueListResponse(List.of(issue()), 1, 20, 11, 1));
+
+        mockMvc.perform(authenticated(get("/api/diagnoses/31/issues")))
+                .andExpect(status().isOk())
+                .andExpect(content().json("""
+                        {"content":[{"issueId":311,"title":"관리자 API에 인증 추가",
+                                     "detail":"로그인한 사람이면 남의 주문 내역까지 열람 가능합니다",
+                                     "location":"app/api/checkout/route.ts:47","isInput":false,
+                                     "category":{"codeId":71,"codeName":"보안"},
+                                     "status":"UNRESOLVED","severity":"HIGH",
+                                     "fixedVersion":null,"originIssueId":null,"qaCriteria":[]}],
+                         "page":1,"size":20,"totalElements":11,"totalPages":1}
+                        """, true));
+    }
+
+    @Test
+    @DisplayName("거르는 조건과 페이지 값을 그대로 넘긴다")
+    void getIssuesPassesFilters() throws Exception {
+        when(diagnosisService.getIssues(eq(31), eq(USER_ID), any(), any(), anyInt(), anyInt()))
+                .thenReturn(new IssueListResponse(List.of(), 1, 20, 0, 0));
+
+        mockMvc.perform(authenticated(get("/api/diagnoses/31/issues"))
+                        .param("status", "RESOLVED")
+                        .param("isInput", "true")
+                        .param("page", "2")
+                        .param("size", "5"))
+                .andExpect(status().isOk());
+
+        verify(diagnosisService).getIssues(31, USER_ID, "RESOLVED", true, 2, 5);
+    }
+
+    @Test
+    @DisplayName("허용되지 않은 status 는 422 INVALID_REQUEST다")
+    void getIssuesRejectsUnknownStatus() throws Exception {
+        mockMvc.perform(authenticated(get("/api/diagnoses/31/issues")).param("status", "NOPE"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.errors[0].field").value("status"));
+
+        verify(diagnosisService, never()).getIssues(any(), any(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    @DisplayName("진행 중인 설문은 content 로만 감싼다")
+    void getUnfinishedSurveysReturnsContentOnly() throws Exception {
+        when(diagnosisService.getUnfinishedSurveys(USER_ID))
+                .thenReturn(new UnfinishedSurveyListResponse(List.of(new UnfinishedSurveyResponse(
+                        31,
+                        "미미헤어샵 예약",
+                        OffsetDateTime.of(2026, 9, 16, 8, 40, 0, 0, ZoneOffset.UTC)))));
+
+        mockMvc.perform(authenticated(get("/api/diagnoses")))
+                .andExpect(status().isOk())
+                .andExpect(content().json("""
+                        {"content":[{"diagnosisId":31,"projectName":"미미헤어샵 예약",
+                                     "updatedAt":"2026-09-16T08:40:00Z"}]}
+                        """, true));
+    }
+
+    @Test
+    @DisplayName("요구사항 직접 추가는 201이고 위치는 코드에서 찾은 값이 아니라 null이다")
+    void addIssueReturnsCreated() throws Exception {
+        when(diagnosisService.addIssue(
+                        eq(31),
+                        eq(USER_ID),
+                        eq(new CreateIssueRequest("장바구니에서 수량을 바꿀 수 있게 해주세요", null, 73, IssueSeverity.MEDIUM))))
+                .thenReturn(new IssueResponse(
+                        399,
+                        "장바구니에서 수량을 바꿀 수 있게 해주세요",
+                        null,
+                        null,
+                        false,
+                        new CodeResponse(73, "결제"),
+                        "UNRESOLVED",
+                        "MEDIUM",
+                        null,
+                        null,
+                        List.of()));
+
+        mockMvc.perform(authenticated(post("/api/diagnoses/31/issues"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"장바구니에서 수량을 바꿀 수 있게 해주세요",
+                                 "categoryCodeId":73,"severity":"MEDIUM"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.issueId").value(399))
+                .andExpect(jsonPath("$.status").value("UNRESOLVED"))
+                .andExpect(jsonPath("$.location").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("요구사항 추가에 title 이 비면 422다")
+    void addIssueRejectsBlankTitle() throws Exception {
+        mockMvc.perform(authenticated(post("/api/diagnoses/31/issues"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"  \",\"categoryCodeId\":73,\"severity\":\"MEDIUM\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors[0].field").value("title"));
+
+        verify(diagnosisService, never()).addIssue(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("검사 전에 요구사항을 붙이려 하면 409 INSPECTION_NOT_DONE 이다")
+    void addIssueBeforeInspectionConflicts() throws Exception {
+        when(diagnosisService.addIssue(any(), any(), any()))
+                .thenThrow(new BusinessException(DiagnosisErrorCode.INSPECTION_NOT_DONE));
+
+        mockMvc.perform(authenticated(post("/api/diagnoses/31/issues"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"x\",\"categoryCodeId\":73,\"severity\":\"LOW\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("INSPECTION_NOT_DONE"));
+    }
+
+    @Test
+    @DisplayName("요청서 저장은 저장된 뒤의 요구사항 전부를 돌려준다")
+    void writeRequirementsReturnsWholeList() throws Exception {
+        when(diagnosisService.writeRequirements(eq(31), eq(USER_ID), any()))
+                .thenReturn(new IssueListResponse(List.of(issue()), 1, 1, 1, 1));
+
+        mockMvc.perform(authenticated(put("/api/diagnoses/31/requirements"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"requirements":[{"issueId":311,"title":"관리자 API에 인증 추가",
+                                  "detail":null,"categoryCodeId":71,"severity":"HIGH",
+                                  "qaCriteria":[{"qaCriterionId":null,"testCase":"관리자 주소로 들어가면 로그인 화면이 뜬다"}]}]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].issueId").value(311));
+    }
+
+    @Test
+    @DisplayName("계약에 포함된 요구사항을 빼면 409 ISSUE_STATUS_CONFLICT 다")
+    void writeRequirementsRejectsDroppingContracted() throws Exception {
+        when(diagnosisService.writeRequirements(any(), any(), any()))
+                .thenThrow(new BusinessException(DiagnosisErrorCode.ISSUE_STATUS_CONFLICT));
+
+        mockMvc.perform(authenticated(put("/api/diagnoses/31/requirements"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"requirements\":[]}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ISSUE_STATUS_CONFLICT"));
+    }
+
+    private static IssueResponse issue() {
+        return new IssueResponse(
+                311,
+                "관리자 API에 인증 추가",
+                "로그인한 사람이면 남의 주문 내역까지 열람 가능합니다",
+                "app/api/checkout/route.ts:47",
+                false,
+                new CodeResponse(71, "보안"),
+                "UNRESOLVED",
+                "HIGH",
+                null,
+                null,
+                List.of());
     }
 
     private static SurveyResponse survey(boolean done) {

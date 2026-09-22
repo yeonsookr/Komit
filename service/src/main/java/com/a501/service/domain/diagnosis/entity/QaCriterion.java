@@ -7,6 +7,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -35,4 +36,22 @@ public class QaCriterion extends SoftDeleteEntity {
 
     @Column(name = "condition", length = 500)
     private String condition;
+
+    public static QaCriterion of(Integer issueId, String testCase) {
+        QaCriterion entity = new QaCriterion();
+        entity.issueId = Objects.requireNonNull(issueId, "issueId");
+        entity.testCase = Objects.requireNonNull(testCase, "testCase");
+        entity.status = "UNRESOLVED";
+        entity.statusGroup = "QA_CRITERION_STATUS";
+        return entity;
+    }
+
+    public void rewrite(String testCase) {
+        this.testCase = Objects.requireNonNull(testCase, "testCase");
+    }
+
+    /** 요청서에서 지운 것으로 표시한다. */
+    public void dropFromRequirements(java.time.LocalDateTime deletedAt) {
+        markDeleted(deletedAt);
+    }
 }

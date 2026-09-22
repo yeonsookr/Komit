@@ -19,4 +19,7 @@ public interface ProjectTechCategoryRepository
             order by c.techCode.sortOrder asc, c.techCode.codeId asc
             """)
     List<TechCategorySummary> findTechCategories(@Param("projectId") Integer projectId);
+
+    /** 검사할 때마다 확인한 기술이 달라질 수 있어 통째로 갈아 끼운다. 이력을 남기는 표가 아니다. */
+    void deleteByIdProjectId(Integer projectId);
 }

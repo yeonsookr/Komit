@@ -5,21 +5,35 @@ import com.a501.service.domain.diagnosis.DiagnosisErrorCode;
 import com.a501.service.domain.diagnosis.dto.request.SaveSurveyAnswersRequest.SurveyAnswerRequest;
 import com.a501.service.domain.diagnosis.dto.request.StartDiagnosisRequest;
 import com.a501.service.domain.diagnosis.dto.response.DiagnosisProjectResponse;
+import com.a501.service.domain.diagnosis.dto.request.CreateIssueRequest;
+import com.a501.service.domain.diagnosis.dto.request.ScanResult;
+import com.a501.service.domain.diagnosis.dto.request.WriteRequirementsRequest.WriteRequirement;
 import com.a501.service.domain.diagnosis.dto.response.DiagnosisResponse;
+import com.a501.service.domain.diagnosis.dto.response.InspectionResponse;
+import com.a501.service.domain.diagnosis.dto.response.IssueListResponse;
+import com.a501.service.domain.diagnosis.dto.response.IssueResponse;
 import com.a501.service.domain.diagnosis.dto.response.SurveyResponse;
+import com.a501.service.domain.diagnosis.dto.response.UnfinishedSurveyListResponse;
+import com.a501.service.domain.diagnosis.dto.response.UnfinishedSurveyListResponse.UnfinishedSurveyResponse;
 import com.a501.service.domain.diagnosis.entity.Diagnosis;
 import com.a501.service.domain.diagnosis.entity.Inspection;
+import com.a501.service.domain.diagnosis.entity.Survey;
 import com.a501.service.domain.diagnosis.repository.DiagnosisRepository;
 import com.a501.service.domain.diagnosis.repository.InspectionRepository;
 import com.a501.service.domain.diagnosis.repository.IssueRepository;
 import com.a501.service.domain.project.dto.ProjectSummary;
 import com.a501.service.domain.project.service.ProjectService;
 import java.time.ZoneOffset;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
 @Service
 @RequiredArgsConstructor
@@ -32,10 +46,88 @@ public class DiagnosisService {
     private final IssueRepository issueRepository;
     private final SurveyService surveyService;
     private final ProjectService projectService;
+    private final ScanFileWriter scanFileWriter;
+    private final ScanResultReader scanResultReader;
+    private final InspectionService inspectionService;
+    private final IssueQueryService issueQueryService;
+    private final RequirementService requirementService;
+
+    /**
+     * 설문을 끝내지 않고 나간 진단. 다시 들어온 사람이 처음부터 하지 않고 이어서 하게 한다.
+     *
+     * <p>끝냈는지는 설문의 완료 여부로 본다. 검사를 돌렸는지와는 무관해서, 설문3까지 하고 나간 사람도 남는다.
+     */
+    public UnfinishedSurveyListResponse getUnfinishedSurveys(Integer userId) {
+        Map<Integer, String> projectNames = projectService.findAllOwned(userId).stream()
+                .collect(Collectors.toMap(ProjectSummary::projectId, ProjectSummary::name));
+        if (projectNames.isEmpty()) {
+            return new UnfinishedSurveyListResponse(List.of());
+        }
+
+        List<Diagnosis> diagnoses =
+                diagnosisRepository.findByProjectIdInAndDeletedFalse(projectNames.keySet());
+        // 지금 회차의 설문만 본다. 지난 회차의 설문은 재진단으로 넘어간 것이라 이어서 할 것이 아니다.
+        Set<String> unfinished = surveyService
+                .findUnfinished(diagnoses.stream().map(Diagnosis::getId).toList())
+                .stream()
+                .map(survey -> survey.getDiagnosisId() + ":" + survey.getDiagnosisVersion())
+                .collect(Collectors.toSet());
+
+        return new UnfinishedSurveyListResponse(diagnoses.stream()
+                .filter(diagnosis ->
+                        unfinished.contains(diagnosis.getId() + ":" + diagnosis.getVersion()))
+                .sorted(Comparator.comparing(Diagnosis::getUpdatedAt).reversed())
+                .map(diagnosis -> new UnfinishedSurveyResponse(
+                        diagnosis.getId(),
+                        projectNames.get(diagnosis.getProjectId()),
+                        diagnosis.getUpdatedAt().atOffset(ZoneOffset.UTC)))
+                .toList());
+    }
 
     public DiagnosisResponse getDiagnosis(Integer diagnosisId, Integer userId) {
         Diagnosis diagnosis = ownedDiagnosis(diagnosisId, userId);
         return toResponse(diagnosis, ownedProject(diagnosis.getProjectId(), userId));
+    }
+
+    /** 의뢰인이 자기 AI 도구에서 돌릴 검사 파일. 이 진단의 번호와 적은 증상이 담긴다. */
+    public byte[] getScanFile(Integer diagnosisId, Integer userId) {
+        Diagnosis diagnosis = ownedDiagnosis(diagnosisId, userId);
+        ProjectSummary project = ownedProject(diagnosis.getProjectId(), userId);
+        return scanFileWriter.write(diagnosis.getId(), project.name(), diagnosis.getUserInput());
+    }
+
+    /** 의뢰인이 자기 AI 도구로 돌린 검사 결과를 받는다. 코드는 올라오지 않고 결과 파일만 온다. */
+    @Transactional
+    public InspectionResponse uploadScanResult(
+            Integer diagnosisId, Integer userId, MultipartFile file) {
+        Diagnosis diagnosis = ownedDiagnosis(diagnosisId, userId);
+        ScanResult result = scanResultReader.read(file, diagnosis.getId());
+        return inspectionService.record(
+                diagnosis.getId(), diagnosis.getProjectId(), diagnosis.getVersion(), result);
+    }
+
+    /** 이 회차에서 나온 결함. 진단서 본문과 요구사항 선택, 요청서가 모두 이 목록을 그린다. */
+    public IssueListResponse getIssues(
+            Integer diagnosisId, Integer userId, String status, Boolean input, int page, int size) {
+        Diagnosis diagnosis = ownedDiagnosis(diagnosisId, userId);
+        return issueQueryService.getIssues(
+                diagnosis.getId(), diagnosis.getVersion(), status, input, page, size);
+    }
+
+    /** 검사가 찾지 못했지만 고치고 싶은 것을 직접 적어 넣는다. */
+    @Transactional
+    public IssueResponse addIssue(
+            Integer diagnosisId, Integer userId, CreateIssueRequest request) {
+        Diagnosis diagnosis = ownedDiagnosis(diagnosisId, userId);
+        return requirementService.addIssue(diagnosis.getId(), diagnosis.getVersion(), request);
+    }
+
+    /** 요청서를 통째로 받아 보낸 내용으로 맞춘다. */
+    @Transactional
+    public IssueListResponse writeRequirements(
+            Integer diagnosisId, Integer userId, List<WriteRequirement> requirements) {
+        Diagnosis diagnosis = ownedDiagnosis(diagnosisId, userId);
+        return requirementService.write(diagnosis.getId(), diagnosis.getVersion(), requirements);
     }
 
     public SurveyResponse getSurvey(Integer diagnosisId, Integer userId) {

@@ -11,6 +11,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.MapsId;
 import jakarta.persistence.Table;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -40,4 +41,12 @@ public class ProjectTechCategory extends SoftDeleteEntity {
             nullable = false,
             foreignKey = @ForeignKey(name = "FK_dynamic_codes_TO_project_tech_categories_1"))
     private DynamicCode techCode;
+
+    public static ProjectTechCategory of(Project project, DynamicCode techCode) {
+        ProjectTechCategory entity = new ProjectTechCategory();
+        entity.project = Objects.requireNonNull(project, "project");
+        entity.techCode = Objects.requireNonNull(techCode, "techCode");
+        entity.id = new ProjectTechCategoryId(project.getId(), techCode.getCodeId());
+        return entity;
+    }
 }

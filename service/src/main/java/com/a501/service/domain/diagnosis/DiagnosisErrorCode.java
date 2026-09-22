@@ -14,9 +14,24 @@ public enum DiagnosisErrorCode implements ErrorCode {
     SCAN_FILE_INVALID(
             HttpStatus.BAD_REQUEST,
             "SCAN_FILE_INVALID",
-            "검사 결과 파일을 읽지 못했습니다. 받은 파일을 그대로 올려 주세요."),
+            "검사 결과 파일을 읽지 못했습니다. 받은 파일 그대로 올려주세요."),
+    /** 다른 진단에서 받은 검사 파일로 검사한 결과다. 진단끼리 결과가 섞이지 않도록 받지 않는다. (R-SCAN-03) */
+    DIAGNOSIS_MISMATCH(
+            HttpStatus.BAD_REQUEST,
+            "DIAGNOSIS_MISMATCH",
+            "다른 진단의 결과 파일입니다. 이 진단에서 받은 검사 파일로 다시 검사해 주세요."),
+    /** 지난 판 검사 지시문으로 만든 결과다. 판이 다르면 담긴 내용도 다르므로 다시 받아 검사하게 한다. (R-SCAN-04) */
+    SCAN_VERSION_OUTDATED(
+            HttpStatus.BAD_REQUEST,
+            "SCAN_VERSION_OUTDATED",
+            "검사 방법이 업데이트되었습니다. 새 검사 파일을 내려받아 다시 검사해 주세요."),
     INSPECTION_ALREADY_RUNNING(
             HttpStatus.CONFLICT, "INSPECTION_ALREADY_RUNNING", "이미 검사가 진행 중입니다."),
+    /**
+     * 검사 전에는 요구사항을 붙일 검사가 없다. 화면은 검사 뒤에만 이 자리에 오므로 정상 흐름에서는 나오지 않는다. 목 명세에 이 경우가 없어 여기서 정한 코드다.
+     */
+    INSPECTION_NOT_DONE(
+            HttpStatus.CONFLICT, "INSPECTION_NOT_DONE", "검사 결과를 먼저 올려 주세요."),
     /** 답하지 않은 문항이 남았거나 이미 끝낸 설문이다. 둘 다 더 진행할 수 없다는 같은 뜻이라 한 코드로 답한다. */
     SURVEY_NOT_COMPLETABLE(
             HttpStatus.CONFLICT, "SURVEY_NOT_COMPLETABLE", "아직 끝내지 않은 문항이 있습니다."),

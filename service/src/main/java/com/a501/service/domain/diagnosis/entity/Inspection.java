@@ -8,6 +8,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -41,4 +42,22 @@ public class Inspection extends CreatedSoftDeleteEntity {
     @ColumnDefault("1")
     @Column(name = "diagnosis_version", nullable = false)
     private Short diagnosisVersion = 1;
+
+    /**
+     * 올라온 검사 결과 한 건. 검사는 의뢰인 컴퓨터에서 이미 끝났고 서버는 그것을 받아 적을 뿐이라, 결과를 받은 시점에 점수와 검사 시각이 함께 정해진다.
+     */
+    public static Inspection of(
+            Integer diagnosisId,
+            Short diagnosisVersion,
+            Integer readinessScore,
+            LocalDateTime scannedAt) {
+        Inspection entity = new Inspection();
+        entity.diagnosisId = Objects.requireNonNull(diagnosisId, "diagnosisId");
+        entity.diagnosisVersion = Objects.requireNonNull(diagnosisVersion, "diagnosisVersion");
+        entity.readinessScore = readinessScore;
+        entity.scannedAt = scannedAt;
+        entity.status = "IN_PROGRESS";
+        entity.statusGroup = "INSPECTION_STATUS";
+        return entity;
+    }
 }
