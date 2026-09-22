@@ -6210,7 +6210,6 @@ def upload_session_recording(
     if sessionId == NOT_ENDED_SESSION_ID:
         return _error_response(400, SESSION_NOT_ENDED)
     if sessionId == RECORDED_SESSION_ID:
-        # 이미 붙어 있는 그 파일이면 붙어 있는 것을 그대로 돌려준다. 다른 파일만 거절한다.
         if request.fileId != SESSION_RECORDING_EXAMPLE["fileId"]:
             return _error_response(409, RECORDING_ALREADY_UPLOADED)
         return SessionRecordingResponse(**SESSION_RECORDING_EXAMPLE)
