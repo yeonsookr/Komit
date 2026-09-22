@@ -40,7 +40,8 @@ class FileUploadServiceTest {
             "us-east-1",
             Duration.ofMinutes(5),
             Duration.ofMinutes(15),
-            10 * 1024 * 1024L);
+            10 * 1024 * 1024L,
+            30 * 1024 * 1024L);
 
     @Mock
     private FileUploadStateService stateService;
@@ -61,6 +62,37 @@ class FileUploadServiceTest {
     void startRejectsFilesOverTheConfiguredLimitBeforeCreatingMetadata() {
         CreateUploadRequest request = new CreateUploadRequest(
                 "large.png", "image/png", PROPERTIES.maxFileBytes() + 1, UploadPurpose.PROFILE_IMAGE);
+
+        assertThatThrownBy(() -> service.start(12, request))
+                .isInstanceOf(BusinessException.class)
+                .satisfies(exception -> assertThat(((BusinessException) exception).getErrorCode().code())
+                        .isEqualTo("FILE_TOO_LARGE"));
+        verify(stateService, never()).createPending(any(), any(), any(), any(), any());
+    }
+
+    /** R-FILE-01: 녹음은 통화 길이에 비례해 커져 상한이 따로 있다. */
+    @Test
+    void startAllowsARecordingOverTheGeneralLimit() {
+        long size = PROPERTIES.maxFileBytes() + 1;
+        StoredFile file = pending(512L, NOW);
+        when(stateService.createPending(
+                        eq(12), eq("session-recording.webm"), eq("audio/webm"), eq(size), any()))
+                .thenReturn(file);
+        when(objectStorageService.issueUploadUrl(file)).thenReturn("http://localhost:9000/put");
+
+        var result = service.start(12, new CreateUploadRequest(
+                "session-recording.webm", "audio/webm", size, UploadPurpose.SESSION_RECORDING));
+
+        assertThat(result.uploadId()).isEqualTo(512);
+    }
+
+    @Test
+    void startRejectsARecordingOverTheRecordingLimit() {
+        CreateUploadRequest request = new CreateUploadRequest(
+                "session-recording.webm",
+                "audio/webm",
+                PROPERTIES.sessionRecordingMaxBytes() + 1,
+                UploadPurpose.SESSION_RECORDING);
 
         assertThatThrownBy(() -> service.start(12, request))
                 .isInstanceOf(BusinessException.class)

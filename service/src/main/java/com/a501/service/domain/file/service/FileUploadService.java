@@ -6,6 +6,7 @@ import com.a501.service.common.time.SeoulTime;
 import com.a501.service.config.StorageProperties;
 import com.a501.service.domain.file.FileErrorCode;
 import com.a501.service.domain.file.dto.request.CreateUploadRequest;
+import com.a501.service.domain.file.dto.request.UploadPurpose;
 import com.a501.service.domain.file.dto.response.UploadTargetResponse;
 import com.a501.service.domain.file.dto.response.UploadedFileResponse;
 import com.a501.service.domain.file.entity.StoredFile;
@@ -106,13 +107,19 @@ public class FileUploadService {
     }
 
     private void validatePolicy(CreateUploadRequest request) {
-        // R-FILE-01: 모든 용도의 파일 크기 상한은 설정의 단일 값으로 관리합니다.
-        if (request.sizeBytes() > storageProperties.maxFileBytes()) {
+        if (request.sizeBytes() > maxBytesFor(request.purpose())) {
             throw new BusinessException(CommonErrorCode.FILE_TOO_LARGE);
         }
         if (!request.purpose().accepts(request.contentType())) {
             throw new BusinessException(FileErrorCode.UNSUPPORTED_FILE_TYPE);
         }
+    }
+
+    /** R-FILE-01: 상한은 용도별입니다. 녹음만 통화 길이에 비례해 커집니다. */
+    private long maxBytesFor(UploadPurpose purpose) {
+        return purpose == UploadPurpose.SESSION_RECORDING
+                ? storageProperties.sessionRecordingMaxBytes()
+                : storageProperties.maxFileBytes();
     }
 
     private void reject(

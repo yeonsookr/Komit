@@ -37,6 +37,8 @@ app:
     bucket: ${STORAGE_BUCKET:komit}
     region: ${STORAGE_REGION:us-east-1}
     max-file-bytes: 10485760
+    # R-FILE-01: 세션 녹음만 상한이 다릅니다. 24kbps 고정에 90분이면 14MiB 안팎입니다.
+    session-recording-max-bytes: 31457280
     upload-url-ttl: 5m
     read-url-ttl: 15m
   logging:

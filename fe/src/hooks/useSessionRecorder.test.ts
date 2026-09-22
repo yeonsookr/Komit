@@ -147,4 +147,32 @@ describe("useSessionRecorder", () => {
 
     expect(FakeRecorder.instances).toHaveLength(0);
   });
+
+  /**
+   * 정하지 않으면 브라우저 기본값이 붙어 90분에 83MiB 가 된다. 전사는 그 위를 쓰지 않는다.
+   * (R-CON-18)
+   */
+  it("비트레이트를 고정해 파일 크기가 시간에만 비례하게 한다", () => {
+    useSessionRecorder(streamWith(1, 1), true);
+
+    expect(FakeRecorder.instances[0].options.audioBitsPerSecond).toBe(24_000);
+  });
+
+  /** 예약 시간이 녹음 상한은 아니라 통화가 길어질 수 있다. (R-CON-18) */
+  it("90분이 되면 스스로 멈추고 담아 둔 조각은 지킨다", async () => {
+    vi.useFakeTimers();
+    try {
+      const recorder = useSessionRecorder(streamWith(1, 1), true);
+      const fake = FakeRecorder.instances[0];
+      fake.emit("담은 것");
+
+      vi.advanceTimersByTime(90 * 60 * 1_000);
+      expect(fake.state).toBe("inactive");
+
+      const file = await recorder.stop();
+      expect(await file?.text()).toBe("담은 것");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

@@ -9742,6 +9742,8 @@ UPLOAD_EXPIRED_EXAMPLE = {
 
 # R-FILE-01, R-FILE-02. 목과 실서버가 같은 정책 판정을 하도록 한 곳에 둔다.
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+# 세션 녹음만 상한이 다르다. 통화 길이에 비례해 커지기 때문이다. (R-FILE-01, R-CON-18)
+MAX_SESSION_RECORDING_BYTES = 30 * 1024 * 1024
 UPLOAD_CONTENT_TYPES = {
     "PROFILE_IMAGE": {"image/png", "image/jpeg", "image/webp"},
     "CAREER_EVIDENCE": {"application/pdf", "image/png", "image/jpeg"},
@@ -10760,7 +10762,12 @@ def get_my_sessions() -> MySessionListResponse:
 def create_upload(
     request: CreateUploadRequest, http: Request
 ) -> UploadTargetResponse | JSONResponse:
-    if request.sizeBytes > MAX_UPLOAD_BYTES:
+    limit = (
+        MAX_SESSION_RECORDING_BYTES
+        if request.purpose == "SESSION_RECORDING"
+        else MAX_UPLOAD_BYTES
+    )
+    if request.sizeBytes > limit:
         return _error_response(400, FILE_TOO_LARGE)
     base_content_type = request.contentType.partition(";")[0].strip().lower()
     if base_content_type not in UPLOAD_CONTENT_TYPES[request.purpose]:

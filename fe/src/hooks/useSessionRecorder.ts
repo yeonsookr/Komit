@@ -18,6 +18,24 @@ const MIME_CANDIDATES = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4"] as
  */
 const CHUNK_MS = 5_000;
 
+/**
+ * R-CON-18: 녹음 비트레이트를 고정한다.
+ *
+ * 정하지 않으면 브라우저 기본값(크롬은 128kbps)이 붙어 90분에 83MiB 가 됩니다. 전사는
+ * 16kHz 모노로 다시 샘플링해 쓰므로 그 위로 올린 몫은 그대로 버려집니다. 크롬의 Opus 는
+ * 요청한 값을 그대로 지켜서, 고정해 두면 파일 크기가 시간에만 비례합니다.
+ */
+const AUDIO_BITS_PER_SECOND = 24_000;
+
+/**
+ * R-CON-18: 이 시간에 이르면 녹음이 스스로 멈춘다.
+ *
+ * 통화 자체는 계속됩니다. 멈춘 뒤의 말은 녹음에도 전사에도 담기지 않습니다. 예약 시간이
+ * 녹음 상한은 아니라 통화가 길어질 수 있고, 그대로 두면 파일이 `R-FILE-01` 의 상한을
+ * 넘어 올라가지 못합니다.
+ */
+const MAX_RECORDING_MS = 90 * 60 * 1_000;
+
 export interface SessionRecorder {
   /** 지금 담고 있는지. 화면이 녹음 중임을 알릴 때 씁니다. */
   recording: boolean;
@@ -67,7 +85,10 @@ export function useSessionRecorder(
       return;
     }
 
-    const recorder = new MediaRecorder(new MediaStream(audio), { mimeType });
+    const recorder = new MediaRecorder(new MediaStream(audio), {
+      mimeType,
+      audioBitsPerSecond: AUDIO_BITS_PER_SECOND,
+    });
     recorderRef.current = recorder;
     chunksRef.current = [];
 
@@ -78,7 +99,14 @@ export function useSessionRecorder(
     recorder.start(CHUNK_MS);
     setRecording(true);
 
+    // 스스로 멈춘 뒤에도 담아 둔 조각은 그대로 둡니다. 세션을 마칠 때 올려야 합니다.
+    const limit = setTimeout(() => {
+      if (recorder.state !== "inactive") recorder.stop();
+      setRecording(false);
+    }, MAX_RECORDING_MS);
+
     return () => {
+      clearTimeout(limit);
       recorderRef.current = null;
       setRecording(false);
       if (recorder.state !== "inactive") recorder.stop();
