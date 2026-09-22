@@ -5388,7 +5388,6 @@ SESSION_NOT_OPEN = (
     "SESSION_NOT_OPEN",
     "아직 입장할 수 없습니다. 시작 10분 전부터 들어갈 수 있습니다.",
 )
-SESSION_NOT_ENDED = ("SESSION_NOT_ENDED", "세션이 아직 끝나지 않았습니다.")
 SUMMARY_NOT_READY = ("SUMMARY_NOT_READY", "요약을 아직 만드는 중입니다.")
 SESSION_NOT_ENDED = ("SESSION_NOT_ENDED", "아직 끝나지 않은 세션입니다.")
 RECORDING_ALREADY_UPLOADED = (
@@ -6174,19 +6173,22 @@ def apply_summary_changes(
         "세션이 끝난 뒤 자기 마이크로 녹음한 파일을 올린다.\n\n"
         "**참가자마다 자기 트랙만 올린다.** 두 사람 소리를 한 파일로 합치지 않는다. "
         "파일이 곧 화자라서 나중에 누가 말했는지 가리는 데 따로 손이 들지 않는다. "
-        "누가 올렸는지는 인증 정보로 정하므로 요청에 담지 않는다. (R-CON-10)\n\n"
+        "누가 올렸는지는 인증 정보로 정하므로 요청에 담지 않는다. (R-CON-14)\n\n"
         "파일은 `POST /api/uploads`에 `purpose`를 `SESSION_RECORDING`으로 올려 받은 "
         "`fileId`로 넘긴다. 파일 자체는 이 API를 지나가지 않는다.\n\n"
         "두 트랙이 모두 올라오면 전사와 요약이 시작된다. 한쪽이 창을 그냥 닫아 올라오지 "
         "않을 수 있으므로, 정해진 시간이 지나면 올라온 트랙만으로 진행한다. 기다리기만 "
-        "하면 요약이 영영 만들어지지 않는다. (R-CON-12)\n\n"
-        "- **201**: 올렸을 때\n"
+        "하면 요약이 영영 만들어지지 않는다. (R-CON-16)\n\n"
+        "**같은 파일을 다시 보내면 붙어 있는 것을 그대로 돌려준다.** 올리고 나서 응답을 "
+        "받지 못해 다시 보내는 일이 있어, 그 되풀이를 실패로 돌리면 올라간 녹음을 두고도 "
+        "화면이 실패를 알린다. 다른 파일로 바꾸려는 요청만 거절한다.\n\n"
+        "- **201**: 올렸을 때. 같은 파일을 다시 보낸 경우도 여기다\n"
         "- **400 / SESSION_NOT_ENDED**: `sessionId`가 400일 때. 아직 끝나지 않은 "
         "세션이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / SESSION_NOT_FOUND**: `sessionId`가 404일 때\n"
-        "- **409 / RECORDING_ALREADY_UPLOADED**: `sessionId`가 410일 때. 이 참가자는 "
-        "이미 올렸다\n"
+        "- **409 / RECORDING_ALREADY_UPLOADED**: `sessionId`가 410이고 이미 붙어 있는 "
+        "것과 다른 `fileId`일 때. 같은 `fileId`면 201로 기존 녹음이 돌아온다\n"
         "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
     ),
 )
@@ -6208,7 +6210,10 @@ def upload_session_recording(
     if sessionId == NOT_ENDED_SESSION_ID:
         return _error_response(400, SESSION_NOT_ENDED)
     if sessionId == RECORDED_SESSION_ID:
-        return _error_response(409, RECORDING_ALREADY_UPLOADED)
+        # 이미 붙어 있는 그 파일이면 붙어 있는 것을 그대로 돌려준다. 다른 파일만 거절한다.
+        if request.fileId != SESSION_RECORDING_EXAMPLE["fileId"]:
+            return _error_response(409, RECORDING_ALREADY_UPLOADED)
+        return SessionRecordingResponse(**SESSION_RECORDING_EXAMPLE)
     return SessionRecordingResponse(
         **{**SESSION_RECORDING_EXAMPLE, "fileId": request.fileId}
     )
