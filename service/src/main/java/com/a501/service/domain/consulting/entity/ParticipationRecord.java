@@ -49,4 +49,29 @@ public class ParticipationRecord extends SoftDeleteEntity {
 
     @Column(name = "file_id")
     private Long fileId;
+
+    /**
+     * 동의를 기록한다. 행이 생기는 것이 곧 동의다. (R-CON-17)
+     *
+     * <p>아직 들어간 것은 아니다. 상대도 동의해야 {@link #enter} 로 입장 시각이 찍힌다.
+     */
+    public static ParticipationRecord consent(
+            Integer consultingSessionId,
+            Integer userId,
+            Short noticeVersion,
+            LocalDateTime consentedAt) {
+        ParticipationRecord record = new ParticipationRecord();
+        record.consultingSessionId = consultingSessionId;
+        record.userId = userId;
+        record.noticeVersion = noticeVersion;
+        record.consentedAt = consentedAt;
+        return record;
+    }
+
+    /** 실제로 들어간 시각. 이미 들어와 있으면 처음 시각을 지킨다. */
+    public void enter(LocalDateTime joinedAt) {
+        if (this.joinedAt == null) {
+            this.joinedAt = joinedAt;
+        }
+    }
 }

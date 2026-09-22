@@ -14,7 +14,15 @@ public enum ConsultingErrorCode implements ErrorCode {
             "CONSENT_REQUIRED",
             "상대가 아직 들어오지 않았습니다. 양쪽이 모두 동의해야 시작할 수 있습니다."),
     ENTRY_NOT_OPEN(
-            HttpStatus.CONFLICT, "ENTRY_NOT_OPEN", "아직 입장할 수 있는 시각이 아닙니다.");
+            HttpStatus.CONFLICT, "ENTRY_NOT_OPEN", "아직 입장할 수 있는 시각이 아닙니다."),
+    /**
+     * 입장 API 는 「아직 이른 시각」과 「이미 끝난 세션」을 한 코드로 답한다. 티켓 발급이 둘을 갈라
+     * 쓰는 것과 다른데, 목 명세가 그렇게 정해 두었다.
+     */
+    SESSION_NOT_OPEN(
+            HttpStatus.CONFLICT,
+            "SESSION_NOT_OPEN",
+            "아직 입장할 수 없습니다. 시작 10분 전부터 들어갈 수 있습니다.");
 
     private final HttpStatus status;
     private final String code;
