@@ -18,7 +18,7 @@ escrow Pod ×2 ──┬─ 일반 트랜잭션   → escrow-db-rw ── Primar
 | `database/` | `service-db`, `escrow-db` Cluster, `service-redis` RedisReplication + RedisSentinel |
 | `base/` | `service`, `escrow`, `fe` 애플리케이션 |
 | `prod/` | 운영 overlay. `service`(30080), `escrow`(30081), 실제 BE용 `fe`(30082), mock용 `fe-test`(30083)를 nginx용 NodePort로 엽니다 |
-| `local/` | 로컬 실습용 Secret, NodePort, 이미지 태그와 mock |
+| `local/` | 로컬 실습용 Secret, NodePort, 이미지 태그, mock과 MinIO(호스트 9000) |
 
 CloudNativePG Cluster와 Redis 리소스는 각 오퍼레이터의 CRD가 설치된 뒤에만 만들 수 있습니다. 그래서 오퍼레이터 → DB·Redis → 애플리케이션 순서로 나눠 적용합니다.
 
@@ -624,6 +624,10 @@ fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
 | `SSAFY_ESCROW_USER_KEY`, `SSAFY_ESCROW_ACCOUNT_NO` | Masked, Protected | 계약별 가상계좌의 모계좌가 되는 Escrow 보관 주체의 금융망 사용자 키와 16자리 보관계좌 번호 |
 | `SSAFY_FEE_ACCOUNT_NO` | Masked, Protected | 보관계좌와 같은 Escrow 사용자 명의로 개설한 별도 16자리 플랫폼 수수료 수익 계좌 번호 |
 | `SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS` | Visible, Protected | 가상계좌 만료일 계산에 사용할 1~30일. SSAFY 금융망은 발급일로부터 30일 이내만 허용한다 |
+| `STORAGE_INTERNAL_ENDPOINT` | Visible, Protected | service Pod가 MinIO/S3 호환 저장소를 부르는 내부 주소(예: `http://minio.komit.svc.cluster.local:9000`). `service-config`에 들어갑니다 |
+| `STORAGE_PUBLIC_ENDPOINT` | Visible, Protected | 브라우저가 열 프리사인 업로드·읽기 주소의 호스트(예: `https://komit.site/storage`). 서명에 호스트가 들어가므로 실제 접속 주소와 글자까지 같아야 합니다. `service-config`에 들어갑니다 |
+| `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` | Masked, Protected | 저장소 접근 키. `service-storage` Secret으로 주입되며, 없으면 service Pod가 기동하지 않습니다 |
+| `STORAGE_BUCKET` | Visible, Protected, 선택 | 업로드 버킷 이름. 비우면 `komit`입니다. 버킷은 미리 만들어 두어야 합니다 |
 
 > GitLab에 CI/CD 변수를 등록하는 것만으로는 Pod에 전달되지 않습니다. 애플리케이션에 운영 환경변수를
 > 추가할 때는 같은 MR에서 `.gitlab-ci.yml`의 필수 변수 검사와 SSH 전달 목록, `deploy/k3s/deploy.sh`의
@@ -662,6 +666,11 @@ export SSAFY_ESCROW_USER_KEY=<Escrow 보관 주체의 SSAFY userKey>
 export SSAFY_ESCROW_ACCOUNT_NO=<Escrow 보관계좌 16자리 번호>
 export SSAFY_FEE_ACCOUNT_NO=<Escrow 플랫폼 수수료 계좌 16자리 번호>
 export SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS=<가상계좌 유효 일수>
+export STORAGE_INTERNAL_ENDPOINT=<service Pod가 부르는 MinIO/S3 내부 주소>
+export STORAGE_PUBLIC_ENDPOINT=<브라우저가 여는 프리사인 URL의 공개 주소>
+export STORAGE_ACCESS_KEY=<저장소 접근 키>
+export STORAGE_SECRET_KEY=<저장소 비밀 키>
+export STORAGE_BUCKET=komit   # 비우면 komit
 
 # 이번에 바뀐 모듈만 넘깁니다. 클러스터에 아직 없는 모듈은 반드시 넘깁니다.
 export SERVICE_IMAGE=docker.io/<account>/komit-service:<commit-sha>
@@ -692,6 +701,9 @@ chmod +x deploy/k3s/deploy.sh
 | `SSAFY_ESCROW_USER_KEY`, `SSAFY_ESCROW_ACCOUNT_NO` | 예 | Escrow 보관 주체의 금융망 사용자 키와 보관계좌 번호. `escrow-security` Secret으로 주입합니다. |
 | `SSAFY_FEE_ACCOUNT_NO` | 예 | 보관계좌와 다른 플랫폼 수수료 수익 계좌 번호. `escrow-security` Secret으로 주입합니다. |
 | `SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS` | 예 | 가상계좌 만료일 계산에 쓰는 1~30일. `escrow-config` ConfigMap으로 주입합니다. |
+| `STORAGE_INTERNAL_ENDPOINT`, `STORAGE_PUBLIC_ENDPOINT` | 예 | MinIO/S3 호환 저장소의 내부·공개 주소. `service-config` ConfigMap으로 주입되며 Spring의 `app.storage.internal-endpoint`·`public-endpoint`가 됩니다. 없으면 service가 기동하지 않습니다. |
+| `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` | 예 | 저장소 접근 키. `service-storage` Secret으로 주입되며 값이 바뀌면 service Pod가 새 값으로 다시 뜹니다. |
+| `STORAGE_BUCKET` | 아니요 | 업로드 버킷. 비우면 `komit`. `service-config` ConfigMap으로 주입되며 버킷은 미리 있어야 합니다. |
 | `SERVICE_IMAGE`, `ESCROW_IMAGE`, `FE_IMAGE`, `FE_TEST_IMAGE` | 아니요 | 비어 있으면 클러스터에서 돌고 있는 이미지를 유지합니다. 바뀌지 않은 모듈은 재시작하지 않습니다. 클러스터에 아직 없는 모듈은 필수입니다. |
 
 스크립트는 배포할 이미지 태그를 임시 디렉터리의 Kustomize overlay에 고정해 적용하고, 각 단계의 준비 완료를 기다린 뒤 다음 단계로 넘어갑니다. DB·Redis 주소는 클러스터 내부 DNS 이름으로 고정되어 있어 주입하지 않습니다.

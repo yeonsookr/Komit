@@ -1,6 +1,6 @@
 import "server-only";
 
-import { backendApi } from "../server";
+import { authenticatedBackendApi } from "../server";
 import { BACKEND } from "../endpoints";
 import type {
   ConfirmMilestoneRequest,
@@ -20,7 +20,7 @@ export async function submitMilestone(
   milestoneId: number,
   body: SubmitMilestoneRequest = {},
 ): Promise<Milestone> {
-  const { data } = await backendApi().post<Milestone>(
+  const { data } = await authenticatedBackendApi().post<Milestone>(
     BACKEND.MILESTONE_SUBMISSION(milestoneId),
     body,
   );
@@ -40,7 +40,7 @@ export async function saveQaResults(
   milestoneId: number,
   body: SaveQaResultsRequest,
 ): Promise<Milestone> {
-  const { data } = await backendApi().put<Milestone>(
+  const { data } = await authenticatedBackendApi().put<Milestone>(
     BACKEND.MILESTONE_QA_RESULTS(milestoneId),
     body,
   );
@@ -60,7 +60,7 @@ export async function confirmMilestone(
   milestoneId: number,
   body: ConfirmMilestoneRequest,
 ): Promise<Milestone> {
-  const { data } = await backendApi().post<Milestone>(
+  const { data } = await authenticatedBackendApi().post<Milestone>(
     BACKEND.MILESTONE_CONFIRMATION(milestoneId),
     body,
   );
@@ -81,7 +81,7 @@ export async function attachDeliverable(
   deliverableId: number,
   fileId: number,
 ): Promise<Deliverable> {
-  const { data } = await backendApi().post<Deliverable>(
+  const { data } = await authenticatedBackendApi().post<Deliverable>(
     BACKEND.DELIVERABLE_FILE(deliverableId),
     { fileId },
   );
@@ -101,7 +101,7 @@ export interface DeliverableFile {
  * 의뢰인이 넘겨받은 것을 확인할 때 씁니다. 이 계약의 당사자만 받을 수 있습니다.
  */
 export async function downloadDeliverable(deliverableId: number): Promise<DeliverableFile> {
-  const response = await backendApi().get<ArrayBuffer>(
+  const response = await authenticatedBackendApi().get<ArrayBuffer>(
     BACKEND.DELIVERABLE_FILE(deliverableId),
     { responseType: "arraybuffer" },
   );

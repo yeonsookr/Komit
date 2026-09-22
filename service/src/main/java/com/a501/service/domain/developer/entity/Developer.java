@@ -12,6 +12,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.ColumnDefault;
 
+/** 개발자. 이 행이 있으면 개발자이며, 사용자당 최대 한 행입니다({@code user_id} unique). 평점과 리뷰 수는 리뷰로만 바뀝니다. */
 @Getter
 @Entity
 @Table(name = "developers")
@@ -38,4 +39,11 @@ public class Developer extends SoftDeleteEntity {
 
     @Column(name = "user_id", nullable = false, unique = true)
     private Integer userId;
+
+    /** 사용자가 개발자 프로필을 처음 저장할 때 개발자 행을 만듭니다. 평점은 없고 리뷰 수는 0입니다. */
+    public static Developer register(Integer userId) {
+        Developer developer = new Developer();
+        developer.userId = userId;
+        return developer;
+    }
 }

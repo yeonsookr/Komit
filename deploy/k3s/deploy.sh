@@ -37,6 +37,12 @@ FE_TEST_IMAGE=${FE_TEST_IMAGE:-}
 # 계좌번호·userKey 를 암호화해 보관하는 키입니다. 없으면 service Pod 가 기동 중 죽습니다.
 : "${ACCOUNT_DATA_ENCRYPTION_KEY:?ACCOUNT_DATA_ENCRYPTION_KEY is required}"
 : "${KAKAO_CLIENT_SECRET:?KAKAO_CLIENT_SECRET is required}"
+# MinIO/S3 호환 파일 저장소. 내부 주소는 Pod가 접근하고 공개 주소는 프리사인 URL에 들어갑니다.
+: "${STORAGE_INTERNAL_ENDPOINT:?STORAGE_INTERNAL_ENDPOINT is required}"
+: "${STORAGE_PUBLIC_ENDPOINT:?STORAGE_PUBLIC_ENDPOINT is required}"
+: "${STORAGE_ACCESS_KEY:?STORAGE_ACCESS_KEY is required}"
+: "${STORAGE_SECRET_KEY:?STORAGE_SECRET_KEY is required}"
+STORAGE_BUCKET=${STORAGE_BUCKET:-komit}
 # escrow 보안 설정. 운영에서는 application-local.yml의 개발 기본값을 사용하지 않습니다.
 : "${CLIENT_API_KEY_HMAC_SECRET:?CLIENT_API_KEY_HMAC_SECRET is required}"
 : "${SENSITIVE_DATA_HMAC_SECRET:?SENSITIVE_DATA_HMAC_SECRET is required}"
@@ -221,6 +227,9 @@ EOF
   printf '  - name: service-config\n    namespace: komit\n    literals:\n'
   config_literal APP_PUBLIC_BASE_URL "$SERVICE_PUBLIC_BASE_URL"
   config_literal ESCROW_API_BASE_URL "$ESCROW_API_BASE_URL"
+  config_literal STORAGE_INTERNAL_ENDPOINT "$STORAGE_INTERNAL_ENDPOINT"
+  config_literal STORAGE_PUBLIC_ENDPOINT "$STORAGE_PUBLIC_ENDPOINT"
+  config_literal STORAGE_BUCKET "$STORAGE_BUCKET"
   printf '  - name: escrow-config\n    namespace: komit\n    literals:\n'
   config_literal APP_PUBLIC_BASE_URL "$ESCROW_PUBLIC_BASE_URL"
   config_literal SSAFY_DEMAND_DEPOSIT_PRODUCT_NO "$SSAFY_DEMAND_DEPOSIT_PRODUCT_NO"
@@ -247,6 +256,10 @@ EOF
   config_literal KAKAO_CLIENT_ID "$KAKAO_CLIENT_ID"
   config_literal KAKAO_CLIENT_SECRET "$KAKAO_CLIENT_SECRET"
   config_literal ESCROW_CLIENT_API_KEY "$ESCROW_CLIENT_API_KEY"
+  # 파일 저장소 자격. 서비스 인증 키와 수명주기를 분리합니다.
+  printf '  - name: service-storage\n    namespace: komit\n    literals:\n'
+  config_literal STORAGE_ACCESS_KEY "$STORAGE_ACCESS_KEY"
+  config_literal STORAGE_SECRET_KEY "$STORAGE_SECRET_KEY"
 } >> "$WORK_DIR/apps/kustomization.yaml"
 # 이전 역방향 구성의 Service가 같은 NodePort(30083)를 점유하므로 첫 전환 때만 제거합니다.
 # Deployment는 새 fe-test가 정상 기동한 뒤 제거해 전환 중 진단 로그를 남길 수 있게 합니다.

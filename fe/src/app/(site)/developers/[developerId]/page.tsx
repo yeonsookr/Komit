@@ -89,9 +89,13 @@ export default async function DeveloperProfilePage({
       </div>
 
       <ProfileSection title="소개">
-        <p className="text-sm leading-7 whitespace-pre-wrap text-fg-secondary">
-          {developer.description}
-        </p>
+        {developer.description ? (
+          <p className="text-sm leading-7 whitespace-pre-wrap text-fg-secondary">
+            {developer.description}
+          </p>
+        ) : (
+          <p className="text-sm text-fg-muted">아직 소개 글이 없습니다.</p>
+        )}
       </ProfileSection>
 
       <ProfileSection title="경력">

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { backendApi } from "../server";
+import { authenticatedBackendApi } from "../server";
 import { BACKEND } from "../endpoints";
 import type {
   AmendConsultingContractRequest,
@@ -25,7 +25,7 @@ import type {
  * 존재를 드러내지 않기 위해 403 대신 404 를 줍니다.
  */
 export async function getContract(contractId: number): Promise<Contract> {
-  const { data } = await backendApi().get<Contract>(BACKEND.CONTRACT(contractId));
+  const { data } = await authenticatedBackendApi().get<Contract>(BACKEND.CONTRACT(contractId));
   return data;
 }
 
@@ -39,7 +39,7 @@ export async function writeDevelopmentContract(
   roomId: number,
   body: WriteDevelopmentContractRequest,
 ): Promise<Contract> {
-  const { data } = await backendApi().post<Contract>(
+  const { data } = await authenticatedBackendApi().post<Contract>(
     BACKEND.DEVELOPMENT_CONTRACTS(roomId),
     body,
   );
@@ -56,7 +56,7 @@ export async function signContract(
   contractId: number,
   body: SignContractRequest,
 ): Promise<Contract> {
-  const { data } = await backendApi().post<Contract>(
+  const { data } = await authenticatedBackendApi().post<Contract>(
     BACKEND.CONTRACT_SIGNATURES(contractId),
     body,
   );
@@ -74,7 +74,7 @@ export async function depositContract(
   contractId: number,
   body: DepositRequest,
 ): Promise<EscrowDeposit> {
-  const { data } = await backendApi().post<EscrowDeposit>(
+  const { data } = await authenticatedBackendApi().post<EscrowDeposit>(
     BACKEND.CONTRACT_DEPOSIT(contractId),
     body,
   );
@@ -88,7 +88,7 @@ export async function depositContract(
  * 등록한 것이 없다는 뜻이고, 그대로 예치를 걸면 409(ACCOUNT_REQUIRED) 입니다.
  */
 export async function getPaymentMethods(): Promise<PaymentMethod[]> {
-  const { data } = await backendApi().get<{ content: PaymentMethod[] }>(
+  const { data } = await authenticatedBackendApi().get<{ content: PaymentMethod[] }>(
     BACKEND.PAYMENT_METHODS,
   );
   return data.content;
@@ -96,7 +96,7 @@ export async function getPaymentMethods(): Promise<PaymentMethod[]> {
 
 /** 예치 상태. 개발자가 착수 전에 돈이 실제로 걸려 있는지 봅니다. */
 export async function getDeposit(contractId: number): Promise<EscrowDeposit> {
-  const { data } = await backendApi().get<EscrowDeposit>(
+  const { data } = await authenticatedBackendApi().get<EscrowDeposit>(
     BACKEND.CONTRACT_DEPOSIT(contractId),
   );
   return data;
@@ -110,7 +110,7 @@ export async function getDeposit(contractId: number): Promise<EscrowDeposit> {
  * 예치가 끝나지 않았으면 409(DEPOSIT_REQUIRED) 입니다.
  */
 export async function startContract(contractId: number): Promise<Contract> {
-  const { data } = await backendApi().post<Contract>(BACKEND.CONTRACT_START(contractId));
+  const { data } = await authenticatedBackendApi().post<Contract>(BACKEND.CONTRACT_START(contractId));
   return data;
 }
 
@@ -124,7 +124,7 @@ export async function writeReview(
   contractId: number,
   body: WriteReviewRequest,
 ): Promise<void> {
-  await backendApi().post(BACKEND.CONTRACT_REVIEW(contractId), body);
+  await authenticatedBackendApi().post(BACKEND.CONTRACT_REVIEW(contractId), body);
 }
 
 /**
@@ -137,7 +137,7 @@ export async function writeConsultingContract(
   roomId: number,
   body: WriteConsultingContractRequest,
 ): Promise<Contract> {
-  const { data } = await backendApi().post<Contract>(
+  const { data } = await authenticatedBackendApi().post<Contract>(
     BACKEND.CONSULTING_CONTRACTS(roomId),
     body,
   );
@@ -154,6 +154,6 @@ export async function amendConsultingContract(
   contractId: number,
   body: AmendConsultingContractRequest,
 ): Promise<Contract> {
-  const { data } = await backendApi().patch<Contract>(BACKEND.CONTRACT(contractId), body);
+  const { data } = await authenticatedBackendApi().patch<Contract>(BACKEND.CONTRACT(contractId), body);
   return data;
 }

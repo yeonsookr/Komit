@@ -3,12 +3,7 @@ import { getMySchedule } from "./schedule";
 
 const { get } = vi.hoisted(() => ({ get: vi.fn() }));
 vi.mock("server-only", () => ({}));
-vi.mock("../server", () => ({ backendApi: () => ({ get }) }));
-vi.mock("@/lib/auth/session", () => ({
-  bearerHeaders: async () => ({ headers: { Authorization: "Bearer t" } }),
-}));
-
-const AUTH = { headers: { Authorization: "Bearer t" } };
+vi.mock("../server", () => ({ authenticatedBackendApi: () => ({ get }) }));
 
 beforeEach(() => get.mockReset());
 
@@ -29,6 +24,6 @@ describe("getMySchedule", () => {
     get.mockResolvedValueOnce({ data: schedule });
 
     await expect(getMySchedule()).resolves.toEqual(schedule);
-    expect(get).toHaveBeenCalledWith("/api/users/me/sessions", AUTH);
+    expect(get).toHaveBeenCalledWith("/api/users/me/sessions");
   });
 });

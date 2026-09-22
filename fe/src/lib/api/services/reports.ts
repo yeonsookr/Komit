@@ -1,6 +1,6 @@
 import "server-only";
 
-import { backendApi } from "../server";
+import { authenticatedBackendApi } from "../server";
 import { BACKEND } from "../endpoints";
 import type { CreateReportBody, Report } from "@/types/report";
 
@@ -13,6 +13,6 @@ export async function createReport(
   contractId: number,
   body: CreateReportBody,
 ): Promise<Report> {
-  const { data } = await backendApi().post<Report>(BACKEND.CONTRACT_REPORTS(contractId), body);
+  const { data } = await authenticatedBackendApi().post<Report>(BACKEND.CONTRACT_REPORTS(contractId), body);
   return data;
 }

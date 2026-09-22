@@ -1,11 +1,15 @@
 package com.a501.service.domain.diagnosis.repository;
 
 import com.a501.service.domain.diagnosis.entity.Issue;
+import java.util.Collection;
+import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 public interface IssueRepository extends JpaRepository<Issue, Integer> {
+    List<Issue> findAllByIdInAndDeletedFalse(Collection<Integer> ids);
+
     long countByInspectionIdAndDeletedFalse(Integer inspectionId);
 
     long countByInspectionIdAndDeletedFalseAndStatus(Integer inspectionId, String status);

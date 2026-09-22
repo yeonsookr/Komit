@@ -3,7 +3,7 @@ import { createReport } from "./reports";
 
 const { post } = vi.hoisted(() => ({ post: vi.fn() }));
 vi.mock("server-only", () => ({}));
-vi.mock("../server", () => ({ backendApi: () => ({ post }) }));
+vi.mock("../server", () => ({ authenticatedBackendApi: () => ({ post }) }));
 
 const report = {
   reportId: 77,

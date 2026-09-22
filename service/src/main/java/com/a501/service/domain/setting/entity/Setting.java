@@ -55,6 +55,11 @@ public class Setting extends SoftDeleteEntity {
         return setting;
     }
 
+    /** 개발자 프로필을 처음 만들 때 판매자 약관 동의로 갈음합니다. 요청에 동의 필드를 두지 않습니다. */
+    public void agreeSellerTerms() {
+        sellerTermsAgreed = true;
+    }
+
     public void agreeRequiredTerms() {
         // R-ACC-12: 가입 화면에서 명시적으로 제출한 뒤에만 필수 약관을 동의 처리한다.
         serviceTermsAgreed = true;

@@ -1,20 +1,18 @@
 package com.a501.service.domain.developer.entity;
 
 import com.a501.service.common.persistence.SoftDeleteEntity;
-import com.a501.service.domain.code.entity.DynamicCode;
-import jakarta.persistence.Column;
 import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
-import jakarta.persistence.FetchType;
-import jakarta.persistence.ForeignKey;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
-import jakarta.persistence.MapsId;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+/**
+ * 개발자가 다룰 수 있는 기술 하나. {@code (developer_id, tech_code_id)}가 자연키라 같은 기술을 지웠다 다시 넣으면 새 행 대신
+ * 소프트 삭제된 행을 되살립니다. 기술 이름은 코드 도메인 서비스에 묻고, 여기서는 식별자만 가집니다. (BACKEND_CONVENTIONS 7.1)
+ */
 @Getter
 @Entity
 @Table(name = "developer_tech_categories")
@@ -23,21 +21,21 @@ public class DeveloperTechCategory extends SoftDeleteEntity {
     @EmbeddedId
     private DeveloperTechCategoryId id;
 
-    @MapsId("developerId")
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(
-            name = "developer_id",
-            referencedColumnName = "id",
-            nullable = false,
-            foreignKey = @ForeignKey(name = "FK_developers_TO_developer_tech_categories_1"))
-    private Developer developer;
+    public static DeveloperTechCategory of(Integer developerId, Integer techCodeId) {
+        DeveloperTechCategory row = new DeveloperTechCategory();
+        row.id = new DeveloperTechCategoryId(developerId, techCodeId);
+        return row;
+    }
 
-    @MapsId("techCodeId")
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumn(
-            name = "tech_code_id",
-            referencedColumnName = "code_id",
-            nullable = false,
-            foreignKey = @ForeignKey(name = "FK_dynamic_codes_TO_developer_tech_categories_1"))
-    private DynamicCode techCode;
+    public Integer getTechCodeId() {
+        return id.getTechCodeId();
+    }
+
+    public void remove(LocalDateTime now) {
+        markDeleted(now);
+    }
+
+    public void reactivate() {
+        restore();
+    }
 }
