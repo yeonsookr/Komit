@@ -61,17 +61,6 @@ export interface RealtimePeerPayload {
   userId: number;
 }
 
-/**
- * 세션이 끝났다는 쪽지의 내용.
- *
- * `SYSTEM_PEER_LEFT` 와 다릅니다 — 저쪽은 회선이 끊긴 것이고 이것은 일이 끝난 것입니다.
- * 한 사람이 끝내면 양쪽이 받습니다. (R-CON-15)
- */
-export interface RealtimeSessionEndedPayload {
-  /** 최초 종료 시각. 같은 요청이 다시 와도 이 값은 바뀌지 않습니다. */
-  endedAt: string;
-}
-
 export type RealtimeType = RtcSignalType | RealtimeSystemType;
 
 /** 지금 프로토콜 판. 서버가 다른 판을 받으면 연결을 닫습니다. */

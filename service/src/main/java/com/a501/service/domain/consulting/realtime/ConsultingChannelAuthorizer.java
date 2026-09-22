@@ -27,8 +27,6 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Component
 public class ConsultingChannelAuthorizer implements RealtimeChannelAuthorizer {
-    /** 세션 하나에 참가자는 의뢰인과 개발자 둘입니다. */
-
     private final ConsultingSessionRepository sessionRepository;
     private final ParticipationRecordRepository participationRepository;
     private final ReservationRepository reservationRepository;
