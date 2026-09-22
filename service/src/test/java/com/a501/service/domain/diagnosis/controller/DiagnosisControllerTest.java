@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -20,7 +21,9 @@ import com.a501.service.common.exception.BusinessException;
 import com.a501.service.common.security.JwtTokenProvider;
 import com.a501.service.common.security.WebMvcSecurityTest;
 import com.a501.service.domain.diagnosis.DiagnosisErrorCode;
+import com.a501.service.domain.diagnosis.IssueSeverity;
 import com.a501.service.domain.diagnosis.SurveyAnswerType;
+import com.a501.service.domain.diagnosis.dto.request.CreateIssueRequest;
 import com.a501.service.domain.diagnosis.dto.request.SaveSurveyAnswersRequest.SurveyAnswerRequest;
 import com.a501.service.domain.diagnosis.dto.request.StartDiagnosisRequest;
 import com.a501.service.domain.diagnosis.dto.response.DiagnosisProjectResponse;
@@ -32,6 +35,8 @@ import com.a501.service.domain.diagnosis.dto.response.IssueResponse;
 import com.a501.service.domain.diagnosis.dto.response.SurveyOptionResponse;
 import com.a501.service.domain.diagnosis.dto.response.SurveyQuestionResponse;
 import com.a501.service.domain.diagnosis.dto.response.SurveyResponse;
+import com.a501.service.domain.diagnosis.dto.response.UnfinishedSurveyListResponse;
+import com.a501.service.domain.diagnosis.dto.response.UnfinishedSurveyListResponse.UnfinishedSurveyResponse;
 import com.a501.service.domain.diagnosis.dto.response.TechCategoryResponse;
 import com.a501.service.domain.diagnosis.service.DiagnosisService;
 import java.nio.charset.StandardCharsets;
@@ -328,6 +333,111 @@ class DiagnosisControllerTest {
                 .andExpect(jsonPath("$.errors[0].field").value("status"));
 
         verify(diagnosisService, never()).getIssues(any(), any(), any(), any(), anyInt(), anyInt());
+    }
+
+    @Test
+    @DisplayName("진행 중인 설문은 content 로만 감싼다")
+    void getUnfinishedSurveysReturnsContentOnly() throws Exception {
+        when(diagnosisService.getUnfinishedSurveys(USER_ID))
+                .thenReturn(new UnfinishedSurveyListResponse(List.of(new UnfinishedSurveyResponse(
+                        31,
+                        "미미헤어샵 예약",
+                        OffsetDateTime.of(2026, 9, 16, 8, 40, 0, 0, ZoneOffset.UTC)))));
+
+        mockMvc.perform(authenticated(get("/api/diagnoses")))
+                .andExpect(status().isOk())
+                .andExpect(content().json("""
+                        {"content":[{"diagnosisId":31,"projectName":"미미헤어샵 예약",
+                                     "updatedAt":"2026-09-16T08:40:00Z"}]}
+                        """, true));
+    }
+
+    @Test
+    @DisplayName("요구사항 직접 추가는 201이고 위치는 코드에서 찾은 값이 아니라 null이다")
+    void addIssueReturnsCreated() throws Exception {
+        when(diagnosisService.addIssue(
+                        eq(31),
+                        eq(USER_ID),
+                        eq(new CreateIssueRequest("장바구니에서 수량을 바꿀 수 있게 해주세요", null, 73, IssueSeverity.MEDIUM))))
+                .thenReturn(new IssueResponse(
+                        399,
+                        "장바구니에서 수량을 바꿀 수 있게 해주세요",
+                        null,
+                        null,
+                        false,
+                        new CodeResponse(73, "결제"),
+                        "UNRESOLVED",
+                        "MEDIUM",
+                        null,
+                        null,
+                        List.of()));
+
+        mockMvc.perform(authenticated(post("/api/diagnoses/31/issues"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"title":"장바구니에서 수량을 바꿀 수 있게 해주세요",
+                                 "categoryCodeId":73,"severity":"MEDIUM"}
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.issueId").value(399))
+                .andExpect(jsonPath("$.status").value("UNRESOLVED"))
+                .andExpect(jsonPath("$.location").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("요구사항 추가에 title 이 비면 422다")
+    void addIssueRejectsBlankTitle() throws Exception {
+        mockMvc.perform(authenticated(post("/api/diagnoses/31/issues"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"  \",\"categoryCodeId\":73,\"severity\":\"MEDIUM\"}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors[0].field").value("title"));
+
+        verify(diagnosisService, never()).addIssue(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("검사 전에 요구사항을 붙이려 하면 409 INSPECTION_NOT_DONE 이다")
+    void addIssueBeforeInspectionConflicts() throws Exception {
+        when(diagnosisService.addIssue(any(), any(), any()))
+                .thenThrow(new BusinessException(DiagnosisErrorCode.INSPECTION_NOT_DONE));
+
+        mockMvc.perform(authenticated(post("/api/diagnoses/31/issues"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"x\",\"categoryCodeId\":73,\"severity\":\"LOW\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("INSPECTION_NOT_DONE"));
+    }
+
+    @Test
+    @DisplayName("요청서 저장은 저장된 뒤의 요구사항 전부를 돌려준다")
+    void writeRequirementsReturnsWholeList() throws Exception {
+        when(diagnosisService.writeRequirements(eq(31), eq(USER_ID), any()))
+                .thenReturn(new IssueListResponse(List.of(issue()), 1, 1, 1, 1));
+
+        mockMvc.perform(authenticated(put("/api/diagnoses/31/requirements"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"requirements":[{"issueId":311,"title":"관리자 API에 인증 추가",
+                                  "detail":null,"categoryCodeId":71,"severity":"HIGH",
+                                  "qaCriteria":[{"qaCriterionId":null,"testCase":"관리자 주소로 들어가면 로그인 화면이 뜬다"}]}]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].issueId").value(311));
+    }
+
+    @Test
+    @DisplayName("계약에 포함된 요구사항을 빼면 409 ISSUE_STATUS_CONFLICT 다")
+    void writeRequirementsRejectsDroppingContracted() throws Exception {
+        when(diagnosisService.writeRequirements(any(), any(), any()))
+                .thenThrow(new BusinessException(DiagnosisErrorCode.ISSUE_STATUS_CONFLICT));
+
+        mockMvc.perform(authenticated(put("/api/diagnoses/31/requirements"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"requirements\":[]}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("ISSUE_STATUS_CONFLICT"));
     }
 
     private static IssueResponse issue() {
