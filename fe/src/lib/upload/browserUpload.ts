@@ -21,14 +21,13 @@ import type { CreateUploadRequest, UploadTarget, UploadedFile, UploadPurpose } f
 /**
  * 저장소로 보내는 데 기다려 주는 시간.
  *
- * 가장 큰 파일을 기준으로 잡습니다. 2분이면 90분 녹음(14MiB)에 0.98Mbps, 상한까지 찬
- * 30MiB 에 2.1Mbps 면 됩니다 (`R-FILE-01`).
+ * **발급받은 주소의 수명과 같게 둡니다** (`R-FILE-03`, 업로드 5분). 짧게 두면 주소는 아직
+ * 살아 있는데 브라우저가 먼저 포기하고, 길게 두면 이미 죽은 주소에 계속 보냅니다.
  *
- * 발급받은 주소의 수명(5분, `R-FILE-03`)보다 짧습니다. 주소가 살아 있는데 먼저 포기하는
- * 셈이지만, 다시 시도하면 새 주소를 받으므로 **빨리 접고 다시 하는 편**이 낫습니다. 5분을
- * 기다리게 하면 안 될 회선에서 5분을 허비합니다.
+ * 여유는 넉넉합니다. 5분이면 90분 녹음(14MiB)에 0.4Mbps, 상한까지 찬 30MiB 에 0.84Mbps 면
+ * 됩니다 (`R-FILE-01`).
  */
-const PUT_TIMEOUT_MS = 2 * 60 * 1_000;
+const PUT_TIMEOUT_MS = 5 * 60 * 1_000;
 
 async function putToStorage(target: UploadTarget, file: File): Promise<void> {
   let response: Response;
