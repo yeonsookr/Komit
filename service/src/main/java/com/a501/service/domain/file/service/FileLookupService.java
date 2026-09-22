@@ -2,7 +2,6 @@ package com.a501.service.domain.file.service;
 
 import com.a501.service.common.exception.BusinessException;
 import com.a501.service.domain.file.FileErrorCode;
-import com.a501.service.domain.file.dto.request.UploadPurpose;
 import com.a501.service.domain.file.entity.StoredFile;
 import com.a501.service.domain.file.repository.StoredFileRepository;
 import java.util.Collection;
@@ -46,32 +45,6 @@ public class FileLookupService {
                 .distinct()
                 .count();
         if (attachable != wanted.size()) {
-            throw new BusinessException(FileErrorCode.FILE_NOT_ATTACHABLE);
-        }
-    }
-
-    /**
-     * 그 용도로 올린, 호출자의 완료된 파일 하나인지 확인합니다.
-     *
-     * <p>용도를 따지는 이유는 다른 데 쓰려고 올린 파일이 엉뚱한 자리에 붙는 것을 막기 위해서입니다
-     * (`R-FILE-02`). 프로필 사진을 세션 녹음으로 붙이면 전사가 읽지 못합니다.
-     *
-     * <p><b>용도가 비어 있는 파일은 거절합니다.</b> 이 칸이 생기기 전에 올린 파일이라 무엇으로
-     * 올렸는지 알 수 없습니다.
-     *
-     * @param userId 붙이려는 사람
-     * @param fileId 파일 id
-     * @param expected 이 자리가 받는 용도
-     * @throws BusinessException {@link FileErrorCode#FILE_NOT_ATTACHABLE} 없거나, 완료 전이거나,
-     *     남의 파일이거나, 다른 용도로 올린 파일일 때
-     */
-    public void assertAttachable(Integer userId, Integer fileId, UploadPurpose expected) {
-        StoredFile file = fileId == null
-                ? null
-                : storedFileRepository.findByFileIdAndDeletedFalse(fileId.longValue()).orElse(null);
-        if (file == null
-                || !isAttachableBy(file, userId)
-                || !expected.name().equals(file.getPurpose())) {
             throw new BusinessException(FileErrorCode.FILE_NOT_ATTACHABLE);
         }
     }

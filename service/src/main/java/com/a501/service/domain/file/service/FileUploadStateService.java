@@ -26,16 +26,14 @@ public class FileUploadStateService {
             String originalName,
             String contentType,
             Long sizeBytes,
-            String storageKey,
-            String purpose) {
+            String storageKey) {
         return storedFileRepository.saveAndFlush(StoredFile.pending(
                 userId,
                 originalName,
                 contentType,
                 sizeBytes,
                 storageProperties.bucket(),
-                storageKey,
-                purpose));
+                storageKey));
     }
 
     public StoredFile getOwned(Integer userId, Integer uploadId) {

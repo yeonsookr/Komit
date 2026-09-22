@@ -54,8 +54,7 @@ public class FileUploadService {
                 request.originalName(),
                 request.contentType(),
                 request.sizeBytes(),
-                storageKey,
-                request.purpose().name());
+                storageKey);
         try {
             String uploadUrl = objectStorageService.issueUploadUrl(file);
             return new UploadTargetResponse(
