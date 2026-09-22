@@ -1804,16 +1804,26 @@ SCAN_VERSION_OUTDATED = (
 )
 SCAN_VERSION = "0.1.0"
 SCAN_FILE_NAME = "komit-scan.md"
-# 내려주는 검사 파일. 실제 서버는 진단마다 설문 답을 채워 내려주지만,
-# 목에서는 고정 문구로 둔다. 검사 기준 본문은 ai/komit-scan/skills 에 있다.
-SCAN_FILE_BODY = f"""# Komit 검사 파일
+
+
+def scan_file_body(diagnosis_id: int) -> bytes:
+    """내려주는 검사 파일.
+
+    실제 서버는 진단마다 프로젝트 이름과 설문 답을 채워 내려주지만, 목에서는
+    그 부분을 고정 문구로 둔다. 검사 기준 본문은 ai/komit-scan/skills 에 있다.
+
+    **진단 번호만은 요청받은 값을 박는다.** 검사 도구가 이 번호를 결과 파일의
+    `diagnosisId` 로 옮겨 적고, 올릴 때 서버가 그것을 대조한다. 고정값을 내보내면
+    안내대로 따라도 다른 진단의 파일이 되어 업로드가 막힌다.
+    """
+    return f"""# Komit 검사 파일
 
 이 파일을 쓰시는 AI 코딩 도구에 읽히면 프로젝트를 검사해 결과 파일을 만듭니다.
 소스 코드는 컴퓨터 밖으로 나가지 않습니다.
 
 ## 진단 정보
 
-- 진단 번호: 31
+- 진단 번호: {diagnosis_id}
 - 검사 지시문 판: {SCAN_VERSION}
 - 프로젝트: 수제 비누 가게
 
@@ -2549,8 +2559,9 @@ def complete_survey(
         "- **201**: 파일을 받아 검사가 열렸을 때. 이어서 설문 조회로 설문4 문항을 받는다\n"
         "- **400 / SCAN_FILE_INVALID**: 받은 형식이 아닌 파일을 올렸을 때. 내려받은 파일을 "
         "그대로 올리도록 안내한다\n"
-        "- **400 / DIAGNOSIS_MISMATCH**: 파일 내용의 진단 번호가 URL의 `diagnosisId`와 "
-        "다를 때. 이 진단에서 받은 검사 파일로 다시 검사하도록 안내한다\n"
+        "- **400 / DIAGNOSIS_MISMATCH**: 파일 내용에 진단 번호가 적혀 있고 그것이 URL의 "
+        "`diagnosisId`와 다를 때. 이 진단에서 받은 검사 파일로 다시 검사하도록 안내한다. "
+        "번호가 적혀 있지 않은 파일은 받는다\n"
         "- **400 / SCAN_VERSION_OUTDATED**: 파일 내용의 검사 버전이 현재 지원하는 버전과 "
         "다를 때. 새 검사 파일을 내려받아 다시 검사하도록 안내한다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
@@ -2590,7 +2601,10 @@ def upload_scan_result(
     parsed = scan_result.parse(file.file.read())
     if parsed is None:
         return _error_response(400, SCAN_FILE_INVALID)
-    if parsed.get("diagnosisId") != diagnosisId:
+    # 번호가 적혀 있을 때만 대조한다. 검사 파일을 받아 만든 결과 파일에는 번호가
+    # 항상 들어 있어(SKILL.md 1단계) 다른 진단의 파일은 그대로 걸린다. 손으로 만든
+    # 예시 파일에는 번호가 없는데, 그것까지 막으면 데모를 돌릴 수 없다.
+    if parsed.get("diagnosisId") is not None and parsed["diagnosisId"] != diagnosisId:
         return _error_response(400, DIAGNOSIS_MISMATCH)
     if parsed.get("scanVersion") != SCAN_VERSION:
         return _error_response(400, SCAN_VERSION_OUTDATED)
@@ -12140,7 +12154,7 @@ def download_scan_file(
     if diagnosisId == NOT_FOUND_DIAGNOSIS_ID:
         return _error_response(404, DIAGNOSIS_NOT_FOUND)
     return Response(
-        content=SCAN_FILE_BODY,
+        content=scan_file_body(diagnosisId),
         media_type="text/markdown",
         headers={"Content-Disposition": f'attachment; filename="{SCAN_FILE_NAME}"'},
     )

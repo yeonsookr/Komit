@@ -7,6 +7,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -31,4 +32,22 @@ public class Diagnosis extends SoftDeleteEntity {
     @ColumnDefault("1")
     @Column(name = "version", nullable = false)
     private Short version = 1;
+
+    public static Diagnosis of(Integer projectId) {
+        Diagnosis entity = new Diagnosis();
+        entity.projectId = Objects.requireNonNull(projectId, "projectId");
+        return entity;
+    }
+
+    /**
+     * 재진단 회차를 연다. 진단은 프로젝트당 한 행이라 새 행을 만들지 않고 회차만 올린다. 지난 회차의 검사와 설문은 그대로 남는다. (R-SCAN-05)
+     */
+    public void startNextVersion() {
+        version = (short) (version + 1);
+    }
+
+    /** 사용자가 설문에 적은 현재 증상. 진단서 머리에 그대로 실린다. */
+    public void writeUserInput(String userInput) {
+        this.userInput = userInput;
+    }
 }
