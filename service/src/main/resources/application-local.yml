@@ -7,6 +7,12 @@ spring:
     url: ${DB_URL:jdbc:postgresql://localhost:5432/service}
     username: ${DB_USERNAME:service}
     password: ${DB_PASSWORD:service}
+  mongodb:
+    host: ${MONGODB_HOST:localhost}
+    port: ${MONGODB_PORT:27017}
+    database: ${MONGODB_DATABASE:service}
+    username: ${MONGODB_USERNAME:service}
+    password: ${MONGODB_PASSWORD:service}
   data:
     redis:
       # 로컬은 단일 Redis에 바로 붙습니다. 운영의 Sentinel 접속은 application-prod.yml 에 있습니다.

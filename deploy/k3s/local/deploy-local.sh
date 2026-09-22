@@ -35,7 +35,7 @@ kubectl wait --for=condition=Established crd/redisreplications.redis.redis.opstr
 wait_for "redis-operator deployment" kubectl -n ot-operators get deployment redis-operator
 kubectl -n ot-operators wait --for=condition=Available deployment/redis-operator --timeout=300s
 
-# 2. service-db, escrow-db, service-redis
+# 2. service-db, escrow-db, service-redis, service-mongodb
 kubectl apply -k "$K3S_DIR/local/database"
 kubectl -n komit wait --for=condition=Ready cluster/service-db cluster/escrow-db --timeout=600s
 # 오퍼레이터가 StatefulSet을 만든 뒤에야 rollout을 볼 수 있습니다. Redis 노드가 모두 뜬 뒤 Sentinel이 Primary를 찾아 기동합니다.
@@ -43,6 +43,8 @@ wait_for "service-redis statefulset" kubectl -n komit get statefulset service-re
 kubectl -n komit rollout status statefulset/service-redis --timeout=300s
 wait_for "service-redis-sentinel statefulset" kubectl -n komit get statefulset service-redis-sentinel
 kubectl -n komit rollout status statefulset/service-redis-sentinel --timeout=300s
+kubectl -n komit rollout status statefulset/service-mongodb --timeout=600s
+sh "$K3S_DIR/verify-mongodb.sh"
 
 # 3. 애플리케이션
 # minio-init Job은 service-config 이름 해시가 바뀌면 template이 달라져 다시 apply할 수 없으므로 먼저 지웁니다.

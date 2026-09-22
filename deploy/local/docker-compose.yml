@@ -1,4 +1,4 @@
-# 로컬 전체 구동. 서비스별 PostgreSQL·Redis와 service·escrow·fe를 한 번에 올립니다.
+# 로컬 전체 구동. 서비스별 PostgreSQL·Redis·MongoDB와 service·escrow·fe를 한 번에 올립니다.
 # 앱 설정값은 각 서버의 application-local.yml 기본값과 같고, 컨테이너 사이 주소만 서비스 이름으로 바꿨습니다.
 # 카카오 키처럼 개인 값은 이 디렉터리의 .env 에서 읽습니다. (.env.example 참고)
 #
@@ -12,6 +12,7 @@
 #   escrow   http://localhost:8081   (Swagger /docs)
 #   minio    http://localhost:9000   (console http://localhost:9001)
 #   postgres localhost:5432 (service/service, DB service)
+#   mongodb   localhost:27017 (service/service, DB service)
 
 name: komit-local
 
@@ -59,6 +60,25 @@ services:
       timeout: 3s
       retries: 10
 
+  mongodb:
+    image: mongo:8.0.30-noble
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD:-root-local-only}
+      MONGODB_DATABASE: service
+      MONGODB_USERNAME: service
+      MONGODB_PASSWORD: ${MONGODB_PASSWORD:-service}
+    volumes:
+      - mongodb-data:/data/db
+      - ../mongodb/init-service-user.js:/docker-entrypoint-initdb.d/init-service-user.js:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --username root --password \"$$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --eval 'quit(db.adminCommand({ ping: 1 }).ok ? 0 : 2)'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   minio:
     image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: server /data --console-address ":9001"
@@ -95,6 +115,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      mongodb:
+        condition: service_healthy
       minio-init:
         condition: service_completed_successfully
     environment:
@@ -104,6 +126,11 @@ services:
       DB_PASSWORD: service
       REDIS_HOST: redis
       REDIS_PORT: "6379"
+      MONGODB_HOST: mongodb
+      MONGODB_PORT: "27017"
+      MONGODB_DATABASE: service
+      MONGODB_USERNAME: service
+      MONGODB_PASSWORD: ${MONGODB_PASSWORD:-service}
       APP_INSTANCE_ROLE: WRITER
       APP_PUBLIC_BASE_URL: http://localhost:8080
       STORAGE_INTERNAL_ENDPOINT: http://minio:9000
@@ -167,4 +194,5 @@ volumes:
   postgres-data:
   escrow-postgres-data:
   redis-data:
+  mongodb-data:
   minio-data:

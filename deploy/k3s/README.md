@@ -1,12 +1,13 @@
 # K3s 배포
 
-`service`, `escrow`, `fe`를 각각 2개의 Pod로 실행하고, 두 서버의 DB를 CloudNativePG 클러스터로 분리합니다. `fe`(Next.js 서버)는 클러스터 안에서 Service 이름으로 스프링을 호출합니다. Spring이 트랜잭션 성격에 따라 쓰기는 Primary로, `readOnly` 조회는 Standby로 보냅니다. `service`는 refresh token 저장과 캐시에 Redis를 쓰고, Redis는 Sentinel이 감시하는 Primary 1 + Replica 2로 둡니다.
+`service`, `escrow`, `fe`를 각각 2개의 Pod로 실행하고, 두 서버의 DB를 CloudNativePG 클러스터로 분리합니다. `fe`(Next.js 서버)는 클러스터 안에서 Service 이름으로 스프링을 호출합니다. Spring이 트랜잭션 성격에 따라 쓰기는 Primary로, `readOnly` 조회는 Standby로 보냅니다. `service`는 refresh token 저장과 캐시에 Redis를 쓰고, 문서 저장 개발을 이어갈 수 있도록 별도 MongoDB 연결을 준비합니다. MongoDB에 어떤 도메인 데이터를 넣을지는 아직 미확정입니다.
 
 ```text
-service Pod ×2 ─┬─ 일반 트랜잭션   → service-db-rw ─ Primary
+service Pod ×2 ─┬─ 일반 트랜잭션    → service-db-rw ─ Primary
                 ├─ readOnly 트랜잭션 → service-db-ro ─ Standby ×2
-                └─ Redis ─ service-redis-sentinel:26379 ─(현재 Primary 주소)→ service-redis Primary
-                                                                              └─ Replica ×2
+                ├─ Redis ─ service-redis-sentinel:26379 ─(현재 Primary 주소)→ service-redis Primary
+                │                                                             └─ Replica ×2
+                └─ MongoDB → service-mongodb:27017 (service 전용 readWrite 계정)
 
 escrow Pod ×2 ──┬─ 일반 트랜잭션   → escrow-db-rw ── Primary
                 └─ readOnly 트랜잭션 → escrow-db-ro ── Standby ×2
@@ -15,12 +16,20 @@ escrow Pod ×2 ──┬─ 일반 트랜잭션   → escrow-db-rw ── Primar
 | 디렉터리 | 내용 |
 |---|---|
 | `platform/` | CloudNativePG 오퍼레이터, redis-operator (K3s HelmChart) |
-| `database/` | `service-db`, `escrow-db` Cluster, `service-redis` RedisReplication + RedisSentinel |
+| `database/` | `service-db`, `escrow-db` Cluster, `service-redis` RedisReplication + RedisSentinel, `service-mongodb` StatefulSet |
 | `base/` | `service`, `escrow`, `fe` 애플리케이션과 파일 저장소 `minio`(단일 노드, PVC) |
 | `prod/` | 운영 overlay. `service`(30080), `escrow`(30081), 실제 BE용 `fe`(30082), mock용 `fe-test`(30083), `minio`(30090)를 nginx용 NodePort로 열고 MinIO 디스크를 20Gi로 키웁니다 |
 | `local/` | 로컬 실습용 Secret, NodePort, 이미지 태그, mock. MinIO는 30090을 docker-compose가 호스트 9000으로 매핑합니다 |
 
 CloudNativePG Cluster와 Redis 리소스는 각 오퍼레이터의 CRD가 설치된 뒤에만 만들 수 있습니다. 그래서 오퍼레이터 → DB·Redis → 애플리케이션 순서로 나눠 적용합니다.
+
+### MongoDB 구성
+
+- `service-mongodb`는 공식 `mongo:8.0.30-noble` 이미지와 1Gi `ReadWriteOnce` PVC를 쓰는 단일 StatefulSet입니다.
+- root 계정은 최초 DB 초기화에만 사용하고, service는 `service` DB에만 `readWrite` 권한이 있는 전용 계정으로 접속합니다.
+- 운영 자격은 `SERVICE_MONGODB_ROOT_PASSWORD`, `SERVICE_MONGODB_PASSWORD` GitLab CI/CD 변수에서 `service-mongodb-auth` Secret으로 전달됩니다.
+- `deploy.sh`와 로컬 배포 스크립트는 MongoDB가 준비된 뒤 모든 K3s 노드에 검증 Job을 하나씩 배치해 DNS·TCP·인증을 함께 확인합니다.
+- 두 비밀번호는 빈 PVC의 최초 초기화 때만 반영됩니다. 기존 데이터가 있는 환경에서 Secret만 바꾸면 계정 비밀번호가 바뀌지 않으므로 별도 회전 절차가 필요합니다.
 
 ### Redis 구성
 
@@ -45,7 +54,7 @@ Compose가 다음 작업을 순서대로 수행합니다.
 2. 이미지를 K3s가 시작할 때 가져갈 tar 파일로 저장
 3. privileged Linux 컨테이너에서 단일 노드 K3s 실행
 4. CloudNativePG 오퍼레이터, redis-operator 설치
-5. `service-db`, `escrow-db`(각 Primary 1 + Standby 2), `service-redis`(Primary 1 + Replica 2, Sentinel 3) 배포
+5. `service-db`, `escrow-db`(각 Primary 1 + Standby 2), `service-redis`(Primary 1 + Replica 2, Sentinel 3), `service-mongodb` 배포 및 노드별 MongoDB 연결 검증
 6. `service`, `escrow`, 기본 `fe`와 mock용 `fe-test`를 배포
 
 상태와 접속을 확인합니다.
@@ -414,6 +423,8 @@ sudo -n true && echo OK
    | `SERVICE_DB_PASSWORD` | service DB용 비밀번호 | **Masked** | 체크 |
    | `ESCROW_DB_PASSWORD` | escrow DB용 비밀번호 | **Masked** | 체크 |
    | `SERVICE_REDIS_PASSWORD` | service Redis용 비밀번호 | **Masked** | 체크 |
+   | `SERVICE_MONGODB_ROOT_PASSWORD` | service MongoDB 초기화 root 비밀번호 | **Masked** | 체크 |
+   | `SERVICE_MONGODB_PASSWORD` | service MongoDB 애플리케이션 계정 비밀번호 | **Masked** | 체크 |
 
 4. **Settings → Repository → Protected branches**에 `develop`이 있는지 확인합니다. Protected 변수는 보호 브랜치 파이프라인에서만 읽힙니다. `develop`이 없으면 변수가 빈 값으로 들어가 배포 잡이 실패합니다.
 
@@ -541,7 +552,9 @@ fe-test image is required because deployment/fe-test does not exist yet
    read -rsp "SERVICE_DB_PASSWORD: " SERVICE_DB_PASSWORD; echo
    read -rsp "ESCROW_DB_PASSWORD: " ESCROW_DB_PASSWORD; echo
    read -rsp "SERVICE_REDIS_PASSWORD: " SERVICE_REDIS_PASSWORD; echo
-   export SERVICE_DB_PASSWORD ESCROW_DB_PASSWORD SERVICE_REDIS_PASSWORD
+   read -rsp "SERVICE_MONGODB_ROOT_PASSWORD: " SERVICE_MONGODB_ROOT_PASSWORD; echo
+   read -rsp "SERVICE_MONGODB_PASSWORD: " SERVICE_MONGODB_PASSWORD; echo
+   export SERVICE_DB_PASSWORD ESCROW_DB_PASSWORD SERVICE_REDIS_PASSWORD SERVICE_MONGODB_ROOT_PASSWORD SERVICE_MONGODB_PASSWORD
    export FE_IMAGE=docker.io/<계정>/komit-fe:<태그>
    export FE_TEST_IMAGE=docker.io/<계정>/komit-fe-test:<태그>
    # GitLab CI/CD 변수에 등록된 값과 같게 넣습니다.
@@ -555,7 +568,7 @@ fe-test image is required because deployment/fe-test does not exist yet
    export KAKAO_REDIRECT_URI=<GitLab 변수 값>
    export TEST_KAKAO_REDIRECT_URI=<GitLab 변수 값>
 
-   sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,SERVICE_REDIS_PASSWORD,FE_IMAGE,FE_TEST_IMAGE,SERVICE_PUBLIC_BASE_URL,ESCROW_PUBLIC_BASE_URL,BACKEND_API_BASE_URL,AI_API_BASE_URL,TEST_BACKEND_API_BASE_URL,TEST_AI_API_BASE_URL,KAKAO_CLIENT_ID,KAKAO_REDIRECT_URI,TEST_KAKAO_REDIRECT_URI \
+   sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,SERVICE_REDIS_PASSWORD,SERVICE_MONGODB_ROOT_PASSWORD,SERVICE_MONGODB_PASSWORD,FE_IMAGE,FE_TEST_IMAGE,SERVICE_PUBLIC_BASE_URL,ESCROW_PUBLIC_BASE_URL,BACKEND_API_BASE_URL,AI_API_BASE_URL,TEST_BACKEND_API_BASE_URL,TEST_AI_API_BASE_URL,KAKAO_CLIENT_ID,KAKAO_REDIRECT_URI,TEST_KAKAO_REDIRECT_URI \
      sh ~/komit-k3s/k3s/deploy.sh
    ```
 
@@ -591,7 +604,9 @@ scp -r deploy/k3s <계정>@komit.site:~/komit-k3s-manual
 read -rsp "SERVICE_DB_PASSWORD: " SERVICE_DB_PASSWORD; echo
 read -rsp "ESCROW_DB_PASSWORD: " ESCROW_DB_PASSWORD; echo
 read -rsp "SERVICE_REDIS_PASSWORD: " SERVICE_REDIS_PASSWORD; echo
-export SERVICE_DB_PASSWORD ESCROW_DB_PASSWORD SERVICE_REDIS_PASSWORD
+read -rsp "SERVICE_MONGODB_ROOT_PASSWORD: " SERVICE_MONGODB_ROOT_PASSWORD; echo
+read -rsp "SERVICE_MONGODB_PASSWORD: " SERVICE_MONGODB_PASSWORD; echo
+export SERVICE_DB_PASSWORD ESCROW_DB_PASSWORD SERVICE_REDIS_PASSWORD SERVICE_MONGODB_ROOT_PASSWORD SERVICE_MONGODB_PASSWORD
 
 export SERVICE_IMAGE=docker.io/<계정>/komit-service:<태그>
 export ESCROW_IMAGE=docker.io/<계정>/komit-escrow:<태그>
@@ -609,7 +624,7 @@ export KAKAO_CLIENT_ID=<GitLab 변수 값>
 export KAKAO_REDIRECT_URI=<GitLab 변수 값>
 export TEST_KAKAO_REDIRECT_URI=<GitLab 변수 값>
 
-sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,SERVICE_REDIS_PASSWORD,SERVICE_IMAGE,ESCROW_IMAGE,FE_IMAGE,FE_TEST_IMAGE,SERVICE_PUBLIC_BASE_URL,ESCROW_PUBLIC_BASE_URL,BACKEND_API_BASE_URL,AI_API_BASE_URL,TEST_BACKEND_API_BASE_URL,TEST_AI_API_BASE_URL,KAKAO_CLIENT_ID,KAKAO_REDIRECT_URI,TEST_KAKAO_REDIRECT_URI \
+sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,SERVICE_REDIS_PASSWORD,SERVICE_MONGODB_ROOT_PASSWORD,SERVICE_MONGODB_PASSWORD,SERVICE_IMAGE,ESCROW_IMAGE,FE_IMAGE,FE_TEST_IMAGE,SERVICE_PUBLIC_BASE_URL,ESCROW_PUBLIC_BASE_URL,BACKEND_API_BASE_URL,AI_API_BASE_URL,TEST_BACKEND_API_BASE_URL,TEST_AI_API_BASE_URL,KAKAO_CLIENT_ID,KAKAO_REDIRECT_URI,TEST_KAKAO_REDIRECT_URI \
   sh ~/komit-k3s-manual/deploy.sh
 ```
 
@@ -637,6 +652,7 @@ rm -rf ~/komit-k3s-manual
 | `statefulset rolling update complete`가 `service-redis`에서 멈춤 | Redis Pod가 못 뜸 | `sudo kubectl -n komit describe pod service-redis-0`. PVC가 `Pending`이면 스토리지, init 컨테이너 실패면 `service-redis-config` ConfigMap 문법 확인 |
 | `service-redis-sentinel` Pod가 `CrashLoopBackOff` | Sentinel이 Primary를 못 찾음 | `sudo kubectl -n komit get redisreplication service-redis`의 `MASTER` 열이 비어 있으면 `sudo kubectl -n ot-operators logs deploy/redis-operator` 확인 |
 | 앱 로그에 `NOAUTH` 또는 `WRONGPASS` | Spring과 Redis 비밀번호가 다름 | `service-redis-auth` Secret과 `SERVICE_REDIS_PASSWORD` 값 확인 |
+| `service-mongodb`가 준비되지 않거나 인증 오류 | 최초 PVC 초기화 값과 Secret이 다름 | `service-mongodb-auth`를 확인합니다. 기존 PVC에서 변수만 바꿨다면 DB 계정 비밀번호를 먼저 회전해야 합니다 |
 | `curl`이 **502** | 30080에 받는 쪽이 없음 | `sudo kubectl -n komit get pods`로 service Pod가 Ready인지 확인 |
 | `curl`이 **504** (약 60초 뒤) | nginx 컨테이너가 30080에 닿지 못함 | A-0의 `nodeport-addresses` 확인 |
 | 사진 업로드·표시가 안 되고 `file.komit.site`가 **502** | 30090에 받는 쪽이 없음 | `sudo kubectl -n komit get pods -l app.kubernetes.io/name=minio`로 MinIO Pod가 Ready인지, `prod/minio-nodeport.yaml`이 적용됐는지 확인 |
@@ -670,6 +686,8 @@ fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
 | `SSH_ADDRESS`, `SSH_PRIVATE_KEY` | 목 배포와 공용 | 서버 접속 |
 | `SERVICE_DB_PASSWORD`, `ESCROW_DB_PASSWORD` | Masked, Protected | DB 계정 Secret |
 | `SERVICE_REDIS_PASSWORD` | Masked, Protected | Redis·Sentinel 비밀번호 Secret(`service-redis-auth`) |
+| `SERVICE_MONGODB_ROOT_PASSWORD` | Masked, Protected | MongoDB 최초 초기화용 root 비밀번호 Secret(`service-mongodb-auth`) |
+| `SERVICE_MONGODB_PASSWORD` | Masked, Protected | service 전용 MongoDB `readWrite` 계정 비밀번호 Secret(`service-mongodb-auth`) |
 | `SERVICE_PUBLIC_BASE_URL`, `ESCROW_PUBLIC_BASE_URL` | Visible | 각 백엔드의 공개 주소(`https://komit.site/service`, `https://komit.site/escrow`). `service-config`, `escrow-config` ConfigMap의 `APP_PUBLIC_BASE_URL`이 됩니다 |
 | `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` | Visible, Protected | `komit.site` 기본 FE가 호출할 실제 BE·AI 주소. `fe-config`에만 들어갑니다 |
 | `TEST_BACKEND_API_BASE_URL`, `TEST_AI_API_BASE_URL` | Visible, Protected | `komit.site/test` FE가 호출할 mock 주소. `fe-test-config`에만 들어갑니다 |
@@ -712,6 +730,8 @@ fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
 export SERVICE_DB_PASSWORD=<password>
 export ESCROW_DB_PASSWORD=<password>
 export SERVICE_REDIS_PASSWORD=<password>
+export SERVICE_MONGODB_ROOT_PASSWORD=<root-password>
+export SERVICE_MONGODB_PASSWORD=<service-password>
 export SERVICE_PUBLIC_BASE_URL=https://komit.site/service
 export ESCROW_PUBLIC_BASE_URL=https://komit.site/escrow
 export BACKEND_API_BASE_URL=<fe가 호출할 백엔드 주소>
@@ -751,6 +771,8 @@ chmod +x deploy/k3s/deploy.sh
 |---|---|---|
 | `SERVICE_DB_PASSWORD`, `ESCROW_DB_PASSWORD` | 예 | DB 소유자 계정 비밀번호. `service-db-app`, `escrow-db-app` Secret이 되어 CloudNativePG initdb와 Spring이 함께 읽습니다. |
 | `SERVICE_REDIS_PASSWORD` | 예 | Redis `requirepass`·`masterauth`와 Sentinel 접속 비밀번호. `service-redis-auth` Secret이 되어 오퍼레이터와 Spring이 함께 읽습니다. |
+| `SERVICE_MONGODB_ROOT_PASSWORD` | 예 | MongoDB의 최초 root 계정 비밀번호. `service-mongodb-auth` Secret으로 전달되며 애플리케이션에는 주입하지 않습니다. |
+| `SERVICE_MONGODB_PASSWORD` | 예 | `service` DB 전용 `readWrite` 계정 비밀번호. 같은 Secret을 MongoDB 초기화와 service Pod가 함께 읽습니다. |
 | `SERVICE_PUBLIC_BASE_URL`, `ESCROW_PUBLIC_BASE_URL` | 예 | 각 백엔드가 밖에서 보이는 주소(nginx 경로 접두사 포함). Spring의 `app.public-base-url`이 되고, 없으면 앱이 기동하지 않습니다. 값이 바뀌면 해당 Pod만 다시 뜹니다. |
 | `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` | 예 | 기본 `fe`가 호출할 실제 BE·AI 주소. GitLab CI/CD 변수와 같은 값을 넣으며 `fe-config`에만 들어갑니다. |
 | `TEST_BACKEND_API_BASE_URL`, `TEST_AI_API_BASE_URL` | 예 | `/test`의 `fe-test`가 호출할 mock 주소. `fe-test-config`에만 들어갑니다. |
@@ -830,5 +852,6 @@ Standby 수는 Cluster의 `instances`로 조정합니다. 동기 복제 대상 �
 - 조회 메서드에 `readOnly = true`를 붙여야 Standby로 갑니다. 쓰기 직후 최신값이 반드시 필요한 조회는 `readOnly`를 빼서 Primary에서 읽습니다.
 
 ### 알려진 제약
+- **MongoDB 단일 인스턴스:** 현재는 개발 인수인계를 위한 연결 구성이라 replica set과 자동 장애 전환이 없습니다. PVC 또는 노드 장애 시 MongoDB 기능이 중단됩니다.
 - **단일 노드:** 운영 EC2가 한 대라 Primary와 Standby가 같은 노드와 디스크(local-path)에 있습니다. Pod 장애는 견디지만 서버나 디스크 장애에는 앱과 DB가 함께 멈추고, 백업이 없어 데이터도 복구할 수 없습니다.
 - **Standby 전체 장애:** Standby가 모두 내려가 `-ro` Service에 대상이 없으면 `readOnly` 트랜잭션이 실패합니다. 쓰기 트랜잭션은 계속 동작합니다. Standby를 2대 이상 유지하는 이유입니다.

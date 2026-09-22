@@ -11,6 +11,8 @@ FE_TEST_IMAGE=${FE_TEST_IMAGE:-}
 : "${SERVICE_DB_PASSWORD:?SERVICE_DB_PASSWORD is required}"
 : "${ESCROW_DB_PASSWORD:?ESCROW_DB_PASSWORD is required}"
 : "${SERVICE_REDIS_PASSWORD:?SERVICE_REDIS_PASSWORD is required}"
+: "${SERVICE_MONGODB_ROOT_PASSWORD:?SERVICE_MONGODB_ROOT_PASSWORD is required}"
+: "${SERVICE_MONGODB_PASSWORD:?SERVICE_MONGODB_PASSWORD is required}"
 # 각 백엔드가 밖에서 보이는 주소입니다. nginx 경로 접두사까지 포함합니다. (예: https://komit.site/service)
 : "${SERVICE_PUBLIC_BASE_URL:?SERVICE_PUBLIC_BASE_URL is required}"
 : "${ESCROW_PUBLIC_BASE_URL:?ESCROW_PUBLIC_BASE_URL is required}"
@@ -158,6 +160,15 @@ apply_password_secret() {
     --dry-run=client -o yaml | kubectl apply -f -
 }
 
+apply_mongodb_secret() {
+  kubectl -n komit create secret generic service-mongodb-auth \
+    --from-literal=root-username=root \
+    --from-literal=root-password="$1" \
+    --from-literal=username=service \
+    --from-literal=password="$2" \
+    --dry-run=client -o yaml | kubectl apply -f -
+}
+
 # 오퍼레이터가 만드는 StatefulSet은 CR을 적용한 직후에는 아직 없을 수 있어 생길 때까지 기다린 뒤 rollout을 봅니다.
 wait_statefulset() {
   until kubectl -n komit get statefulset "$1" >/dev/null 2>&1; do sleep 3; done
@@ -193,12 +204,15 @@ kubectl -n ot-operators wait --for=condition=Available deployment/redis-operator
 apply_basic_auth_secret service-db-app service "$SERVICE_DB_PASSWORD"
 apply_basic_auth_secret escrow-db-app escrow "$ESCROW_DB_PASSWORD"
 apply_password_secret service-redis-auth "$SERVICE_REDIS_PASSWORD"
+apply_mongodb_secret "$SERVICE_MONGODB_ROOT_PASSWORD" "$SERVICE_MONGODB_PASSWORD"
 # service 인증 Secret 은 아래 Kustomize secretGenerator 가 만듭니다. 이름에 해시가 붙어 값이 바뀌면 Pod 가 새 값으로 다시 뜹니다.
 kubectl apply -k "$SCRIPT_DIR/database"
 kubectl -n komit wait --for=condition=Ready cluster/service-db cluster/escrow-db --timeout=600s
 # Redis 노드가 모두 뜬 뒤 Sentinel이 Primary를 찾아 기동합니다.
 wait_statefulset service-redis
 wait_statefulset service-redis-sentinel
+wait_statefulset service-mongodb
+sh "$SCRIPT_DIR/verify-mongodb.sh"
 
 # 3. 애플리케이션: 배포할 이미지를 Kustomize overlay에 고정해 한 번의 apply로 반영합니다.
 # Kustomize는 절대 경로 base를 받지 않으므로 임시 디렉터리에 base와 prod를 복사해 overlay를 만듭니다.
