@@ -8,6 +8,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -37,4 +38,16 @@ public class Survey extends CreatedSoftDeleteEntity {
     @ColumnDefault("FALSE")
     @Column(name = "is_done", nullable = false)
     private boolean done = false;
+
+    public static Survey of(Integer diagnosisId, Short diagnosisVersion) {
+        Survey entity = new Survey();
+        entity.diagnosisId = Objects.requireNonNull(diagnosisId, "diagnosisId");
+        entity.diagnosisVersion = Objects.requireNonNull(diagnosisVersion, "diagnosisVersion");
+        return entity;
+    }
+
+    /** 설문을 끝낸 것으로 표시한다. 이미 끝난 설문에 다시 불러도 결과가 같다. */
+    public void complete() {
+        done = true;
+    }
 }

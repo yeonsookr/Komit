@@ -7,6 +7,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -32,4 +33,12 @@ public class Project extends SoftDeleteEntity {
 
     @Column(name = "client_id", nullable = false)
     private Integer clientId;
+
+    public static Project of(Integer clientId, String name, String description) {
+        Project entity = new Project();
+        entity.clientId = Objects.requireNonNull(clientId, "clientId");
+        entity.name = Objects.requireNonNull(name, "name");
+        entity.description = description;
+        return entity;
+    }
 }
