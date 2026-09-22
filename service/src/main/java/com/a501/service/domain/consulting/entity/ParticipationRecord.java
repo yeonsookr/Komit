@@ -74,4 +74,9 @@ public class ParticipationRecord extends SoftDeleteEntity {
             this.joinedAt = joinedAt;
         }
     }
+
+    /** 자기 마이크로 담은 녹음을 붙인다. 참가자당 한 건이다. (R-CON-14) */
+    public void attachRecording(Long fileId) {
+        this.fileId = fileId;
+    }
 }

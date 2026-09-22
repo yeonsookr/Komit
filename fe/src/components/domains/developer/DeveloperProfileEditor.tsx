@@ -6,6 +6,7 @@ import { Avatar, Card, Field, Input, NativeSelect, Textarea } from "@/components
 import { Button, IconButton } from "@/components/buttons";
 import { useToast } from "@/components/feedback";
 import { clientApi } from "@/lib/api/client";
+import { uploadFromBrowser } from "@/lib/upload/browserUpload";
 import { INTERNAL } from "@/lib/api/endpoints";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
@@ -76,13 +77,7 @@ export function DeveloperProfileEditor({ profile, account, fields, technologies 
     router.push(`${ROUTES.mypage}#profile-image`);
   };
 
-  const upload = async (file: File, purpose: UploadPurpose) => {
-    const form = new FormData();
-    form.append("file", file);
-    form.append("purpose", purpose);
-    const { data } = await clientApi.post<UploadedFile>(INTERNAL.PROFILE_UPLOAD, form);
-    return data;
-  };
+  const upload = (file: File, purpose: UploadPurpose) => uploadFromBrowser(file, purpose);
 
   const save = async () => {
     if (intro.trim() === "") {

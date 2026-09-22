@@ -36,7 +36,8 @@ app:
     # R-FILE-01, R-FILE-03. MinIO 프리사인 URL 자체의 상한은 7일입니다.
     bucket: ${STORAGE_BUCKET:komit}
     region: ${STORAGE_REGION:us-east-1}
-    max-file-bytes: 10485760
+    # R-FILE-01: 가장 큰 파일인 세션 녹음에 맞춥니다. 24kbps 고정에 90분이면 14MiB 안팎입니다.
+    max-file-bytes: 31457280
     upload-url-ttl: 5m
     read-url-ttl: 15m
   logging:

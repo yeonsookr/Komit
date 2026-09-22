@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import {
   attachDeliverable,
   downloadDeliverable,
-  uploadFile,
 } from "@/lib/api/services";
 import { parseNumericParam, toErrorResponse } from "@/lib/api/route";
 
@@ -23,20 +22,20 @@ export async function POST(
   const id = parseNumericParam(deliverableId);
   if (id === null) return NextResponse.json(NOT_FOUND, { status: 404 });
 
-  let file: FormDataEntryValue | null;
+  // 파일은 이 핸들러를 지나가지 않습니다. 브라우저가 저장소로 직접 보내고 fileId 만 옵니다.
+  let fileId: unknown;
   try {
-    file = (await request.formData()).get("file");
+    ({ fileId } = (await request.json()) as { fileId?: unknown });
   } catch {
     return NextResponse.json(INVALID_REQUEST, { status: 422 });
   }
 
-  if (!(file instanceof File) || file.size === 0) {
+  if (typeof fileId !== "number" || !Number.isInteger(fileId) || fileId <= 0) {
     return NextResponse.json(INVALID_REQUEST, { status: 422 });
   }
 
   try {
-    const uploaded = await uploadFile(file, "DELIVERABLE");
-    const deliverable = await attachDeliverable(id, uploaded.fileId);
+    const deliverable = await attachDeliverable(id, fileId);
     return NextResponse.json(deliverable, { status: 201 });
   } catch (error) {
     return toErrorResponse(error);

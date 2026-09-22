@@ -49,7 +49,8 @@ export type RealtimeSystemType =
   | "SYSTEM_ERROR"
   | "SYSTEM_REPLACED"
   | "SYSTEM_PEER_JOINED"
-  | "SYSTEM_PEER_LEFT";
+  | "SYSTEM_PEER_LEFT"
+  | "SYSTEM_SESSION_ENDED";
 
 /**
  * 채널에 누가 붙고 떨어졌는지 알리는 쪽지의 내용.

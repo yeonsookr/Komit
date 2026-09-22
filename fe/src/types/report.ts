@@ -1,7 +1,7 @@
 /**
  * 신고 접수 요청.
  *
- * 증거 파일은 `uploadFile(file, "REPORT_EVIDENCE")` 로 먼저 올리고 받은
+ * 증거 파일은 `uploadFromBrowser(file, "REPORT_EVIDENCE")` 로 먼저 올리고 받은
  * `fileId` 만 보냅니다. 파일 자체는 이 요청에 싣지 않습니다.
  */
 export interface CreateReportBody {

@@ -14,6 +14,7 @@ import { INTERNAL } from "@/lib/api/endpoints";
 import { formatTime } from "@/lib/format";
 import { ROUTES } from "@/lib/routes";
 import { SESSION_PENDING_CONSENT_STATUS } from "@/lib/session";
+import { uploadFromBrowser } from "@/lib/upload/browserUpload";
 import {
   usePeerConnection,
   type CallStatus,
@@ -60,9 +61,6 @@ function stageNotice(
  * - `FAILED` — 들어가지 못함
  */
 type EntryState = "JOINING" | "PENDING" | "ENTERED" | "FAILED";
-
-/** 상대가 들어왔는지 다시 묻는 주기. 실시간 채널이 붙으면 지웁니다. */
-const PENDING_RECHECK_MS = 5_000;
 
 /** 아직 무대를 열 수 없는 때에 적는 말. */
 const ENTRY_NOTICE: Record<Exclude<EntryState, "ENTERED">, { title: string; body: string }> = {
@@ -207,35 +205,42 @@ export function SessionStage({
   }, [join]);
 
   /*
-    기다리는 동안 같은 요청을 되풀이해 201 로 바뀌는 때를 봅니다. 동의는 한 번만
-    기록되므로 여러 번 보내도 덧나지 않습니다.
-
-    ⚠️ 임시입니다. 상대가 들어온 것은 원래 실시간 채널이 알려줄 일이고, 그것이 붙으면
-    이 되풀이를 지웁니다. 그때까지 이것이 없으면 먼저 동의한 사람은 상대가 들어왔는지
-    영영 알 수 없습니다.
-    간격은 정책 값이 아니라 화면이 다시 묻는 주기라 `RULES.md` 에 두지 않습니다.
+    동의한 순간부터 채널에 들어갑니다. 상대가 들어온 것을 서버가 알려 줄 수 있어야 하기
+    때문입니다. 실제 입장과 세션 시작은 입장 API 가 막습니다 (`R-CON-17`).
   */
-  React.useEffect(() => {
-    if (entry !== "PENDING") return;
-
-    let alive = true;
-    const timer = setInterval(() => {
-      void join().then((next) => {
-        if (alive) setEntry(next);
-      });
-    }, PENDING_RECHECK_MS);
-
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, [entry, join]);
+  const consented = entry === "PENDING" || entry === "ENTERED";
+  const joined = entry === "ENTERED";
 
   /*
-    양쪽이 모인 뒤에만 엽니다. 기다리는 동안에는 소켓도 카메라도 켜지 않습니다
-    (`R-CON-17`).
+    상대가 채널에 들어왔다는 알림을 받으면 그때 한 번만 다시 묻습니다.
+
+    상대가 동의하는 순간 서버 안에서는 두 사람 모두 입장 처리가 끝나지만, 기다리던 쪽은
+    그 응답을 받은 적이 없어 `201` 본문을 가져오려면 한 번은 물어야 합니다.
   */
-  const joined = entry === "ENTERED";
+  const enteredRef = React.useRef(false);
+  React.useEffect(() => {
+    enteredRef.current = joined;
+  }, [joined]);
+
+  const askAgain = React.useCallback(() => {
+    if (enteredRef.current) return;
+    void join().then(setEntry);
+  }, [join]);
+
+  // 쪽지 처리는 다시 만들어지지 않게 빈 의존성으로 두므로, 최신 함수를 여기 맡겨 둡니다.
+  const askAgainRef = React.useRef(askAgain);
+  React.useEffect(() => {
+    askAgainRef.current = askAgain;
+  }, [askAgain]);
+
+  /*
+    세션이 끝났다는 서버 알림을 받는 자리입니다.
+
+    **누가 눌렀든 양쪽이 같은 쪽지를 받습니다.** 끝낸 사람 쪽은 자기 응답으로 이미
+    마감했고, 쪽지도 회선이 튀면 두 번 올 수 있습니다. `finishedRef` 로 한 번만 돕니다.
+  */
+  const finishRef = React.useRef<() => void>(() => {});
+  const finishedRef = React.useRef(false);
 
   // 훅끼리 서로를 참조해 순서가 꼬이지 않게, 받은 쪽지를 잠깐 맡아 두는 자리입니다.
   const callRef = React.useRef<PeerConnection | null>(null);
@@ -243,17 +248,32 @@ export function SessionStage({
   const realtime = useRealtimeConnection({
     channel: "CONSULTING_SESSION",
     channelId: String(sessionId),
-    enabled: joined,
-    onMessage: React.useCallback((envelope: RealtimeEnvelope) => {
-      const call = callRef.current;
-      if (!call) return;
+    enabled: consented,
+    onMessage: React.useCallback(
+      (envelope: RealtimeEnvelope) => {
+        // 참가 알림은 통화보다 먼저 봅니다. 기다리는 동안에는 통화가 아직 없어서,
+        // 아래 빗장에 걸리면 정작 기다리던 소식을 버리게 됩니다.
+        if (envelope.type === "SYSTEM_PEER_JOINED") {
+          askAgainRef.current();
+          callRef.current?.peerPresent();
+          return;
+        }
 
-      // 누가 붙고 떨어졌는지는 서버가 압니다. 통화 쪽지는 상대가 직접 보낸 것입니다.
-      if (envelope.type === "SYSTEM_PEER_JOINED") return call.peerPresent();
-      if (envelope.type === "SYSTEM_PEER_LEFT") return call.peerAway();
+        if (envelope.type === "SYSTEM_SESSION_ENDED") {
+          finishRef.current();
+          return;
+        }
 
-      call.accept(envelope.type as RtcSignalType, envelope.payload);
-    }, []),
+        const call = callRef.current;
+        if (!call) return;
+
+        // 누가 떨어졌는지는 서버가 압니다. 통화 쪽지는 상대가 직접 보낸 것입니다.
+        if (envelope.type === "SYSTEM_PEER_LEFT") return call.peerAway();
+
+        call.accept(envelope.type as RtcSignalType, envelope.payload);
+      },
+      [],
+    ),
   });
 
   /*
@@ -262,15 +282,19 @@ export function SessionStage({
   */
   const [socketOpened, setSocketOpened] = React.useState(false);
   React.useEffect(() => {
-    if (!joined) {
+    if (!consented) {
       setSocketOpened(false);
       return;
     }
     if (realtime.status === "OPEN") setSocketOpened(true);
-  }, [joined, realtime.status]);
+  }, [consented, realtime.status]);
 
+  /*
+    동의한 사람은 기다리는 동안에도 자기 카메라를 켭니다. 상대는 아직 통화가 없어 내
+    화면도 소리도 받지 못하므로 감출 것이 없고, 들어가기 전에 장치를 확인할 수 있습니다.
+  */
   const call = usePeerConnection({
-    enabled: joined && socketOpened,
+    enabled: consented && socketOpened,
     polite,
     send: realtime.send,
   });
@@ -280,10 +304,11 @@ export function SessionStage({
   }, [call]);
 
   /*
-    통화가 열리면 자기 마이크만 담기 시작합니다. 입장 자체가 동의라 따로 묻지 않습니다
-    (`R-CON-17`). 파일은 세션을 마친 뒤에 올립니다.
+    담기 시작하는 것은 **세션이 시작된 뒤**입니다. 카메라가 켜졌다고 담지 않습니다 —
+    기다리는 동안의 미리보기까지 들어가면 안 됩니다. 입장 자체가 동의라 따로 묻지
+    않습니다 (`R-CON-17`). 파일은 세션을 마친 뒤에 올립니다.
   */
-  const recorder = useSessionRecorder(call.localStream);
+  const recorder = useSessionRecorder(call.localStream, joined);
 
   React.useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
@@ -308,29 +333,74 @@ export function SessionStage({
     ]);
   };
 
+  /*
+    올리지 못한 녹음을 쥐고 있는 자리입니다.
+
+    **성공할 때까지 버리지 않습니다.** 조각은 멈추는 순간 파일 하나로 묶이고 그 뒤로는
+    다시 만들 수 없어서, 여기서 놓으면 그 사람의 이야기가 요약에서 통째로 빠집니다.
+  */
+  const [pendingRecording, setPendingRecording] = React.useState<File | null>(null);
+  const [uploading, setUploading] = React.useState(false);
+
   /**
-   * 담아 둔 녹음을 올립니다.
+   * 녹음을 저장소에 올리고 세션에 붙입니다.
    *
-   * 올리지 못해도 방을 떠나는 것을 막지 않습니다. 한쪽 녹음이 없어도 요약은 만들어지고
-   * (`R-CON-16`), 여기서 붙잡으면 사용자가 나갈 방법이 없습니다.
+   * 파일 본문은 브라우저가 저장소로 직접 보냅니다. 우리 서버는 주소를 내주고 완료를 확인할
+   * 뿐 십수 MiB 를 받았다 다시 보내지 않습니다.
    */
-  const uploadRecording = async () => {
+  const uploadRecording = React.useCallback(
+    async (file: File) => {
+      setUploading(true);
+      try {
+        const uploaded = await uploadFromBrowser(file, "SESSION_RECORDING");
+        await clientApi.post(INTERNAL.SESSION_RECORDINGS(sessionId), {
+          fileId: uploaded.fileId,
+        });
+        setPendingRecording(null);
+        return true;
+      } catch {
+        setPendingRecording(file);
+        showToast({
+          tone: "danger",
+          title: "녹음을 올리지 못했습니다",
+          description: "다시 시도할 수 있습니다. 창을 닫으면 녹음이 사라집니다.",
+        });
+        return false;
+      } finally {
+        setUploading(false);
+      }
+    },
+    [sessionId, showToast],
+  );
+
+  const leave = React.useCallback(() => {
+    router.push(ROUTES.room(roomId));
+    router.refresh();
+  }, [roomId, router]);
+
+  /*
+    세션을 마칠 때 하는 일. 녹음을 마감해 올리고 방으로 돌아갑니다.
+
+    **올리지 못했으면 나가지 않습니다.** 나가면 화면이 사라져 쥐고 있던 파일도 함께
+    사라지고, 조각은 이미 묶여 다시 만들 수 없습니다. 남아 있어야 다시 시도할 수 있습니다.
+  */
+  const finish = React.useCallback(async () => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    setEnding(true);
+
+    // 상대 화면이 얼어붙은 채 남지 않게, 방을 뜨기 전에 나간다고 알립니다.
+    call.hangUp();
+
     const file = await recorder.stop();
-    if (!file) return;
+    if (file && !(await uploadRecording(file))) return;
 
-    const body = new FormData();
-    body.append("recording", file);
+    leave();
+  }, [call, leave, recorder, uploadRecording]);
 
-    try {
-      await clientApi.post(INTERNAL.SESSION_RECORDINGS(sessionId), body);
-    } catch {
-      showToast({
-        tone: "danger",
-        title: "녹음을 올리지 못했습니다",
-        description: "요약이 내 이야기를 빼고 만들어질 수 있습니다.",
-      });
-    }
-  };
+  React.useEffect(() => {
+    finishRef.current = () => void finish();
+  }, [finish]);
 
   const end = async () => {
     if (ending) return;
@@ -338,18 +408,19 @@ export function SessionStage({
 
     try {
       await clientApi.post(INTERNAL.SESSION_END(sessionId));
-      // 상대 화면이 얼어붙은 채 남지 않게, 방을 뜨기 전에 나간다고 알립니다.
-      call.hangUp();
       setAsking(false);
-      // 녹음은 세션이 끝난 뒤에만 받습니다. 순서를 바꾸면 400 입니다.
-      await uploadRecording();
       showToast({
         tone: "success",
         title: "세션을 마쳤습니다",
         description: "녹음을 바탕으로 요약을 만들고 있습니다.",
       });
-      router.push(ROUTES.room(roomId));
-      router.refresh();
+
+      /*
+        쪽지를 기다리지 않고 여기서 바로 마감합니다. 쪽지는 상대를 위한 것이고,
+        중계가 막히면 오지 않을 수도 있습니다. 그때 기다리기만 하면 끝낸 사람의 녹음이
+        영영 올라가지 않습니다. 쪽지가 뒤이어 와도 `finish` 는 한 번만 돕니다.
+      */
+      await finish();
     } catch (error) {
       showToast({
         tone: "danger",
@@ -365,20 +436,37 @@ export function SessionStage({
   */
   if (entry !== "ENTERED") {
     return (
-      <Callout
-        className="mt-4"
-        tone={entry === "FAILED" ? "danger" : "info"}
-        title={ENTRY_NOTICE[entry].title}
-        action={
-          entry === "FAILED" ? (
-            <Button variant="outline" onClick={() => window.location.reload()}>
-              다시 시도
-            </Button>
-          ) : undefined
-        }
-      >
-        {ENTRY_NOTICE[entry].body}
-      </Callout>
+      <>
+        <Callout
+          className="mt-4"
+          tone={entry === "FAILED" ? "danger" : "info"}
+          title={ENTRY_NOTICE[entry].title}
+          action={
+            entry === "FAILED" ? (
+              <Button variant="outline" onClick={() => window.location.reload()}>
+                다시 시도
+              </Button>
+            ) : undefined
+          }
+        >
+          {ENTRY_NOTICE[entry].body}
+        </Callout>
+
+        {/*
+          기다리는 동안 자기 모습을 미리 봅니다. 상대는 아직 통화가 없어 이 화면도 소리도
+          받지 못합니다. 들어가기 전에 카메라가 제대로 잡혔는지 확인할 수 있습니다.
+          녹음은 여기서 시작되지 않습니다 — 세션이 시작된 뒤입니다.
+        */}
+        {entry === "PENDING" && (
+          <VideoTile
+            className="mt-4 h-[200px] w-full max-w-[360px]"
+            stream={call.localStream}
+            label={`${myName} (나)`}
+            muted
+            placeholder="카메라를 켜는 중입니다"
+          />
+        )}
+      </>
     );
   }
 
@@ -428,6 +516,29 @@ export function SessionStage({
           <div ref={bottomRef} />
         </ChatRoom>
       </div>
+
+      {pendingRecording && (
+        <Callout
+          className="mt-4"
+          tone="danger"
+          title="녹음을 올리지 못했습니다"
+          action={
+            <Button
+              variant="outline"
+              disabled={uploading}
+              onClick={() =>
+                void uploadRecording(pendingRecording).then((ok) => {
+                  if (ok) leave();
+                })
+              }
+            >
+              {uploading ? "올리는 중" : "다시 시도"}
+            </Button>
+          }
+        >
+          이 창을 닫으면 녹음이 사라져 요약에 내 이야기가 빠집니다.
+        </Callout>
+      )}
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">

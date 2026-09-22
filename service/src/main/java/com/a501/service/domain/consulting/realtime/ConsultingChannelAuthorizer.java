@@ -27,9 +27,6 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Component
 public class ConsultingChannelAuthorizer implements RealtimeChannelAuthorizer {
-    /** 세션 하나에 참가자는 의뢰인과 개발자 둘입니다. */
-    private static final int REQUIRED_PARTICIPANTS = 2;
-
     private final ConsultingSessionRepository sessionRepository;
     private final ParticipationRecordRepository participationRepository;
     private final ReservationRepository reservationRepository;
@@ -84,10 +81,8 @@ public class ConsultingChannelAuthorizer implements RealtimeChannelAuthorizer {
             throw new BusinessException(ConsultingErrorCode.SESSION_ENDED);
         }
 
-        // 먼저 동의한 사람은 상대를 기다립니다. 행은 동의할 때 생기므로 수가 곧 동의 수입니다. (R-CON-17)
-        if (records.size() < REQUIRED_PARTICIPANTS) {
-            throw new BusinessException(ConsultingErrorCode.CONSENT_REQUIRED);
-        }
+        // 동의한 사람은 상대를 기다리는 동안에도 채널에 들어옵니다. 그래야 상대가 들어온 것을
+        // 서버가 알려 줄 수 있습니다. 실제 입장과 세션 시작은 입장 API 가 막습니다. (R-CON-17)
 
         requireEntryOpen(sessionId);
     }

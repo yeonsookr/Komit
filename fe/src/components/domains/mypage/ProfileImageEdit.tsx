@@ -6,6 +6,7 @@ import { Button } from "@/components/buttons";
 import { Avatar, KeyValueRow } from "@/components/common";
 import { useToast } from "@/components/feedback";
 import { clientApi } from "@/lib/api/client";
+import { uploadFromBrowser } from "@/lib/upload/browserUpload";
 import { INTERNAL } from "@/lib/api/endpoints";
 import { useAuthStore } from "@/stores/auth";
 import { ApiError } from "@/types/api";
@@ -40,12 +41,13 @@ export function ProfileImageEdit({
       return;
     }
 
-    const formData = new FormData();
-    formData.append("image", file);
     setUploading(true);
 
     try {
-      const { data } = await clientApi.post<MyAccount>(INTERNAL.PROFILE_IMAGE, formData);
+      const uploaded = await uploadFromBrowser(file, "PROFILE_IMAGE");
+      const { data } = await clientApi.post<MyAccount>(INTERNAL.PROFILE_IMAGE, {
+        fileId: uploaded.fileId,
+      });
       setCurrentUrl(data.profileImageUrl);
       await loadMe();
       router.refresh();

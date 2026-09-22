@@ -114,15 +114,18 @@ class ConsultingChannelAuthorizerTest {
                 .hasFieldOrPropertyWithValue("errorCode", ConsultingErrorCode.SESSION_ENDED);
     }
 
-    /** 먼저 동의한 사람은 상대를 기다린다. (R-CON-17) */
+    /**
+     * 먼저 동의한 사람도 채널에는 들어온다. 그래야 상대가 들어온 것을 서버가 알려 줄 수 있고,
+     * 기다리는 쪽이 같은 입장 요청을 되풀이하지 않아도 된다. 실제 입장과 세션 시작은 입장
+     * API 가 막는다. (R-CON-17)
+     */
     @Test
-    void 한쪽만_동의했으면_막는다() {
+    void 한쪽만_동의했어도_채널에는_들어온다() {
         givenSession(null);
         givenParticipants(CLIENT_ID);
+        givenReservation(SCHEDULED_AT);
 
-        assertThatThrownBy(() -> authorizer.authorize(CLIENT_ID, "42"))
-                .isInstanceOf(BusinessException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ConsultingErrorCode.CONSENT_REQUIRED);
+        assertThatCode(() -> authorizer.authorize(CLIENT_ID, "42")).doesNotThrowAnyException();
     }
 
     /** 시작 10분 전부터 들어갈 수 있다. (R-CON-08) */

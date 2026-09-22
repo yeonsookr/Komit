@@ -40,7 +40,7 @@ class FileUploadServiceTest {
             "us-east-1",
             Duration.ofMinutes(5),
             Duration.ofMinutes(15),
-            10 * 1024 * 1024L);
+            30 * 1024 * 1024L);
 
     @Mock
     private FileUploadStateService stateService;

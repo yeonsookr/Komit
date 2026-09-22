@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/buttons";
 import { useToast } from "@/components/feedback";
 import { clientApi } from "@/lib/api/client";
+import { uploadFromBrowser } from "@/lib/upload/browserUpload";
 import { INTERNAL } from "@/lib/api/endpoints";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
@@ -45,11 +46,11 @@ export function SignContractButton({
   const sign = async (signature: File) => {
     setSaving(true);
 
-    const form = new FormData();
-    form.append("signature", signature);
-
     try {
-      await clientApi.post(INTERNAL.CONTRACT_SIGNATURES(contractId), form);
+      const uploaded = await uploadFromBrowser(signature, "SIGNATURE");
+      await clientApi.post(INTERNAL.CONTRACT_SIGNATURES(contractId), {
+        fileId: uploaded.fileId,
+      });
       setOpen(false);
       showToast({
         tone: "success",
