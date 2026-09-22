@@ -71,7 +71,10 @@ class LoggingAspectTest {
         assertThat(lines.get(0)).isEqualTo("SERVICE start DefaultService.getDefault(..)");
         assertThat(lines.get(1)).startsWith("SERVICE done DefaultService.getDefault(..) elapsedMs=");
         assertThat(appender.list).allSatisfy(event -> assertThat(event.getLevel()).isEqualTo(Level.DEBUG));
-        assertThat(String.join("\n", lines)).doesNotContain("7", "secret-looking-value");
+        // 소요 시간은 잴 때마다 달라집니다. 값 노출 검사에 그 숫자까지 넣으면 elapsedMs 에
+        // 7 이 섞이는 순간 터집니다. 시간만 가리고 값이 새는지 봅니다.
+        String logged = String.join("\n", lines).replaceAll("elapsedMs=[0-9]+", "elapsedMs=");
+        assertThat(logged).doesNotContain("7", "secret-looking-value");
     }
 
     @Test
