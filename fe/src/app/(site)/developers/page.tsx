@@ -10,6 +10,7 @@ import {
 } from "@/components/domains/developer";
 import { findDevelopers, getCodes } from "@/lib/api/services";
 import { parseSearchParams, toQueryString } from "@/lib/developerSearch";
+import { ROUTES } from "@/lib/routes";
 
 export const metadata: Metadata = {
   title: "개발자 찾기 | Komit",
@@ -76,7 +77,7 @@ export default async function DevelopersPage({
       {result.page < result.totalPages && (
         <div className="mt-6 flex justify-center">
           <Link
-            href={`/developers?${toQueryString({ ...params, page: result.page + 1 })}`}
+            href={`${ROUTES.developers}?${toQueryString({ ...params, page: result.page + 1 })}`}
             className="inline-flex h-10 items-center rounded-md border border-line px-5 text-sm font-semibold text-fg hover:bg-surface focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
             <span className="font-mono tabular-nums">{rest}</span>명 더 보기

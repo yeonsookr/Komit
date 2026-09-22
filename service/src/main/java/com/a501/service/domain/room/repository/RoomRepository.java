@@ -18,4 +18,6 @@ public interface RoomRepository extends JpaRepository<Room, Integer> {
     List<RoomCountView> countByProjectIds(@Param("projectIds") Collection<Integer> projectIds);
 
     List<Room> findByDeveloperIdAndDeletedFalse(Integer developerId);
+
+    List<Room> findByDeveloperIdInAndDeletedFalse(Collection<Integer> developerIds);
 }

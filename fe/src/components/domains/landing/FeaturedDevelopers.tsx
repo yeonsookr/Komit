@@ -67,7 +67,7 @@ function FeaturedDeveloperCard({ developer }: Readonly<{ developer: FeaturedDeve
   return (
     <Card as="li" padding="lg" className="flex flex-col">
       <div className="flex items-center gap-4">
-        <Avatar size="lg" name={developer.name} />
+        <Avatar size="lg" name={developer.name} src={developer.profileImageUrl ?? undefined} />
         <div className="min-w-0">
           <p className="truncate text-base font-bold text-fg">{developer.name}</p>
           {field && <p className="mt-0.5 text-[13px] text-fg-subtle">{field}</p>}

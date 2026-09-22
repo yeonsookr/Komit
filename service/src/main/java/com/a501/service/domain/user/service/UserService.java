@@ -13,6 +13,7 @@ import com.a501.service.domain.user.dto.UserLoginResult;
 import com.a501.service.domain.user.dto.UserSnapshot;
 import com.a501.service.domain.user.dto.UserProfileView;
 import java.util.Collection;
+import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
@@ -78,7 +79,34 @@ public class UserService {
         User user = userRepository.findById(userId)
                 .filter(found -> !found.isWithdrawn())
                 .orElseThrow(() -> new BusinessException(CommonErrorCode.UNAUTHORIZED));
-        return new UserProfileView(user.getId(), user.getName(), user.getProfileImageFileId(), user.getKakaoProfileImageUrl());
+        return profile(user);
+    }
+
+    /**
+     * 사용자 식별자별 공개 표시 정보. 개발자 목록·상세처럼 남의 이름과 사진을 보여줄 때 씁니다.
+     * 탈퇴한 사용자는 결과에 없습니다. 탈퇴 회원의 이름·프로필을 노출하지 않기 위해서입니다. (R-ACC-07)
+     */
+    public Map<Integer, UserProfileView> findProfiles(Collection<Integer> userIds) {
+        if (userIds == null || userIds.isEmpty()) {
+            return Map.of();
+        }
+        return userRepository.findAllById(userIds).stream()
+                .filter(user -> !user.isWithdrawn())
+                .collect(Collectors.toMap(User::getId, UserService::profile));
+    }
+
+    /**
+     * 표시 이름에 검색어가 들어 있는 살아 있는 사용자의 식별자. 개발자 찾기의 이름 검색이 개발자 조건으로 바꿔 쓰기 위해 부릅니다.
+     * 검색어는 호출하는 쪽이 다듬어 넘기며, 대소문자를 가립니다(목과 같음).
+     */
+    public List<Integer> findActiveUserIdsByName(String keyword) {
+        if (keyword == null || keyword.isEmpty()) {
+            return List.of();
+        }
+        return userRepository.findByNameContainingAndDeletedFalse(keyword).stream()
+                .filter(user -> !user.isWithdrawn())
+                .map(User::getId)
+                .toList();
     }
 
     /** 마이페이지 계정 칸에 필요한 값. 탈퇴했거나 없는 사용자는 인증 실패로 봅니다. */
@@ -102,7 +130,7 @@ public class UserService {
         User user = userRepository.findByIdForUpdate(userId)
                 .filter(found -> !found.isWithdrawn())
                 .orElseThrow(() -> new BusinessException(CommonErrorCode.UNAUTHORIZED));
-        return new UserProfileView(user.getId(), user.getName(), user.getProfileImageFileId(), user.getKakaoProfileImageUrl());
+        return profile(user);
     }
 
     /** 개발자 프로필을 처음 만들 때 개발자 역할을 더합니다. (R-ACC-08) */
@@ -192,6 +220,10 @@ public class UserService {
         userRepository.markSignupPending(userId);
         settingService.createForNewUser(userId);
         return UserLoginResult.accepted(newUser, true);
+    }
+
+    private static UserProfileView profile(User user) {
+        return new UserProfileView(user.getId(), user.getName(), user.getProfileImageFileId(), user.getKakaoProfileImageUrl());
     }
 
     private UserSnapshot snapshot(User user) {

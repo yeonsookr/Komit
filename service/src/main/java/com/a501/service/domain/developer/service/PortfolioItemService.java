@@ -4,6 +4,7 @@ import com.a501.service.common.exception.BusinessException;
 import com.a501.service.common.exception.CommonErrorCode;
 import com.a501.service.domain.developer.dto.request.WritePortfolioItemRequest;
 import com.a501.service.domain.developer.dto.response.MyPortfolioItemResponse;
+import com.a501.service.domain.developer.dto.response.PortfolioItemResponse;
 import com.a501.service.domain.developer.entity.PortfolioItem;
 import com.a501.service.domain.developer.repository.PortfolioItemRepository;
 import com.a501.service.domain.file.service.FileLookupService;
@@ -39,6 +40,17 @@ public class PortfolioItemService {
         return items.stream()
                 // 썸네일 없는 줄은 조회하지 않습니다. 불변 Map은 null 키 조회에 NPE를 던집니다.
                 .map(item -> MyPortfolioItemResponse.of(
+                        item, item.getThumbnailId() == null ? null : thumbnailUrls.get(item.getThumbnailId())))
+                .toList();
+    }
+
+    /** 남에게 보이는 프로필용 작업물. 등록순이며 썸네일은 내 프로필과 같은 임시 읽기 주소를 함께 내려줍니다. */
+    public List<PortfolioItemResponse> listPublic(Integer developerId) {
+        List<PortfolioItem> items = portfolioItemRepository.findByDeveloperIdAndDeletedFalseOrderByIdAsc(developerId);
+        Map<Integer, String> thumbnailUrls = fileLookupService.findReadUrls(
+                items.stream().map(PortfolioItem::getThumbnailId).filter(Objects::nonNull).toList());
+        return items.stream()
+                .map(item -> PortfolioItemResponse.of(
                         item, item.getThumbnailId() == null ? null : thumbnailUrls.get(item.getThumbnailId())))
                 .toList();
     }

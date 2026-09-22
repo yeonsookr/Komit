@@ -3,6 +3,10 @@ package com.a501.service.domain.developer.service;
 import com.a501.service.domain.developer.entity.DeveloperTechCategory;
 import com.a501.service.domain.developer.repository.DeveloperTechCategoryRepository;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -21,15 +25,31 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class DeveloperTechCategoryService {
+    private static final Comparator<DeveloperTechCategory> REGISTRATION_ORDER =
+            Comparator.comparing(DeveloperTechCategory::getCreatedAt).thenComparing(DeveloperTechCategory::getTechCodeId);
+
     private final DeveloperTechCategoryRepository repository;
 
     /** 살아 있는 기술 코드 식별자. 등록순입니다. */
     public List<Integer> listCodeIds(Integer developerId) {
         return repository.findByIdDeveloperId(developerId).stream()
                 .filter(row -> !row.isDeleted())
-                .sorted((a, b) -> a.getCreatedAt().compareTo(b.getCreatedAt()))
+                .sorted(REGISTRATION_ORDER)
                 .map(DeveloperTechCategory::getTechCodeId)
                 .toList();
+    }
+
+    /** 여러 개발자의 살아 있는 기술 코드 식별자. 개발자별로 등록순이며, 기술이 없는 개발자는 결과에 없습니다. */
+    public Map<Integer, List<Integer>> listCodeIdsByDevelopers(Collection<Integer> developerIds) {
+        if (developerIds == null || developerIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<Integer, List<Integer>> result = new HashMap<>();
+        repository.findByIdDeveloperIdInAndDeletedFalse(developerIds).stream()
+                .sorted(REGISTRATION_ORDER)
+                .forEach(row -> result.computeIfAbsent(row.getId().getDeveloperId(), id -> new ArrayList<>())
+                        .add(row.getTechCodeId()));
+        return result;
     }
 
     @Transactional

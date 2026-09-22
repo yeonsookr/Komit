@@ -4,6 +4,7 @@ import {
   careerStatusLabel,
   formatActiveHours,
   formatCareerPeriod,
+  formatFieldAndYears,
   formatPeriodDays,
 } from "@/lib/developerProfile";
 import { ROUTES } from "@/lib/routes";
@@ -14,10 +15,17 @@ import type { Career, DeveloperDetail, PortfolioItem, PriceCatalogItem } from "@
  * 아바타 · 이름 · 분야와 연차 · 활동 시간대 · 한 줄 소개 · 평점 · 기술 칩.
  */
 export function ProfileHeader({ developer }: Readonly<{ developer: DeveloperDetail }>) {
+  const activeHours = formatActiveHours(developer.activeFrom, developer.activeTo);
+
   return (
     <header>
       <div className="flex items-start gap-4">
-        <Avatar size="xl" name={developer.name} className="shrink-0" />
+        <Avatar
+          size="xl"
+          name={developer.name}
+          src={developer.profileImageUrl ?? undefined}
+          className="shrink-0"
+        />
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -30,11 +38,14 @@ export function ProfileHeader({ developer }: Readonly<{ developer: DeveloperDeta
           </div>
 
           <p className="mt-1 text-sm text-fg-muted">
-            {developer.field?.codeName ?? "분야 미설정"} {Math.floor(developer.yearsOfExperience)}년
+            {formatFieldAndYears(developer.field, developer.yearsOfExperience)}
           </p>
-          <p className="mt-0.5 text-sm text-fg-muted">
-            활동 시간대 <Mono>{formatActiveHours(developer.activeFrom, developer.activeTo)}</Mono>
-          </p>
+          {/* 활동 시간대는 정하지 않았으면(null) 줄을 그리지 않습니다. */}
+          {activeHours && (
+            <p className="mt-0.5 text-sm text-fg-muted">
+              활동 시간대 <Mono>{activeHours}</Mono>
+            </p>
+          )}
         </div>
       </div>
 
@@ -126,8 +137,17 @@ export function PortfolioList({ items }: Readonly<{ items: PortfolioItem[] }>) {
       {items.map((item) => (
         <li key={item.portfolioItemId}>
           <Card variant="outline" padding="none" className="h-full overflow-hidden">
-            {/* 썸네일 자리. 이미지가 붙기 전까지 비율만 잡아 둡니다. */}
-            <div className="aspect-[16/10] w-full bg-surface" aria-hidden />
+            {/* 썸네일. 서버가 준 임시 주소를 그대로 겁니다. 사진이 없으면 비율만 잡은 빈 칸입니다. */}
+            {item.thumbnailUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={item.thumbnailUrl}
+                alt={`${item.title} 썸네일`}
+                className="aspect-[16/10] w-full object-cover"
+              />
+            ) : (
+              <div className="aspect-[16/10] w-full bg-surface" aria-hidden />
+            )}
             <div className="px-3 py-3">
               <p className="truncate text-sm font-semibold text-fg">{item.title}</p>
               {item.description && (

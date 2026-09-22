@@ -1,5 +1,6 @@
 package com.a501.service.domain.user.repository;
 
+import java.util.List;
 import java.util.Optional;
 
 import com.a501.service.domain.user.entity.User;
@@ -12,6 +13,12 @@ import org.springframework.data.repository.query.Param;
 
 public interface UserRepository extends JpaRepository<User, Integer> {
     Optional<User> findByKakaoId(Long kakaoId);
+
+    /**
+     * 표시 이름에 검색어가 들어 있는 살아 있는 사용자. 개발자 찾기의 이름 검색이 씁니다.
+     * 선행 와일드카드라 인덱스를 타지 않지만, 이름 검색은 부분 일치가 계약이라 피할 수 없습니다. (BACKEND_CONVENTIONS 13.3)
+     */
+    List<User> findByNameContainingAndDeletedFalse(String keyword);
 
     /** 개발자 프로필 전체 치환을 사용자별로 직렬화하기 위한 잠금 조회. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)

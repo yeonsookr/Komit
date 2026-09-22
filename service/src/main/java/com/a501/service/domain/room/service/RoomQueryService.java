@@ -34,4 +34,13 @@ public class RoomQueryService {
                 .map(Room::getId)
                 .toList();
     }
+
+    /** 여러 개발자의 살아 있는 방. 방 식별자별로 그 방의 개발자 식별자를 돌려줍니다. 개발자별 마친 계약 수를 셀 때 씁니다. */
+    public Map<Integer, Integer> findRoomDevelopers(Collection<Integer> developerIds) {
+        if (developerIds == null || developerIds.isEmpty()) {
+            return Map.of();
+        }
+        return roomRepository.findByDeveloperIdInAndDeletedFalse(developerIds).stream()
+                .collect(Collectors.toMap(Room::getId, Room::getDeveloperId));
+    }
 }

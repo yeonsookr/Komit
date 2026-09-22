@@ -3,15 +3,19 @@ package com.a501.service.domain.developer.service;
 import com.a501.service.common.exception.BusinessException;
 import com.a501.service.common.exception.CommonErrorCode;
 import com.a501.service.domain.developer.dto.request.WriteCareerRequest;
+import com.a501.service.domain.developer.dto.response.CareerResponse;
 import com.a501.service.domain.developer.dto.response.MyCareerResponse;
 import com.a501.service.domain.developer.entity.Career;
 import com.a501.service.domain.developer.repository.CareerRepository;
 import com.a501.service.domain.file.service.FileLookupService;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -40,9 +44,24 @@ public class CareerService {
                 .toList();
     }
 
+    /** 남에게 보이는 프로필용 경력. 최근 경력이 먼저이며 증빙 파일 정보는 담지 않습니다. */
+    public List<CareerResponse> listPublic(Integer developerId) {
+        return careerRepository.findByDeveloperIdAndDeletedFalseOrderByStartDateDescIdDesc(developerId).stream()
+                .map(CareerResponse::from)
+                .toList();
+    }
+
     /** 증빙이 확인된 경력을 하나라도 가지고 있는지. */
     public boolean hasVerified(Integer developerId) {
         return careerRepository.existsByDeveloperIdAndDeletedFalseAndVerifiedTrue(developerId);
+    }
+
+    /** 증빙이 확인된 경력을 하나라도 가진 개발자 식별자. 목록 여러 명을 한 번에 봅니다. */
+    public Set<Integer> findVerifiedDeveloperIds(Collection<Integer> developerIds) {
+        if (developerIds == null || developerIds.isEmpty()) {
+            return Set.of();
+        }
+        return new HashSet<>(careerRepository.findVerifiedDeveloperIds(developerIds));
     }
 
     /**

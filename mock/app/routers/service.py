@@ -548,7 +548,17 @@ class FeaturedDeveloperResponse(BaseModel):
     profileImageFileId: int | None = Field(
         description=(
             "직접 올린 프로필 사진의 파일 식별자. 올린 사진이 없으면 null이고, "
-            "그때 화면은 이름 첫 글자를 동그라미에 넣어 보여준다."
+            "그때 화면은 `profileImageUrl`의 카카오 사진이나 이름 첫 글자를 보여준다."
+        ),
+        examples=[None],
+    )
+    profileImageUrl: str | None = Field(
+        description=(
+            "화면에 그대로 거는 프로필 사진 주소. 계정의 `profileImageUrl`과 같은 방식으로, "
+            "저장된 값이 아니라 응답을 만들 때마다 새로 만든다. 직접 올린 사진이 있으면 그 "
+            "사진의 임시 주소, 없으면 카카오 프로필 사진 주소, 둘 다 없으면 null이다.\n\n"
+            "임시 주소는 한동안만 쓸 수 있다. 만료되면 다시 받아야 하므로 저장해 두고 "
+            "오래 쓰지 않는다."
         ),
         examples=[None],
     )
@@ -795,6 +805,7 @@ FEATURED_DEVELOPERS = [
         "developerId": 3,
         "name": "이준",
         "profileImageFileId": None,
+        "profileImageUrl": None,
         "intro": "간단한 상담도 받습니다.",
         "yearsOfExperience": 5.0,
         "field": {"codeId": 42, "codeName": "DB 연결"},
@@ -809,6 +820,7 @@ FEATURED_DEVELOPERS = [
         "developerId": 7,
         "name": "한서",
         "profileImageFileId": None,
+        "profileImageUrl": None,
         "intro": "급한 장애 대응 잘합니다.",
         "yearsOfExperience": 6.0,
         "field": {"codeId": 47, "codeName": "버그 잡기"},
@@ -823,6 +835,7 @@ FEATURED_DEVELOPERS = [
         "developerId": 11,
         "name": "박선",
         "profileImageFileId": None,
+        "profileImageUrl": None,
         "intro": "상담으로 먼저 방향을 잡아드립니다.",
         "yearsOfExperience": 8.0,
         "field": {"codeId": 46, "codeName": "비용 진단"},
@@ -3061,6 +3074,16 @@ class DeveloperSummaryResponse(BaseModel):
         description="직접 올린 프로필 사진의 파일 식별자. 없으면 null이다.",
         examples=[None],
     )
+    profileImageUrl: str | None = Field(
+        description=(
+            "화면에 그대로 거는 프로필 사진 주소. 계정의 `profileImageUrl`과 같은 방식으로, "
+            "저장된 값이 아니라 응답을 만들 때마다 새로 만든다. 직접 올린 사진이 있으면 그 "
+            "사진의 임시 주소, 없으면 카카오 프로필 사진 주소, 둘 다 없으면 null이다.\n\n"
+            "임시 주소는 한동안만 쓸 수 있다. 만료되면 다시 받아야 하므로 저장해 두고 "
+            "오래 쓰지 않는다."
+        ),
+        examples=[None],
+    )
     intro: str = Field(
         description="개발자가 적은 한 줄 소개.",
         examples=["간단한 상담도 받습니다. 용어부터 풀어서 설명합니다."],
@@ -3169,6 +3192,14 @@ class PortfolioItemResponse(BaseModel):
     )
     thumbnailFileId: int | None = Field(
         description="썸네일 파일 식별자. 올리지 않았으면 null이다.",
+        examples=[None],
+    )
+    thumbnailUrl: str | None = Field(
+        description=(
+            "화면에 그대로 거는 사진 주소. 내 프로필의 `thumbnailUrl`과 같은 방식으로, "
+            "저장된 값이 아니라 응답을 만들 때마다 새로 만드는 임시 주소다. 사진을 "
+            "올리지 않았으면 null이고, 화면은 그 자리에 빈 칸을 둔다."
+        ),
         examples=[None],
     )
 
@@ -3734,6 +3765,7 @@ DEVELOPERS = [
         "developerId": 3,
         "name": "이준",
         "profileImageFileId": None,
+        "profileImageUrl": None,
         "intro": "간단한 상담도 받습니다. 용어부터 풀어서 설명합니다.",
         "field": {"codeId": 42, "codeName": "DB 연결"},
         "yearsOfExperience": 5.0,
@@ -3751,6 +3783,7 @@ DEVELOPERS = [
         "developerId": 5,
         "name": "정하",
         "profileImageFileId": None,
+        "profileImageUrl": None,
         "intro": "짧게 방향만 잡아드려요.",
         "field": {"codeId": 41, "codeName": "인터넷에 올리기"},
         "yearsOfExperience": 4.0,
@@ -3768,6 +3801,7 @@ DEVELOPERS = [
         "developerId": 7,
         "name": "한서",
         "profileImageFileId": None,
+        "profileImageUrl": None,
         "intro": "급한 장애 대응 잘합니다. 새벽도 괜찮습니다.",
         "field": {"codeId": 47, "codeName": "버그 잡기"},
         "yearsOfExperience": 6.0,
@@ -3883,6 +3917,7 @@ DEVELOPER_DETAIL = {
             "description": None,
             "linkUrl": "https://example.com",
             "thumbnailFileId": None,
+            "thumbnailUrl": None,
         }
     ],
 }
