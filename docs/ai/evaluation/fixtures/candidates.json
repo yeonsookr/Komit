@@ -58,9 +58,15 @@
       },
       "input": {
         "utterances": [
-          { "utteranceIndex": 0, "text": "관리자 화면 접근 오류를 확인했어요." },
-          { "utteranceIndex": 1, "text": "로그인하지 않으면 관리자 화면을 막는 것으로 정하죠." },
-          { "utteranceIndex": 2, "text": "제가 재현 절차를 정리해서 보내겠습니다." }
+          { "utteranceIndex": 0, "speaker": "CLIENT",
+          "rawText": "관리자 화면 접근 오류를 확인했어요.",
+          "normalizedText": "관리자 화면 접근 오류를 확인했어요." },
+          { "utteranceIndex": 1, "speaker": "DEVELOPER",
+          "rawText": "로그인하지 않으면 관리자 화면을 막는 것으로 정하죠.",
+          "normalizedText": "로그인하지 않으면 관리자 화면을 막는 것으로 정하죠." },
+          { "utteranceIndex": 2, "speaker": "DEVELOPER",
+          "rawText": "제가 재현 절차를 정리해서 보내겠습니다.",
+          "normalizedText": "제가 재현 절차를 정리해서 보내겠습니다." }
         ]
       },
       "expected": {
@@ -74,7 +80,7 @@
           { "title": "재현 절차 전달", "detail": null, "evidenceUtteranceIndexes": [2], "reviewRequired": false }
         ],
         "changes": [],
-        "reviewNote": "분류와 근거 의미의 적합성은 승인 전 검토한다."
+        "reviewNote": "분류와 근거 의미의 적합성은 승인 전 검토한다. 화자(speaker)는 252에서 합성 사례에 배정한 값이므로 승인 시 함께 검토한다."
       }
     }
   ]
