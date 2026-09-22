@@ -236,10 +236,8 @@ export function SessionStage({
   /*
     세션이 끝났다는 서버 알림을 받는 자리입니다.
 
-    **누가 눌렀든 양쪽이 같은 쪽지를 받습니다.** 끝낸 사람도 받으므로 마감과 업로드는 여기
-    한 곳에서만 합니다 — 종료 요청 쪽에서도 하면 같은 녹음을 두 번 올리게 됩니다.
-
-    **한 번만 처리합니다.** 쪽지는 회선이 튀어 두 번 올 수 있습니다.
+    **누가 눌렀든 양쪽이 같은 쪽지를 받습니다.** 끝낸 사람 쪽은 자기 응답으로 이미
+    마감했고, 쪽지도 회선이 튀면 두 번 올 수 있습니다. `finishedRef` 로 한 번만 돕니다.
   */
   const finishRef = React.useRef<() => void>(() => {});
   const finishedRef = React.useRef(false);
@@ -375,11 +373,16 @@ export function SessionStage({
     [sessionId, showToast],
   );
 
-  /*
-    종료 쪽지를 받았을 때 하는 일. 녹음을 마감해 올리고 방으로 돌아갑니다.
+  const leave = React.useCallback(() => {
+    router.push(ROUTES.room(roomId));
+    router.refresh();
+  }, [roomId, router]);
 
-    올리지 못해도 방을 떠나는 것을 막지 않습니다. 붙잡아 두면 나갈 방법이 없어집니다.
-    대신 파일은 쥐고 있다가 화면에서 다시 시도할 수 있게 합니다.
+  /*
+    세션을 마칠 때 하는 일. 녹음을 마감해 올리고 방으로 돌아갑니다.
+
+    **올리지 못했으면 나가지 않습니다.** 나가면 화면이 사라져 쥐고 있던 파일도 함께
+    사라지고, 조각은 이미 묶여 다시 만들 수 없습니다. 남아 있어야 다시 시도할 수 있습니다.
   */
   const finish = React.useCallback(async () => {
     if (finishedRef.current) return;
@@ -390,11 +393,10 @@ export function SessionStage({
     call.hangUp();
 
     const file = await recorder.stop();
-    if (file) await uploadRecording(file);
+    if (file && !(await uploadRecording(file))) return;
 
-    router.push(ROUTES.room(roomId));
-    router.refresh();
-  }, [call, recorder, roomId, router, uploadRecording]);
+    leave();
+  }, [call, leave, recorder, uploadRecording]);
 
   React.useEffect(() => {
     finishRef.current = () => void finish();
@@ -407,12 +409,18 @@ export function SessionStage({
     try {
       await clientApi.post(INTERNAL.SESSION_END(sessionId));
       setAsking(false);
-      // 서버가 양쪽에 종료를 알리면 그때 각자 마감하고 올립니다. 여기서는 기다리지 않습니다.
       showToast({
         tone: "success",
         title: "세션을 마쳤습니다",
         description: "녹음을 바탕으로 요약을 만들고 있습니다.",
       });
+
+      /*
+        쪽지를 기다리지 않고 여기서 바로 마감합니다. 쪽지는 상대를 위한 것이고,
+        중계가 막히면 오지 않을 수도 있습니다. 그때 기다리기만 하면 끝낸 사람의 녹음이
+        영영 올라가지 않습니다. 쪽지가 뒤이어 와도 `finish` 는 한 번만 돕니다.
+      */
+      await finish();
     } catch (error) {
       showToast({
         tone: "danger",
@@ -509,9 +517,6 @@ export function SessionStage({
         </ChatRoom>
       </div>
 
-      {/*
-        올리지 못한 녹음. 창을 닫으면 사라지므로 떠나기 전에 다시 해 볼 수 있게 남겨 둡니다.
-      */}
       {pendingRecording && (
         <Callout
           className="mt-4"
@@ -521,7 +526,11 @@ export function SessionStage({
             <Button
               variant="outline"
               disabled={uploading}
-              onClick={() => void uploadRecording(pendingRecording)}
+              onClick={() =>
+                void uploadRecording(pendingRecording).then((ok) => {
+                  if (ok) leave();
+                })
+              }
             >
               {uploading ? "올리는 중" : "다시 시도"}
             </Button>
