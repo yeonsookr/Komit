@@ -82,7 +82,7 @@ public class ContractDetailService {
                 roomQueryService
                         .findParties(contract.getRoomId())
                         .orElseThrow(() -> new BusinessException(ContractErrorCode.CONTRACT_NOT_FOUND));
-        if (!parties.clientId().equals(userId) && !parties.developerId().equals(userId)) {
+        if (!parties.clientId().equals(userId) && !parties.developerUserId().equals(userId)) {
             throw new BusinessException(ContractErrorCode.CONTRACT_NOT_FOUND);
         }
 

@@ -63,6 +63,6 @@ public class ContractQueryService {
 
     private ContractParties toParties(Contract contract, RoomParties parties) {
         return new ContractParties(
-                contract.getId(), parties.clientId(), parties.developerId());
+                contract.getId(), parties.clientId(), parties.developerUserId());
     }
 }

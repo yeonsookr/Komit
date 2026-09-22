@@ -76,7 +76,7 @@ public class RoomService {
     private String counterpartName(RoomParties parties, Integer userId) {
         Integer counterpartId =
                 Objects.equals(parties.clientId(), userId)
-                        ? parties.developerId()
+                        ? parties.developerUserId()
                         : parties.clientId();
         return userQueryService
                 .findName(counterpartId)
