@@ -62,6 +62,15 @@ public class ContractQueryService {
                 .flatMap(this::toParties);
     }
 
+    /**
+     * 이 방에 달린 계약. 아직 계약서를 쓰지 않았으면 비어 있습니다.
+     *
+     * @param roomId 방 id
+     */
+    public Optional<Integer> findContractIdByRoomId(Integer roomId) {
+        return contractRepository.findByRoomIdAndDeletedFalse(roomId).map(Contract::getId);
+    }
+
     /** 계약 식별자별 계약 유형 코드값({@code CONSULTING}·{@code DEVELOPMENT}). 없는 계약은 결과에 빠집니다. */
     public Map<Integer, String> findContractTypes(Collection<Integer> contractIds) {
         if (contractIds == null || contractIds.isEmpty()) {
@@ -123,6 +132,6 @@ public class ContractQueryService {
 
     private ContractParties toParties(Contract contract, RoomParties parties) {
         return new ContractParties(
-                contract.getId(), parties.clientId(), parties.developerId());
+                contract.getId(), parties.clientId(), parties.developerUserId());
     }
 }
