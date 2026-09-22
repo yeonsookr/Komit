@@ -81,6 +81,13 @@ public class SurveyService {
         });
     }
 
+    /** 끝내지 않은 설문. 회차가 지금 것인지는 부르는 쪽이 가린다. */
+    public List<Survey> findUnfinished(List<Integer> diagnosisIds) {
+        return diagnosisIds.isEmpty()
+                ? List.of()
+                : surveyRepository.findByDiagnosisIdInAndDoneFalseAndDeletedFalse(diagnosisIds);
+    }
+
     public SurveyResponse getSurvey(Integer diagnosisId, Short diagnosisVersion) {
         return toResponse(load(diagnosisId, diagnosisVersion));
     }

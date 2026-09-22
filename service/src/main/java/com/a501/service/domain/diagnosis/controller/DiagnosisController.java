@@ -2,13 +2,17 @@ package com.a501.service.domain.diagnosis.controller;
 
 import com.a501.service.common.exception.ErrorResponse;
 import com.a501.service.common.security.AuthenticatedUser;
+import com.a501.service.domain.diagnosis.dto.request.CreateIssueRequest;
 import com.a501.service.domain.diagnosis.dto.request.SaveSurveyAnswersRequest;
+import com.a501.service.domain.diagnosis.dto.request.WriteRequirementsRequest;
 import com.a501.service.domain.diagnosis.dto.request.StartDiagnosisRequest;
 import com.a501.service.domain.diagnosis.dto.response.DiagnosisResponse;
 import com.a501.service.domain.diagnosis.IssueStatus;
 import com.a501.service.domain.diagnosis.dto.response.InspectionResponse;
 import com.a501.service.domain.diagnosis.dto.response.IssueListResponse;
+import com.a501.service.domain.diagnosis.dto.response.IssueResponse;
 import com.a501.service.domain.diagnosis.dto.response.SurveyResponse;
+import com.a501.service.domain.diagnosis.dto.response.UnfinishedSurveyListResponse;
 import com.a501.service.domain.diagnosis.service.DiagnosisService;
 import com.a501.service.domain.diagnosis.service.ScanFileWriter;
 import io.swagger.v3.oas.annotations.Operation;
@@ -33,6 +37,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -78,6 +83,27 @@ public class DiagnosisController {
             @Valid @RequestBody StartDiagnosisRequest request,
             @AuthenticationPrincipal AuthenticatedUser user) {
         return diagnosisService.start(request, user.userId());
+    }
+
+    @Operation(
+            summary = "끝내지 않은 설문 목록",
+            description = "**화면 — `2_설문1` › 진행 중인 설문**\n\n"
+                    + "설문을 끝내지 않고 나간 진단을 돌려준다. 다시 들어온 사람이 처음부터 다시 하지 않고 이어서 하게 하려는 것이다.\n\n"
+                    + "**끝냈는지는 설문의 완료 여부로 본다.** 설문4까지 마치고 완료를 부르면 그 설문은 여기서 빠진다. 검사를 돌렸는지와는 무관하다 — 설문3까지 하고 나간 사람도 남는다.\n\n"
+                    + "내 프로젝트의 것만 내려간다. 마지막으로 저장한 시각의 내림차순이다.\n\n"
+                    + "- **200**: 목록을 내줬을 때. 없으면 `content`가 빈 배열이다\n"
+                    + "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+                    + "- **500 / INTERNAL_ERROR**: 목록을 읽지 못했을 때",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping
+    UnfinishedSurveyListResponse getUnfinishedSurveys(
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return diagnosisService.getUnfinishedSurveys(user.userId());
     }
 
     @Operation(
@@ -135,6 +161,65 @@ public class DiagnosisController {
             @AuthenticationPrincipal AuthenticatedUser user) {
         return diagnosisService.getIssues(
                 diagnosisId, user.userId(), status == null ? null : status.name(), isInput, page, size);
+    }
+
+    @Operation(
+            summary = "요구사항 직접 추가",
+            description = "**화면 — `2_요구사항선택` › + 요구사항 추가**\n\n"
+                    + "검사가 찾지 못했지만 고치고 싶은 것을 사용자가 직접 적어 넣는다. 검사에서 나온 결함과 같은 목록에 미해결로 들어가고, 요청서에도 함께 담긴다.\n\n"
+                    + "- **201**: 추가했을 때. 위치는 코드에서 찾은 값이 아니므로 null이다\n"
+                    + "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+                    + "- **404 / DIAGNOSIS_NOT_FOUND**: 없는 진단이거나 남의 진단일 때\n"
+                    + "- **409 / INSPECTION_NOT_DONE**: 아직 검사 결과를 올리지 않아 요구사항을 붙일 검사가 없을 때\n"
+                    + "- **422 / INVALID_REQUEST**: `title`이 비었거나 `severity`가 허용된 값이 아닐 때\n"
+                    + "- **500 / INTERNAL_ERROR**: 추가하지 못했을 때",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "요구사항 추가"),
+            @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "진단 없음", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "409", description = "검사 전", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "422", description = "요청 스키마 유효성 검증 실패", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @ResponseStatus(HttpStatus.CREATED)
+    @PostMapping("/{diagnosisId}/issues")
+    IssueResponse addIssue(
+            @Parameter(description = "진단 식별자.", example = "31") @PathVariable Integer diagnosisId,
+            @Valid @RequestBody CreateIssueRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return diagnosisService.addIssue(diagnosisId, user.userId(), request);
+    }
+
+    @Operation(
+            summary = "요청서 저장",
+            description = "**화면 — `2_의뢰인_요청서수정` › 저장하기**\n\n"
+                    + "요청서를 통째로 받아 **보낸 내용으로 맞춘다.** 화면의 저장 버튼 하나가 이 요청 하나를 보낸다.\n\n"
+                    + "보낸 목록에 없는 기존 요구사항은 요청서에서 뺀 것으로 보고, 요구사항 안에서 보낸 목록에 없는 확인 문장도 지운 것으로 본다. 새로 적는 줄은 식별자를 null로 보내면 서버가 만들어 응답에 담아 준다.\n\n"
+                    + "**보내는 것이 아니라 저장하는 것이다.** 요청서는 방에 걸려 있어 개발자가 언제든 같은 것을 본다.\n\n"
+                    + "**이미 계약에 들어간 요구사항은 뺄 수 없다.** 계약서에 적힌 작업이 사라지면 안 되기 때문이다.\n\n"
+                    + "- **200**: 저장했을 때. 저장된 뒤의 요구사항 전부를 준다\n"
+                    + "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+                    + "- **404 / DIAGNOSIS_NOT_FOUND**: 없는 진단이거나 남의 진단일 때\n"
+                    + "- **409 / ISSUE_STATUS_CONFLICT**: 계약에 포함된 요구사항을 빼려 할 때\n"
+                    + "- **409 / INSPECTION_NOT_DONE**: 아직 검사 결과를 올리지 않았을 때\n"
+                    + "- **422 / INVALID_REQUEST**: 요구사항 문장이 비었거나 `severity`가 허용된 값이 아닐 때\n"
+                    + "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "저장 성공"),
+            @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "진단 없음", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "409", description = "뺄 수 없는 요구사항", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "422", description = "요청 스키마 유효성 검증 실패", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PutMapping("/{diagnosisId}/requirements")
+    IssueListResponse writeRequirements(
+            @Parameter(description = "진단 식별자.", example = "31") @PathVariable Integer diagnosisId,
+            @Valid @RequestBody WriteRequirementsRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return diagnosisService.writeRequirements(diagnosisId, user.userId(), request.requirements());
     }
 
     @Operation(

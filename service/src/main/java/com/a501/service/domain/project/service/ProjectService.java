@@ -39,6 +39,13 @@ public class ProjectService {
                         ProjectSummary.of(project, projectTechCategoryRepository.findTechCategories(project.getId())));
     }
 
+    /** 의뢰인이 가진 프로젝트. 이름만 쓰는 목록 화면을 위해 기술 목록은 비워 둔다. */
+    public List<ProjectSummary> findAllOwned(Integer clientId) {
+        return projectRepository.findByClientIdAndDeletedFalseOrderByIdDesc(clientId).stream()
+                .map(project -> ProjectSummary.of(project, List.of()))
+                .toList();
+    }
+
     /**
      * 검사에서 확인한 기술로 갈아 끼운다. 코드북에 없는 이름은 담을 자리가 없어 건너뛴다. 검사 도구는 기술 이름을 자유 문자열로 보내므로 시드에 없는 이름이 언제든 올 수 있다.
      */

@@ -27,6 +27,11 @@ public enum DiagnosisErrorCode implements ErrorCode {
             "검사 방법이 업데이트되었습니다. 새 검사 파일을 내려받아 다시 검사해 주세요."),
     INSPECTION_ALREADY_RUNNING(
             HttpStatus.CONFLICT, "INSPECTION_ALREADY_RUNNING", "이미 검사가 진행 중입니다."),
+    /**
+     * 검사 전에는 요구사항을 붙일 검사가 없다. 화면은 검사 뒤에만 이 자리에 오므로 정상 흐름에서는 나오지 않는다. 목 명세에 이 경우가 없어 여기서 정한 코드다.
+     */
+    INSPECTION_NOT_DONE(
+            HttpStatus.CONFLICT, "INSPECTION_NOT_DONE", "검사 결과를 먼저 올려 주세요."),
     /** 답하지 않은 문항이 남았거나 이미 끝낸 설문이다. 둘 다 더 진행할 수 없다는 같은 뜻이라 한 코드로 답한다. */
     SURVEY_NOT_COMPLETABLE(
             HttpStatus.CONFLICT, "SURVEY_NOT_COMPLETABLE", "아직 끝내지 않은 문항이 있습니다."),
