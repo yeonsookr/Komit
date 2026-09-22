@@ -133,11 +133,16 @@
         "utterances": {
           "type": "array",
           "items": {
-            "type": "object", "required": ["utteranceIndex", "text"],
+            "type": "object",
+            "required": ["utteranceIndex", "speaker", "rawText", "normalizedText"],
             "additionalProperties": false,
             "properties": {
               "utteranceIndex": { "type": "integer", "minimum": 0 },
-              "text": { "type": "string", "minLength": 1 }
+              "speaker": { "enum": ["CLIENT", "DEVELOPER"] },
+              "startMs": { "type": "integer", "minimum": 0 },
+              "endMs": { "type": "integer", "minimum": 0 },
+              "rawText": { "type": "string", "minLength": 1 },
+              "normalizedText": { "type": "string", "minLength": 1 }
             }
           }
         }
