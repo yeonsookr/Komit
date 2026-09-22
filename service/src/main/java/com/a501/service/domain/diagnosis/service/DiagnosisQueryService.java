@@ -1,12 +1,16 @@
 package com.a501.service.domain.diagnosis.service;
 
 import com.a501.service.domain.diagnosis.dto.IssueBrief;
+import com.a501.service.domain.diagnosis.dto.RequestSummary;
 import com.a501.service.domain.diagnosis.dto.response.QaCriterionResponse;
+import com.a501.service.domain.diagnosis.entity.Diagnosis;
 import com.a501.service.domain.diagnosis.entity.Issue;
+import com.a501.service.domain.diagnosis.repository.DiagnosisRepository;
 import com.a501.service.domain.diagnosis.repository.IssueRepository;
 import com.a501.service.domain.diagnosis.repository.QaCriterionRepository;
 import java.util.Collection;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -15,13 +19,15 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 다른 도메인이 요구사항과 확인 문장을 물어볼 때 쓰는 조회 창구.
  *
- * <p>계약서는 작업 이름·위치와 확인 문장을 보여 주는데 그 값들이 진단 쪽에 있습니다. 묻는 쪽이
- * 진단 엔티티를 직접 읽지 않도록 여기서 표시용 값만 넘깁니다. (BACKEND_CONVENTIONS 7.1)
+ * <p>계약서는 작업 이름·위치와 확인 문장을, 방은 요청서 요약을 보여 주는데 그 값들이 진단 쪽에
+ * 있습니다. 묻는 쪽이 진단 엔티티를 직접 읽지 않도록 여기서 표시용 값만 넘깁니다.
+ * (BACKEND_CONVENTIONS 7.1)
  */
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class DiagnosisQueryService {
+    private final DiagnosisRepository diagnosisRepository;
     private final IssueRepository issueRepository;
     private final QaCriterionRepository qaCriterionRepository;
 
@@ -52,6 +58,23 @@ public class DiagnosisQueryService {
         return qaCriterionRepository.findAllByIdInAndDeletedFalse(qaCriterionIds).stream()
                 .map(QaCriterionResponse::from)
                 .collect(Collectors.toMap(QaCriterionResponse::qaCriterionId, response -> response));
+    }
+
+    /**
+     * 이 프로젝트의 요청서 요약. 아직 진단이 없으면 비어 있습니다.
+     *
+     * @param projectId 프로젝트 id
+     * @return 요청서 요약
+     */
+    public Optional<RequestSummary> findRequestSummary(Integer projectId) {
+        return diagnosisRepository.findByProjectIdAndDeletedFalse(projectId).map(this::toSummary);
+    }
+
+    private RequestSummary toSummary(Diagnosis diagnosis) {
+        return new RequestSummary(
+                diagnosis.getId(),
+                issueRepository.countInRequest(diagnosis.getId(), diagnosis.getVersion()),
+                diagnosis.getUpdatedAt());
     }
 
     private IssueBrief toBrief(Issue issue) {

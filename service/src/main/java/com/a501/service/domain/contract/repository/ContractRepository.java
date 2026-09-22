@@ -6,4 +6,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 
 public interface ContractRepository extends JpaRepository<Contract, Integer> {
     Optional<Contract> findByIdAndDeletedFalse(Integer id);
+
+    Optional<Contract> findByRoomIdAndDeletedFalse(Integer roomId);
 }

@@ -31,4 +31,13 @@ public class ProjectQueryService {
     public Optional<Integer> findClientId(Integer projectId) {
         return projectRepository.findByIdAndDeletedFalse(projectId).map(Project::getClientId);
     }
+
+    /**
+     * 화면에 보이는 프로젝트 이름.
+     *
+     * @param projectId 프로젝트 id
+     */
+    public Optional<String> findName(Integer projectId) {
+        return projectRepository.findByIdAndDeletedFalse(projectId).map(Project::getName);
+    }
 }

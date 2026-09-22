@@ -46,6 +46,15 @@ public class ContractQueryService {
                 .flatMap(this::toParties);
     }
 
+    /**
+     * 이 방에 달린 계약. 아직 계약서를 쓰지 않았으면 비어 있습니다.
+     *
+     * @param roomId 방 id
+     */
+    public Optional<Integer> findContractIdByRoomId(Integer roomId) {
+        return contractRepository.findByRoomIdAndDeletedFalse(roomId).map(Contract::getId);
+    }
+
     private Optional<ContractParties> toParties(Contract contract) {
         return roomQueryService
                 .findParties(contract.getRoomId())

@@ -1,5 +1,9 @@
 package com.a501.service.domain.user.service;
 
+import com.a501.service.domain.user.entity.User;
+import com.a501.service.domain.user.repository.UserRepository;
+import java.util.Optional;
+
 import com.a501.service.domain.developer.service.DeveloperLookupService;
 import com.a501.service.domain.notification.service.NotificationQueryService;
 import com.a501.service.domain.user.dto.UserSnapshot;
@@ -12,9 +16,22 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class UserQueryService {
+    private final UserRepository userRepository;
     private final UserService userService;
     private final DeveloperLookupService developerLookupService;
     private final NotificationQueryService notificationQueryService;
+
+    /**
+     * 화면에 보이는 이름.
+     *
+     * <p>탈퇴한 사람도 이름을 돌려줍니다. 방 머리처럼 지난 상대를 가리키는 자리가 있어서,
+     * 여기서 막으면 그 방이 통째로 열리지 않습니다. 없는 사용자만 비어 있습니다.
+     *
+     * @param userId 사용자 id
+     */
+    public Optional<String> findName(Integer userId) {
+        return userRepository.findById(userId).map(User::getName);
+    }
 
     public MeResponse getMe(Integer userId) {
         UserSnapshot user = userService.getActiveUser(userId);

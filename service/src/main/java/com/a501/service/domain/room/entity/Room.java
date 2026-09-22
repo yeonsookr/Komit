@@ -52,4 +52,13 @@ public class Room extends SoftDeleteEntity {
 
     @Column(name = "recommendation_item_id")
     private Integer recommendationItemId;
+
+    /**
+     * 갈래를 정해 새로 열린 방. 상담방에서만 찹니다.
+     *
+     * <p>방의 용도는 따로 담지 않습니다. 가리키는 방의 {@code type} 을 읽으면 되고, 그래야
+     * 그 방이 지워졌을 때 식별자와 용도가 함께 비어 화면의 전제가 깨지지 않습니다.
+     */
+    @Column(name = "converted_room_id")
+    private Integer convertedRoomId;
 }
