@@ -83,6 +83,23 @@ spec:
                 secretKeyRef:
                   name: service-redis-auth
                   key: password
+            # MongoDB는 service 전용 readWrite 계정으로 접속합니다. root 계정은 DB 초기화에만 사용합니다.
+            - name: MONGODB_HOST
+              value: service-mongodb
+            - name: MONGODB_PORT
+              value: "27017"
+            - name: MONGODB_DATABASE
+              value: service
+            - name: MONGODB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: service-mongodb-auth
+                  key: username
+            - name: MONGODB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: service-mongodb-auth
+                  key: password
             - name: POD_NAME
               valueFrom:
                 fieldRef:

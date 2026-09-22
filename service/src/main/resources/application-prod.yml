@@ -3,6 +3,12 @@ spring:
     url: ${DB_URL}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
+  mongodb:
+    host: ${MONGODB_HOST}
+    port: ${MONGODB_PORT:27017}
+    database: ${MONGODB_DATABASE:service}
+    username: ${MONGODB_USERNAME}
+    password: ${MONGODB_PASSWORD}
   data:
     redis:
       # Sentinel에 현재 Primary 주소를 물어 접속합니다. failover 후에도 Lettuce가 새 Primary로 다시 붙습니다.

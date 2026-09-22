@@ -12,6 +12,7 @@ import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.mongodb.MongoDBContainer;
 
 @Testcontainers
 // 진짜 서블릿 컨테이너를 띄운다. MOCK 으로 두면 ServerContainer 가 없어 WebSocket 버퍼 설정
@@ -26,6 +27,10 @@ class ServiceApplicationTests {
     @Container
     @ServiceConnection(name = "redis")
     static GenericContainer<?> redis = new GenericContainer<>("redis:8-alpine").withExposedPorts(6379);
+
+    @Container
+    @ServiceConnection
+    static MongoDBContainer mongodb = new MongoDBContainer("mongo:8.0.30-noble");
 
     @Autowired
     JdbcClient jdbcClient;
