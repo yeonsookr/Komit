@@ -18,6 +18,7 @@ import com.a501.service.domain.consulting.repository.ParticipationRecordReposito
 import com.a501.service.domain.consulting.repository.ReservationRepository;
 import com.a501.service.domain.contract.dto.ContractParties;
 import com.a501.service.domain.contract.service.ContractQueryService;
+import com.a501.service.domain.file.service.FileLookupService;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -50,6 +51,7 @@ class ConsultingSessionServiceTest {
             mock(ParticipationRecordRepository.class);
     private final ReservationRepository reservationRepository = mock(ReservationRepository.class);
     private final ContractQueryService contractQueryService = mock(ContractQueryService.class);
+    private final FileLookupService fileLookupService = mock(FileLookupService.class);
 
     private final ConsultingSessionService service =
             new ConsultingSessionService(
@@ -57,6 +59,7 @@ class ConsultingSessionServiceTest {
                     participationRepository,
                     reservationRepository,
                     contractQueryService,
+                    fileLookupService,
                     Clock.fixed(NOW, ZoneOffset.UTC));
 
     @BeforeEach
@@ -190,6 +193,61 @@ class ConsultingSessionServiceTest {
         var response = service.end(CLIENT_ID, SESSION_ID);
 
         assertThat(response.endedAt()).isEqualTo(NOW_AT.atOffset(ZoneOffset.UTC));
+    }
+
+    @Test
+    void 녹음은_세션을_마친_뒤에만_받는다() {
+        givenSession(null);
+        givenParticipants(CLIENT_ID, DEVELOPER_ID);
+
+        assertThatThrownBy(() -> service.attachRecording(CLIENT_ID, SESSION_ID, 612L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ConsultingErrorCode.SESSION_NOT_ENDED);
+    }
+
+    @Test
+    void 화자는_요청이_아니라_인증_정보로_정한다() {
+        givenSession(NOW_AT);
+        givenParticipants(CLIENT_ID, DEVELOPER_ID);
+
+        assertThat(service.attachRecording(CLIENT_ID, SESSION_ID, 612L).speaker()).isEqualTo("CLIENT");
+        assertThat(service.attachRecording(DEVELOPER_ID, SESSION_ID, 613L).speaker())
+                .isEqualTo("DEVELOPER");
+    }
+
+    /** 올리고 나서 응답을 받지 못해 다시 보내는 일이 있다. 그 되풀이를 실패로 돌리지 않는다. */
+    @Test
+    void 같은_파일을_다시_보내면_붙어_있는_것을_그대로_돌려준다() {
+        givenSession(NOW_AT);
+        givenParticipants(CLIENT_ID, DEVELOPER_ID);
+
+        var first = service.attachRecording(CLIENT_ID, SESSION_ID, 612L);
+        var again = service.attachRecording(CLIENT_ID, SESSION_ID, 612L);
+
+        assertThat(again.fileId()).isEqualTo(first.fileId());
+        assertThat(again.recordingId()).isEqualTo(first.recordingId());
+    }
+
+    @Test
+    void 다른_파일로_바꾸려는_요청은_거절한다() {
+        givenSession(NOW_AT);
+        givenParticipants(CLIENT_ID, DEVELOPER_ID);
+        service.attachRecording(CLIENT_ID, SESSION_ID, 612L);
+
+        assertThatThrownBy(() -> service.attachRecording(CLIENT_ID, SESSION_ID, 999L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue(
+                        "errorCode", ConsultingErrorCode.RECORDING_ALREADY_UPLOADED);
+    }
+
+    @Test
+    void 당사자가_아니면_녹음도_붙일_수_없다() {
+        givenSession(NOW_AT);
+        givenParticipants(CLIENT_ID, DEVELOPER_ID);
+
+        assertThatThrownBy(() -> service.attachRecording(OUTSIDER_ID, SESSION_ID, 612L))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ConsultingErrorCode.SESSION_NOT_FOUND);
     }
 
     private void givenSession(LocalDateTime endedAt) {

@@ -4,6 +4,7 @@ import com.a501.service.common.exception.BusinessException;
 import com.a501.service.domain.consulting.ConsultingEntryPolicy;
 import com.a501.service.domain.consulting.ConsultingErrorCode;
 import com.a501.service.domain.consulting.dto.response.ConsultingSessionResponse;
+import com.a501.service.domain.consulting.dto.response.SessionRecordingResponse;
 import com.a501.service.domain.consulting.entity.ConsultingSession;
 import com.a501.service.domain.consulting.entity.ParticipationRecord;
 import com.a501.service.domain.consulting.entity.Reservation;
@@ -12,9 +13,12 @@ import com.a501.service.domain.consulting.repository.ParticipationRecordReposito
 import com.a501.service.domain.consulting.repository.ReservationRepository;
 import com.a501.service.domain.contract.dto.ContractParties;
 import com.a501.service.domain.contract.service.ContractQueryService;
+import com.a501.service.domain.file.service.FileLookupService;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -46,6 +50,7 @@ public class ConsultingSessionService {
     private final ParticipationRecordRepository participationRepository;
     private final ReservationRepository reservationRepository;
     private final ContractQueryService contractQueryService;
+    private final FileLookupService fileLookupService;
     private final Clock clock;
 
     @Autowired
@@ -53,12 +58,14 @@ public class ConsultingSessionService {
             ConsultingSessionRepository sessionRepository,
             ParticipationRecordRepository participationRepository,
             ReservationRepository reservationRepository,
-            ContractQueryService contractQueryService) {
+            ContractQueryService contractQueryService,
+            FileLookupService fileLookupService) {
         this(
                 sessionRepository,
                 participationRepository,
                 reservationRepository,
                 contractQueryService,
+                fileLookupService,
                 Clock.systemUTC());
     }
 
@@ -138,6 +145,62 @@ public class ConsultingSessionService {
 
         session.completeConsulting(LocalDateTime.now(clock));
         return response(session, parties, findReservation(sessionId));
+    }
+
+    /**
+     * 자기 마이크로 담은 녹음을 세션에 붙입니다.
+     *
+     * <p><b>세션을 마친 뒤에만 받습니다.</b> 끝나기 전에는 몇 분짜리인지도 정해지지 않았습니다.
+     *
+     * <p>참가자당 한 건입니다 (R-CON-14). <b>같은 파일을 다시 보내면 붙어 있는 것을 그대로
+     * 돌려줍니다</b> — 올리고 나서 응답을 받지 못해 다시 보내는 일이 있어, 그 되풀이를 실패로
+     * 돌리면 올라간 녹음을 두고도 화면이 실패를 알립니다. 다른 파일로 바꾸려는 요청만
+     * 거절합니다.
+     *
+     * @param userId 인증된 사용자
+     * @param sessionId 세션 id
+     * @param fileId 올리기를 마친 파일
+     * @return 붙은 녹음
+     * @throws BusinessException {@link ConsultingErrorCode#SESSION_NOT_FOUND} — 없거나 지워진
+     *     세션, 또는 요청자가 당사자가 아닌 경우
+     * @throws BusinessException {@link ConsultingErrorCode#SESSION_NOT_ENDED} — 아직 끝나지
+     *     않은 세션인 경우
+     * @throws BusinessException {@link ConsultingErrorCode#RECORDING_ALREADY_UPLOADED} — 이미
+     *     다른 녹음이 붙어 있는 경우
+     */
+    @Transactional
+    public SessionRecordingResponse attachRecording(
+            Integer userId, Integer sessionId, Long fileId) {
+        ConsultingSession session = findSession(sessionId);
+        ContractParties parties = findParties(session, userId);
+        if (!session.isEnded()) {
+            throw new BusinessException(ConsultingErrorCode.SESSION_NOT_ENDED);
+        }
+
+        // 올리기를 마친 그 사람의 파일인지는 파일 도메인이 봅니다. (BACKEND_CONVENTIONS 7.1)
+        fileLookupService.assertAttachable(userId, List.of(Math.toIntExact(fileId)));
+
+        ParticipationRecord record =
+                participationRepository
+                        .findByConsultingSessionIdAndUserIdAndDeletedFalse(sessionId, userId)
+                        .orElseThrow(
+                                () -> new BusinessException(ConsultingErrorCode.SESSION_NOT_FOUND));
+        Long attached = record.getFileId();
+        if (attached != null && !attached.equals(fileId)) {
+            throw new BusinessException(ConsultingErrorCode.RECORDING_ALREADY_UPLOADED);
+        }
+        record.attachRecording(fileId);
+
+        return new SessionRecordingResponse(
+                record.getId(),
+                speaker(parties, userId),
+                fileId,
+                session.getEndedAt().atOffset(ZoneOffset.UTC));
+    }
+
+    /** 이 계약에서 이 사람이 맡은 쪽. 화자는 요청이 아니라 인증 정보로 정합니다. (R-CON-14) */
+    private String speaker(ContractParties parties, Integer userId) {
+        return Objects.equals(parties.clientId(), userId) ? "CLIENT" : "DEVELOPER";
     }
 
     /** 행이 생기는 것이 곧 동의입니다. 이미 있으면 그대로 둡니다. */

@@ -22,7 +22,13 @@ public enum ConsultingErrorCode implements ErrorCode {
     SESSION_NOT_OPEN(
             HttpStatus.CONFLICT,
             "SESSION_NOT_OPEN",
-            "아직 입장할 수 없습니다. 시작 10분 전부터 들어갈 수 있습니다.");
+            "아직 입장할 수 없습니다. 시작 10분 전부터 들어갈 수 있습니다."),
+    /** 녹음은 세션을 마친 뒤에만 받는다. 끝나기 전에는 몇 분짜리인지도 정해지지 않았다. */
+    SESSION_NOT_ENDED(
+            HttpStatus.BAD_REQUEST, "SESSION_NOT_ENDED", "아직 끝나지 않은 세션입니다."),
+    /** 참가자당 한 건이다. 같은 파일을 다시 보내는 것은 성공으로 다루고 여기 오지 않는다. */
+    RECORDING_ALREADY_UPLOADED(
+            HttpStatus.CONFLICT, "RECORDING_ALREADY_UPLOADED", "이미 녹음을 올렸습니다.");
 
     private final HttpStatus status;
     private final String code;

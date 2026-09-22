@@ -1,10 +1,13 @@
 package com.a501.service.domain.consulting.controller;
 
 import com.a501.service.common.security.AuthenticatedUser;
+import com.a501.service.domain.consulting.dto.request.CreateSessionRecordingRequest;
 import com.a501.service.domain.consulting.dto.response.ConsultingSessionResponse;
+import com.a501.service.domain.consulting.dto.response.SessionRecordingResponse;
 import com.a501.service.domain.consulting.service.ConsultingSessionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -12,7 +15,9 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @Tag(name = "컨설팅 세션", description = "유료 상담 세션의 조회·입장·종료")
@@ -59,6 +64,32 @@ public class ConsultingSessionController {
         ConsultingSessionService.SessionEntry entry = sessionService.join(user.userId(), sessionId);
         return ResponseEntity.status(entry.entered() ? HttpStatus.CREATED : HttpStatus.ACCEPTED)
                 .body(entry.session());
+    }
+
+    @Operation(
+            summary = "세션 녹음 올리기",
+            description =
+                    """
+                    세션이 끝난 뒤 자기 마이크로 녹음한 파일을 올린다.
+
+                    참가자마다 자기 트랙만 올린다. 두 사람 소리를 한 파일로 합치지 않는다 —                     파일이 곧 화자라서 나중에 누가 말했는지 가리는 데 따로 손이 들지 않는다.                     누가 올렸는지는 인증 정보로 정하므로 요청에 담지 않는다. (R-CON-14)
+
+                    파일은 POST /api/uploads 로 올려 받은 fileId 로 넘긴다. 파일 자체는 이                     API 를 지나가지 않는다.
+
+                    같은 파일을 다시 보내면 붙어 있는 것을 그대로 돌려준다. 올리고 나서 응답을                     받지 못해 다시 보내는 일이 있기 때문이다. 다른 파일로 바꾸려는 요청만                     거절한다.
+
+                    - 201: 올렸을 때
+                    - 400 SESSION_NOT_ENDED: 아직 끝나지 않은 세션일 때
+                    - 401 UNAUTHORIZED: 로그인하지 않았을 때
+                    - 404 SESSION_NOT_FOUND: 없는 세션이거나 요청자가 그 세션의 당사자가 아닐 때
+                    - 409 RECORDING_ALREADY_UPLOADED: 이미 다른 녹음이 붙어 있을 때""")
+    @PostMapping("/{sessionId}/recordings")
+    @ResponseStatus(HttpStatus.CREATED)
+    SessionRecordingResponse attachRecording(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable Integer sessionId,
+            @Valid @RequestBody CreateSessionRecordingRequest request) {
+        return sessionService.attachRecording(user.userId(), sessionId, request.fileId());
     }
 
     @Operation(
