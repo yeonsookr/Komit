@@ -25,7 +25,10 @@ import com.a501.service.domain.diagnosis.dto.request.SaveSurveyAnswersRequest.Su
 import com.a501.service.domain.diagnosis.dto.request.StartDiagnosisRequest;
 import com.a501.service.domain.diagnosis.dto.response.DiagnosisProjectResponse;
 import com.a501.service.domain.diagnosis.dto.response.DiagnosisResponse;
+import com.a501.service.domain.code.dto.CodeResponse;
 import com.a501.service.domain.diagnosis.dto.response.InspectionResponse;
+import com.a501.service.domain.diagnosis.dto.response.IssueListResponse;
+import com.a501.service.domain.diagnosis.dto.response.IssueResponse;
 import com.a501.service.domain.diagnosis.dto.response.SurveyOptionResponse;
 import com.a501.service.domain.diagnosis.dto.response.SurveyQuestionResponse;
 import com.a501.service.domain.diagnosis.dto.response.SurveyResponse;
@@ -279,6 +282,67 @@ class DiagnosisControllerTest {
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID)))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("DIAGNOSIS_MISMATCH"));
+    }
+
+    @Test
+    @DisplayName("결함 목록은 content와 페이지 정보로 감싼다")
+    void getIssuesReturnsPagedContract() throws Exception {
+        when(diagnosisService.getIssues(31, USER_ID, null, null, 1, 20))
+                .thenReturn(new IssueListResponse(List.of(issue()), 1, 20, 11, 1));
+
+        mockMvc.perform(authenticated(get("/api/diagnoses/31/issues")))
+                .andExpect(status().isOk())
+                .andExpect(content().json("""
+                        {"content":[{"issueId":311,"title":"관리자 API에 인증 추가",
+                                     "detail":"로그인한 사람이면 남의 주문 내역까지 열람 가능합니다",
+                                     "location":"app/api/checkout/route.ts:47","isInput":false,
+                                     "category":{"codeId":71,"codeName":"보안"},
+                                     "status":"UNRESOLVED","severity":"HIGH",
+                                     "fixedVersion":null,"originIssueId":null,"qaCriteria":[]}],
+                         "page":1,"size":20,"totalElements":11,"totalPages":1}
+                        """, true));
+    }
+
+    @Test
+    @DisplayName("거르는 조건과 페이지 값을 그대로 넘긴다")
+    void getIssuesPassesFilters() throws Exception {
+        when(diagnosisService.getIssues(eq(31), eq(USER_ID), any(), any(), anyInt(), anyInt()))
+                .thenReturn(new IssueListResponse(List.of(), 1, 20, 0, 0));
+
+        mockMvc.perform(authenticated(get("/api/diagnoses/31/issues"))
+                        .param("status", "RESOLVED")
+                        .param("isInput", "true")
+                        .param("page", "2")
+                        .param("size", "5"))
+                .andExpect(status().isOk());
+
+        verify(diagnosisService).getIssues(31, USER_ID, "RESOLVED", true, 2, 5);
+    }
+
+    @Test
+    @DisplayName("허용되지 않은 status 는 422 INVALID_REQUEST다")
+    void getIssuesRejectsUnknownStatus() throws Exception {
+        mockMvc.perform(authenticated(get("/api/diagnoses/31/issues")).param("status", "NOPE"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.errors[0].field").value("status"));
+
+        verify(diagnosisService, never()).getIssues(any(), any(), any(), any(), anyInt(), anyInt());
+    }
+
+    private static IssueResponse issue() {
+        return new IssueResponse(
+                311,
+                "관리자 API에 인증 추가",
+                "로그인한 사람이면 남의 주문 내역까지 열람 가능합니다",
+                "app/api/checkout/route.ts:47",
+                false,
+                new CodeResponse(71, "보안"),
+                "UNRESOLVED",
+                "HIGH",
+                null,
+                null,
+                List.of());
     }
 
     private static SurveyResponse survey(boolean done) {

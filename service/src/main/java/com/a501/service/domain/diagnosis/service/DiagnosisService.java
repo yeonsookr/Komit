@@ -8,6 +8,7 @@ import com.a501.service.domain.diagnosis.dto.response.DiagnosisProjectResponse;
 import com.a501.service.domain.diagnosis.dto.request.ScanResult;
 import com.a501.service.domain.diagnosis.dto.response.DiagnosisResponse;
 import com.a501.service.domain.diagnosis.dto.response.InspectionResponse;
+import com.a501.service.domain.diagnosis.dto.response.IssueListResponse;
 import com.a501.service.domain.diagnosis.dto.response.SurveyResponse;
 import com.a501.service.domain.diagnosis.entity.Diagnosis;
 import com.a501.service.domain.diagnosis.entity.Inspection;
@@ -38,6 +39,7 @@ public class DiagnosisService {
     private final ScanFileWriter scanFileWriter;
     private final ScanResultReader scanResultReader;
     private final InspectionService inspectionService;
+    private final IssueQueryService issueQueryService;
 
     public DiagnosisResponse getDiagnosis(Integer diagnosisId, Integer userId) {
         Diagnosis diagnosis = ownedDiagnosis(diagnosisId, userId);
@@ -59,6 +61,14 @@ public class DiagnosisService {
         ScanResult result = scanResultReader.read(file, diagnosis.getId());
         return inspectionService.record(
                 diagnosis.getId(), diagnosis.getProjectId(), diagnosis.getVersion(), result);
+    }
+
+    /** 이 회차에서 나온 결함. 진단서 본문과 요구사항 선택, 요청서가 모두 이 목록을 그린다. */
+    public IssueListResponse getIssues(
+            Integer diagnosisId, Integer userId, String status, Boolean input, int page, int size) {
+        Diagnosis diagnosis = ownedDiagnosis(diagnosisId, userId);
+        return issueQueryService.getIssues(
+                diagnosis.getId(), diagnosis.getVersion(), status, input, page, size);
     }
 
     public SurveyResponse getSurvey(Integer diagnosisId, Integer userId) {

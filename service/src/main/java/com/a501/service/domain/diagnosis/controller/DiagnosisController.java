@@ -5,7 +5,9 @@ import com.a501.service.common.security.AuthenticatedUser;
 import com.a501.service.domain.diagnosis.dto.request.SaveSurveyAnswersRequest;
 import com.a501.service.domain.diagnosis.dto.request.StartDiagnosisRequest;
 import com.a501.service.domain.diagnosis.dto.response.DiagnosisResponse;
+import com.a501.service.domain.diagnosis.IssueStatus;
 import com.a501.service.domain.diagnosis.dto.response.InspectionResponse;
+import com.a501.service.domain.diagnosis.dto.response.IssueListResponse;
 import com.a501.service.domain.diagnosis.dto.response.SurveyResponse;
 import com.a501.service.domain.diagnosis.service.DiagnosisService;
 import com.a501.service.domain.diagnosis.service.ScanFileWriter;
@@ -18,6 +20,8 @@ import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ContentDisposition;
 import org.springframework.http.HttpHeaders;
@@ -31,6 +35,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -98,6 +103,38 @@ public class DiagnosisController {
             @Parameter(description = "진단 식별자.", example = "31") @PathVariable Integer diagnosisId,
             @AuthenticationPrincipal AuthenticatedUser user) {
         return diagnosisService.getDiagnosis(diagnosisId, user.userId());
+    }
+
+    @Operation(
+            summary = "결함 목록 조회",
+            description = "**화면 — `2_진단서` › 문제점 목록 · `2_요구사항선택` › 요구사항 목록**\n\n"
+                    + "이 진단 회차에서 나온 결함을 내려준다. 진단서는 사용자가 적은 증상과 관련된 것을 위에 따로 보여주므로 `isInput`으로 가른다. 요구사항 선택 화면은 해결한 것을 아래로 내리므로 `status`로 가른다.\n\n"
+                    + "**요청서도 이 목록으로 그린다.** 요청서는 따로 저장되는 문서가 아니라 이 요구사항들을 모아 부르는 이름이다.\n\n"
+                    + "- **200**: 진단이 있을 때. 검사 전이면 `content`가 빈 배열이다\n"
+                    + "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+                    + "- **404 / DIAGNOSIS_NOT_FOUND**: 없는 진단이거나 남의 진단일 때\n"
+                    + "- **422 / INVALID_REQUEST**: `status`나 페이지 값이 허용된 범위를 벗어났을 때\n"
+                    + "- **500 / INTERNAL_ERROR**: 목록을 만들지 못했을 때",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "진단 없음", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "422", description = "요청 스키마 유효성 검증 실패", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/{diagnosisId}/issues")
+    IssueListResponse getIssues(
+            @Parameter(description = "진단 식별자.", example = "31") @PathVariable Integer diagnosisId,
+            @Parameter(description = "처리 상태로 거른다. 비우면 전부 내려간다.", example = "UNRESOLVED")
+            @RequestParam(required = false) IssueStatus status,
+            @Parameter(description = "사용자가 적은 증상과 관련된 것만 거른다. 비우면 전부 내려간다.")
+            @RequestParam(required = false) Boolean isInput,
+            @RequestParam(defaultValue = "1") @Min(1) int page,
+            @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return diagnosisService.getIssues(
+                diagnosisId, user.userId(), status == null ? null : status.name(), isInput, page, size);
     }
 
     @Operation(
