@@ -40,7 +40,6 @@ class FileUploadServiceTest {
             "us-east-1",
             Duration.ofMinutes(5),
             Duration.ofMinutes(15),
-            10 * 1024 * 1024L,
             30 * 1024 * 1024L);
 
     @Mock
@@ -67,38 +66,7 @@ class FileUploadServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .satisfies(exception -> assertThat(((BusinessException) exception).getErrorCode().code())
                         .isEqualTo("FILE_TOO_LARGE"));
-        verify(stateService, never()).createPending(any(), any(), any(), any(), any());
-    }
-
-    /** R-FILE-01: 녹음은 통화 길이에 비례해 커져 상한이 따로 있다. */
-    @Test
-    void startAllowsARecordingOverTheGeneralLimit() {
-        long size = PROPERTIES.maxFileBytes() + 1;
-        StoredFile file = pending(512L, NOW);
-        when(stateService.createPending(
-                        eq(12), eq("session-recording.webm"), eq("audio/webm"), eq(size), any()))
-                .thenReturn(file);
-        when(objectStorageService.issueUploadUrl(file)).thenReturn("http://localhost:9000/put");
-
-        var result = service.start(12, new CreateUploadRequest(
-                "session-recording.webm", "audio/webm", size, UploadPurpose.SESSION_RECORDING));
-
-        assertThat(result.uploadId()).isEqualTo(512);
-    }
-
-    @Test
-    void startRejectsARecordingOverTheRecordingLimit() {
-        CreateUploadRequest request = new CreateUploadRequest(
-                "session-recording.webm",
-                "audio/webm",
-                PROPERTIES.sessionRecordingMaxBytes() + 1,
-                UploadPurpose.SESSION_RECORDING);
-
-        assertThatThrownBy(() -> service.start(12, request))
-                .isInstanceOf(BusinessException.class)
-                .satisfies(exception -> assertThat(((BusinessException) exception).getErrorCode().code())
-                        .isEqualTo("FILE_TOO_LARGE"));
-        verify(stateService, never()).createPending(any(), any(), any(), any(), any());
+        verify(stateService, never()).createPending(any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -115,7 +83,7 @@ class FileUploadServiceTest {
     @Test
     void startReturnsThePresignedPutContract() {
         StoredFile file = pending(512L, NOW);
-        when(stateService.createPending(eq(12), eq("portfolio.png"), eq("image/png"), eq(4L), any())).thenReturn(file);
+        when(stateService.createPending(eq(12), eq("portfolio.png"), eq("image/png"), eq(4L), any(), any())).thenReturn(file);
         when(objectStorageService.issueUploadUrl(file)).thenReturn("http://localhost:9000/put");
 
         var result = service.start(12, new CreateUploadRequest(
@@ -188,7 +156,8 @@ class FileUploadServiceTest {
                 "image/png",
                 4L,
                 "komit",
-                "pending/portfolio-image/12/test");
+                "pending/portfolio-image/12/test",
+                UploadPurpose.PORTFOLIO_IMAGE.name());
         ReflectionTestUtils.setField(file, "fileId", fileId);
         ReflectionTestUtils.setField(file, "createdAt", createdAt);
         return file;

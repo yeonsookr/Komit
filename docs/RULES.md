@@ -311,7 +311,7 @@ Komit의 **정책 값과 불변식**을 모아 놓은 단일 출처다.
 
 | 번호 | 규칙 | 값 | 영향 범위 |
 | --- | --- | --- | --- |
-| `R-FILE-01` | 파일을 올리기 전에 용도·이름·형식·크기를 알리고 임시 업로드 주소를 받는다. 크기 상한은 용도별로 둔다. | `SESSION_RECORDING` **30MiB** (`31,457,280`바이트) / 그 밖의 용도 **10MiB** (`10,485,760`바이트) | Service, Mock API, 저장소, FE |
+| `R-FILE-01` | 파일을 올리기 전에 용도·이름·형식·크기를 알리고 임시 업로드 주소를 받는다. 모든 용도의 파일 크기는 같은 상한을 적용한다. | 용도별 **30MiB** (`31,457,280`바이트) | Service, Mock API, 저장소, FE |
 | `R-FILE-02` | 용도별로 허용하는 파일 형식을 제한한다. `PROFILE_IMAGE`·`PORTFOLIO_IMAGE`는 PNG·JPEG·WebP, `CAREER_EVIDENCE`는 PDF·PNG·JPEG, `SIGNATURE`는 PNG, `DELIVERABLE`은 ZIP·PDF·일반 바이너리, `SESSION_RECORDING`은 WebM·MP4 오디오, `REPORT_EVIDENCE`는 PDF·PNG·JPEG·WebP만 받는다. | 아래 「용도별 허용 형식」 | Service, Mock API, FE |
 | `R-FILE-03` | 업로드 주소와 읽기 주소는 짧게 만료되는 임시 주소로 발급한다. 주소에 접근 키를 직접 노출하지 않는다. | 업로드 **5분** / 읽기 **15분** | Service, 저장소, FE, 운영 |
 | `R-FILE-04` | 업로드 완료 요청에서는 저장소에 실제 객체가 있는지와 시작 때 알린 크기·형식이 같은지 확인한다. 다르면 객체를 지우고 실패로 남긴다. 완료 요청은 멱등하며, 완료된 파일은 기존 업로드 주소로 바꿀 수 없게 최종 객체로 확정한다. | 완료 전 첨부 불가 / 완료 후 불변 | Service, 저장소, API |

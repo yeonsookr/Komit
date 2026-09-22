@@ -18,14 +18,12 @@ public record StorageProperties(
         @NotBlank String region,
         @NotNull Duration uploadUrlTtl,
         @NotNull Duration readUrlTtl,
-        long maxFileBytes,
-        /** R-FILE-01: 세션 녹음은 상한이 다릅니다. 통화 길이에 비례해 커지기 때문입니다. */
-        long sessionRecordingMaxBytes) {
+        long maxFileBytes) {
 
     public StorageProperties {
         validateTtl("upload", uploadUrlTtl);
         validateTtl("read", readUrlTtl);
-        if (maxFileBytes <= 0 || sessionRecordingMaxBytes <= 0) {
+        if (maxFileBytes <= 0) {
             throw new IllegalArgumentException("Storage maximum file size must be positive");
         }
     }

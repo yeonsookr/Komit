@@ -86,6 +86,18 @@ public class StoredFile {
     @Column(name = "user_id", nullable = false)
     private Integer userId;
 
+    /**
+     * 무엇으로 올린 파일인지. (R-FILE-01, R-FILE-02)
+     *
+     * <p>붙일 때 다시 확인하려고 남깁니다. 저장소 키에도 같은 값이 들어 있지만 키를 쪼개
+     * 읽는 것은 형식이 바뀌면 조용히 깨집니다.
+     *
+     * <p><b>이 칸이 생기기 전에 올린 파일은 비어 있습니다.</b> 용도를 따지는 자리에서는
+     * 비어 있는 것을 「아니다」로 다루어 거절합니다.
+     */
+    @Column(name = "purpose", length = 50)
+    private String purpose;
+
     @Column(name = "status", nullable = false, length = 50)
     private String status;
 
@@ -98,8 +110,10 @@ public class StoredFile {
             String contentType,
             Long sizeBytes,
             String bucketName,
-            String storageKey) {
+            String storageKey,
+            String purpose) {
         StoredFile file = new StoredFile();
+        file.purpose = purpose;
         file.userId = userId;
         file.originalName = originalName;
         file.contentType = contentType;
