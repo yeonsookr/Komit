@@ -43,12 +43,20 @@ function supportedMimeType(): string | null {
  * 마이크를 끈 동안에도 계속 담습니다. 트랙은 살아 있고 소리만 비어 있어, 멈췄다
  * 다시 시작하면 조각이 갈려 이어 붙일 수 없게 됩니다.
  */
-export function useSessionRecorder(stream: MediaStream | null): SessionRecorder {
+export function useSessionRecorder(
+  stream: MediaStream | null,
+  enabled: boolean,
+): SessionRecorder {
   const [recording, setRecording] = React.useState(false);
   const recorderRef = React.useRef<MediaRecorder | null>(null);
   const chunksRef = React.useRef<Blob[]>([]);
 
   React.useEffect(() => {
+    // 카메라가 켜졌다고 담기 시작하지 않습니다. 기다리는 동안 미리보기를 켜 둘 수 있는데,
+    // 거기서부터 담으면 상대가 동의하기 전의 혼잣말이 들어갑니다. (R-CON-08 로 입장은 시작
+    // 10분 전부터 열립니다)
+    if (!enabled) return;
+
     const audio = stream?.getAudioTracks() ?? [];
     if (audio.length === 0) return;
 
@@ -75,7 +83,7 @@ export function useSessionRecorder(stream: MediaStream | null): SessionRecorder 
       setRecording(false);
       if (recorder.state !== "inactive") recorder.stop();
     };
-  }, [stream]);
+  }, [stream, enabled]);
 
   const stop = React.useCallback(async () => {
     const recorder = recorderRef.current;

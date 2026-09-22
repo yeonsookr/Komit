@@ -94,7 +94,7 @@ beforeEach(() => {
 
 describe("useSessionRecorder", () => {
   it("영상은 빼고 자기 마이크 트랙만 담는다", () => {
-    useSessionRecorder(streamWith(1, 1));
+    useSessionRecorder(streamWith(1, 1), true);
 
     const recorder = FakeRecorder.instances[0];
     expect(recorder.stream.tracks).toHaveLength(1);
@@ -105,7 +105,7 @@ describe("useSessionRecorder", () => {
   });
 
   it("멈추면 조각을 모아 파일 하나로 묶는다", async () => {
-    const recorder = useSessionRecorder(streamWith(1, 1));
+    const recorder = useSessionRecorder(streamWith(1, 1), true);
     const fake = FakeRecorder.instances[0];
     fake.emit("first");
     fake.emit("second");
@@ -119,7 +119,7 @@ describe("useSessionRecorder", () => {
   });
 
   it("담긴 것이 없으면 올릴 파일도 없다", async () => {
-    const recorder = useSessionRecorder(streamWith(1, 0));
+    const recorder = useSessionRecorder(streamWith(1, 0), true);
 
     await expect(recorder.stop()).resolves.toBeNull();
   });
@@ -128,7 +128,7 @@ describe("useSessionRecorder", () => {
     FakeRecorder.supported = false;
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const recorder = useSessionRecorder(streamWith(1, 1));
+    const recorder = useSessionRecorder(streamWith(1, 1), true);
 
     expect(FakeRecorder.instances).toHaveLength(0);
     await expect(recorder.stop()).resolves.toBeNull();
@@ -136,7 +136,14 @@ describe("useSessionRecorder", () => {
   });
 
   it("마이크가 없으면 아무것도 시작하지 않는다", () => {
-    useSessionRecorder(streamWith(0, 1));
+    useSessionRecorder(streamWith(0, 1), true);
+
+    expect(FakeRecorder.instances).toHaveLength(0);
+  });
+
+  /** 기다리는 동안 켜 둔 미리보기까지 담으면 상대가 동의하기 전의 말이 들어갑니다. */
+  it("세션이 시작되기 전에는 카메라가 켜져 있어도 담지 않는다", () => {
+    useSessionRecorder(streamWith(1, 1), false);
 
     expect(FakeRecorder.instances).toHaveLength(0);
   });
