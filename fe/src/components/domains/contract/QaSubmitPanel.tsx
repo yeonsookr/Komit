@@ -15,6 +15,7 @@ import {
 import { Callout, useToast } from "@/components/feedback";
 import { DeliverableFiles } from "./DeliverableFiles";
 import { clientApi } from "@/lib/api/client";
+import { uploadFromBrowser } from "@/lib/upload/browserUpload";
 import { INTERNAL } from "@/lib/api/endpoints";
 import {
   AUTO_PASS_DAYS,
@@ -93,14 +94,11 @@ export function QaSubmitPanel({
     if (busy !== null) return;
     setBusy(deliverable.deliverableId);
 
-    const form = new FormData();
-    form.append("file", file);
-
     try {
-      await clientApi.post(
-        INTERNAL.DELIVERABLE_FILE(deliverable.deliverableId),
-        form,
-      );
+      const uploaded = await uploadFromBrowser(file, "DELIVERABLE");
+      await clientApi.post(INTERNAL.DELIVERABLE_FILE(deliverable.deliverableId), {
+        fileId: uploaded.fileId,
+      });
       showToast({
         tone: "success",
         title: `‘${deliverable.title}’ 을 올렸습니다.`,

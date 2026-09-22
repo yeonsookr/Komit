@@ -6,6 +6,7 @@ import { Button, buttonClass } from "@/components/buttons";
 import { Card, Field, Textarea } from "@/components/common";
 import { Callout, useToast } from "@/components/feedback";
 import { clientApi } from "@/lib/api/client";
+import { uploadFromBrowser } from "@/lib/upload/browserUpload";
 import { INTERNAL } from "@/lib/api/endpoints";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
@@ -36,12 +37,13 @@ export function ReportForm({ roomId, contractId }: Readonly<ReportFormProps>) {
 
     setReasonError(null);
     setSubmitting(true);
-    const body = new FormData();
-    body.set("reason", trimmed);
-    if (file !== null) body.set("file", file, file.name);
-
     try {
-      await clientApi.post(INTERNAL.CONTRACT_REPORTS(contractId), body);
+      // 증거가 있으면 저장소로 먼저 보내고 그 식별자만 신고에 싣습니다.
+      const uploaded = file === null ? null : await uploadFromBrowser(file, "REPORT_EVIDENCE");
+      await clientApi.post(INTERNAL.CONTRACT_REPORTS(contractId), {
+        reason: trimmed,
+        fileId: uploaded?.fileId ?? null,
+      });
       showToast({ tone: "success", title: "신고가 접수되었습니다." });
       router.push(ROUTES.roomProgress(roomId));
     } catch (error) {

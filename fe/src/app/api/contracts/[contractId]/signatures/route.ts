@@ -1,15 +1,9 @@
 import { NextResponse } from "next/server";
-import { signContract, uploadFile } from "@/lib/api/services";
+import { signContract } from "@/lib/api/services";
 import { parseNumericParam, toErrorResponse } from "@/lib/api/route";
 
 const INVALID_REQUEST = { code: "INVALID_REQUEST", message: "서명을 그려 주세요." };
 const NOT_FOUND = { code: "CONTRACT_NOT_FOUND", message: "계약서를 찾을 수 없습니다." };
-
-/** 서명 그림은 캔버스가 만든 PNG 입니다. 다른 형식은 받지 않습니다. */
-const SIGNATURE_TYPE = "image/png";
-/** 캔버스 한 장이라 이보다 클 이유가 없습니다. */
-// R-FILE-01: 모든 파일 용도의 공통 상한.
-const MAX_BYTES = 10 * 1024 * 1024;
 
 /**
  * POST /api/contracts/{contractId}/signatures — 계약서 서명.
@@ -28,23 +22,21 @@ export async function POST(
   const id = parseNumericParam(contractId);
   if (id === null) return NextResponse.json(NOT_FOUND, { status: 404 });
 
-  let file: FormDataEntryValue | null;
+  // 파일은 이 핸들러를 지나가지 않습니다. 브라우저가 저장소로 직접 보내고 fileId 만 옵니다.
+  // 형식과 크기는 올리기 시작 단계에서 백엔드가 거릅니다. (R-FILE-01, R-FILE-02)
+  let fileId: unknown;
   try {
-    file = (await request.formData()).get("signature");
+    ({ fileId } = (await request.json()) as { fileId?: unknown });
   } catch {
     return NextResponse.json(INVALID_REQUEST, { status: 422 });
   }
 
-  if (!(file instanceof File) || file.size === 0 || file.size > MAX_BYTES) {
-    return NextResponse.json(INVALID_REQUEST, { status: 422 });
-  }
-  if (file.type !== SIGNATURE_TYPE) {
+  if (typeof fileId !== "number" || !Number.isInteger(fileId) || fileId <= 0) {
     return NextResponse.json(INVALID_REQUEST, { status: 422 });
   }
 
   try {
-    const uploaded = await uploadFile(file, "SIGNATURE");
-    const contract = await signContract(id, { signatureImageFileId: uploaded.fileId });
+    const contract = await signContract(id, { signatureImageFileId: fileId });
     return NextResponse.json(contract, { status: 201 });
   } catch (error) {
     return toErrorResponse(error);

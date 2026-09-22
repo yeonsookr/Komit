@@ -120,7 +120,6 @@ export const INTERNAL = {
   PROFILE_IMAGE: "/api/users/me/profile-image",
   MY_DEVELOPER_PROFILE: "/api/users/me/developer-profile",
   REVIEW_REPLY: (reviewId: number) => `/api/reviews/${reviewId}/reply`,
-  PROFILE_UPLOAD: "/api/users/me/developer-profile/upload",
   ROOMS: "/api/rooms",
   ROOM: (roomId: number) => `/api/rooms/${roomId}`,
   ROOM_MESSAGES: (roomId: number) => `/api/rooms/${roomId}/messages`,

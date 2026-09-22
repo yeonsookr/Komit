@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { updateMyProfileImage, uploadFile } from "@/lib/api/services";
+import { updateMyProfileImage } from "@/lib/api/services";
 import { toErrorResponse } from "@/lib/api/route";
 import { authorized } from "@/lib/auth/session";
 
@@ -9,9 +9,10 @@ const INVALID_REQUEST = {
 };
 
 /**
- * POST /api/users/me/profile-image — 프로필 사진을 올리고 내 계정에 붙입니다.
+ * POST /api/users/me/profile-image — 올린 사진을 내 계정에 붙입니다.
  *
- * 브라우저는 사진 한 장만 보내고, 올리기 3콜과 계정 연결은 이 핸들러가 처리합니다.
+ * **파일은 이 핸들러를 지나가지 않습니다.** 브라우저가 저장소로 직접 보내고 받은 `fileId` 만
+ * 여기로 옵니다.
  */
 export async function POST(request: Request) {
   try {
@@ -20,21 +21,19 @@ export async function POST(request: Request) {
     return toErrorResponse(error);
   }
 
-  let file: FormDataEntryValue | null;
+  let fileId: unknown;
   try {
-    file = (await request.formData()).get("image");
+    ({ fileId } = (await request.json()) as { fileId?: unknown });
   } catch {
     return NextResponse.json(INVALID_REQUEST, { status: 422 });
   }
 
-  if (!(file instanceof File) || file.size === 0 || !file.type.startsWith("image/")) {
+  if (typeof fileId !== "number" || !Number.isInteger(fileId) || fileId <= 0) {
     return NextResponse.json(INVALID_REQUEST, { status: 422 });
   }
 
   try {
-    const uploaded = await uploadFile(file, "PROFILE_IMAGE");
-    const account = await updateMyProfileImage({ fileId: uploaded.fileId });
-    return NextResponse.json(account);
+    return NextResponse.json(await updateMyProfileImage({ fileId }));
   } catch (error) {
     return toErrorResponse(error);
   }
