@@ -6,7 +6,9 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import com.a501.service.domain.diagnosis.SurveyAnswerType;
 import jakarta.persistence.Table;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -32,4 +34,17 @@ public class SurveyQuestion extends CreatedSoftDeleteEntity {
 
     @Column(name = "answer_type_group", nullable = false, length = 50)
     private String answerTypeGroup;
+
+    public static SurveyQuestion of(Integer surveyId, String content, SurveyAnswerType answerType) {
+        SurveyQuestion entity = new SurveyQuestion();
+        entity.surveyId = Objects.requireNonNull(surveyId, "surveyId");
+        entity.content = Objects.requireNonNull(content, "content");
+        entity.answerType = Objects.requireNonNull(answerType, "answerType").name();
+        entity.answerTypeGroup = SurveyAnswerType.GROUP;
+        return entity;
+    }
+
+    public SurveyAnswerType answerType() {
+        return SurveyAnswerType.valueOf(answerType);
+    }
 }

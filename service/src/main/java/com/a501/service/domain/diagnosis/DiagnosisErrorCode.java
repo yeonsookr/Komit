@@ -17,6 +17,9 @@ public enum DiagnosisErrorCode implements ErrorCode {
             "검사 결과 파일을 읽지 못했습니다. 받은 파일을 그대로 올려 주세요."),
     INSPECTION_ALREADY_RUNNING(
             HttpStatus.CONFLICT, "INSPECTION_ALREADY_RUNNING", "이미 검사가 진행 중입니다."),
+    /** 답하지 않은 문항이 남았거나 이미 끝낸 설문이다. 둘 다 더 진행할 수 없다는 같은 뜻이라 한 코드로 답한다. */
+    SURVEY_NOT_COMPLETABLE(
+            HttpStatus.CONFLICT, "SURVEY_NOT_COMPLETABLE", "아직 끝내지 않은 문항이 있습니다."),
     /** 계약으로 넘어간 요구사항은 사전점검에서 더 건드리지 않는다. 빼는 것도 상태를 바꾸는 것도 막는다. */
     ISSUE_STATUS_CONFLICT(
             HttpStatus.CONFLICT,

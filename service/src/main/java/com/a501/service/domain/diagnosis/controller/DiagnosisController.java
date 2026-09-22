@@ -2,8 +2,10 @@ package com.a501.service.domain.diagnosis.controller;
 
 import com.a501.service.common.exception.ErrorResponse;
 import com.a501.service.common.security.AuthenticatedUser;
+import com.a501.service.domain.diagnosis.dto.request.SaveSurveyAnswersRequest;
 import com.a501.service.domain.diagnosis.dto.request.StartDiagnosisRequest;
 import com.a501.service.domain.diagnosis.dto.response.DiagnosisResponse;
+import com.a501.service.domain.diagnosis.dto.response.SurveyResponse;
 import com.a501.service.domain.diagnosis.service.DiagnosisService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -18,6 +20,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -81,5 +84,80 @@ public class DiagnosisController {
             @Parameter(description = "진단 식별자.", example = "31") @PathVariable Integer diagnosisId,
             @AuthenticationPrincipal AuthenticatedUser user) {
         return diagnosisService.getDiagnosis(diagnosisId, user.userId());
+    }
+
+    @Operation(
+            summary = "설문 조회",
+            description = "**화면 — `2_설문4` › 문항과 보기. 설문1~3은 이어하기에만 쓴다**\n\n"
+                    + "설문 문항과 보기를 순서대로 내려준다. 이미 답한 보기는 `isSelected`가 참이라 뒤로 갔다 와도 고른 상태가 그대로 보인다.\n\n"
+                    + "설문1~3은 모든 프로젝트에 같은 고정 문항이라 화면이 문구를 갖고 있다. 설문4는 올린 검사 결과에서 나오므로 반드시 이 API로 받아 그린다.\n\n"
+                    + "- **200**: 진단이 있고 내 것일 때\n"
+                    + "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+                    + "- **404 / DIAGNOSIS_NOT_FOUND**: 없는 진단이거나 남의 진단일 때\n"
+                    + "- **500 / INTERNAL_ERROR**: 설문을 읽지 못했을 때",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "조회 성공"),
+            @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "진단 없음", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/{diagnosisId}/survey")
+    SurveyResponse getSurvey(
+            @Parameter(description = "진단 식별자.", example = "31") @PathVariable Integer diagnosisId,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return diagnosisService.getSurvey(diagnosisId, user.userId());
+    }
+
+    @Operation(
+            summary = "설문 답 저장",
+            description = "**화면 — `2_설문1` · `2_설문2` · `2_설문4` › 다음 버튼**\n\n"
+                    + "한 단계에서 고른 답을 저장한다. 보낸 문항만 바뀌고 나머지는 그대로 남는다. 같은 단계를 다시 보내도 결과가 같다.\n\n"
+                    + "저장 뒤의 설문지 전체를 돌려주므로 화면은 응답으로 상태를 맞추면 된다.\n\n"
+                    + "- **200**: 저장했을 때\n"
+                    + "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+                    + "- **404 / DIAGNOSIS_NOT_FOUND**: 없는 진단이거나 남의 진단일 때\n"
+                    + "- **422 / INVALID_REQUEST**: 단수 문항에 보기를 둘 이상 보냈거나, 주관식에 보기 식별자를 보냈거나, 이 설문의 문항·보기가 아닐 때\n"
+                    + "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "저장 성공"),
+            @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "진단 없음", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "422", description = "요청 스키마 유효성 검증 실패", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PatchMapping("/{diagnosisId}/survey/answers")
+    SurveyResponse saveSurveyAnswers(
+            @Parameter(description = "진단 식별자.", example = "31") @PathVariable Integer diagnosisId,
+            @Valid @RequestBody SaveSurveyAnswersRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return diagnosisService.saveSurveyAnswers(diagnosisId, user.userId(), request.answers());
+    }
+
+    @Operation(
+            summary = "설문 완료",
+            description = "**화면 — `2_설문4` › 진단서 보기**\n\n"
+                    + "설문을 끝냈다고 알린다. 이 호출을 받아야 설문이 완료로 바뀌고 `2_설문1`의 「진행 중인 설문」 목록에서 빠진다.\n\n"
+                    + "답 저장이 완료를 겸하지 않는다. 설문4 문항은 검사 결과에서 나오므로, 답이 다 찼는지로 판정하면 설문2까지만 하고도 완료로 찍힌다.\n\n"
+                    + "완료 조건은 서버가 확인한다 — 검사가 끝나 설문4 문항이 생겼고 모든 문항에 답이 있어야 한다.\n\n"
+                    + "- **200**: 완료로 바뀌었을 때. `isDone`이 참인 설문지를 돌려준다\n"
+                    + "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+                    + "- **404 / DIAGNOSIS_NOT_FOUND**: 없는 진단이거나 남의 진단일 때\n"
+                    + "- **409 / SURVEY_NOT_COMPLETABLE**: 답하지 않은 문항이 남았거나 이미 끝낸 설문일 때\n"
+                    + "- **500 / INTERNAL_ERROR**: 완료 처리를 하지 못했을 때",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "완료 처리"),
+            @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "진단 없음", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "409", description = "아직 끝낼 수 없거나 이미 끝냄", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @PostMapping("/{diagnosisId}/survey/complete")
+    SurveyResponse completeSurvey(
+            @Parameter(description = "진단 식별자.", example = "31") @PathVariable Integer diagnosisId,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return diagnosisService.completeSurvey(diagnosisId, user.userId());
     }
 }

@@ -45,4 +45,9 @@ public class Diagnosis extends SoftDeleteEntity {
     public void startNextVersion() {
         version = (short) (version + 1);
     }
+
+    /** 사용자가 설문에 적은 현재 증상. 진단서 머리에 그대로 실린다. */
+    public void writeUserInput(String userInput) {
+        this.userInput = userInput;
+    }
 }

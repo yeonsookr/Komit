@@ -7,17 +7,24 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.a501.service.common.exception.BusinessException;
 import com.a501.service.common.security.JwtTokenProvider;
 import com.a501.service.common.security.WebMvcSecurityTest;
 import com.a501.service.domain.diagnosis.DiagnosisErrorCode;
+import com.a501.service.domain.diagnosis.SurveyAnswerType;
+import com.a501.service.domain.diagnosis.dto.request.SaveSurveyAnswersRequest.SurveyAnswerRequest;
 import com.a501.service.domain.diagnosis.dto.request.StartDiagnosisRequest;
 import com.a501.service.domain.diagnosis.dto.response.DiagnosisProjectResponse;
 import com.a501.service.domain.diagnosis.dto.response.DiagnosisResponse;
+import com.a501.service.domain.diagnosis.dto.response.SurveyOptionResponse;
+import com.a501.service.domain.diagnosis.dto.response.SurveyQuestionResponse;
+import com.a501.service.domain.diagnosis.dto.response.SurveyResponse;
 import com.a501.service.domain.diagnosis.dto.response.TechCategoryResponse;
 import com.a501.service.domain.diagnosis.service.DiagnosisService;
 import java.time.OffsetDateTime;
@@ -134,6 +141,95 @@ class DiagnosisControllerTest {
                 .andExpect(status().isUnauthorized());
 
         verify(diagnosisService, never()).getDiagnosis(any(), any());
+    }
+
+    @Test
+    @DisplayName("설문 조회는 문항과 보기를 순서대로 주고 고른 보기를 isSelected로 표시한다")
+    void getSurveyReturnsQuestionsInOrder() throws Exception {
+        when(diagnosisService.getSurvey(31, USER_ID)).thenReturn(survey(false));
+
+        mockMvc.perform(authenticated(get("/api/diagnoses/31/survey")))
+                .andExpect(status().isOk())
+                .andExpect(content().contentType(MediaType.APPLICATION_JSON))
+                .andExpect(content().json("""
+                        {"surveyId":19,"diagnosisVersion":2,"isDone":false,
+                         "questions":[
+                           {"questionId":51,"content":"지금 어디까지 왔나요","answerType":"SINGLE",
+                            "options":[{"optionId":101,"content":"내 컴퓨터에서만 돌아갑니다","isSelected":false},
+                                       {"optionId":102,"content":"배포는 했는데 아직 아무도 안 씁니다","isSelected":true}]},
+                           {"questionId":53,"content":"무슨 일이 있었는지 적어주세요","answerType":"TEXT",
+                            "options":[{"optionId":121,"content":"결제 버튼이 안 눌려요","isSelected":true}]}]}
+                        """, true));
+    }
+
+    @Test
+    @DisplayName("설문 답 저장은 저장 뒤의 설문지 전체를 돌려준다")
+    void saveSurveyAnswersReturnsWholeSurvey() throws Exception {
+        when(diagnosisService.saveSurveyAnswers(
+                        31, USER_ID, List.of(new SurveyAnswerRequest(51, List.of(102), null))))
+                .thenReturn(survey(false));
+
+        mockMvc.perform(authenticated(patch("/api/diagnoses/31/survey/answers"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"answers\":[{\"questionId\":51,\"selectedOptionIds\":[102]}]}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.surveyId").value(19))
+                .andExpect(jsonPath("$.questions[0].options[1].isSelected").value(true));
+    }
+
+    @Test
+    @DisplayName("답 저장에 answers가 비어 있으면 422 INVALID_REQUEST다")
+    void saveSurveyAnswersRejectsEmptyAnswers() throws Exception {
+        mockMvc.perform(authenticated(patch("/api/diagnoses/31/survey/answers"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"answers\":[]}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.errors[0].field").value("answers"));
+
+        verify(diagnosisService, never()).saveSurveyAnswers(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("설문 완료는 isDone이 참인 설문지를 돌려준다")
+    void completeSurveyMarksDone() throws Exception {
+        when(diagnosisService.completeSurvey(31, USER_ID)).thenReturn(survey(true));
+
+        mockMvc.perform(authenticated(post("/api/diagnoses/31/survey/complete")))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.isDone").value(true));
+    }
+
+    @Test
+    @DisplayName("답하지 않은 문항이 남았거나 이미 끝낸 설문은 409 SURVEY_NOT_COMPLETABLE이다")
+    void completeSurveyConflicts() throws Exception {
+        when(diagnosisService.completeSurvey(409, USER_ID))
+                .thenThrow(new BusinessException(DiagnosisErrorCode.SURVEY_NOT_COMPLETABLE));
+
+        mockMvc.perform(authenticated(post("/api/diagnoses/409/survey/complete")))
+                .andExpect(status().isConflict())
+                .andExpect(content().json(
+                        "{\"code\":\"SURVEY_NOT_COMPLETABLE\",\"message\":\"아직 끝내지 않은 문항이 있습니다.\"}", true));
+    }
+
+    private static SurveyResponse survey(boolean done) {
+        return new SurveyResponse(
+                19,
+                2,
+                List.of(
+                        new SurveyQuestionResponse(
+                                51,
+                                "지금 어디까지 왔나요",
+                                SurveyAnswerType.SINGLE,
+                                List.of(
+                                        new SurveyOptionResponse(101, "내 컴퓨터에서만 돌아갑니다", false),
+                                        new SurveyOptionResponse(102, "배포는 했는데 아직 아무도 안 씁니다", true))),
+                        new SurveyQuestionResponse(
+                                53,
+                                "무슨 일이 있었는지 적어주세요",
+                                SurveyAnswerType.TEXT,
+                                List.of(new SurveyOptionResponse(121, "결제 버튼이 안 눌려요", true)))),
+                done);
     }
 
     private static DiagnosisResponse scanned() {
