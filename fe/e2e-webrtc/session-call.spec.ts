@@ -177,19 +177,32 @@ test('한쪽이 새로고침해도 다시 붙는다', async ({ browser }) => {
 });
 
 /**
- * 한 사람이 끝내면 양쪽이 안다. 이 쪽지가 없으면 끝낸 사람만 녹음을 마감하고, 상대는 자기도
- * 종료를 누르기 전까지 올리지 않는다.
+ * 한 사람이 끝내면 양쪽이 종료를 알고 각자 녹음을 올린다.
+ *
+ * 이 쪽지가 없으면 끝낸 사람만 마감하고, 상대는 자기도 종료를 누르기 전까지 올리지 않는다.
+ * 파일 본문은 브라우저가 저장소로 직접 보낸다 — 우리 서버는 주소를 내주고 완료를 확인할 뿐
+ * 파일을 받았다 다시 보내지 않는다.
  *
  * **맨 마지막에 둔다.** 세션을 실제로 끝내므로, 뒤에 오는 시험은 끝난 세션을 열게 되어
  * 요약 화면으로 넘어간다.
  */
-test('한쪽이 세션을 끝내면 양쪽에 종료가 전해진다', async ({ browser }) => {
+test('한쪽이 끝내면 양쪽 녹음이 각자 올라간다', async ({ browser }) => {
   const client = await openAs(browser, requiredToken('E2E_TOKEN_CLIENT'), '의뢰인');
   const developer = await openAs(browser, requiredToken('E2E_TOKEN_DEVELOPER'), '개발자');
 
-  // 두 사람이 받은 쪽지를 모아 둔다. 화면이 아직 이 쪽지를 쓰지 않으므로 회선에서 직접 본다.
+  // 저장소로 직접 간 PUT, 세션에 붙인 요청, 그리고 받은 종료 쪽지를 모은다.
+  const direct: string[] = [];
+  const attached: number[] = [];
   const ended: Record<string, string[]> = { 의뢰인: [], 개발자: [] };
   for (const [who, page] of [['의뢰인', client.page], ['개발자', developer.page]] as const) {
+    page.on('request', (request) => {
+      if (request.method() === 'PUT' && request.url().includes(':9000/')) direct.push(request.url());
+    });
+    page.on('response', (response) => {
+      if (response.url().includes('/recordings') && response.status() === 201) {
+        attached.push(response.status());
+      }
+    });
     page.on('websocket', (socket) => {
       if (!socket.url().includes('/service/ws/')) return;
       socket.on('framereceived', (frame) => {
@@ -204,16 +217,23 @@ test('한쪽이 세션을 끝내면 양쪽에 종료가 전해진다', async ({ 
     await developer.page.goto(`/sessions/${SESSION_ID}`);
     await expectTwoWayVideo([client.page, developer.page]);
 
-    // 의뢰인만 끝낸다.
+    // 담을 시간을 조금 준다. 조각 간격이 5초라 그보다 길게 기다린다.
+    await client.page.waitForTimeout(6_000);
+
     await client.page.getByRole('button', { name: '세션 종료' }).click();
     await client.page.getByRole('button', { name: '세션 종료' }).last().click();
 
+    // 의뢰인만 눌렀는데 양쪽이 종료를 받는다. 두 쪽의 종료 시각이 같다.
     await expect.poll(() => ended.개발자.length, { timeout: CONNECT_TIMEOUT_MS }).toBeGreaterThan(0);
     await expect.poll(() => ended.의뢰인.length, { timeout: CONNECT_TIMEOUT_MS }).toBeGreaterThan(0);
-
-    // 양쪽이 같은 종료 시각을 받는다.
     const endedAt = (text: string) => JSON.parse(text).payload.endedAt as string;
     expect(endedAt(ended.개발자[0])).toBe(endedAt(ended.의뢰인[0]));
+
+    // 두 사람 모두 자기 녹음을 붙인다.
+    await expect.poll(() => attached.length, { timeout: CONNECT_TIMEOUT_MS }).toBe(2);
+
+    // 파일은 우리 서버를 지나지 않고 저장소로 곧장 갔다.
+    expect(direct).toHaveLength(2);
   } finally {
     await client.context.close();
     await developer.context.close();

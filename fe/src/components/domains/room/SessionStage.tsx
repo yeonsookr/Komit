@@ -14,6 +14,7 @@ import { INTERNAL } from "@/lib/api/endpoints";
 import { formatTime } from "@/lib/format";
 import { ROUTES } from "@/lib/routes";
 import { SESSION_PENDING_CONSENT_STATUS } from "@/lib/session";
+import { uploadFromBrowser } from "@/lib/upload/browserUpload";
 import {
   usePeerConnection,
   type CallStatus,
@@ -232,6 +233,17 @@ export function SessionStage({
     askAgainRef.current = askAgain;
   }, [askAgain]);
 
+  /*
+    세션이 끝났다는 서버 알림을 받는 자리입니다.
+
+    **누가 눌렀든 양쪽이 같은 쪽지를 받습니다.** 끝낸 사람도 받으므로 마감과 업로드는 여기
+    한 곳에서만 합니다 — 종료 요청 쪽에서도 하면 같은 녹음을 두 번 올리게 됩니다.
+
+    **한 번만 처리합니다.** 쪽지는 회선이 튀어 두 번 올 수 있습니다.
+  */
+  const finishRef = React.useRef<() => void>(() => {});
+  const finishedRef = React.useRef(false);
+
   // 훅끼리 서로를 참조해 순서가 꼬이지 않게, 받은 쪽지를 잠깐 맡아 두는 자리입니다.
   const callRef = React.useRef<PeerConnection | null>(null);
 
@@ -246,6 +258,11 @@ export function SessionStage({
         if (envelope.type === "SYSTEM_PEER_JOINED") {
           askAgainRef.current();
           callRef.current?.peerPresent();
+          return;
+        }
+
+        if (envelope.type === "SYSTEM_SESSION_ENDED") {
+          finishRef.current();
           return;
         }
 
@@ -318,29 +335,70 @@ export function SessionStage({
     ]);
   };
 
+  /*
+    올리지 못한 녹음을 쥐고 있는 자리입니다.
+
+    **성공할 때까지 버리지 않습니다.** 조각은 멈추는 순간 파일 하나로 묶이고 그 뒤로는
+    다시 만들 수 없어서, 여기서 놓으면 그 사람의 이야기가 요약에서 통째로 빠집니다.
+  */
+  const [pendingRecording, setPendingRecording] = React.useState<File | null>(null);
+  const [uploading, setUploading] = React.useState(false);
+
   /**
-   * 담아 둔 녹음을 올립니다.
+   * 녹음을 저장소에 올리고 세션에 붙입니다.
    *
-   * 올리지 못해도 방을 떠나는 것을 막지 않습니다. 한쪽 녹음이 없어도 요약은 만들어지고
-   * (`R-CON-16`), 여기서 붙잡으면 사용자가 나갈 방법이 없습니다.
+   * 파일 본문은 브라우저가 저장소로 직접 보냅니다. 우리 서버는 주소를 내주고 완료를 확인할
+   * 뿐 십수 MiB 를 받았다 다시 보내지 않습니다.
    */
-  const uploadRecording = async () => {
+  const uploadRecording = React.useCallback(
+    async (file: File) => {
+      setUploading(true);
+      try {
+        const uploaded = await uploadFromBrowser(file, "SESSION_RECORDING");
+        await clientApi.post(INTERNAL.SESSION_RECORDINGS(sessionId), {
+          fileId: uploaded.fileId,
+        });
+        setPendingRecording(null);
+        return true;
+      } catch {
+        setPendingRecording(file);
+        showToast({
+          tone: "danger",
+          title: "녹음을 올리지 못했습니다",
+          description: "다시 시도할 수 있습니다. 창을 닫으면 녹음이 사라집니다.",
+        });
+        return false;
+      } finally {
+        setUploading(false);
+      }
+    },
+    [sessionId, showToast],
+  );
+
+  /*
+    종료 쪽지를 받았을 때 하는 일. 녹음을 마감해 올리고 방으로 돌아갑니다.
+
+    올리지 못해도 방을 떠나는 것을 막지 않습니다. 붙잡아 두면 나갈 방법이 없어집니다.
+    대신 파일은 쥐고 있다가 화면에서 다시 시도할 수 있게 합니다.
+  */
+  const finish = React.useCallback(async () => {
+    if (finishedRef.current) return;
+    finishedRef.current = true;
+    setEnding(true);
+
+    // 상대 화면이 얼어붙은 채 남지 않게, 방을 뜨기 전에 나간다고 알립니다.
+    call.hangUp();
+
     const file = await recorder.stop();
-    if (!file) return;
+    if (file) await uploadRecording(file);
 
-    const body = new FormData();
-    body.append("recording", file);
+    router.push(ROUTES.room(roomId));
+    router.refresh();
+  }, [call, recorder, roomId, router, uploadRecording]);
 
-    try {
-      await clientApi.post(INTERNAL.SESSION_RECORDINGS(sessionId), body);
-    } catch {
-      showToast({
-        tone: "danger",
-        title: "녹음을 올리지 못했습니다",
-        description: "요약이 내 이야기를 빼고 만들어질 수 있습니다.",
-      });
-    }
-  };
+  React.useEffect(() => {
+    finishRef.current = () => void finish();
+  }, [finish]);
 
   const end = async () => {
     if (ending) return;
@@ -348,18 +406,13 @@ export function SessionStage({
 
     try {
       await clientApi.post(INTERNAL.SESSION_END(sessionId));
-      // 상대 화면이 얼어붙은 채 남지 않게, 방을 뜨기 전에 나간다고 알립니다.
-      call.hangUp();
       setAsking(false);
-      // 녹음은 세션이 끝난 뒤에만 받습니다. 순서를 바꾸면 400 입니다.
-      await uploadRecording();
+      // 서버가 양쪽에 종료를 알리면 그때 각자 마감하고 올립니다. 여기서는 기다리지 않습니다.
       showToast({
         tone: "success",
         title: "세션을 마쳤습니다",
         description: "녹음을 바탕으로 요약을 만들고 있습니다.",
       });
-      router.push(ROUTES.room(roomId));
-      router.refresh();
     } catch (error) {
       showToast({
         tone: "danger",
@@ -455,6 +508,28 @@ export function SessionStage({
           <div ref={bottomRef} />
         </ChatRoom>
       </div>
+
+      {/*
+        올리지 못한 녹음. 창을 닫으면 사라지므로 떠나기 전에 다시 해 볼 수 있게 남겨 둡니다.
+      */}
+      {pendingRecording && (
+        <Callout
+          className="mt-4"
+          tone="danger"
+          title="녹음을 올리지 못했습니다"
+          action={
+            <Button
+              variant="outline"
+              disabled={uploading}
+              onClick={() => void uploadRecording(pendingRecording)}
+            >
+              {uploading ? "올리는 중" : "다시 시도"}
+            </Button>
+          }
+        >
+          이 창을 닫으면 녹음이 사라져 요약에 내 이야기가 빠집니다.
+        </Callout>
+      )}
 
       <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">

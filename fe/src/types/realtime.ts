@@ -49,7 +49,8 @@ export type RealtimeSystemType =
   | "SYSTEM_ERROR"
   | "SYSTEM_REPLACED"
   | "SYSTEM_PEER_JOINED"
-  | "SYSTEM_PEER_LEFT";
+  | "SYSTEM_PEER_LEFT"
+  | "SYSTEM_SESSION_ENDED";
 
 /**
  * 채널에 누가 붙고 떨어졌는지 알리는 쪽지의 내용.
@@ -58,6 +59,17 @@ export type RealtimeSystemType =
  */
 export interface RealtimePeerPayload {
   userId: number;
+}
+
+/**
+ * 세션이 끝났다는 쪽지의 내용.
+ *
+ * `SYSTEM_PEER_LEFT` 와 다릅니다 — 저쪽은 회선이 끊긴 것이고 이것은 일이 끝난 것입니다.
+ * 한 사람이 끝내면 양쪽이 받습니다. (R-CON-15)
+ */
+export interface RealtimeSessionEndedPayload {
+  /** 최초 종료 시각. 같은 요청이 다시 와도 이 값은 바뀌지 않습니다. */
+  endedAt: string;
 }
 
 export type RealtimeType = RtcSignalType | RealtimeSystemType;

@@ -171,6 +171,12 @@ export const INTERNAL = {
   SESSION_RECORDINGS: (sessionId: number) =>
     `/api/consulting-sessions/${sessionId}/recordings`,
   SESSION_SUMMARY: (sessionId: number) => `/api/consulting-sessions/${sessionId}/summary`,
+  /**
+   * 파일 올리기 3콜 중 첫째와 셋째. 가운데 PUT 은 브라우저가 저장소로 직접 보내므로
+   * 여기에 없습니다.
+   */
+  UPLOADS: "/api/uploads",
+  UPLOAD_COMPLETE: (uploadId: number) => `/api/uploads/${uploadId}/complete`,
   SESSION_SUMMARY_CHANGES: (sessionId: number) =>
     `/api/consulting-sessions/${sessionId}/summary/applied-changes`,
   MILESTONE_SUBMISSION: (milestoneId: number) => `/api/milestones/${milestoneId}/submission`,
