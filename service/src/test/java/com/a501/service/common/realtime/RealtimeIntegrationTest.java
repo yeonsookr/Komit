@@ -11,6 +11,7 @@ import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -110,6 +111,18 @@ class RealtimeIntegrationTest {
                 + CHANNEL_ID + "\"}";
     }
 
+    /**
+     * 앞 시험의 연결을 다음 시험으로 넘기지 않는다.
+     *
+     * <p>시험끼리 같은 채널과 같은 사람을 쓴다. 닫기는 client 쪽이 돌아온 뒤에도 server
+     * 에서 조금 더 걸리므로, 덜 닫힌 연결이 다음 시험의 registry.size() 와 presence
+     * 단언에 섞인다.
+     */
+    @AfterEach
+    void 연결이_모두_정리된_뒤에_넘어간다() throws Exception {
+        awaitUntil(() -> registry.size() == 0 && present().isEmpty());
+    }
+
     @Test
     void 티켓으로_열고_PING_에_PONG_을_받는다() throws Exception {
         Recorder recorder = new Recorder();
@@ -119,9 +132,8 @@ class RealtimeIntegrationTest {
 
             session.sendMessage(new TextMessage(envelope("SYSTEM_PING")));
 
-            awaitUntil(() -> !recorder.snapshot().isEmpty());
-            assertThat(MAPPER.readTree(recorder.snapshot().get(0)).get("type").asString())
-                    .isEqualTo("SYSTEM_PONG");
+            awaitUntil(() -> types(recorder).contains("SYSTEM_PONG"));
+            assertThat(types(recorder)).contains("SYSTEM_PONG");
         } finally {
             session.close();
         }
@@ -199,9 +211,8 @@ class RealtimeIntegrationTest {
         WebSocketSession secondSession = open(second);
         try {
             // 앞의 연결은 이유를 받고 닫힌다. 닫는 코드만으로는 이유를 전할 수 없어 봉투를 먼저 보낸다.
-            awaitUntil(() -> !first.snapshot().isEmpty());
-            assertThat(MAPPER.readTree(first.snapshot().get(0)).get("type").asString())
-                    .isEqualTo("SYSTEM_REPLACED");
+            awaitUntil(() -> types(first).contains("SYSTEM_REPLACED"));
+            assertThat(types(first)).contains("SYSTEM_REPLACED");
 
             awaitUntil(() -> !firstSession.isOpen());
             assertThat(secondSession.isOpen()).isTrue();
@@ -209,6 +220,18 @@ class RealtimeIntegrationTest {
         } finally {
             secondSession.close();
         }
+    }
+
+    /**
+     * 받은 봉투의 종류만 모은다.
+     *
+     * <p>몇 번째로 닿았는지로 단언하지 않는다. SYSTEM_REPLACED 는 지시 토픽을, 참가 알림은
+     * 중계 토픽을 타므로 둘 사이의 도착 순서가 정해져 있지 않다.
+     */
+    private List<String> types(Recorder recorder) {
+        return recorder.snapshot().stream()
+                .map(payload -> MAPPER.readTree(payload).get("type").asString())
+                .toList();
     }
 
     private List<RealtimePresence> present() {
