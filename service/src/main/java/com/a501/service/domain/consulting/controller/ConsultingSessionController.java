@@ -57,7 +57,6 @@ public class ConsultingSessionController {
     ResponseEntity<ConsultingSessionResponse> join(
             @AuthenticationPrincipal AuthenticatedUser user, @PathVariable Integer sessionId) {
         ConsultingSessionService.SessionEntry entry = sessionService.join(user.userId(), sessionId);
-        // 202 는 「기다리는 중」이다. 화면이 이 둘을 갈라 무대를 열지 정한다.
         return ResponseEntity.status(entry.entered() ? HttpStatus.CREATED : HttpStatus.ACCEPTED)
                 .body(entry.session());
     }

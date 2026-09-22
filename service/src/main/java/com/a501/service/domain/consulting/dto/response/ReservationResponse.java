@@ -26,9 +26,6 @@ public record ReservationResponse(
     /**
      * 엔티티를 응답으로 바꿉니다. 엔티티는 밖으로 나가지 않습니다.
      *
-     * <p>저장된 값은 offset 이 없는 시각이고 서버는 UTC 로 씁니다. 계약은 경계에서 offset 을
-     * 요구하므로(BACKEND_CONVENTIONS 11.1) 여기서 UTC 를 붙입니다.
-     *
      * @param entity 조회한 엔티티
      * @return 응답 DTO
      */

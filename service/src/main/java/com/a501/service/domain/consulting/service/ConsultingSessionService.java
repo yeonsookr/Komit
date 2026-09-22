@@ -110,7 +110,6 @@ public class ConsultingSessionService {
         List<ParticipationRecord> records =
                 participationRepository.findAllByConsultingSessionIdAndDeletedFalse(sessionId);
         if (records.size() < REQUIRED_PARTICIPANTS) {
-            // 먼저 동의한 사람은 여기서 기다립니다. 아직 들어간 것이 아닙니다.
             return new SessionEntry(false, response(session, parties, reservation));
         }
 
@@ -139,7 +138,7 @@ public class ConsultingSessionService {
         return response(session, parties, findReservation(sessionId));
     }
 
-    /** 이미 동의했으면 그대로 두고, 처음이면 행을 만듭니다. 행이 생기는 것이 곧 동의입니다. */
+    /** 행이 생기는 것이 곧 동의입니다. 이미 있으면 그대로 둡니다. */
     private void recordConsent(Integer sessionId, Integer userId, LocalDateTime now) {
         participationRepository
                 .findByConsultingSessionIdAndUserIdAndDeletedFalse(sessionId, userId)
@@ -150,7 +149,6 @@ public class ConsultingSessionService {
                                                 sessionId, userId, NOTICE_VERSION, now)));
     }
 
-    /** 아직 이른 시각과 이미 끝난 세션을 한 코드로 답합니다. 목 명세가 그렇게 정해 두었습니다. */
     private void requireOpen(
             ConsultingSession session, Reservation reservation, LocalDateTime now) {
         if (session.isEnded()

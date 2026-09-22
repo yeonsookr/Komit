@@ -15,12 +15,7 @@ public final class ConsultingEntryPolicy {
 
     private ConsultingEntryPolicy() {}
 
-    /**
-     * 예약 시각을 기준으로 지금 들어갈 수 있는지.
-     *
-     * @param scheduledAt 예약한 일시
-     * @param now 지금
-     */
+    /** 예약 시각을 기준으로 지금 들어갈 수 있는지. */
     public static boolean isOpen(LocalDateTime scheduledAt, LocalDateTime now) {
         return !now.isBefore(scheduledAt.minus(ENTRY_OPENS_BEFORE));
     }

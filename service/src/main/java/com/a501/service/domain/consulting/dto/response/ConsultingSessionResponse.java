@@ -62,7 +62,10 @@ public record ConsultingSessionResponse(
                 entity.getChatRefId());
     }
 
-    /** 저장된 값에는 offset 이 없고 서버는 UTC 로 씁니다. 계약은 경계에서 offset 을 요구합니다. */
+    /**
+     * 저장된 값에는 offset 이 없고 서버는 UTC 로 씁니다. 계약은 경계에서 offset 을 요구하므로
+     * (BACKEND_CONVENTIONS 11.1) 여기서 붙입니다.
+     */
     private static OffsetDateTime atUtc(LocalDateTime value) {
         return value == null ? null : value.atOffset(ZoneOffset.UTC);
     }
