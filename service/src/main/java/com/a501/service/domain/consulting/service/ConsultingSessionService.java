@@ -98,7 +98,9 @@ public class ConsultingSessionService {
      */
     @Transactional
     public SessionEntry join(Integer userId, Integer sessionId) {
-        ConsultingSession session = findSession(sessionId);
+        // 같은 세션의 입장은 한 줄로 세웁니다. 겹치면 동의가 두 번 들어가거나 양쪽이 서로를
+        // 못 보고 대기에 머뭅니다.
+        ConsultingSession session = findSessionForEntry(sessionId);
         ContractParties parties = findParties(session, userId);
         Reservation reservation = findReservation(sessionId);
 
@@ -160,6 +162,12 @@ public class ConsultingSessionService {
     private ConsultingSessionResponse response(
             ConsultingSession session, ContractParties parties, Reservation reservation) {
         return ConsultingSessionResponse.of(session, parties.contractId(), reservation);
+    }
+
+    private ConsultingSession findSessionForEntry(Integer sessionId) {
+        return sessionRepository
+                .findWithLockByIdAndDeletedFalse(sessionId)
+                .orElseThrow(() -> new BusinessException(ConsultingErrorCode.SESSION_NOT_FOUND));
     }
 
     private ConsultingSession findSession(Integer sessionId) {

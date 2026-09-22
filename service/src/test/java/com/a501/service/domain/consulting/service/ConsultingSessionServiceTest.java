@@ -201,6 +201,9 @@ class ConsultingSessionServiceTest {
         ReflectionTestUtils.setField(session, "chatRefId", "session-42-chat");
         ReflectionTestUtils.setField(session, "endedAt", endedAt);
         when(sessionRepository.findByIdAndDeletedFalse(SESSION_ID)).thenReturn(Optional.of(session));
+        // 입장은 세션 행을 잠그고 가져옵니다. 같은 세션을 돌려주게 둡니다.
+        when(sessionRepository.findWithLockByIdAndDeletedFalse(SESSION_ID))
+                .thenReturn(Optional.of(session));
     }
 
     private void givenParticipants(Integer... userIds) {
