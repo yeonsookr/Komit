@@ -52,6 +52,10 @@ services:
       - "8081:30081"
       - "3000:30082"
       - "3001:30083"
+      # MinIO S3. service-config의 STORAGE_PUBLIC_ENDPOINT(http://localhost:9000)와 같아야 프리사인 URL이 열립니다.
+      - "9000:30090"
+      # MinIO S3. service-config의 STORAGE_PUBLIC_ENDPOINT(http://localhost:9000)와 같아야 프리사인 URL이 열립니다.
+      - "9000:30090"
     volumes:
       - k3s-data:/var/lib/rancher/k3s
       - k3s-config:/etc/rancher/k3s

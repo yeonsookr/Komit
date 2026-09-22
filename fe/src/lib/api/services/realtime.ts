@@ -1,8 +1,7 @@
 import "server-only";
 
-import { backendApi } from "../server";
+import { authenticatedBackendApi } from "../server";
 import { BACKEND } from "../endpoints";
-import { authorized } from "@/lib/auth/session";
 import type { CreateRealtimeTicketRequest, RealtimeTicket } from "@/types/realtime";
 
 /**
@@ -17,10 +16,9 @@ import type { CreateRealtimeTicketRequest, RealtimeTicket } from "@/types/realti
 export async function createRealtimeTicket(
   body: CreateRealtimeTicketRequest,
 ): Promise<RealtimeTicket> {
-  const { data } = await backendApi().post<RealtimeTicket>(
+  const { data } = await authenticatedBackendApi().post<RealtimeTicket>(
     BACKEND.REALTIME_TICKETS,
     body,
-    await authorized(),
   );
   return data;
 }

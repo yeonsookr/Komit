@@ -1,8 +1,7 @@
 import "server-only";
 
-import { backendApi } from "../server";
+import { authenticatedBackendApi } from "../server";
 import { BACKEND } from "../endpoints";
-import { authorized } from "@/lib/auth/session";
 import type {
   CreateIssueRequest,
   Diagnosis,
@@ -29,9 +28,8 @@ interface UnfinishedSurveyListResponse {
  * 그려지고, 마지막으로 저장한 시각의 내림차순입니다.
  */
 export async function getUnfinishedSurveys(): Promise<UnfinishedSurvey[]> {
-  const { data } = await backendApi().get<UnfinishedSurveyListResponse>(
+  const { data } = await authenticatedBackendApi().get<UnfinishedSurveyListResponse>(
     BACKEND.DIAGNOSES,
-    await authorized(),
   );
   return data.content;
 }
@@ -43,7 +41,7 @@ export async function getUnfinishedSurveys(): Promise<UnfinishedSurvey[]> {
  * 설문1에서 받으므로 화면에 들어올 때가 아니라 **다음을 누를 때** 부릅니다.
  */
 export async function startDiagnosis(body: StartDiagnosisRequest): Promise<Diagnosis> {
-  const { data } = await backendApi().post<Diagnosis>(BACKEND.DIAGNOSES, body);
+  const { data } = await authenticatedBackendApi().post<Diagnosis>(BACKEND.DIAGNOSES, body);
   return data;
 }
 
@@ -54,7 +52,7 @@ export async function startDiagnosis(body: StartDiagnosisRequest): Promise<Diagn
  * 설문4 문항은 검사 결과를 올린 뒤에야 생깁니다.
  */
 export async function getSurvey(diagnosisId: number): Promise<Survey> {
-  const { data } = await backendApi().get<Survey>(BACKEND.SURVEY(diagnosisId));
+  const { data } = await authenticatedBackendApi().get<Survey>(BACKEND.SURVEY(diagnosisId));
   return data;
 }
 
@@ -68,7 +66,7 @@ export async function saveSurveyAnswers(
   diagnosisId: number,
   body: SaveSurveyAnswersRequest,
 ): Promise<Survey> {
-  const { data } = await backendApi().patch<Survey>(BACKEND.SURVEY_ANSWERS(diagnosisId), body);
+  const { data } = await authenticatedBackendApi().patch<Survey>(BACKEND.SURVEY_ANSWERS(diagnosisId), body);
   return data;
 }
 
@@ -82,7 +80,7 @@ export async function saveSurveyAnswers(
  * 아직 답하지 않은 문항이 남았거나 이미 끝낸 설문이면 409 입니다.
  */
 export async function completeSurvey(diagnosisId: number): Promise<Survey> {
-  const { data } = await backendApi().post<Survey>(BACKEND.SURVEY_COMPLETE(diagnosisId));
+  const { data } = await authenticatedBackendApi().post<Survey>(BACKEND.SURVEY_COMPLETE(diagnosisId));
   return data;
 }
 
@@ -99,7 +97,7 @@ export async function uploadInspection(
   const form = new FormData();
   form.append("file", file);
 
-  const { data } = await backendApi().post<Inspection>(
+  const { data } = await authenticatedBackendApi().post<Inspection>(
     BACKEND.INSPECTIONS(diagnosisId),
     form,
     // FormData 는 경계 문자열이 필요하므로 공통 JSON 헤더를 지웁니다.
@@ -122,7 +120,7 @@ export interface ScanFile {
  * 만들어지고, 그 결과 파일만 다시 올립니다. 소스 코드는 올리지 않습니다.
  */
 export async function downloadScanFile(diagnosisId: number): Promise<ScanFile> {
-  const response = await backendApi().get<ArrayBuffer>(BACKEND.SCAN_FILE(diagnosisId), {
+  const response = await authenticatedBackendApi().get<ArrayBuffer>(BACKEND.SCAN_FILE(diagnosisId), {
     responseType: "arraybuffer",
   });
 
@@ -138,13 +136,13 @@ export async function downloadScanFile(diagnosisId: number): Promise<ScanFile> {
 
 /** 진단 머리. 준비도 점수와 검사 시각, 프로젝트가 옵니다. */
 export async function getDiagnosis(diagnosisId: number): Promise<Diagnosis> {
-  const { data } = await backendApi().get<Diagnosis>(BACKEND.DIAGNOSIS(diagnosisId));
+  const { data } = await authenticatedBackendApi().get<Diagnosis>(BACKEND.DIAGNOSIS(diagnosisId));
   return data;
 }
 
 /** 검사에서 나온 결함 목록. 진단서와 요구사항 선택이 함께 씁니다. */
 export async function getIssues(diagnosisId: number): Promise<Issue[]> {
-  const { data } = await backendApi().get<IssueListResponse>(BACKEND.ISSUES(diagnosisId), {
+  const { data } = await authenticatedBackendApi().get<IssueListResponse>(BACKEND.ISSUES(diagnosisId), {
     // 진단서와 요청서는 일부 페이지만 보여주면 분류와 요구사항이 조용히 사라집니다.
     // 목·실서버 계약이 허용하는 최대 크기로 한 회차의 결함을 모두 받습니다.
     params: { page: 1, size: 100 },
@@ -157,7 +155,7 @@ export async function createIssue(
   diagnosisId: number,
   body: CreateIssueRequest,
 ): Promise<Issue> {
-  const { data } = await backendApi().post<Issue>(BACKEND.ISSUES(diagnosisId), body);
+  const { data } = await authenticatedBackendApi().post<Issue>(BACKEND.ISSUES(diagnosisId), body);
   return data;
 }
 
@@ -166,7 +164,7 @@ export async function updateIssueStatus(
   issueId: number,
   body: UpdateIssueStatusRequest,
 ): Promise<Issue> {
-  const { data } = await backendApi().patch<Issue>(BACKEND.ISSUE(issueId), body);
+  const { data } = await authenticatedBackendApi().patch<Issue>(BACKEND.ISSUE(issueId), body);
   return data;
 }
 
@@ -182,7 +180,7 @@ export async function writeRequirements(
   diagnosisId: number,
   body: WriteRequirementsRequest,
 ): Promise<Issue[]> {
-  const { data } = await backendApi().put<IssueListResponse>(
+  const { data } = await authenticatedBackendApi().put<IssueListResponse>(
     BACKEND.REQUIREMENTS(diagnosisId),
     body,
   );

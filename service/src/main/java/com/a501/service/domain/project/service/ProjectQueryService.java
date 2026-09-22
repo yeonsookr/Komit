@@ -1,5 +1,6 @@
 package com.a501.service.domain.project.service;
 
+import com.a501.service.domain.project.dto.MyProjectView;
 import com.a501.service.domain.project.entity.Project;
 import com.a501.service.domain.project.repository.ProjectRepository;
 import java.util.Collection;
@@ -14,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 다른 도메인이 프로젝트를 물어볼 때 쓰는 조회 창구.
  *
- * <p>엔티티와 리포지터리는 이 도메인 밖으로 나가지 않습니다. 묻는 쪽에는 id 만 돌려줍니다.
+ * <p>엔티티와 리포지터리는 이 도메인 밖으로 나가지 않습니다. 묻는 쪽에는 id 와 표시용 최소 정보만 돌려줍니다.
  * (BACKEND_CONVENTIONS 7.1)
  */
 @Service
@@ -22,6 +23,13 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class ProjectQueryService {
     private final ProjectRepository projectRepository;
+
+    /** 이 사용자가 의뢰인인 프로젝트. 최근 것이 먼저이며 마이페이지의 프로젝트 칸이 씁니다. */
+    public List<MyProjectView> findMine(Integer userId) {
+        return projectRepository.findByClientIdAndDeletedFalseOrderByIdDesc(userId).stream()
+                .map(ProjectQueryService::toView)
+                .toList();
+    }
 
     /**
      * 이 프로젝트를 맡긴 의뢰인.
@@ -52,7 +60,7 @@ public class ProjectQueryService {
      * @return 프로젝트 id 목록
      */
     public List<Integer> findProjectIds(Integer clientId) {
-        return projectRepository.findAllByClientIdAndDeletedFalse(clientId).stream()
+        return projectRepository.findByClientIdAndDeletedFalseOrderByIdDesc(clientId).stream()
                 .map(Project::getId)
                 .toList();
     }
@@ -83,5 +91,9 @@ public class ProjectQueryService {
         }
         return projectRepository.findAllByIdInAndDeletedFalse(projectIds).stream()
                 .collect(Collectors.toMap(Project::getId, Project::getName));
+    }
+
+    private static MyProjectView toView(Project project) {
+        return new MyProjectView(project.getId(), project.getName());
     }
 }

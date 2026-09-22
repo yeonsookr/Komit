@@ -11,5 +11,7 @@ resources:
   - fe-service.yaml
   - fe-test-deployment.yaml
   - fe-test-service.yaml
+  # 파일 저장소. overlay가 NodePort와 디스크 크기를 덧씌웁니다.
+  - minio.yaml
   - pod-disruption-budgets.yaml
   - autoscalers.yaml

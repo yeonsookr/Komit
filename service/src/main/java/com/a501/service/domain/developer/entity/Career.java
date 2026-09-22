@@ -14,6 +14,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.ColumnDefault;
 
+/** 개발자 경력 한 줄. 증빙 확인(R-DEV-01)은 운영이 하며, 개발자의 저장 요청으로는 확인 상태가 바뀌지 않습니다. */
 @Getter
 @Entity
 @Table(name = "careers")
@@ -48,4 +49,29 @@ public class Career extends SoftDeleteEntity {
     @ColumnDefault("FALSE")
     @Column(name = "is_verified", nullable = false)
     private boolean verified = false;
+
+    public static Career create(Integer developerId, String company, String role, LocalDate startDate, LocalDate endDate, Integer evidenceFileId) {
+        Career career = new Career();
+        career.developerId = developerId;
+        career.update(company, role, startDate, endDate, evidenceFileId);
+        return career;
+    }
+
+    /**
+     * 저장 요청의 값으로 맞춥니다. 확인을 마친 경력은 증빙과 표시 내용이 어긋나지 않도록 내용과 확인 상태를 모두 그대로 둡니다.
+     */
+    public void update(String company, String role, LocalDate startDate, LocalDate endDate, Integer evidenceFileId) {
+        if (verified) {
+            return;
+        }
+        this.company = company;
+        this.role = role;
+        this.startDate = startDate;
+        this.endDate = endDate;
+        this.fileId = evidenceFileId;
+    }
+
+    public void remove(LocalDateTime now) {
+        markDeleted(now);
+    }
 }

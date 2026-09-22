@@ -22,6 +22,13 @@ import org.hibernate.type.SqlTypes;
 @Table(name = "files")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class StoredFile {
+    public static final String STATUS_GROUP = "FILE_STATUS";
+    public static final String STATUS_PENDING = "PENDING";
+    public static final String STATUS_COMPLETED = "COMPLETED";
+    public static final String STATUS_FAILED = "FAILED";
+    private static final String RECORD_STATUS_GROUP = "RECORD_STATUS";
+    private static final String RECORD_STATUS_ACTIVE = "ACTIVE";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "file_id", nullable = false)
@@ -84,4 +91,48 @@ public class StoredFile {
 
     @Column(name = "status_group", nullable = false, length = 50)
     private String statusGroup;
+
+    public static StoredFile pending(
+            Integer userId,
+            String originalName,
+            String contentType,
+            Long sizeBytes,
+            String bucketName,
+            String storageKey) {
+        StoredFile file = new StoredFile();
+        file.userId = userId;
+        file.originalName = originalName;
+        file.contentType = contentType;
+        file.sizeBytes = sizeBytes;
+        file.bucketName = bucketName;
+        file.storageKey = storageKey;
+        file.recordStatus = RECORD_STATUS_ACTIVE;
+        file.recordStatusGroup = RECORD_STATUS_GROUP;
+        file.status = STATUS_PENDING;
+        file.statusGroup = STATUS_GROUP;
+        return file;
+    }
+
+    public boolean isPending() {
+        return STATUS_PENDING.equals(status);
+    }
+
+    public boolean isCompleted() {
+        return STATUS_COMPLETED.equals(status);
+    }
+
+    public void complete(String finalStorageKey, Instant completedAt) {
+        if (!isPending()) {
+            return;
+        }
+        storageKey = finalStorageKey;
+        verifiedAt = completedAt;
+        status = STATUS_COMPLETED;
+    }
+
+    public void fail() {
+        if (isPending()) {
+            status = STATUS_FAILED;
+        }
+    }
 }

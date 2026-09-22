@@ -16,9 +16,9 @@ escrow Pod ×2 ──┬─ 일반 트랜잭션   → escrow-db-rw ── Primar
 |---|---|
 | `platform/` | CloudNativePG 오퍼레이터, redis-operator (K3s HelmChart) |
 | `database/` | `service-db`, `escrow-db` Cluster, `service-redis` RedisReplication + RedisSentinel |
-| `base/` | `service`, `escrow`, `fe` 애플리케이션 |
-| `prod/` | 운영 overlay. `service`(30080), `escrow`(30081), 실제 BE용 `fe`(30082), mock용 `fe-test`(30083)를 nginx용 NodePort로 엽니다 |
-| `local/` | 로컬 실습용 Secret, NodePort, 이미지 태그와 mock |
+| `base/` | `service`, `escrow`, `fe` 애플리케이션과 파일 저장소 `minio`(단일 노드, PVC) |
+| `prod/` | 운영 overlay. `service`(30080), `escrow`(30081), 실제 BE용 `fe`(30082), mock용 `fe-test`(30083), `minio`(30090)를 nginx용 NodePort로 열고 MinIO 디스크를 20Gi로 키웁니다 |
+| `local/` | 로컬 실습용 Secret, NodePort, 이미지 태그, mock. MinIO는 30090을 docker-compose가 호스트 9000으로 매핑합니다 |
 
 CloudNativePG Cluster와 Redis 리소스는 각 오퍼레이터의 CRD가 설치된 뒤에만 만들 수 있습니다. 그래서 오퍼레이터 → DB·Redis → 애플리케이션 순서로 나눠 적용합니다.
 
@@ -175,6 +175,12 @@ upstream komit_test {
     keepalive 16;
 }
 
+# 파일 저장소(MinIO). 별도 호스트 file.komit.site로 받습니다. 아래 「파일 저장소」 참고.
+upstream komit_storage {
+    server 172.17.0.1:30090;
+    keepalive 16;
+}
+
 server {
     # ...기존 설정 (/mock/, /grafana/ 등)...
 
@@ -245,6 +251,61 @@ server {
     }
 }
 ```
+
+#### 파일 저장소(`file.komit.site`)
+
+프로필 사진·작업물 썸네일·증빙·인계물은 브라우저가 service가 발급한 **프리사인 URL**로 MinIO에 직접 올리고 읽습니다.
+그 주소의 호스트가 `STORAGE_PUBLIC_ENDPOINT`이고, 운영 값은 `https://file.komit.site`입니다.
+
+**`komit.site/file/` 같은 하위 경로로는 열 수 없습니다.** S3 서명이 경로와 Host를 포함해 계산되기 때문에 MinIO는
+하위 경로 프록시를 지원하지 않고([MinIO 문서](https://longsheng.org/post/25735.html): "The S3 API signature calculation
+algorithm does not support proxy schemes where you host the MinIO Server API such as example.net/s3/"), service가 쓰는
+minio-java도 경로가 있는 엔드포인트를 거부합니다(`no path allowed in endpoint`). 그래서 서브도메인 하나를 씁니다.
+
+서버에서 할 일 세 가지입니다.
+
+1. DNS: `file.komit.site` A 레코드를 이 서버로 잡습니다.
+2. 인증서: 기존 인증서에 `file.komit.site`를 추가합니다. certbot이면 `-d komit.site -d file.komit.site`로 다시 발급합니다.
+3. nginx: 아래 `server` 블록을 `conf.d`에 추가합니다. `komit.site` 블록과 **별도의 server 블록**입니다.
+
+```nginx
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name file.komit.site;
+    # ssl_certificate / ssl_certificate_key: file.komit.site 가 포함된 인증서
+
+    # MinIO 문서의 필수 설정. 특수문자 헤더를 살리고, 업로드를 nginx 디스크에 모으지 않습니다.
+    ignore_invalid_headers off;
+    client_max_body_size 0;
+    proxy_buffering off;
+    proxy_request_buffering off;
+
+    location / {
+        # 경로와 Host 가 서명에 들어갑니다. proxy_pass 끝에 / 를 붙이지 않고 Host 를 그대로 넘깁니다.
+        proxy_pass http://komit_storage;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_connect_timeout 300;
+        chunked_transfer_encoding off;
+    }
+}
+
+# http 로 들어오면 https 로 보냅니다. 프리사인 URL 은 항상 https 로 발급됩니다.
+server {
+    listen 80;
+    server_name file.komit.site;
+    return 301 https://$host$request_uri;
+}
+```
+
+확인은 `curl -i https://file.komit.site/minio/health/live`가 200이면 됩니다. 파이프라인의 `storage-smoke` 잡이
+배포 뒤 같은 확인을 하고, DNS·인증서·nginx가 아직 없으면 경고로 남깁니다(배포는 되돌리지 않습니다).
+MinIO 콘솔(9001)은 열지 않습니다. 필요하면 `sudo kubectl -n komit port-forward deployment/minio 9001:9001`로 봅니다.
 
 #### mock용 FE(`fe-test`)
 
@@ -578,6 +639,10 @@ rm -rf ~/komit-k3s-manual
 | 앱 로그에 `NOAUTH` 또는 `WRONGPASS` | Spring과 Redis 비밀번호가 다름 | `service-redis-auth` Secret과 `SERVICE_REDIS_PASSWORD` 값 확인 |
 | `curl`이 **502** | 30080에 받는 쪽이 없음 | `sudo kubectl -n komit get pods`로 service Pod가 Ready인지 확인 |
 | `curl`이 **504** (약 60초 뒤) | nginx 컨테이너가 30080에 닿지 못함 | A-0의 `nodeport-addresses` 확인 |
+| 사진 업로드·표시가 안 되고 `file.komit.site`가 **502** | 30090에 받는 쪽이 없음 | `sudo kubectl -n komit get pods -l app.kubernetes.io/name=minio`로 MinIO Pod가 Ready인지, `prod/minio-nodeport.yaml`이 적용됐는지 확인 |
+| 프리사인 URL이 **403 `SignatureDoesNotMatch`** | nginx가 Host나 경로를 바꿔 넘김, 또는 `STORAGE_PUBLIC_ENDPOINT`가 실제 호스트와 다름 | `file.komit.site` 블록의 `proxy_set_header Host $http_host`와 `proxy_pass`에 끝 `/`가 없는지, 변수 값이 `https://file.komit.site`(경로 없음)인지 확인 |
+| service Pod가 `no path allowed in endpoint`로 죽음 | `STORAGE_*_ENDPOINT`에 경로가 들어감 | 호스트만 남깁니다. deploy.sh가 같은 검사를 하므로 새 파이프라인으로 다시 배포 |
+| `minio-init` Job이 `field is immutable`로 실패 | 이름 해시가 바뀐 ConfigMap을 참조하는 Job을 다시 apply함 | deploy.sh가 apply 전에 Job을 지웁니다. 손으로 돌렸다면 `sudo kubectl -n komit delete job minio-init` 뒤 다시 실행 |
 | 리다이렉트 `Location`이 `https://komit.site/login`처럼 `/service` 접두사를 잃음 | nginx의 `X-Forwarded-Prefix`가 빠졌거나 Spring이 헤더를 반영하지 않음 | 서버 nginx `location /service/`에 `proxy_set_header X-Forwarded-Prefix /service;`가 있는지 확인. Spring은 prod에서 `server.forward-headers-strategy=framework`로 반영합니다 |
 | WebSocket 핸드셰이크가 **404**나 **200**으로 끝남 | `/service/ws/` 블록이 없어 `/service/`에 걸렸고, 그쪽이 `Connection ""`으로 업그레이드를 지움 | 4단계의 `location /service/ws/`와 `map $http_upgrade` 블록이 들어갔는지 확인 |
 | 통화가 **1분쯤 지나 저절로** 끊김 | `proxy_read_timeout` 기본값 60초 | `location /service/ws/`의 `proxy_read_timeout`·`proxy_send_timeout` 확인 |
@@ -624,6 +689,10 @@ fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
 | `SSAFY_ESCROW_USER_KEY`, `SSAFY_ESCROW_ACCOUNT_NO` | Masked, Protected | 계약별 가상계좌의 모계좌가 되는 Escrow 보관 주체의 금융망 사용자 키와 16자리 보관계좌 번호 |
 | `SSAFY_FEE_ACCOUNT_NO` | Masked, Protected | 보관계좌와 같은 Escrow 사용자 명의로 개설한 별도 16자리 플랫폼 수수료 수익 계좌 번호 |
 | `SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS` | Visible, Protected | 가상계좌 만료일 계산에 사용할 1~30일. SSAFY 금융망은 발급일로부터 30일 이내만 허용한다 |
+| `STORAGE_INTERNAL_ENDPOINT` | Visible, Protected | service Pod가 클러스터 안의 MinIO를 부르는 주소. `http://minio.komit.svc.cluster.local:9000`으로 고정입니다. `service-config`에 들어갑니다 |
+| `STORAGE_PUBLIC_ENDPOINT` | Visible, Protected | 브라우저가 열 프리사인 업로드·읽기 주소의 호스트. `https://file.komit.site`. **경로를 붙일 수 없고**(deploy.sh가 거부) nginx `server_name`과 글자까지 같아야 합니다. `service-config`에 들어갑니다 |
+| `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` | Masked, Protected | 저장소 접근 키이자 MinIO 루트 계정(각각 3자·8자 이상). `service-storage` Secret으로 주입되어 service와 MinIO가 함께 읽습니다. 없으면 둘 다 기동하지 않습니다 |
+| `STORAGE_BUCKET` | Visible, Protected, 선택 | 업로드 버킷 이름. 비우면 `komit`입니다. `minio-init` Job이 배포마다 만들어 두므로 손으로 만들 필요는 없습니다 |
 
 > GitLab에 CI/CD 변수를 등록하는 것만으로는 Pod에 전달되지 않습니다. 애플리케이션에 운영 환경변수를
 > 추가할 때는 같은 MR에서 `.gitlab-ci.yml`의 필수 변수 검사와 SSH 전달 목록, `deploy/k3s/deploy.sh`의
@@ -662,6 +731,11 @@ export SSAFY_ESCROW_USER_KEY=<Escrow 보관 주체의 SSAFY userKey>
 export SSAFY_ESCROW_ACCOUNT_NO=<Escrow 보관계좌 16자리 번호>
 export SSAFY_FEE_ACCOUNT_NO=<Escrow 플랫폼 수수료 계좌 16자리 번호>
 export SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS=<가상계좌 유효 일수>
+export STORAGE_INTERNAL_ENDPOINT=http://minio.komit.svc.cluster.local:9000
+export STORAGE_PUBLIC_ENDPOINT=https://file.komit.site   # 경로 없이 호스트만
+export STORAGE_ACCESS_KEY=<MinIO 루트 사용자, 3자 이상>
+export STORAGE_SECRET_KEY=<MinIO 루트 비밀번호, 8자 이상>
+export STORAGE_BUCKET=komit   # 비우면 komit
 
 # 이번에 바뀐 모듈만 넘깁니다. 클러스터에 아직 없는 모듈은 반드시 넘깁니다.
 export SERVICE_IMAGE=docker.io/<account>/komit-service:<commit-sha>
@@ -692,6 +766,9 @@ chmod +x deploy/k3s/deploy.sh
 | `SSAFY_ESCROW_USER_KEY`, `SSAFY_ESCROW_ACCOUNT_NO` | 예 | Escrow 보관 주체의 금융망 사용자 키와 보관계좌 번호. `escrow-security` Secret으로 주입합니다. |
 | `SSAFY_FEE_ACCOUNT_NO` | 예 | 보관계좌와 다른 플랫폼 수수료 수익 계좌 번호. `escrow-security` Secret으로 주입합니다. |
 | `SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS` | 예 | 가상계좌 만료일 계산에 쓰는 1~30일. `escrow-config` ConfigMap으로 주입합니다. |
+| `STORAGE_INTERNAL_ENDPOINT`, `STORAGE_PUBLIC_ENDPOINT` | 예 | 클러스터 안 MinIO 주소와 브라우저가 여는 공개 호스트. 경로가 붙어 있으면 스크립트가 거부합니다. `service-config` ConfigMap으로 주입되며 Spring의 `app.storage.internal-endpoint`·`public-endpoint`가 됩니다. |
+| `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY` | 예 | 저장소 접근 키이자 MinIO 루트 계정. `service-storage` Secret으로 주입되며 값이 바뀌면 service Pod가 새 값으로 다시 뜹니다. **MinIO는 Recreate 전략이라 자격을 바꾸면 기존 디스크의 루트 계정과 어긋나므로 바꾸지 않는 것을 전제로 합니다.** |
+| `STORAGE_BUCKET` | 아니요 | 업로드 버킷. 비우면 `komit`. `service-config` ConfigMap으로 주입되며 `minio-init` Job이 배포마다 `--ignore-existing`으로 만듭니다. |
 | `SERVICE_IMAGE`, `ESCROW_IMAGE`, `FE_IMAGE`, `FE_TEST_IMAGE` | 아니요 | 비어 있으면 클러스터에서 돌고 있는 이미지를 유지합니다. 바뀌지 않은 모듈은 재시작하지 않습니다. 클러스터에 아직 없는 모듈은 필수입니다. |
 
 스크립트는 배포할 이미지 태그를 임시 디렉터리의 Kustomize overlay에 고정해 적용하고, 각 단계의 준비 완료를 기다린 뒤 다음 단계로 넘어갑니다. DB·Redis 주소는 클러스터 내부 DNS 이름으로 고정되어 있어 주입하지 않습니다.

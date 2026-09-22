@@ -1,6 +1,6 @@
 import "server-only";
 
-import { backendApi } from "../server";
+import { authenticatedBackendApi, backendApi } from "../server";
 import { BACKEND } from "../endpoints";
 import type {
   CodeItem,
@@ -34,7 +34,9 @@ export async function findDevelopers(
 
 /** 내 개발자 프로필. 아직 만들지 않았으면 NO_DEVELOPER_PROFILE 오류가 그대로 올라갑니다. */
 export async function getMyDeveloperProfile(): Promise<MyDeveloperProfile> {
-  const { data } = await backendApi().get<MyDeveloperProfile>(BACKEND.MY_DEVELOPER_PROFILE);
+  const { data } = await authenticatedBackendApi().get<MyDeveloperProfile>(
+    BACKEND.MY_DEVELOPER_PROFILE,
+  );
   return data;
 }
 
@@ -42,7 +44,7 @@ export async function getMyDeveloperProfile(): Promise<MyDeveloperProfile> {
 export async function writeMyDeveloperProfile(
   body: WriteDeveloperProfileRequest,
 ): Promise<{ profile: MyDeveloperProfile; status: number }> {
-  const { data, status } = await backendApi().put<MyDeveloperProfile>(
+  const { data, status } = await authenticatedBackendApi().put<MyDeveloperProfile>(
     BACKEND.MY_DEVELOPER_PROFILE,
     body,
   );
@@ -51,7 +53,10 @@ export async function writeMyDeveloperProfile(
 
 /** 내가 받은 리뷰의 답글 쓰기·수정. */
 export async function writeReviewReply(reviewId: number, reply: string): Promise<Review> {
-  const { data } = await backendApi().put<Review>(BACKEND.REVIEW_REPLY(reviewId), { reply });
+  const { data } = await authenticatedBackendApi().put<Review>(
+    BACKEND.REVIEW_REPLY(reviewId),
+    { reply },
+  );
   return data;
 }
 

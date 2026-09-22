@@ -1,6 +1,5 @@
 import "server-only";
 
-import { bearerHeaders } from "@/lib/auth/session";
 import type {
   AccountVerification,
   MemberAccount,
@@ -9,14 +8,13 @@ import type {
   RequestAccountVerificationBody,
 } from "@/types/account";
 import { BACKEND } from "../endpoints";
-import { backendApi } from "../server";
+import { authenticatedBackendApi } from "../server";
 
 /** 회원가입 때 발급된 내 계좌를 받아옵니다. 아직 없으면 이때 발급됩니다. (R-ACC-14) */
 export async function issueMemberAccount(): Promise<MemberAccount> {
-  const { data } = await backendApi().post<MemberAccount>(
+  const { data } = await authenticatedBackendApi().post<MemberAccount>(
     BACKEND.MEMBER_ACCOUNT,
     null,
-    await bearerHeaders(),
   );
   return data;
 }
@@ -25,10 +23,9 @@ export async function issueMemberAccount(): Promise<MemberAccount> {
 export async function requestAccountVerification(
   body: RequestAccountVerificationBody,
 ): Promise<AccountVerification> {
-  const { data } = await backendApi().post<AccountVerification>(
+  const { data } = await authenticatedBackendApi().post<AccountVerification>(
     BACKEND.ACCOUNT_VERIFICATIONS,
     body,
-    await bearerHeaders(),
   );
   return data;
 }
@@ -38,10 +35,9 @@ export async function confirmAccountVerification(
   verificationId: number,
   body: ConfirmAccountVerificationBody,
 ): Promise<ConfirmAccountVerificationResponse> {
-  const { data } = await backendApi().post<ConfirmAccountVerificationResponse>(
+  const { data } = await authenticatedBackendApi().post<ConfirmAccountVerificationResponse>(
     BACKEND.ACCOUNT_VERIFICATION_CONFIRM(verificationId),
     body,
-    await bearerHeaders(),
   );
   return data;
 }

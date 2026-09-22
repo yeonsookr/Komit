@@ -1,16 +1,13 @@
 import Link from "next/link";
 import { Avatar, Badge, RatingDots, Tag } from "@/components/common";
 import { Money } from "@/components/common";
+import { formatFieldAndYears } from "@/lib/developerProfile";
+import { ROUTES } from "@/lib/routes";
 import type { DeveloperSummary, TaskType } from "@/types/developer";
 
 /** 요금표에서 작업 종류별 시작 금액을 꺼냅니다. 없으면 그 줄을 적지 않습니다. */
 function priceOf(developer: DeveloperSummary, taskType: TaskType): number | undefined {
   return developer.prices.find((price) => price.taskType === taskType)?.price;
-}
-
-/** 연차 표기. 목은 4.0 처럼 소수로 주지만 화면에는 정수로 적습니다. */
-function yearsLabel(years: number): string {
-  return `${Math.floor(years)}년`;
 }
 
 export interface DeveloperCardProps {
@@ -29,23 +26,26 @@ export function DeveloperCard({ developer }: Readonly<DeveloperCardProps>) {
 
   return (
     <article className="flex gap-4 py-6">
-      <Avatar size="lg" name={developer.name} className="mt-0.5 shrink-0" />
+      <Avatar
+        size="lg"
+        name={developer.name}
+        src={developer.profileImageUrl ?? undefined}
+        className="mt-0.5 shrink-0"
+      />
 
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-2">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <Link
-                href={`/developers/${developer.developerId}`}
+                href={ROUTES.developer(developer.developerId)}
                 className="rounded-sm text-base font-bold text-fg hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               >
                 {developer.name}
               </Link>
             </div>
             <p className="mt-0.5 flex flex-wrap items-center gap-2 text-[13px] text-fg-muted">
-              <span>
-                {developer.field?.codeName ?? "분야 미설정"} {yearsLabel(developer.yearsOfExperience)}
-              </span>
+              <span>{formatFieldAndYears(developer.field, developer.yearsOfExperience)}</span>
               {developer.isCareerVerified && (
                 <Badge tone="success" plain dot size="sm">
                   증빙 확인

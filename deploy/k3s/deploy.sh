@@ -37,6 +37,13 @@ FE_TEST_IMAGE=${FE_TEST_IMAGE:-}
 # 계좌번호·userKey 를 암호화해 보관하는 키입니다. 없으면 service Pod 가 기동 중 죽습니다.
 : "${ACCOUNT_DATA_ENCRYPTION_KEY:?ACCOUNT_DATA_ENCRYPTION_KEY is required}"
 : "${KAKAO_CLIENT_SECRET:?KAKAO_CLIENT_SECRET is required}"
+# 파일 저장소 MinIO(base/minio.yaml). 내부 주소는 service Pod가 부르고(minio.komit.svc.cluster.local:9000),
+# 공개 주소는 브라우저가 열 프리사인 URL의 호스트(https://file.komit.site)입니다. 자격은 MinIO 루트 계정으로도 쓰입니다.
+: "${STORAGE_INTERNAL_ENDPOINT:?STORAGE_INTERNAL_ENDPOINT is required}"
+: "${STORAGE_PUBLIC_ENDPOINT:?STORAGE_PUBLIC_ENDPOINT is required}"
+: "${STORAGE_ACCESS_KEY:?STORAGE_ACCESS_KEY is required}"
+: "${STORAGE_SECRET_KEY:?STORAGE_SECRET_KEY is required}"
+STORAGE_BUCKET=${STORAGE_BUCKET:-komit}
 # escrow 보안 설정. 운영에서는 application-local.yml의 개발 기본값을 사용하지 않습니다.
 : "${CLIENT_API_KEY_HMAC_SECRET:?CLIENT_API_KEY_HMAC_SECRET is required}"
 : "${SENSITIVE_DATA_HMAC_SECRET:?SENSITIVE_DATA_HMAC_SECRET is required}"
@@ -85,6 +92,22 @@ if [ "${#ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE}" -gt 100 ]; then
   echo "ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE must not exceed 100 characters" >&2
   exit 1
 fi
+# S3 서명 규격상 엔드포인트에 경로를 둘 수 없습니다(minio-java: "no path allowed in endpoint").
+# https://komit.site/file 같은 값은 service가 기동하지 않으므로 여기서 먼저 막습니다. 끝의 /만 허용합니다.
+for NAME in STORAGE_INTERNAL_ENDPOINT STORAGE_PUBLIC_ENDPOINT; do
+  eval "VALUE=\${$NAME}"
+  VALUE=${VALUE%/}
+  case "$VALUE" in
+    http://*|https://*) ;;
+    *) echo "$NAME must start with http:// or https://" >&2; exit 1 ;;
+  esac
+  case "${VALUE#*://}" in
+    */*|'') echo "$NAME must be a host without a path (S3 signatures do not support sub-path endpoints)" >&2; exit 1 ;;
+  esac
+done
+# MinIO 루트 계정 규칙. 짧으면 MinIO Pod가 기동하지 않습니다.
+[ "${#STORAGE_ACCESS_KEY}" -ge 3 ] || { echo "STORAGE_ACCESS_KEY must contain at least 3 characters (MinIO root user)" >&2; exit 1; }
+[ "${#STORAGE_SECRET_KEY}" -ge 8 ] || { echo "STORAGE_SECRET_KEY must contain at least 8 characters (MinIO root password)" >&2; exit 1; }
 ACCOUNT_KEY_BYTES=$(printf '%s' "$ACCOUNT_DATA_ENCRYPTION_KEY" | base64 -d 2>/dev/null | wc -c | tr -d ' ')
 if [ "$ACCOUNT_KEY_BYTES" != 32 ]; then
   echo "ACCOUNT_DATA_ENCRYPTION_KEY must encode exactly 32 bytes" >&2
@@ -221,6 +244,9 @@ EOF
   printf '  - name: service-config\n    namespace: komit\n    literals:\n'
   config_literal APP_PUBLIC_BASE_URL "$SERVICE_PUBLIC_BASE_URL"
   config_literal ESCROW_API_BASE_URL "$ESCROW_API_BASE_URL"
+  config_literal STORAGE_INTERNAL_ENDPOINT "$STORAGE_INTERNAL_ENDPOINT"
+  config_literal STORAGE_PUBLIC_ENDPOINT "$STORAGE_PUBLIC_ENDPOINT"
+  config_literal STORAGE_BUCKET "$STORAGE_BUCKET"
   printf '  - name: escrow-config\n    namespace: komit\n    literals:\n'
   config_literal APP_PUBLIC_BASE_URL "$ESCROW_PUBLIC_BASE_URL"
   config_literal SSAFY_DEMAND_DEPOSIT_PRODUCT_NO "$SSAFY_DEMAND_DEPOSIT_PRODUCT_NO"
@@ -247,10 +273,17 @@ EOF
   config_literal KAKAO_CLIENT_ID "$KAKAO_CLIENT_ID"
   config_literal KAKAO_CLIENT_SECRET "$KAKAO_CLIENT_SECRET"
   config_literal ESCROW_CLIENT_API_KEY "$ESCROW_CLIENT_API_KEY"
+  # 파일 저장소 자격. 서비스 인증 키와 수명주기를 분리합니다.
+  printf '  - name: service-storage\n    namespace: komit\n    literals:\n'
+  config_literal STORAGE_ACCESS_KEY "$STORAGE_ACCESS_KEY"
+  config_literal STORAGE_SECRET_KEY "$STORAGE_SECRET_KEY"
 } >> "$WORK_DIR/apps/kustomization.yaml"
 # 이전 역방향 구성의 Service가 같은 NodePort(30083)를 점유하므로 첫 전환 때만 제거합니다.
 # Deployment는 새 fe-test가 정상 기동한 뒤 제거해 전환 중 진단 로그를 남길 수 있게 합니다.
 kubectl -n komit delete service fe-be --ignore-not-found
+# minio-init Job은 service-config 이름 해시가 바뀌면 template이 달라져 다시 apply할 수 없으므로 먼저 지웁니다.
+# 버킷 생성은 --ignore-existing이라 매 배포마다 다시 돌아도 안전합니다.
+kubectl -n komit delete job minio-init --ignore-not-found
 kubectl apply -k "$WORK_DIR/apps"
 rollout() {
   NAME=$1
@@ -265,6 +298,9 @@ rollout() {
   done
   return 1
 }
+# 파일 저장소가 먼저 준비되어야 service의 업로드·읽기 주소 발급이 바로 동작합니다.
+rollout minio
+kubectl -n komit wait --for=condition=Complete job/minio-init --timeout=300s
 rollout service
 rollout escrow
 rollout fe

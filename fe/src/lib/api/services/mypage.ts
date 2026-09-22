@@ -1,8 +1,7 @@
 import "server-only";
 
-import { backendApi } from "../server";
+import { authenticatedBackendApi } from "../server";
 import { BACKEND } from "../endpoints";
-import { bearerHeaders } from "@/lib/auth/session";
 import type {
   MyAccount,
   MyPage,
@@ -20,7 +19,7 @@ import type {
  * 부릅니다. 로그인하지 않았으면 401 입니다.
  */
 export async function getMyPage(): Promise<MyPage> {
-  const { data } = await backendApi().get<MyPage>(BACKEND.MYPAGE, await bearerHeaders());
+  const { data } = await authenticatedBackendApi().get<MyPage>(BACKEND.MYPAGE);
   return data;
 }
 
@@ -32,10 +31,9 @@ export async function getMyPage(): Promise<MyPage> {
  * 그대로 넣으면 안 됩니다. 헤더는 `/api/users/me` 를 다시 읽어 맞춥니다.
  */
 export async function updateMyName(body: UpdateMyNameBody): Promise<MyAccount> {
-  const { data } = await backendApi().patch<MyAccount>(
+  const { data } = await authenticatedBackendApi().patch<MyAccount>(
     BACKEND.ME,
     body,
-    await bearerHeaders(),
   );
   return data;
 }
@@ -44,10 +42,9 @@ export async function updateMyName(body: UpdateMyNameBody): Promise<MyAccount> {
 export async function updateMyProfileImage(
   body: UpdateProfileImageBody,
 ): Promise<MyAccount> {
-  const { data } = await backendApi().put<MyAccount>(
+  const { data } = await authenticatedBackendApi().put<MyAccount>(
     BACKEND.PROFILE_IMAGE,
     body,
-    await bearerHeaders(),
   );
   return data;
 }
@@ -56,10 +53,9 @@ export async function updateMyProfileImage(
 export async function updateNotificationSetting(
   body: UpdateNotificationSettingBody,
 ): Promise<UpdateNotificationSettingBody> {
-  const { data } = await backendApi().patch<UpdateNotificationSettingBody>(
+  const { data } = await authenticatedBackendApi().patch<UpdateNotificationSettingBody>(
     BACKEND.NOTIFICATION_SETTING,
     body,
-    await bearerHeaders(),
   );
   return data;
 }
@@ -71,9 +67,8 @@ export async function updateNotificationSetting(
  * 거짓이면 탈퇴 버튼을 잠급니다. (R-ACC-05)
  */
 export async function checkWithdrawal(): Promise<WithdrawalCheck> {
-  const { data } = await backendApi().get<WithdrawalCheck>(
+  const { data } = await authenticatedBackendApi().get<WithdrawalCheck>(
     BACKEND.WITHDRAWAL,
-    await bearerHeaders(),
   );
   return data;
 }
@@ -85,10 +80,9 @@ export async function checkWithdrawal(): Promise<WithdrawalCheck> {
  * 화면이 버튼을 잠갔더라도 서버가 같은 조건을 다시 봅니다 — 막히면 409 입니다.
  */
 export async function withdraw(): Promise<WithdrawalResult> {
-  const { data } = await backendApi().post<WithdrawalResult>(
+  const { data } = await authenticatedBackendApi().post<WithdrawalResult>(
     BACKEND.WITHDRAWAL,
     undefined,
-    await bearerHeaders(),
   );
   return data;
 }

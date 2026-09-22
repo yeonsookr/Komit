@@ -3,19 +3,14 @@ import { confirmAccountVerification, requestAccountVerification } from "./accoun
 
 const { post } = vi.hoisted(() => ({ post: vi.fn() }));
 vi.mock("server-only", () => ({}));
-vi.mock("../server", () => ({ backendApi: () => ({ post }) }));
-vi.mock("@/lib/auth/session", () => ({
-  bearerHeaders: async () => ({ headers: { Authorization: "Bearer t" } }),
-}));
-
-const AUTH = { headers: { Authorization: "Bearer t" } };
+vi.mock("../server", () => ({ authenticatedBackendApi: () => ({ post }) }));
 
 beforeEach(() => {
   post.mockReset();
 });
 
 describe("requestAccountVerification", () => {
-  it("계좌 정보와 토큰을 실어 확인 건을 연다", async () => {
+  it("계좌 정보로 확인 건을 연다", async () => {
     const body = {
       bankCodeId: 52,
       accountNumber: "11012345678842",
@@ -31,12 +26,12 @@ describe("requestAccountVerification", () => {
     post.mockResolvedValueOnce({ data: verification });
 
     await expect(requestAccountVerification(body)).resolves.toEqual(verification);
-    expect(post).toHaveBeenCalledWith("/api/accounts/verifications", body, AUTH);
+    expect(post).toHaveBeenCalledWith("/api/accounts/verifications", body);
   });
 });
 
 describe("confirmAccountVerification", () => {
-  it("확인 건에 네 자리 문자열과 토큰을 싣는다", async () => {
+  it("확인 건에 네 자리 문자열을 싣는다", async () => {
     const account = {
       accountId: 22,
       bankName: "신한은행",
@@ -51,7 +46,6 @@ describe("confirmAccountVerification", () => {
     expect(post).toHaveBeenCalledWith(
       "/api/accounts/verifications/77301/confirm",
       { authCode: "0001" },
-      AUTH,
     );
   });
 });

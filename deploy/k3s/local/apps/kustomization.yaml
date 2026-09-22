@@ -9,6 +9,8 @@ patches:
   - path: escrow-nodeport.yaml
   - path: fe-nodeport.yaml
   - path: fe-test-nodeport.yaml
+  # 파일 저장소. docker-compose가 30090을 호스트 9000으로 매핑합니다.
+  - path: minio-nodeport.yaml
 images:
   - name: komit-service
     newName: komit-service
@@ -46,6 +48,9 @@ configMapGenerator:
     literals:
       - APP_PUBLIC_BASE_URL=http://localhost:8080
       - ESCROW_API_BASE_URL=http://escrow.komit.svc.cluster.local:8081
+      - STORAGE_INTERNAL_ENDPOINT=http://minio.komit.svc.cluster.local:9000
+      - STORAGE_PUBLIC_ENDPOINT=http://localhost:9000
+      - STORAGE_BUCKET=komit
   - name: escrow-config
     namespace: komit
     literals:
@@ -70,3 +75,9 @@ secretGenerator:
       - SSAFY_ESCROW_USER_KEY=disabled-local-escrow-user-key
       - SSAFY_ESCROW_ACCOUNT_NO=0010000000000000
       - SSAFY_FEE_ACCOUNT_NO=0010000000000001
+  # 로컬 개발 전용 MinIO 자격. 운영 값은 deploy.sh가 별도 Secret으로 만듭니다.
+  - name: service-storage
+    namespace: komit
+    literals:
+      - STORAGE_ACCESS_KEY=minioadmin
+      - STORAGE_SECRET_KEY=minioadmin

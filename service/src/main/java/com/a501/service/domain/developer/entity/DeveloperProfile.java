@@ -13,6 +13,7 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+/** 개발자 프로필. 개발자당 한 행이며, 만드는 경로는 내 프로필 저장({@code PUT /api/users/me/developer-profile}) 하나뿐입니다. */
 @Getter
 @Entity
 @Table(name = "developer_profiles")
@@ -43,4 +44,22 @@ public class DeveloperProfile extends SoftDeleteEntity {
 
     @Column(name = "active_to")
     private LocalTime activeTo;
+
+    public static DeveloperProfile create(Integer developerId, String intro, String description, BigDecimal yearsOfExperience,
+            Integer fieldCodeId, LocalTime activeFrom, LocalTime activeTo) {
+        DeveloperProfile profile = new DeveloperProfile();
+        profile.developerId = developerId;
+        profile.update(intro, description, yearsOfExperience, fieldCodeId, activeFrom, activeTo);
+        return profile;
+    }
+
+    public void update(String intro, String description, BigDecimal yearsOfExperience, Integer fieldCodeId,
+            LocalTime activeFrom, LocalTime activeTo) {
+        this.intro = intro;
+        this.description = description;
+        this.yearsOfExperience = yearsOfExperience;
+        this.fieldCodeId = fieldCodeId;
+        this.activeFrom = activeFrom;
+        this.activeTo = activeTo;
+    }
 }

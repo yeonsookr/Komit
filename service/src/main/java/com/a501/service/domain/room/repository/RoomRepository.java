@@ -1,5 +1,6 @@
 package com.a501.service.domain.room.repository;
 
+import com.a501.service.domain.room.dto.RoomCountView;
 import com.a501.service.domain.room.entity.Room;
 import java.util.Collection;
 import java.util.List;
@@ -11,7 +12,17 @@ import org.springframework.data.repository.query.Param;
 public interface RoomRepository extends JpaRepository<Room, Integer> {
     Optional<Room> findByIdAndDeletedFalse(Integer id);
 
-    List<Room> findAllByIdInAndDeletedFalse(Collection<Integer> ids);
+    @Query("""
+            select room.projectId as projectId, count(room.id) as roomCount
+            from Room room
+            where room.projectId in :projectIds and room.deleted = false
+            group by room.projectId
+            """)
+    List<RoomCountView> countByProjectIds(@Param("projectIds") Collection<Integer> projectIds);
+
+    List<Room> findByDeveloperIdAndDeletedFalse(Integer developerId);
+
+    List<Room> findByDeveloperIdInAndDeletedFalse(Collection<Integer> developerIds);
 
     /**
      * 내가 들어가 있는 방. 개발자로 들어간 방과 내가 맡긴 프로젝트의 방을 함께 가져옵니다.

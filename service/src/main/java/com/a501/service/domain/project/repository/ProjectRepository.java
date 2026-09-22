@@ -9,7 +9,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface ProjectRepository extends JpaRepository<Project, Integer> {
     Optional<Project> findByIdAndDeletedFalse(Integer id);
 
-    List<Project> findAllByClientIdAndDeletedFalse(Integer clientId);
+    List<Project> findByClientIdAndDeletedFalseOrderByIdDesc(Integer clientId);
 
     List<Project> findAllByIdInAndDeletedFalse(Collection<Integer> ids);
 }

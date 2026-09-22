@@ -1,4 +1,5 @@
 import axios, { type AxiosInstance } from "axios";
+import { unstable_rethrow } from "next/navigation";
 import {
   ApiError,
   NETWORK_ERROR_CODE,
@@ -21,6 +22,15 @@ export function attachErrorNormalizer(instance: AxiosInstance): AxiosInstance {
   instance.interceptors.response.use(
     (response) => response,
     (error: unknown) => {
+      // cookies(), redirect() 같은 Next 내부 제어 신호는 앱 오류로 정규화하면 안 됩니다.
+      // 특히 인증 Axios의 요청 interceptor가 cookies()를 읽을 때 정적 렌더링 전환
+      // 신호가 이 경로를 지나므로 Next가 직접 처리하도록 가장 먼저 돌려보냅니다.
+      unstable_rethrow(error);
+
+      // 요청 interceptor가 인증 쿠키 부재처럼 이미 공통 오류로 판단한 경우에는
+      // Axios 내부 오류가 아니라는 이유로 UNKNOWN_ERROR로 다시 덮지 않습니다.
+      if (error instanceof ApiError) throw error;
+
       if (!axios.isAxiosError(error)) {
         throw new ApiError(0, UNKNOWN_ERROR_CODE, "알 수 없는 오류가 발생했습니다.");
       }

@@ -8,10 +8,12 @@ from app.routers.service import (
     CONVERTED_CONSULTING_ROOM_ID,
     CONVERTED_DEVELOPMENT_ROOM_ID,
     DRAFT_CONSULTING_CONTRACT_EXAMPLE,
-    DRAFT_DEV_CONTRACT_EXAMPLE,
+    DRAFT_DEV_CONTRACT_ID,
+    DRAFT_DEVELOPMENT_CONTRACT_EXAMPLE,
     ROOMS,
     ContractResponse,
     draft_contract,
+    get_contract,
 )
 
 # 갈래를 정하기 전의 무료 상담방. 초안을 만들 수 없다.
@@ -46,14 +48,45 @@ class ContractDraftDeliveryTest(unittest.TestCase):
         self.assertIsNone(result.developerSignature.signedAt)
         self.assertEqual(result.status, "NEGOTIATING")
 
-    def test_developer_input_fields_are_left_empty(self) -> None:
-        """일정·금액·인계물은 개발자가 채운다. 초안에는 없다."""
+    def test_consulting_draft_leaves_developer_input_empty(self) -> None:
+        """컨설팅은 다룰 항목만 온다. 일시·시간·금액은 개발자가 채운다."""
         result = draft_contract(CONVERTED_CONSULTING_ROOM_ID)
 
+        self.assertNotEqual(result.consulting.topic, "")
         self.assertEqual(result.consulting.totalAmount, 0)
         self.assertEqual(result.consulting.sessions, [])
+        self.assertIsNone(result.detail)
         self.assertEqual(result.messages, [])
         self.assertIsNone(result.contractText)
+
+    def test_development_draft_leaves_developer_input_empty(self) -> None:
+        """개발은 작업 이름·확인 문장·맡을 요구사항만 온다. 일정·금액·인계물은 비어 있다."""
+        result = draft_contract(CONVERTED_DEVELOPMENT_ROOM_ID)
+        development = result.development
+
+        self.assertNotEqual(development.issueIds, [])
+        self.assertNotEqual(development.milestones, [])
+        for milestone in development.milestones:
+            self.assertNotEqual(milestone.title, "")
+            self.assertNotEqual(milestone.qaCriteria, [])
+            self.assertEqual(milestone.price, 0)
+            self.assertIsNone(milestone.workDate)
+
+        self.assertIsNone(development.startDate)
+        self.assertIsNone(development.dueDate)
+        self.assertEqual(development.freeRepairDays, 0)
+        self.assertEqual(development.totalAmount, 0)
+        self.assertEqual(development.deliverables, [])
+        self.assertIsNone(result.detail)
+        self.assertEqual(result.messages, [])
+
+    def test_sent_contract_keeps_the_amounts_the_developer_filled(self) -> None:
+        """초안과 가계약은 다르다. 개발자가 써서 보낸 계약서에는 금액과 일정이 있다."""
+        sent = get_contract(DRAFT_DEV_CONTRACT_ID)
+
+        self.assertIsInstance(sent, ContractResponse)
+        self.assertNotEqual(sent.development.totalAmount, 0)
+        self.assertIsNotNone(sent.development.startDate)
 
     def test_same_room_always_gets_the_same_draft(self) -> None:
         """방마다 한 번만 만들어 둔다. 다시 불러도 문장이 달라지지 않는다."""
@@ -92,7 +125,7 @@ class ContractDraftDeliveryTest(unittest.TestCase):
         self.assertIn("개발자가 고친 내용은 서버가 들고 있지 않는다", operation["description"])
         self.assertEqual(
             operation["responses"]["200"]["content"]["application/json"]["example"],
-            DRAFT_DEV_CONTRACT_EXAMPLE,
+            DRAFT_DEVELOPMENT_CONTRACT_EXAMPLE,
         )
         for status in ("401", "403", "404", "409", "422", "502", "503", "500"):
             self.assertIn(status, operation["responses"])
@@ -100,7 +133,7 @@ class ContractDraftDeliveryTest(unittest.TestCase):
     def test_examples_match_the_contract_response_model(self) -> None:
         for example in (
             DRAFT_CONSULTING_CONTRACT_EXAMPLE,
-            DRAFT_DEV_CONTRACT_EXAMPLE,
+            DRAFT_DEVELOPMENT_CONTRACT_EXAMPLE,
         ):
             with self.subTest(contract_type=example["contractType"]):
                 self.assertEqual(ContractResponse(**example).model_dump(), example)

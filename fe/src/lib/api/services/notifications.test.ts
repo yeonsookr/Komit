@@ -7,12 +7,7 @@ const { get, patch, post } = vi.hoisted(() => ({
   post: vi.fn(),
 }));
 vi.mock("server-only", () => ({}));
-vi.mock("../server", () => ({ backendApi: () => ({ get, patch, post }) }));
-vi.mock("@/lib/auth/session", () => ({
-  bearerHeaders: async () => ({ headers: { Authorization: "Bearer t" } }),
-}));
-
-const AUTH = { headers: { Authorization: "Bearer t" } };
+vi.mock("../server", () => ({ authenticatedBackendApi: () => ({ get, patch, post }) }));
 
 beforeEach(() => {
   get.mockReset();
@@ -21,13 +16,12 @@ beforeEach(() => {
 });
 
 describe("getNotifications", () => {
-  it("필터와 페이지를 토큰과 함께 보낸다", async () => {
+  it("필터와 페이지를 보낸다", async () => {
     const list = { content: [], unreadCount: 0, page: 2, size: 10, totalElements: 0, totalPages: 0 };
     get.mockResolvedValueOnce({ data: list });
 
     await expect(getNotifications({ unreadOnly: true, page: 2, size: 10 })).resolves.toEqual(list);
     expect(get).toHaveBeenCalledWith("/api/notifications", {
-      ...AUTH,
       params: { unreadOnly: true, page: 2, size: 10 },
     });
   });
@@ -39,7 +33,7 @@ describe("readAllNotifications", () => {
     post.mockResolvedValueOnce({ data: list });
 
     await expect(readAllNotifications()).resolves.toEqual(list);
-    expect(post).toHaveBeenCalledWith("/api/notifications/read-all", undefined, AUTH);
+    expect(post).toHaveBeenCalledWith("/api/notifications/read-all", undefined);
   });
 });
 
@@ -49,6 +43,6 @@ describe("readNotification", () => {
     patch.mockResolvedValueOnce({ data: notification });
 
     await expect(readNotification(951)).resolves.toEqual(notification);
-    expect(patch).toHaveBeenCalledWith("/api/notifications/951/read", undefined, AUTH);
+    expect(patch).toHaveBeenCalledWith("/api/notifications/951/read", undefined);
   });
 });
