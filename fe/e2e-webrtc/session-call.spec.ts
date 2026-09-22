@@ -91,7 +91,6 @@ test('먼저 동의한 사람은 미리보기만 보고, 둘 다 동의하면 �
   const developer = await openAs(browser, requiredToken('E2E_TOKEN_DEVELOPER'), '개발자');
 
   try {
-    // --- 의뢰인만 들어온다 -------------------------------------------------
     await client.page.goto(`/sessions/${SESSION_ID}`);
 
     await expect(client.page.getByText('상대방의 동의를 기다리고 있습니다')).toBeVisible({
@@ -104,7 +103,6 @@ test('먼저 동의한 사람은 미리보기만 보고, 둘 다 동의하면 �
       .poll(() => hasMovingVideo(client.page, 0), { timeout: CONNECT_TIMEOUT_MS })
       .toBe(true);
 
-    // --- 개발자가 들어온다 -------------------------------------------------
     await developer.page.goto(`/sessions/${SESSION_ID}`);
 
     // 기다리던 쪽 화면이 저절로 바뀐다. 되묻기가 아니라 서버 알림으로 안다.
@@ -112,7 +110,6 @@ test('먼저 동의한 사람은 미리보기만 보고, 둘 다 동의하면 �
       timeout: CONNECT_TIMEOUT_MS,
     });
 
-    // --- 양방향 영상 -------------------------------------------------------
     await expectTwoWayVideo([client.page, developer.page]);
   } finally {
     await client.context.close();

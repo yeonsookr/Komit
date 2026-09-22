@@ -37,8 +37,6 @@ export default defineConfig({
             '--use-fake-ui-for-media-stream',
             // 진짜 카메라·마이크 대신 만들어 낸 영상과 소리를 물립니다.
             '--use-fake-device-for-media-stream',
-            // 두 context 가 같은 기계 안에서 붙으므로 호스트 확인을 건너뜁니다.
-            '--allow-running-insecure-content',
           ],
         },
       },
