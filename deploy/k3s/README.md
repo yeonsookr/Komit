@@ -11,13 +11,19 @@ service Pod ×2 ─┬─ 일반 트랜잭션    → service-db-rw ─ Primary
 
 escrow Pod ×2 ──┬─ 일반 트랜잭션   → escrow-db-rw ── Primary
                 └─ readOnly 트랜잭션 → escrow-db-ro ── Standby ×2
+
+service Pod ────→ ai:8080 (ClusterIP) ──→ GMS
 ```
+
+`ai`는 확인 문장·계약 초안·컨설팅 요약을 만드는 파이썬 서비스입니다. **부르는 쪽은 `service`
+하나이고** 밖으로 열지 않습니다. FE는 이 주소를 알지 못합니다. GMS 키는 `ai-secret`으로
+들어가며, 키가 없으면 Pod가 기동하지 않습니다.
 
 | 디렉터리 | 내용 |
 |---|---|
 | `platform/` | CloudNativePG 오퍼레이터, redis-operator (K3s HelmChart) |
 | `database/` | `service-db`, `escrow-db` Cluster, `service-redis` RedisReplication + RedisSentinel, `service-mongodb` StatefulSet |
-| `base/` | `service`, `escrow`, `fe` 애플리케이션과 파일 저장소 `minio`(단일 노드, PVC) |
+| `base/` | `service`, `escrow`, `fe`, `ai` 애플리케이션과 파일 저장소 `minio`(단일 노드, PVC) |
 | `prod/` | 운영 overlay. `service`(30080), `escrow`(30081), 실제 BE용 `fe`(30082), mock용 `fe-test`(30083), `minio`(30090)를 nginx용 NodePort로 열고 MinIO 디스크를 20Gi로 키웁니다 |
 | `local/` | 로컬 실습용 Secret, NodePort, 이미지 태그, mock. MinIO는 30090을 docker-compose가 호스트 9000으로 매핑합니다 |
 
@@ -50,12 +56,12 @@ docker compose -f .\deploy\k3s\docker-compose.yml logs -f deployer
 
 Compose가 다음 작업을 순서대로 수행합니다.
 
-1. `service`, `escrow`, `mock`, `fe`, `fe-test` Docker 이미지 빌드
+1. `service`, `escrow`, `mock`, `ai`, `fe`, `fe-test` Docker 이미지 빌드
 2. 이미지를 K3s가 시작할 때 가져갈 tar 파일로 저장
 3. privileged Linux 컨테이너에서 단일 노드 K3s 실행
 4. CloudNativePG 오퍼레이터, redis-operator 설치
 5. `service-db`, `escrow-db`(각 Primary 1 + Standby 2), `service-redis`(Primary 1 + Replica 2, Sentinel 3), `service-mongodb` 배포 및 노드별 MongoDB 연결 검증
-6. `service`, `escrow`, 기본 `fe`와 mock용 `fe-test`를 배포
+6. `ai`, `service`, `escrow`, 기본 `fe`와 mock용 `fe-test`를 배포
 
 상태와 접속을 확인합니다.
 
@@ -438,12 +444,17 @@ DB 비밀번호는 한 번 정하면 바꾸지 않습니다. DB 계정은 첫 �
 | `ESCROW_PUBLIC_BASE_URL` | `https://komit.site/escrow` | Visible |
 | `BACKEND_API_BASE_URL` | `https://komit.site/service` | Visible |
 | `TEST_BACKEND_API_BASE_URL` | `https://komit.site/mock/service` | Visible |
-| `TEST_AI_API_BASE_URL` | `https://komit.site/mock/service` | Visible |
+| `AI_API_BASE_URL` | `http://ai.komit.svc.cluster.local:8080` | Visible |
 | `KAKAO_REDIRECT_URI` | `https://komit.site/api/auth/kakao/callback` | Masked |
 | `TEST_KAKAO_REDIRECT_URI` | `https://komit.site/test/api/auth/kakao/callback` | Masked |
 
-`AI_API_BASE_URL`은 실제 AI 배포 주소를 넣습니다. 루트 FE 변수에는 mock 주소를 넣지 않고,
-테스트 FE의 mock 주소는 반드시 `TEST_*` 변수에만 둡니다.
+`AI_API_BASE_URL`은 **`service`가 부를 클러스터 안 주소**입니다. `fe-config`가 아니라
+`service-config`로 들어갑니다. FE는 AI를 직접 부르지 않습니다 — 컨설팅 요약과 전사는
+브라우저 요청 없이 서버 이벤트로 시작하고, 권한 확인은 `service`만 할 수 있기 때문입니다.
+`ai/worker/docs/job-contract.md`에 근거가 있습니다.
+
+`GMS_API_KEY`는 AI 서비스가 모델을 부르는 키입니다. **Masked**로 등록합니다. 값이 없으면
+AI Pod가 기동하지 않고, 그러면 `k3s-deploy`의 `rollout ai`에서 배포가 멈춥니다.
 
 `SSH_ADDRESS`, `SSH_PRIVATE_KEY`, `DOCKER_REGISTRY*`는 mock 배포에서 이미 쓰고 있어 추가하지 않습니다.
 
@@ -482,7 +493,8 @@ cluster.postgresql.cnpg.io/service-db condition met           (여기서 몇 분
 cluster.postgresql.cnpg.io/escrow-db condition met
 statefulset rolling update complete 3 pods ...service-redis
 statefulset rolling update complete 3 pods ...service-redis-sentinel
-deployment.apps/service created                            ← 3. 앱 배포
+deployment.apps/ai created                                 ← 3. 앱 배포
+deployment "ai" successfully rolled out                       (service보다 먼저 뜹니다)
 deployment "service" successfully rolled out
 deployment "escrow" successfully rolled out
 ```
@@ -562,13 +574,13 @@ fe-test image is required because deployment/fe-test does not exist yet
    export ESCROW_PUBLIC_BASE_URL=https://komit.site/escrow
    export BACKEND_API_BASE_URL=<GitLab 변수 값>
    export AI_API_BASE_URL=<GitLab 변수 값>
+   export GMS_API_KEY=<GitLab 변수 값>
    export TEST_BACKEND_API_BASE_URL=<GitLab 변수 값>
-   export TEST_AI_API_BASE_URL=<GitLab 변수 값>
    export KAKAO_CLIENT_ID=<GitLab 변수 값>
    export KAKAO_REDIRECT_URI=<GitLab 변수 값>
    export TEST_KAKAO_REDIRECT_URI=<GitLab 변수 값>
 
-   sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,SERVICE_REDIS_PASSWORD,SERVICE_MONGODB_ROOT_PASSWORD,SERVICE_MONGODB_PASSWORD,FE_IMAGE,FE_TEST_IMAGE,SERVICE_PUBLIC_BASE_URL,ESCROW_PUBLIC_BASE_URL,BACKEND_API_BASE_URL,AI_API_BASE_URL,TEST_BACKEND_API_BASE_URL,TEST_AI_API_BASE_URL,KAKAO_CLIENT_ID,KAKAO_REDIRECT_URI,TEST_KAKAO_REDIRECT_URI \
+   sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,SERVICE_REDIS_PASSWORD,SERVICE_MONGODB_ROOT_PASSWORD,SERVICE_MONGODB_PASSWORD,FE_IMAGE,FE_TEST_IMAGE,AI_IMAGE,SERVICE_PUBLIC_BASE_URL,ESCROW_PUBLIC_BASE_URL,BACKEND_API_BASE_URL,AI_API_BASE_URL,GMS_API_KEY,TEST_BACKEND_API_BASE_URL,KAKAO_CLIENT_ID,KAKAO_REDIRECT_URI,TEST_KAKAO_REDIRECT_URI \
      sh ~/komit-k3s/k3s/deploy.sh
    ```
 
@@ -618,13 +630,13 @@ export SERVICE_PUBLIC_BASE_URL=https://komit.site/service
 export ESCROW_PUBLIC_BASE_URL=https://komit.site/escrow
 export BACKEND_API_BASE_URL=<GitLab 변수 값>
 export AI_API_BASE_URL=<GitLab 변수 값>
+export GMS_API_KEY=<GitLab 변수 값>
 export TEST_BACKEND_API_BASE_URL=<GitLab 변수 값>
-export TEST_AI_API_BASE_URL=<GitLab 변수 값>
 export KAKAO_CLIENT_ID=<GitLab 변수 값>
 export KAKAO_REDIRECT_URI=<GitLab 변수 값>
 export TEST_KAKAO_REDIRECT_URI=<GitLab 변수 값>
 
-sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,SERVICE_REDIS_PASSWORD,SERVICE_MONGODB_ROOT_PASSWORD,SERVICE_MONGODB_PASSWORD,SERVICE_IMAGE,ESCROW_IMAGE,FE_IMAGE,FE_TEST_IMAGE,SERVICE_PUBLIC_BASE_URL,ESCROW_PUBLIC_BASE_URL,BACKEND_API_BASE_URL,AI_API_BASE_URL,TEST_BACKEND_API_BASE_URL,TEST_AI_API_BASE_URL,KAKAO_CLIENT_ID,KAKAO_REDIRECT_URI,TEST_KAKAO_REDIRECT_URI \
+sudo --preserve-env=SERVICE_DB_PASSWORD,ESCROW_DB_PASSWORD,SERVICE_REDIS_PASSWORD,SERVICE_MONGODB_ROOT_PASSWORD,SERVICE_MONGODB_PASSWORD,SERVICE_IMAGE,ESCROW_IMAGE,FE_IMAGE,FE_TEST_IMAGE,AI_IMAGE,SERVICE_PUBLIC_BASE_URL,ESCROW_PUBLIC_BASE_URL,BACKEND_API_BASE_URL,AI_API_BASE_URL,GMS_API_KEY,TEST_BACKEND_API_BASE_URL,KAKAO_CLIENT_ID,KAKAO_REDIRECT_URI,TEST_KAKAO_REDIRECT_URI \
   sh ~/komit-k3s-manual/deploy.sh
 ```
 
@@ -690,7 +702,7 @@ fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
 | `SERVICE_MONGODB_PASSWORD` | Masked, Protected | service 전용 MongoDB `readWrite` 계정 비밀번호 Secret(`service-mongodb-auth`) |
 | `SERVICE_PUBLIC_BASE_URL`, `ESCROW_PUBLIC_BASE_URL` | Visible | 각 백엔드의 공개 주소(`https://komit.site/service`, `https://komit.site/escrow`). `service-config`, `escrow-config` ConfigMap의 `APP_PUBLIC_BASE_URL`이 됩니다 |
 | `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` | Visible, Protected | `komit.site` 기본 FE가 호출할 실제 BE·AI 주소. `fe-config`에만 들어갑니다 |
-| `TEST_BACKEND_API_BASE_URL`, `TEST_AI_API_BASE_URL` | Visible, Protected | `komit.site/test` FE가 호출할 mock 주소. `fe-test-config`에만 들어갑니다 |
+| `TEST_BACKEND_API_BASE_URL` | Visible, Protected | `komit.site/test` FE가 호출할 mock 주소. `fe-test-config`에만 들어갑니다 |
 | `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI` | Masked | 카카오 로그인. fe 실행 환경(`fe-config`). Redirect URI 는 카카오 콘솔에 등록한 배포 주소(`https://komit.site/api/auth/kakao/callback`)와 글자까지 같아야 합니다 |
 | `ACCOUNT_DATA_ENCRYPTION_KEY` | Masked, Protected | 계좌번호와 `userKey`를 암호화해 보관하는 AES-256 키. 정확히 32바이트인 키의 Base64 값이어야 합니다. `service-auth` Secret으로 주입되며, 없으면 service Pod가 기동 중 죽습니다. **한 번 정한 뒤 바꾸면 이미 저장된 암호문을 읽지 못합니다** |
 | `TEST_KAKAO_REDIRECT_URI` | Masked | `fe-test`의 카카오 Redirect URI(`https://komit.site/test/api/auth/kakao/callback`). 루트 주소와 따로 카카오 콘솔에 등록합니다 |
@@ -735,9 +747,9 @@ export SERVICE_MONGODB_PASSWORD=<service-password>
 export SERVICE_PUBLIC_BASE_URL=https://komit.site/service
 export ESCROW_PUBLIC_BASE_URL=https://komit.site/escrow
 export BACKEND_API_BASE_URL=<fe가 호출할 백엔드 주소>
-export AI_API_BASE_URL=<fe가 호출할 AI 주소>
+export AI_API_BASE_URL=<service가 호출할 AI 주소>
+export GMS_API_KEY=<AI 서비스가 쓸 GMS 키>
 export TEST_BACKEND_API_BASE_URL=<fe-test가 호출할 mock service 주소>
-export TEST_AI_API_BASE_URL=<fe-test가 호출할 mock AI 주소>
 export KAKAO_CLIENT_ID=<카카오 REST API 키>
 export KAKAO_REDIRECT_URI=<카카오 콜백 주소>
 export TEST_KAKAO_REDIRECT_URI=https://komit.site/test/api/auth/kakao/callback
@@ -775,7 +787,7 @@ chmod +x deploy/k3s/deploy.sh
 | `SERVICE_MONGODB_PASSWORD` | 예 | `service` DB 전용 `readWrite` 계정 비밀번호. 같은 Secret을 MongoDB 초기화와 service Pod가 함께 읽습니다. |
 | `SERVICE_PUBLIC_BASE_URL`, `ESCROW_PUBLIC_BASE_URL` | 예 | 각 백엔드가 밖에서 보이는 주소(nginx 경로 접두사 포함). Spring의 `app.public-base-url`이 되고, 없으면 앱이 기동하지 않습니다. 값이 바뀌면 해당 Pod만 다시 뜹니다. |
 | `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` | 예 | 기본 `fe`가 호출할 실제 BE·AI 주소. GitLab CI/CD 변수와 같은 값을 넣으며 `fe-config`에만 들어갑니다. |
-| `TEST_BACKEND_API_BASE_URL`, `TEST_AI_API_BASE_URL` | 예 | `/test`의 `fe-test`가 호출할 mock 주소. `fe-test-config`에만 들어갑니다. |
+| `TEST_BACKEND_API_BASE_URL` | 예 | `/test`의 `fe-test`가 호출할 mock 주소. `fe-test-config`에만 들어갑니다. |
 | `ESCROW_API_BASE_URL` | 예 | GitLab CI/CD 값이 `service-config`에 주입됩니다. `http://escrow.komit.svc.cluster.local:8081`로 설정해 실제 Escrow를 사용합니다. |
 | `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI` | 예 | 카카오 로그인 REST API 키와 콜백 주소. fe 의 `/api/auth/kakao` 가 실행 시점에 읽습니다. 없으면 로그인만 500 으로 실패하고 다른 화면은 영향이 없습니다. |
 | `ACCOUNT_DATA_ENCRYPTION_KEY` | 예 | 계좌 데이터 AES-256 암호화 키. Base64 디코딩 결과가 정확히 32바이트여야 하며 `service-auth` Secret으로 주입됩니다. 이 Secret은 `secretGenerator`가 만들어 이름에 해시가 붙으므로, 값이 바뀌면 service Pod가 새 값으로 다시 뜹니다. 값을 바꾸면 기존 암호문을 복호화할 수 없습니다. |
