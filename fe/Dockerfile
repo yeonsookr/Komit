@@ -18,7 +18,6 @@ COPY . .
 # next build가 페이지 정보를 모으며 서버 API 모듈을 불러올 때 이 값들을 요구합니다.
 # ARG라서 builder 단계에서만 쓰이고 최종 이미지에는 남지 않으므로, 실행 시에는 컨테이너 환경 변수로 다시 넣어야 합니다.
 ARG BACKEND_API_BASE_URL
-ARG AI_API_BASE_URL
 # 하위 경로로 서비스할 때만 넣습니다. next.config.ts 가 basePath 로 굽습니다. (예: /test)
 ARG BASE_PATH
 ENV NEXT_TELEMETRY_DISABLED=1 \

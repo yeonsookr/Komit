@@ -11,6 +11,9 @@ resources:
   - fe-service.yaml
   - fe-test-deployment.yaml
   - fe-test-service.yaml
+  # AI 서비스. service Pod만 부르는 ClusterIP라 overlay에 NodePort 패치가 없습니다.
+  - ai-deployment.yaml
+  - ai-service.yaml
   # 파일 저장소. overlay가 NodePort와 디스크 크기를 덧씌웁니다.
   - minio.yaml
   - pod-disruption-budgets.yaml

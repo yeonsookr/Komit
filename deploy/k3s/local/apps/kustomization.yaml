@@ -24,22 +24,22 @@ images:
   - name: komit-fe-test
     newName: komit-fe-test
     newTag: local
+  - name: komit-ai
+    newName: komit-ai
+    newTag: local
 # 로컬 실습 전용 값입니다. 운영은 deploy.sh가 GitLab CI/CD 변수로 만듭니다.
-# 로컬에는 AI 서버가 없어 AI 호출은 실패합니다.
+# 로컬에는 GMS 키가 없어 AI 서비스는 뜨기는 하지만 호출은 503으로 실패합니다.
 configMapGenerator:
   - name: fe-config
     namespace: komit
     literals:
       - BACKEND_API_BASE_URL=http://service.komit.svc.cluster.local:8080
-      # 별도 AI HTTP 서버가 아직 없으므로 .env.example의 기존 Mock 주소를 클러스터 내부 주소로 씁니다.
-      - AI_API_BASE_URL=http://mock.komit.svc.cluster.local:8080/service
       - KAKAO_CLIENT_ID=local-kakao-client-id
       - KAKAO_REDIRECT_URI=http://localhost:3000/api/auth/kakao/callback
   - name: fe-test-config
     namespace: komit
     literals:
       - BACKEND_API_BASE_URL=http://mock.komit.svc.cluster.local:8080/service
-      - AI_API_BASE_URL=http://mock.komit.svc.cluster.local:8080/service
       - KAKAO_CLIENT_ID=local-kakao-client-id
       - KAKAO_REDIRECT_URI=http://localhost:3001/test/api/auth/kakao/callback
   # docker-compose가 NodePort 30080/30081을 호스트 8080/8081에 매핑합니다.
@@ -48,6 +48,8 @@ configMapGenerator:
     literals:
       - APP_PUBLIC_BASE_URL=http://localhost:8080
       - ESCROW_API_BASE_URL=http://escrow.komit.svc.cluster.local:8081
+      # AI 서비스를 부르는 쪽은 service입니다. FE는 이 주소를 알지 못합니다.
+      - AI_API_BASE_URL=http://ai.komit.svc.cluster.local:8080
       - STORAGE_INTERNAL_ENDPOINT=http://minio.komit.svc.cluster.local:9000
       - STORAGE_PUBLIC_ENDPOINT=http://localhost:9000
       - STORAGE_BUCKET=komit
@@ -61,6 +63,12 @@ configMapGenerator:
       - SSAFY_DEMAND_DEPOSIT_PRODUCT_NO=001-1-231ecb61d2554c
       - SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS=30
 secretGenerator:
+  # 로컬 전용 자리표시 키입니다. 값이 없으면 AI Pod가 기동하지 않아 클러스터가 뜨지 않습니다.
+  # 실제 호출은 GMS가 거부해 503이 나옵니다. 운영 값은 deploy.sh가 만듭니다.
+  - name: ai-secret
+    namespace: komit
+    literals:
+      - GMS_API_KEY=local-dev-no-real-gms-key
   - name: escrow-security
     namespace: komit
     literals:

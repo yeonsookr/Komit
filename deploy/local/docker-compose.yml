@@ -175,7 +175,6 @@ services:
       # 계약 모양이 보장되는 목 서버를 쓰고, 실행 값은 아래 environment 가 덮습니다.
       args:
         BACKEND_API_BASE_URL: https://komit.site/mock/service
-        AI_API_BASE_URL: https://komit.site/mock/service
     ports:
       - "3000:3000"
     depends_on:
@@ -184,7 +183,6 @@ services:
     environment:
       BACKEND_API_BASE_URL: http://service:8080
       ESCROW_API_BASE_URL: http://escrow:8081
-      AI_API_BASE_URL: ${AI_API_BASE_URL:-https://komit.site/mock/service}
       KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID:-}
       # 카카오 콘솔에 등록한 Redirect URI 와 글자까지 같아야 합니다.
       KAKAO_REDIRECT_URI: http://localhost:3000/api/auth/kakao/callback
