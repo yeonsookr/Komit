@@ -16,16 +16,19 @@ const PAGE_SIZE = 30;
 export async function getRoomMessages(
   roomId: number,
   before?: string,
+  size: number = PAGE_SIZE,
 ): Promise<ChatMessageListResponse> {
   const { data } = await authenticatedBackendApi().get<ChatMessageListResponse>(
     BACKEND.ROOM_MESSAGES(roomId),
-    { params: { size: PAGE_SIZE, ...(before ? { before } : {}) } },
+    { params: { size, ...(before ? { before } : {}) } },
   );
   return data;
 }
 
 /**
  * 여러 방의 마지막 메시지. 사이드바 미리보기에 씁니다.
+ *
+ * 쓰는 것은 마지막 한 건뿐이라 한 건만 받아 옵니다.
  *
  * ⚠️ 방마다 따로 부릅니다. 방이 많아지면 요청도 그만큼 늘어납니다. 서버에 여러 방의
  * 마지막 메시지를 한 번에 주는 길이 생기면 이 함수만 그쪽으로 바꿉니다.
@@ -35,7 +38,7 @@ export async function getLastMessages(
 ): Promise<Record<number, ChatMessage | undefined>> {
   const entries = await Promise.all(
     roomIds.map(async (roomId) => {
-      const { content } = await getRoomMessages(roomId);
+      const { content } = await getRoomMessages(roomId, undefined, 1);
       return [roomId, content.at(-1)] as const;
     }),
   );
