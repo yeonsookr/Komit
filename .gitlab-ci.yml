@@ -625,6 +625,9 @@ ai-docker-build-push:
     - if: '$CI_PIPELINE_SOURCE == "push" && $CI_COMMIT_BRANCH == "develop"'
       changes:
         - ai/worker/**/*
+        # AI 서비스를 처음 올릴 때, 배포 설정만 바뀐 푸시에서도 이미지가 있어야 합니다.
+        # 없으면 deploy.sh 가 resolve_image 에서 멈추고 service·escrow·fe 배포까지 함께 막힙니다.
+        - deploy/k3s/**/*
     - when: never
 
 # 목 서버 도커 빌드/도커허브 푸시
