@@ -1,0 +1,5 @@
+# STT 비교 스크립트(compare_stt.py) 전용. 서비스 이미지에는 넣지 않는다.
+# faster-whisper 는 모델 런타임까지 끌고 와 이미지가 GiB 단위로 커진다.
+faster-whisper==1.2.1
+psutil==7.2.2
+rapidfuzz==3.14.6
