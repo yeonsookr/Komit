@@ -81,7 +81,11 @@ public class RequirementService {
             if (issue.isContracted()) {
                 throw new BusinessException(DiagnosisErrorCode.ISSUE_STATUS_CONFLICT);
             }
-            issue.dropFromRequirements(now);
+            // 요청서에서만 빼고 결함 자체는 남긴다. 지우면 요구사항 선택 화면에서도 사라져
+            // 다시 고를 수 없다. 직접 해결한 것은 그 상태를 지킨다.
+            if (!issue.isResolved()) {
+                issue.reopen();
+            }
         }
 
         List<IssueResponse> content = issueQueryService.toResponses(kept);
@@ -108,6 +112,8 @@ public class RequirementService {
                     requirement.categoryCodeId(),
                     requirement.severity().name());
         }
+        // 요청서에 담긴 것과 아직 고르지 않은 것을 갈라야 화면이 요청서 본문을 그릴 수 있다.
+        issue.putIntoRequirements();
         writeCriteria(issue.getId(), requirement.qaCriteria(), now);
         return issue;
     }
