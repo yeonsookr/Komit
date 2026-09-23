@@ -4,6 +4,7 @@ import com.a501.service.common.exception.ErrorResponse;
 import com.a501.service.common.security.AuthenticatedUser;
 import com.a501.service.domain.recommendation.dto.request.CreateRecommendationRequest;
 import com.a501.service.domain.recommendation.dto.response.RecommendationBatchResponse;
+import com.a501.service.domain.recommendation.service.RecommendationQueryService;
 import com.a501.service.domain.recommendation.service.RecommendationService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -17,6 +18,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -30,6 +32,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class RecommendationController {
     private final RecommendationService recommendationService;
+    private final RecommendationQueryService recommendationQueryService;
 
     @Operation(
             summary = "개발자 추천 받기",
@@ -60,5 +63,29 @@ public class RecommendationController {
             @Valid @RequestBody CreateRecommendationRequest request,
             @AuthenticationPrincipal AuthenticatedUser user) {
         return recommendationService.create(projectId, user.userId(), request);
+    }
+
+    @Operation(
+            summary = "추천 결과 조회",
+            description = "**화면 — `3_의뢰인_개발자추천` › 추천 개발자 목록**\n\n"
+                    + "추천 회차의 결과를 순위대로 내려준다. 개발자마다 상담을 요청했는지는 `roomId`로 안다. 비어 있으면 아직 요청하지 않은 개발자다.\n\n"
+                    + "**이 조회가 회차를 '열어본 것'으로 표시한다.** 처음 불릴 때 열람 시각을 남기며, 그 표시가 있어야 추천 받기를 다시 불렀을 때 새 회차가 만들어진다. 표시가 없는 동안에는 추천 받기가 같은 회차를 계속 돌려주므로, **이 API를 부르지 않으면 두 번째 회차가 영영 생기지 않는다.**\n\n"
+                    + "조회인데 기록을 남기지만 몇 번을 불러도 결과는 같다. 열람 시각은 처음 한 번만 찍히고 그 뒤로는 아무것도 바뀌지 않는다.\n\n"
+                    + "- **200**: 추천 회차가 있고 내 것일 때. 맞는 개발자가 없던 회차면 `items`가 빈 배열이다\n"
+                    + "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+                    + "- **404 / RECOMMENDATION_NOT_FOUND**: 없거나 남의 추천일 때\n"
+                    + "- **500 / INTERNAL_ERROR**: 결과를 읽지 못했을 때",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "추천 결과"),
+            @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "추천 결과 없음", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/recommendations/{batchId}")
+    RecommendationBatchResponse getRecommendation(
+            @Parameter(description = "추천 회차 식별자.", example = "61") @PathVariable Integer batchId,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return recommendationQueryService.get(batchId, user.userId());
     }
 }

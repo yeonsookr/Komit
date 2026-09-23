@@ -44,7 +44,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 
 /**
- * 추천 회차를 만드는 규칙을 DB 없이 검증합니다. 순위 정렬, 미열람 회차 재사용, 회차 번호와 계기, 남의 프로젝트 404가 대상입니다.
+ * 추천 회차를 만들고 다시 열어보는 규칙을 DB 없이 검증합니다. 순위 정렬, 미열람 회차 재사용, 회차 번호와 계기, 열람 표시, 404 조건이 대상입니다.
  *
  * <p>점수 계산 자체는 {@link MatchScoreTest}가 맡습니다. 여기서는 계산한 점수를 어떤 순서로 저장하는지만 봅니다.
  */
@@ -70,6 +70,7 @@ class RecommendationServiceTest {
     private DeveloperSummaryAssembler developerSummaryAssembler;
 
     private RecommendationService service;
+    private RecommendationQueryService queryService;
     private List<RecommendationItem> savedItems;
 
     private final CreateRecommendationRequest request =
@@ -77,14 +78,18 @@ class RecommendationServiceTest {
 
     @BeforeEach
     void setUp() {
+        // 조립기는 로직이 얕아 가짜로 두지 않고 그대로 씁니다. 응답 모양까지 함께 보기 위해서입니다.
+        RecommendationBatchAssembler batchAssembler = new RecommendationBatchAssembler(
+                itemRepository, developerSummaryAssembler, projectService);
         service = new RecommendationService(
                 batchRepository,
                 itemRepository,
                 projectService,
                 issueQueryService,
                 developerLookupService,
-                developerSummaryAssembler,
+                batchAssembler,
                 new ObjectMapper());
+        queryService = new RecommendationQueryService(batchRepository, batchAssembler);
 
         when(projectService.findOwned(PROJECT_ID, USER_ID))
                 .thenReturn(Optional.of(new ProjectSummary(
@@ -224,6 +229,72 @@ class RecommendationServiceTest {
         assertThatThrownBy(() -> service.create(PROJECT_ID, USER_ID, request))
                 .isInstanceOf(BusinessException.class);
         verify(batchRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("회차를 처음 열면 열람 시각이 찍힌다")
+    void marksViewedOnFirstOpen() {
+        RecommendationBatch target = batch(61, (short) 1, null);
+        when(batchRepository.findByIdAndDeletedFalse(61)).thenReturn(Optional.of(target));
+
+        RecommendationBatchResponse response = queryService.get(61, USER_ID);
+
+        assertThat(response.batchId()).isEqualTo(61);
+        assertThat(target.isViewed()).isTrue();
+    }
+
+    @Test
+    @DisplayName("다시 열어도 열람 시각은 처음 값 그대로다")
+    void keepsFirstViewedAt() {
+        LocalDateTime first = LocalDateTime.of(2026, 9, 20, 10, 0);
+        RecommendationBatch target = batch(61, (short) 1, first);
+        when(batchRepository.findByIdAndDeletedFalse(61)).thenReturn(Optional.of(target));
+
+        queryService.get(61, USER_ID);
+
+        assertThat(target.getViewedAt()).isEqualTo(first);
+    }
+
+    @Test
+    @DisplayName("남의 회차는 없는 것과 같게 404다")
+    void hidesForeignBatch() {
+        when(batchRepository.findByIdAndDeletedFalse(61))
+                .thenReturn(Optional.of(batch(61, (short) 1, null)));
+
+        assertThatThrownBy(() -> queryService.get(61, 9999))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue(
+                        "errorCode", RecommendationErrorCode.RECOMMENDATION_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("없는 회차는 404다")
+    void rejectsMissingBatch() {
+        when(batchRepository.findByIdAndDeletedFalse(404)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> queryService.get(404, USER_ID))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue(
+                        "errorCode", RecommendationErrorCode.RECOMMENDATION_NOT_FOUND);
+    }
+
+    @Test
+    @DisplayName("열어본 뒤에 다시 추천 받으면 새 회차가 생긴다")
+    void openingUnlocksNextBatch() {
+        RecommendationBatch first = batch(60, (short) 1, null);
+        when(batchRepository.findByIdAndDeletedFalse(60)).thenReturn(Optional.of(first));
+        when(batchRepository.findFirstByProjectIdAndDeletedFalseOrderBySequenceNoDesc(PROJECT_ID))
+                .thenReturn(Optional.of(first));
+        when(developerLookupService.findMatchCandidates())
+                .thenReturn(List.of(candidate(1, PROJECT_TECHS, 4.0, 1)));
+
+        // 열어보기 전에는 같은 회차만 돌아온다.
+        assertThat(service.create(PROJECT_ID, USER_ID, request).batchId()).isEqualTo(60);
+        verify(batchRepository, never()).save(any());
+
+        queryService.get(60, USER_ID);
+
+        assertThat(service.create(PROJECT_ID, USER_ID, request).sequenceNo()).isEqualTo(2);
     }
 
     private RecommendationBatch savedBatch() {

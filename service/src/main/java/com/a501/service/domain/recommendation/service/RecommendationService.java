@@ -3,9 +3,7 @@ package com.a501.service.domain.recommendation.service;
 import com.a501.service.common.exception.BusinessException;
 import com.a501.service.common.exception.CommonErrorCode;
 import com.a501.service.domain.developer.dto.MatchCandidate;
-import com.a501.service.domain.developer.dto.response.DeveloperSummaryResponse;
 import com.a501.service.domain.developer.service.DeveloperLookupService;
-import com.a501.service.domain.developer.service.DeveloperSummaryAssembler;
 import com.a501.service.domain.diagnosis.service.DiagnosisMatchInput;
 import com.a501.service.domain.diagnosis.service.IssueQueryService;
 import com.a501.service.domain.project.dto.ProjectSummary;
@@ -13,7 +11,6 @@ import com.a501.service.domain.project.service.ProjectService;
 import com.a501.service.domain.recommendation.RecommendationErrorCode;
 import com.a501.service.domain.recommendation.dto.request.CreateRecommendationRequest;
 import com.a501.service.domain.recommendation.dto.response.RecommendationBatchResponse;
-import com.a501.service.domain.recommendation.dto.response.RecommendationBatchResponse.RecommendationItemResponse;
 import com.a501.service.domain.recommendation.entity.RecommendationBatch;
 import com.a501.service.domain.recommendation.entity.RecommendationItem;
 import com.a501.service.domain.recommendation.repository.RecommendationBatchRepository;
@@ -21,8 +18,6 @@ import com.a501.service.domain.recommendation.repository.RecommendationItemRepos
 import java.math.BigDecimal;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,7 +37,7 @@ public class RecommendationService {
     private final ProjectService projectService;
     private final IssueQueryService issueQueryService;
     private final DeveloperLookupService developerLookupService;
-    private final DeveloperSummaryAssembler developerSummaryAssembler;
+    private final RecommendationBatchAssembler batchAssembler;
     private final ObjectMapper objectMapper;
 
     /**
@@ -68,7 +63,7 @@ public class RecommendationService {
                 .findFirstByProjectIdAndDeletedFalseOrderBySequenceNoDesc(projectId)
                 .orElse(null);
         if (previous != null && !previous.isViewed()) {
-            return toResponse(previous, project.name());
+            return batchAssembler.assemble(previous, project.name());
         }
 
         List<MatchCandidate> candidates = developerLookupService.findMatchCandidates();
@@ -83,7 +78,7 @@ public class RecommendationService {
                 candidates.size()));
 
         saveItems(batch, input, candidates);
-        return toResponse(batch, project.name());
+        return batchAssembler.assemble(batch, project.name());
     }
 
     private void saveItems(
@@ -120,29 +115,6 @@ public class RecommendationService {
                     writeJson(row.scored().breakdown()),
                     writeJson(row.candidate())));
         }
-    }
-
-    private RecommendationBatchResponse toResponse(RecommendationBatch batch, String projectName) {
-        List<RecommendationItem> items =
-                itemRepository.findByBatchIdAndDeletedFalseOrderByRankAsc(batch.getId());
-        // 추천 시점 프로필은 회차에 남기지만 응답에는 지금 값을 싣는다. 카드에 적힌 금액과
-        // 상담에서 듣는 금액이 달라지면 안 된다.
-        Map<Integer, DeveloperSummaryResponse> developers = developerSummaryAssembler
-                .assembleByIds(items.stream().map(RecommendationItem::getDeveloperId).toList())
-                .stream()
-                .collect(Collectors.toMap(DeveloperSummaryResponse::developerId, summary -> summary));
-
-        return RecommendationBatchResponse.of(
-                batch,
-                projectName,
-                items.stream()
-                        .filter(item -> developers.containsKey(item.getDeveloperId()))
-                        .map(item -> new RecommendationItemResponse(
-                                item.getId(),
-                                item.getRank().intValue(),
-                                developers.get(item.getDeveloperId()),
-                                item.getRoomId()))
-                        .toList());
     }
 
     private String writeJson(Object value) {
