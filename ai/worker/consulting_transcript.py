@@ -29,6 +29,16 @@ CONDITION_ON_PREVIOUS_TEXT = False
 
 SPEAKERS = ("CLIENT", "DEVELOPER")
 
+# 기준 장비가 GPU 로 정해져 모델을 다시 골랐다 (`README.md` 「GPU 기준으로 다시 고름」).
+#
+# `small` 은 CPU 조건에서 고른 것이다. GPU 에서 `large-v3-turbo` 는 절반으로 느려지는 대신
+# 「에이터베이터 주소」를 「데이터베이스 주소」로, 「A P I T」를 「API키」로 받아 적는다.
+# 90분 두 트랙이 8.5분이라 어차피 비동기인 이상 속도 손해가 값을 갖지 않는다.
+DEFAULT_MODEL = "large-v3-turbo"
+
+# 기준 장비가 GPU 다. CPU 로도 돌지만 훨씬 느리고, 그 조건은 다시 재야 한다.
+DEFAULT_DEVICE = "cuda"
+
 # 전사는 GMS 를 부르지 않지만 실패 갈래는 `ai/AGENTS.md` 5 를 그대로 따른다.
 #
 #   모델을 올리지 못함  -> GmsUnavailableError  (상류에 닿지 못함. 다시 걸면 될 수 있다)
@@ -173,8 +183,8 @@ def transcribe_track(model, track: Track, gap_seconds: float = SPLIT_GAP_SECONDS
 def transcribe_session(
     tracks: list[Track],
     *,
-    model_name: str = "small",
-    device: str = "cpu",
+    model_name: str = DEFAULT_MODEL,
+    device: str = DEFAULT_DEVICE,
     compute_type: str | None = None,
     gap_seconds: float = SPLIT_GAP_SECONDS,
 ) -> dict:
@@ -204,8 +214,8 @@ if __name__ == "__main__":
     try:
         result = transcribe_session(
             [Track(**row) for row in payload["tracks"]],
-            model_name=payload.get("model", "small"),
-            device=payload.get("device", "cpu"),
+            model_name=payload.get("model", DEFAULT_MODEL),
+            device=payload.get("device", DEFAULT_DEVICE),
         )
     except (GmsUnavailableError, UnusableInputError) as error:
         print(f"{type(error).__name__}: {error}", file=sys.stderr)
