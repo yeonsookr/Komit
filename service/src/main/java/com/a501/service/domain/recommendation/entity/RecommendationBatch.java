@@ -8,6 +8,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -71,4 +72,44 @@ public class RecommendationBatch extends SoftDeleteEntity {
 
     @Column(name = "outcome_group", length = 50)
     private String outcomeGroup;
+
+    /**
+     * 추천 회차 하나.
+     *
+     * <p>계기는 서버가 정한다. 이 프로젝트의 첫 회차면 상담 요청, 이미 회차가 있으면 재매칭으로 기록하고 직전 회차를 부모로 잇는다.
+     */
+    public static RecommendationBatch of(
+            Integer projectId,
+            Integer requesterUserId,
+            Integer diagnosisId,
+            Short diagnosisVersion,
+            RecommendationBatch previous,
+            String algorithmVersion,
+            String inputSnapshot,
+            int candidateCount) {
+        RecommendationBatch entity = new RecommendationBatch();
+        entity.projectId = Objects.requireNonNull(projectId, "projectId");
+        entity.requesterUserId = Objects.requireNonNull(requesterUserId, "requesterUserId");
+        entity.diagnosisId = diagnosisId;
+        entity.diagnosisVersion = diagnosisVersion;
+        entity.sequenceNo = previous == null ? 1 : (short) (previous.sequenceNo + 1);
+        entity.parentBatchId = previous == null ? null : previous.id;
+        entity.triggerType = previous == null ? "CONSULT_REQUEST" : "REMATCH";
+        entity.triggerTypeGroup = "RECOMMENDATION_TRIGGER";
+        entity.algorithmVersion = Objects.requireNonNull(algorithmVersion, "algorithmVersion");
+        entity.inputSnapshot = Objects.requireNonNull(inputSnapshot, "inputSnapshot");
+        entity.candidateCount = (short) candidateCount;
+        return entity;
+    }
+
+    /** 의뢰인이 추천 목록을 처음 열었다. 열어 보지 않은 회차가 있으면 새 회차를 만들지 않는다. */
+    public void markViewed(LocalDateTime viewedAt) {
+        if (this.viewedAt == null) {
+            this.viewedAt = Objects.requireNonNull(viewedAt, "viewedAt");
+        }
+    }
+
+    public boolean isViewed() {
+        return viewedAt != null;
+    }
 }

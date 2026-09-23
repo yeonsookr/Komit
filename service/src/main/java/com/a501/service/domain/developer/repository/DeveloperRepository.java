@@ -15,4 +15,7 @@ public interface DeveloperRepository extends JpaRepository<Developer, Integer>, 
     Optional<Developer> findByUserIdAndDeletedFalse(Integer userId);
 
     List<Developer> findAllByIdInAndDeletedFalse(Collection<Integer> ids);
+
+    /** 추천 점수를 매길 모집단. 개발자 수가 많아지면 후보를 줄이는 조건을 여기 건다. */
+    List<Developer> findAllByDeletedFalse();
 }
