@@ -74,19 +74,56 @@ class Body(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+# 필드를 `dict` 로 받으면 이름이 틀려도 여기서 통과하고 모듈이 `KeyError` 로 터져 `500` 이
+# 나간다. 계약은 어떤 실패도 `code`·`message` 로 돌려주기로 했으므로 경계에서 걸러야 한다.
+# 계약 문서의 형식을 여기 한 벌 더 적게 되지만, 그것이 경계가 하는 일이다.
+
+
+class Utterance(Body):
+    """`docs/ai/transcript-evidence-contract.md` 2절. 시각은 있으면 받고 쓰지는 않는다."""
+
+    utteranceIndex: int
+    speaker: str
+    rawText: str
+    normalizedText: str
+    startMs: int | None = None
+    endMs: int | None = None
+
+
+class Requirement(Body):
+    """식별자만으로는 모델이 발화와 이을 근거가 없어 제목을 함께 받는다."""
+
+    issueId: int
+    title: str
+
+
+class ChatMessage(Body):
+    """`docs/ai/chat-contract-draft.md`. 방 식별자가 섞였는지는 모듈이 본다."""
+
+    chatRefId: str
+    authorRole: str
+    createdAt: str
+    content: str
+
+
 class QaSuggestionRequest(Body):
     requirement: str
 
 
 class ContractDraftRequest(Body):
     targetType: str
-    messages: list[dict]
-    issues: list[dict] | None = None
+    messages: list[ChatMessage]
+    issues: list[Requirement] | None = None
 
 
 class ConsultingSummaryRequest(Body):
-    utterances: list[dict]
-    requirements: list[dict] | None = None
+    utterances: list[Utterance]
+    requirements: list[Requirement] | None = None
+
+
+def dump(rows: list[Body] | None) -> list[dict]:
+    """모듈은 평범한 dict 를 받는다. 값이 없는 선택 필드는 빼고 넘긴다."""
+    return [row.model_dump(exclude_none=True) for row in rows or []]
 
 
 def failure(status: int, code: str, message: str) -> JSONResponse:
@@ -136,7 +173,7 @@ async def rejected(request, error: ValueError) -> JSONResponse:
 
 
 @app.get("/health")
-async def health() -> dict[str, str]:
+def health() -> dict[str, str]:
     """기동·생존 확인. 모델을 부르지 않는다.
 
     여기서 GMS 를 부르면 상류가 잠깐 흔들릴 때 Pod 가 통째로 재시작된다. 처리 중인
@@ -146,19 +183,19 @@ async def health() -> dict[str, str]:
 
 
 @app.post("/qa-suggestions")
-async def qa_suggestions(body: QaSuggestionRequest) -> dict:
+def qa_suggestions(body: QaSuggestionRequest) -> dict:
     return {"content": suggest(body.requirement, build_client())}
 
 
 @app.post("/contract-draft")
-async def contract_draft(body: ContractDraftRequest) -> dict:
+def contract_draft(body: ContractDraftRequest) -> dict:
     draft = draft_contract(
-        body.targetType, body.messages, build_client(), body.issues or []
+        body.targetType, dump(body.messages), build_client(), dump(body.issues)
     )
     # 상담이 아직 안 끝났으면 초안이 없다. 오류가 아니므로 200 으로 돌려준다.
     return {"draft": draft}
 
 
 @app.post("/consulting-summary")
-async def consulting_summary(body: ConsultingSummaryRequest) -> dict:
-    return summarize(body.utterances, build_client(), body.requirements or [])
+def consulting_summary(body: ConsultingSummaryRequest) -> dict:
+    return summarize(dump(body.utterances), build_client(), dump(body.requirements))

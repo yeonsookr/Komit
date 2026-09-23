@@ -1,6 +1,7 @@
 # AI 로컬 실행
 
-현재 이 경로는 로컬 STT·GMS 처리 코드의 위치다. 별도 서버나 배포 방식을 확정하지 않는다.
+이 경로에는 두 가지가 있다. Service 가 부르는 AI 서비스(`app.py` 와 그 뒤의 모듈들)와,
+한 번 돌리고 마는 실행 스크립트(`scripts/`)다. 배포 방식은 `deploy/k3s` 에 있다.
 
 ## AI 서비스로 띄우기 (S15P21A201-236)
 
@@ -177,7 +178,7 @@ PowerShell에서 저장소 루트로 이동한 뒤 실행한다. Python 3.9 이�
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r ai\worker\requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r ai\worker\scripts\requirements.txt
 .\.venv\Scripts\python.exe ai\worker\scripts\compare_stt.py --input-dir "담당자 개인 개발 관련 녹취본 폴더 경로"
 ```
 

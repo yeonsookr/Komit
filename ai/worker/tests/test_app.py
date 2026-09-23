@@ -77,35 +77,35 @@ class AiServiceTest(unittest.IsolatedAsyncioTestCase):
     def setUpClass(cls):
         cls._real_build_client = service.build_client
 
-    async def test_기동_확인은_모델을_부르지_않는다(self):
+    def test_기동_확인은_모델을_부르지_않는다(self):
         use(FailingClient(GmsUnavailableError("불러선 안 된다")))
-        self.assertEqual(await service.health(), {"status": "UP"})
+        self.assertEqual(service.health(), {"status": "UP"})
 
-    async def test_확인_문장_후보를_돌려준다(self):
+    def test_확인_문장_후보를_돌려준다(self):
         use(FakeClient(SUGGESTIONS))
-        result = await service.qa_suggestions(
+        result = service.qa_suggestions(
             service.QaSuggestionRequest(requirement="회원 탈퇴 후에도 마이페이지에 접근할 수 있다")
         )
         self.assertEqual(len(result["content"]), 3)
         self.assertIn("testCase", result["content"][0])
 
-    async def test_계약_초안을_돌려준다(self):
+    def test_계약_초안을_돌려준다(self):
         use(FakeClient(CONSULTING_DRAFT))
-        result = await service.contract_draft(
+        result = service.contract_draft(
             service.ContractDraftRequest(targetType="CONSULTING", messages=MESSAGES)
         )
         self.assertEqual(result["draft"]["topic"], "관리자 인증을 함께 봅니다")
 
-    async def test_상담이_안_끝나면_초안_없이_성공한다(self):
+    def test_상담이_안_끝나면_초안_없이_성공한다(self):
         use(FakeClient('{"proceed": false, "draft": null}'))
-        result = await service.contract_draft(
+        result = service.contract_draft(
             service.ContractDraftRequest(targetType="CONSULTING", messages=MESSAGES)
         )
         self.assertIsNone(result["draft"])
 
-    async def test_컨설팅_요약을_돌려준다(self):
+    def test_컨설팅_요약을_돌려준다(self):
         use(FakeClient(SUMMARY))
-        result = await service.consulting_summary(
+        result = service.consulting_summary(
             service.ConsultingSummaryRequest(utterances=UTTERANCES)
         )
         self.assertEqual(set(result), {"discussed", "decided", "nextActions", "changes"})
@@ -134,12 +134,37 @@ class AiServiceTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn(service.REQUEST_CODE.encode(), response.body)
         self.assertIn("전사 발화가 비어 있습니다".encode(), response.body)
 
-    async def test_모듈이_거부하는_입력은_예외로_올라간다(self):
+    def test_모듈이_거부하는_입력은_예외로_올라간다(self):
         use(FakeClient(SUMMARY))
         with self.assertRaises(ValueError):
-            await service.consulting_summary(
+            service.consulting_summary(
                 service.ConsultingSummaryRequest(utterances=[])
             )
+
+    def test_필수_필드가_빠지면_모델이_거부한다(self):
+        """계약 필드를 dict 로 받으면 여기서 통과하고 모듈이 KeyError 로 터져 500 이 된다."""
+        from pydantic import ValidationError
+
+        with self.assertRaises(ValidationError):
+            service.ConsultingSummaryRequest(
+                utterances=[{"utteranceIdx": 0, "speaker": "CLIENT", "normalizedText": "x"}]
+            )
+
+    def test_시각은_있으면_받고_없어도_된다(self):
+        body = service.ConsultingSummaryRequest(
+            utterances=[{**UTTERANCES[0], "startMs": 0, "endMs": 1200}]
+        )
+        self.assertEqual(body.utterances[0].endMs, 1200)
+        self.assertIsNone(
+            service.ConsultingSummaryRequest(utterances=UTTERANCES).utterances[0].startMs
+        )
+
+    def test_모듈에는_평범한_dict_로_넘긴다(self):
+        body = service.ConsultingSummaryRequest(utterances=UTTERANCES)
+        rows = service.dump(body.utterances)
+        self.assertIsInstance(rows[0], dict)
+        self.assertNotIn("startMs", rows[0])
+        self.assertEqual(service.dump(None), [])
 
     def test_계약에_없는_필드는_받지_않는다(self):
         from pydantic import ValidationError
