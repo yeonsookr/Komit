@@ -2,10 +2,12 @@ package com.a501.service.domain.recommendation.controller;
 
 import com.a501.service.common.exception.ErrorResponse;
 import com.a501.service.common.security.AuthenticatedUser;
+import com.a501.service.domain.recommendation.dto.request.CreateConsultationRequest;
 import com.a501.service.domain.recommendation.dto.request.CreateRecommendationRequest;
 import com.a501.service.domain.recommendation.dto.response.RecommendationBatchResponse;
 import com.a501.service.domain.recommendation.service.RecommendationQueryService;
 import com.a501.service.domain.recommendation.service.RecommendationService;
+import com.a501.service.domain.room.dto.response.RoomListResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -87,5 +89,34 @@ public class RecommendationController {
             @Parameter(description = "추천 회차 식별자.", example = "61") @PathVariable Integer batchId,
             @AuthenticationPrincipal AuthenticatedUser user) {
         return recommendationQueryService.get(batchId, user.userId());
+    }
+
+    @Operation(
+            summary = "상담 요청 보내기",
+            description = "**화면 — `3_의뢰인_개발자추천` › N명에게 상담 요청**\n\n"
+                    + "고른 개발자들에게 같은 요청서를 보낸다. 여러 명에게 한 번에 보낼 수 있고, 개발자마다 무료 상담방이 하나씩 열린다. 상담은 무료다.\n\n"
+                    + "**개발자의 수락을 기다리지 않는다.** 요청하면 그 자리에서 방이 열리고, 개발자는 사이드바의 '받은 의뢰'에서 그 방을 본다.\n\n"
+                    + "열린 방은 보낸 순서가 아니라 `recommendationItemId`로 맞춘다. 그 값이 이 요청에 담아 보낸 추천 항목과 같으므로, 화면은 어느 개발자 카드에 어느 방을 붙일지 안다.\n\n"
+                    + "**몇 번을 보내도 방은 개발자마다 하나다.** 이미 방이 있는 개발자는 그 방을 그대로 응답에 담고 새로 만들지 않는다. 같은 개발자를 두 번 담아 보내도, 새로고침해도, 두 화면에서 동시에 눌러도 결과가 같다. 이미 요청했다는 이유로 막지 않으므로 **여러 명 중 한 명이 걸려 나머지가 못 나가는 일도 없다.**\n\n"
+                    + "- **201**: 요청을 보냈을 때. 이번에 연 방과 이미 있던 방이 함께 내려온다\n"
+                    + "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+                    + "- **404 / RECOMMENDATION_NOT_FOUND**: 없거나 남의 추천일 때\n"
+                    + "- **422 / INVALID_REQUEST**: `recommendationItemIds`가 비었거나, **이 회차의 추천 항목이 아닌 값이 섞였을 때.** 고르지 않은 개발자에게 요청이 나가면 안 되므로 조용히 버리지 않고 막는다\n"
+                    + "- **500 / INTERNAL_ERROR**: 요청을 보내지 못했을 때",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "상담 요청 완료"),
+            @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "추천 결과 없음", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "422", description = "요청 스키마 유효성 검증 실패", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @ResponseStatus(HttpStatus.CREATED)
+    @PostMapping("/recommendations/{batchId}/consultation-requests")
+    RoomListResponse requestConsultations(
+            @Parameter(description = "추천 회차 식별자.", example = "61") @PathVariable Integer batchId,
+            @Valid @RequestBody CreateConsultationRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return recommendationQueryService.requestConsultations(batchId, user.userId(), request);
     }
 }

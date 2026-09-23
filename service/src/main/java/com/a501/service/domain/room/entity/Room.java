@@ -8,6 +8,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -67,6 +68,31 @@ public class Room extends SoftDeleteEntity {
      */
     @Column(name = "converted_room_id")
     private Integer convertedRoomId;
+
+    /**
+     * 추천에서 상담을 요청해 무료 상담방을 엽니다.
+     *
+     * <p>개발자의 수락을 기다리지 않습니다. 요청하면 그 자리에서 방이 열리고 개발자는 '받은 의뢰'에서
+     * 그 방을 봅니다.
+     *
+     * <p>{@code chatRefId} 는 {@link #openFrom} 과 같은 이유로 비어 있습니다. 저장한 뒤
+     * {@link #assignChatRef()} 로 채웁니다.
+     *
+     * @param recommendationItemId 이 방이 시작된 추천 항목. 직접 탐색으로 열었으면 {@code null}
+     */
+    public static Room openInquiry(
+            Integer projectId, Integer developerId, Integer recommendationItemId) {
+        Room room = new Room();
+        room.projectId = Objects.requireNonNull(projectId, "projectId");
+        room.developerId = Objects.requireNonNull(developerId, "developerId");
+        room.recommendationItemId = recommendationItemId;
+        room.chatRefId = "";
+        room.type = TYPE_INQUIRY;
+        room.typeGroup = TYPE_GROUP;
+        room.status = STATUS_OPEN;
+        room.statusGroup = STATUS_GROUP;
+        return room;
+    }
 
     /**
      * 갈래를 정해 이어질 방을 엽니다. 상담방과 같은 프로젝트·개발자를 그대로 물려받습니다.

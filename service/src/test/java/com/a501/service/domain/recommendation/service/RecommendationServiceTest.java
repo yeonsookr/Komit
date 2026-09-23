@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -19,12 +20,17 @@ import com.a501.service.domain.diagnosis.service.IssueQueryService;
 import com.a501.service.domain.project.dto.ProjectSummary;
 import com.a501.service.domain.project.service.ProjectService;
 import com.a501.service.domain.recommendation.RecommendationErrorCode;
+import com.a501.service.domain.recommendation.dto.request.CreateConsultationRequest;
 import com.a501.service.domain.recommendation.dto.request.CreateRecommendationRequest;
 import com.a501.service.domain.recommendation.dto.response.RecommendationBatchResponse;
 import com.a501.service.domain.recommendation.entity.RecommendationBatch;
 import com.a501.service.domain.recommendation.entity.RecommendationItem;
 import com.a501.service.domain.recommendation.repository.RecommendationBatchRepository;
 import com.a501.service.domain.recommendation.repository.RecommendationItemRepository;
+import com.a501.service.domain.room.dto.InquiryTarget;
+import com.a501.service.domain.room.dto.response.RoomListResponse;
+import com.a501.service.domain.room.dto.response.RoomSummaryResponse;
+import com.a501.service.domain.room.service.RoomService;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -36,6 +42,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
@@ -68,6 +75,8 @@ class RecommendationServiceTest {
     private DeveloperLookupService developerLookupService;
     @Mock
     private DeveloperSummaryAssembler developerSummaryAssembler;
+    @Mock
+    private RoomService roomService;
 
     private RecommendationService service;
     private RecommendationQueryService queryService;
@@ -89,7 +98,8 @@ class RecommendationServiceTest {
                 developerLookupService,
                 batchAssembler,
                 new ObjectMapper());
-        queryService = new RecommendationQueryService(batchRepository, batchAssembler);
+        queryService = new RecommendationQueryService(
+                batchRepository, itemRepository, batchAssembler, roomService);
 
         when(projectService.findOwned(PROJECT_ID, USER_ID))
                 .thenReturn(Optional.of(new ProjectSummary(
@@ -295,6 +305,105 @@ class RecommendationServiceTest {
         queryService.get(60, USER_ID);
 
         assertThat(service.create(PROJECT_ID, USER_ID, request).sequenceNo()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("고른 개발자마다 상담방이 열리고 항목에 요청이 남는다")
+    void opensRoomPerDeveloper() {
+        RecommendationBatch target = batch(61, (short) 1, null);
+        RecommendationItem first = item(501, 1);
+        RecommendationItem second = item(502, 2);
+        when(batchRepository.findByIdAndDeletedFalse(61)).thenReturn(Optional.of(target));
+        when(itemRepository.findByBatchIdAndDeletedFalseOrderByRankAsc(61))
+                .thenReturn(List.of(first, second));
+        when(roomService.openInquiries(any(), any(), anyList()))
+                .thenReturn(new RoomListResponse(List.of(room(92, 501), room(93, 502))));
+
+        RoomListResponse rooms = queryService.requestConsultations(
+                61, USER_ID, new CreateConsultationRequest(List.of(501, 502)));
+
+        assertThat(rooms.content()).extracting(RoomSummaryResponse::roomId).containsExactly(92, 93);
+        assertThat(first.getRoomId()).isEqualTo(92);
+        assertThat(second.getRoomId()).isEqualTo(93);
+        assertThat(first.getRequestedAt()).isNotNull();
+    }
+
+    @Test
+    @DisplayName("같은 항목을 두 번 담아 보내도 방은 하나다")
+    void dedupesRepeatedItem() {
+        RecommendationBatch target = batch(61, (short) 1, null);
+        when(batchRepository.findByIdAndDeletedFalse(61)).thenReturn(Optional.of(target));
+        when(itemRepository.findByBatchIdAndDeletedFalseOrderByRankAsc(61))
+                .thenReturn(List.of(item(501, 1)));
+        when(roomService.openInquiries(any(), any(), anyList()))
+                .thenReturn(new RoomListResponse(List.of(room(92, 501))));
+
+        queryService.requestConsultations(
+                61, USER_ID, new CreateConsultationRequest(List.of(501, 501)));
+
+        ArgumentCaptor<List<InquiryTarget>> captor = ArgumentCaptor.forClass(List.class);
+        verify(roomService).openInquiries(any(), any(), captor.capture());
+        assertThat(captor.getValue()).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("이미 요청한 항목은 요청 시각을 덮어쓰지 않는다")
+    void keepsFirstRequestedAt() {
+        LocalDateTime first = LocalDateTime.of(2026, 9, 21, 9, 0);
+        RecommendationItem requested = item(501, 1);
+        requested.requestConsultation(92, first);
+        when(batchRepository.findByIdAndDeletedFalse(61))
+                .thenReturn(Optional.of(batch(61, (short) 1, null)));
+        when(itemRepository.findByBatchIdAndDeletedFalseOrderByRankAsc(61))
+                .thenReturn(List.of(requested));
+        when(roomService.openInquiries(any(), any(), anyList()))
+                .thenReturn(new RoomListResponse(List.of(room(92, 501))));
+
+        queryService.requestConsultations(61, USER_ID, new CreateConsultationRequest(List.of(501)));
+
+        assertThat(requested.getRequestedAt()).isEqualTo(first);
+    }
+
+    @Test
+    @DisplayName("이 회차의 항목이 아닌 값이 섞이면 방을 열지 않는다")
+    void rejectsForeignItem() {
+        when(batchRepository.findByIdAndDeletedFalse(61))
+                .thenReturn(Optional.of(batch(61, (short) 1, null)));
+        when(itemRepository.findByBatchIdAndDeletedFalseOrderByRankAsc(61))
+                .thenReturn(List.of(item(501, 1)));
+
+        assertThatThrownBy(() -> queryService.requestConsultations(
+                        61, USER_ID, new CreateConsultationRequest(List.of(501, 999))))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", CommonErrorCode.INVALID_REQUEST);
+        verify(roomService, never()).openInquiries(any(), any(), anyList());
+    }
+
+    @Test
+    @DisplayName("남의 회차에는 상담을 요청할 수 없다")
+    void rejectsForeignBatchOnRequest() {
+        when(batchRepository.findByIdAndDeletedFalse(61))
+                .thenReturn(Optional.of(batch(61, (short) 1, null)));
+
+        assertThatThrownBy(() -> queryService.requestConsultations(
+                        61, 9999, new CreateConsultationRequest(List.of(501))))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue(
+                        "errorCode", RecommendationErrorCode.RECOMMENDATION_NOT_FOUND);
+        verify(roomService, never()).openInquiries(any(), any(), anyList());
+    }
+
+    private static RecommendationItem item(Integer id, Integer developerId) {
+        RecommendationItem entity = RecommendationItem.of(
+                61, developerId, 1, java.math.BigDecimal.ONE, "{}", "{}");
+        ReflectionTestUtils.setField(entity, "id", id);
+        return entity;
+    }
+
+    private static RoomSummaryResponse room(Integer roomId, Integer recommendationItemId) {
+        return new RoomSummaryResponse(
+                roomId, recommendationItemId, "INQUIRY", "OPEN", PROJECT_ID, "수제 비누 가게",
+                1, "이준", "room-" + roomId + "-chat", java.time.OffsetDateTime.now());
     }
 
     private RecommendationBatch savedBatch() {

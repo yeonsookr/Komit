@@ -7,6 +7,7 @@ import com.a501.service.domain.developer.service.DeveloperLookupService;
 import com.a501.service.domain.diagnosis.service.DiagnosisQueryService;
 import com.a501.service.domain.project.service.ProjectQueryService;
 import com.a501.service.domain.room.RoomErrorCode;
+import com.a501.service.domain.room.dto.InquiryTarget;
 import com.a501.service.domain.room.dto.RoomParties;
 import com.a501.service.domain.room.dto.request.ConvertRoomRequest;
 import com.a501.service.domain.room.dto.request.RoomStatus;
@@ -24,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -122,6 +124,48 @@ public class RoomService {
         inquiry.convertTo(opened.getId());
 
         return detail(inquiry, counterpartName(parties, userId));
+    }
+
+    /**
+     * 고른 개발자들에게 무료 상담방을 하나씩 엽니다. 개발자의 수락을 기다리지 않고 그 자리에서 열립니다.
+     *
+     * <p><b>몇 번을 보내도 방은 개발자마다 하나입니다.</b> 이미 방이 있는 개발자는 그 방을 그대로 담고 새로
+     * 만들지 않습니다. 같은 개발자를 두 번 담아 보내도, 새로고침해도 결과가 같습니다. 이미 요청했다는 이유로
+     * 막지 않으므로 여러 명 중 한 명이 걸려 나머지가 못 나가는 일도 없습니다.
+     *
+     * @param targets 방을 열 개발자. 보낸 순서를 지켜 돌려줍니다
+     * @return 이번에 연 방과 이미 있던 방
+     */
+    @Transactional
+    public RoomListResponse openInquiries(
+            Integer userId, Integer projectId, List<InquiryTarget> targets) {
+        if (targets.isEmpty()) {
+            return new RoomListResponse(List.of());
+        }
+
+        List<Integer> developerIds = targets.stream().map(InquiryTarget::developerId).toList();
+        Map<Integer, Room> existing = roomRepository
+                .findByProjectIdAndDeveloperIdInAndTypeAndDeletedFalse(
+                        projectId, developerIds, RoomType.INQUIRY.name())
+                .stream()
+                // 같은 개발자에 방이 둘 이상 남아 있으면 먼저 열린 방을 씁니다. 나눈 이야기가 그쪽에 있습니다.
+                .collect(Collectors.toMap(
+                        Room::getDeveloperId, room -> room, (first, later) -> first));
+
+        List<Room> rooms = new ArrayList<>();
+        for (InquiryTarget target : targets) {
+            Room room = existing.get(target.developerId());
+            if (room == null) {
+                room = roomRepository.save(Room.openInquiry(
+                        projectId, target.developerId(), target.recommendationItemId()));
+                room.assignChatRef();
+                existing.put(target.developerId(), room);
+            }
+            rooms.add(room);
+        }
+
+        return new RoomListResponse(
+                toSummaries(rooms, developerLookupService.findDeveloperId(userId)));
     }
 
     private Room room(Integer roomId) {

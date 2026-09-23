@@ -1,11 +1,22 @@
 package com.a501.service.domain.recommendation.service;
 
 import com.a501.service.common.exception.BusinessException;
+import com.a501.service.common.exception.CommonErrorCode;
 import com.a501.service.domain.recommendation.RecommendationErrorCode;
+import com.a501.service.domain.recommendation.dto.request.CreateConsultationRequest;
 import com.a501.service.domain.recommendation.dto.response.RecommendationBatchResponse;
 import com.a501.service.domain.recommendation.entity.RecommendationBatch;
+import com.a501.service.domain.recommendation.entity.RecommendationItem;
 import com.a501.service.domain.recommendation.repository.RecommendationBatchRepository;
+import com.a501.service.domain.recommendation.repository.RecommendationItemRepository;
+import com.a501.service.domain.room.dto.InquiryTarget;
+import com.a501.service.domain.room.dto.response.RoomListResponse;
+import com.a501.service.domain.room.service.RoomService;
 import java.time.LocalDateTime;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,7 +26,9 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class RecommendationQueryService {
     private final RecommendationBatchRepository batchRepository;
+    private final RecommendationItemRepository itemRepository;
     private final RecommendationBatchAssembler batchAssembler;
+    private final RoomService roomService;
 
     /**
      * 추천 회차 하나를 순위대로 읽는다.
@@ -38,5 +51,59 @@ public class RecommendationQueryService {
 
         batch.markViewed(LocalDateTime.now());
         return batchAssembler.assemble(batch, userId);
+    }
+
+    /**
+     * 고른 개발자들에게 상담을 요청한다. 개발자마다 무료 상담방이 하나씩 열린다.
+     *
+     * <p><b>개발자의 수락을 기다리지 않는다.</b> 요청하면 그 자리에서 방이 열린다.
+     *
+     * <p><b>몇 번을 보내도 방은 개발자마다 하나다.</b> 이미 방이 있는 개발자는 그 방을 그대로 응답에 담는다.
+     * 이미 요청했다는 이유로 막지 않으므로 여러 명 중 한 명이 걸려 나머지가 못 나가는 일도 없다.
+     *
+     * @throws BusinessException {@link RecommendationErrorCode#RECOMMENDATION_NOT_FOUND} 없거나 남의 회차일 때,
+     *                           {@link CommonErrorCode#INVALID_REQUEST} 이 회차의 항목이 아닌 값이 섞였을 때
+     */
+    @Transactional
+    public RoomListResponse requestConsultations(
+            Integer batchId, Integer userId, CreateConsultationRequest request) {
+        RecommendationBatch batch = batchRepository
+                .findByIdAndDeletedFalse(batchId)
+                .filter(found -> found.getRequesterUserId().equals(userId))
+                .orElseThrow(
+                        () -> new BusinessException(RecommendationErrorCode.RECOMMENDATION_NOT_FOUND));
+
+        Map<Integer, RecommendationItem> items = itemRepository
+                .findByBatchIdAndDeletedFalseOrderByRankAsc(batchId)
+                .stream()
+                .collect(Collectors.toMap(RecommendationItem::getId, item -> item));
+        // 고르지 않은 개발자에게 요청이 나가면 안 되므로 조용히 버리지 않고 막는다.
+        if (!items.keySet().containsAll(request.recommendationItemIds())) {
+            throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
+        }
+
+        // 같은 항목을 거듭 보내도 방은 하나다. 보낸 순서는 지킨다.
+        List<RecommendationItem> targets = new LinkedHashSet<>(request.recommendationItemIds())
+                .stream()
+                .map(items::get)
+                .toList();
+
+        RoomListResponse rooms = roomService.openInquiries(
+                userId,
+                batch.getProjectId(),
+                targets.stream()
+                        .map(item -> new InquiryTarget(item.getId(), item.getDeveloperId()))
+                        .toList());
+
+        // 방은 보낸 순서 그대로 돌아온다. 이미 있던 방은 다른 회차에서 열렸을 수 있어
+        // recommendationItemId 로 맞추면 이번 항목을 찾지 못한다.
+        LocalDateTime requestedAt = LocalDateTime.now();
+        for (int index = 0; index < targets.size(); index++) {
+            RecommendationItem item = targets.get(index);
+            if (!item.isRequested()) {
+                item.requestConsultation(rooms.content().get(index).roomId(), requestedAt);
+            }
+        }
+        return rooms;
     }
 }
