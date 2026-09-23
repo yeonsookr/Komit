@@ -101,6 +101,7 @@ private static final int AUTO_PASS_DAYS = 3;
 | `fe/` | `fe` — 플랫폼 웹 프론트엔드 | Next.js | `fe/AGENTS.md` |
 | `service/` | `be-api` — 회원·매칭·요청서·알림 | Gradle | `service/AGENTS.md` |
 | `escrow/` | `be-escrow` — 예치·지급·원장·대사 | Gradle | — |
+| `ai/` | `ai` — 컨설팅 요약·확인 문장, 사전점검 검사 지시문 | Python · Claude 플러그인 | `ai/AGENTS.md` |
 | `mock/` | 목 서버 | Python | `mock/AGENTS.md` |
 | `deploy/` | `infra` — 배포, CI/CD | docker-compose | — |
 | `docs/` | `common` — 공용 문서 | — | — |
