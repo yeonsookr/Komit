@@ -7,6 +7,8 @@ metadata:
     app.kubernetes.io/name: ai
     app.kubernetes.io/part-of: komit
 spec:
+  # HPA를 두지 않습니다. 이 서비스는 GMS 왕복을 기다리기만 해 CPU가 거의 오르지 않아
+  # CPU 지표로는 한 번도 늘지 않습니다. 다른 지표를 쓰려면 별도 어댑터가 필요합니다.
   replicas: 2
   strategy:
     type: RollingUpdate

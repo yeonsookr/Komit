@@ -657,7 +657,7 @@ rm -rf ~/komit-k3s-manual
 | 잡 로그: `service image is required because deployment/service does not exist yet` | 한쪽 모듈만 빌드됨 | A-2의 `git diff` 확인, 또는 방법 B |
 | 잡 로그: `fe image is required because deployment/fe does not exist yet` | FE를 처음 추가하는데 FE 이미지가 빌드되지 않음 | 「이미 돌고 있는 클러스터에 FE를 처음 추가할 때」 |
 | `fe` Pod는 Running인데 페이지에서 API 호출이 실패 | FE 서버가 백엔드에 닿지 못함 | `sudo kubectl -n komit logs deploy/fe`. `sudo kubectl -n komit exec deploy/fe -- env \| grep API_BASE_URL`로 GitLab 변수 값이 들어갔는지 확인 |
-| 잡 로그: `BACKEND_API_BASE_URL CI/CD variable is required` | FE 주소 변수 미등록 | GitLab 변수 `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` 확인 |
+| 잡 로그: `BACKEND_API_BASE_URL CI/CD variable is required` | 주소 변수 미등록 | GitLab 변수 `BACKEND_API_BASE_URL`(FE), `AI_API_BASE_URL`(service), `GMS_API_KEY`(AI) 확인 |
 | `cluster ... condition met`에서 10분 넘게 멈춤 | DB Pod가 못 뜸 | `sudo kubectl -n komit get pods`로 DB Pod 상태 확인. `Pending`이면 메모리 부족, `ImagePullBackOff`이면 서버의 인터넷(ghcr.io) 접속 확인 |
 | `komit-service` Pod가 `ImagePullBackOff` | Docker Hub 저장소가 private | 3단계 Docker Hub 인증 |
 | 앱 Pod가 `CrashLoopBackOff` | 앱 기동 실패 | `sudo kubectl -n komit logs deploy/service`. `password authentication failed`이면 비밀번호가 DB와 다름 |
@@ -701,7 +701,9 @@ fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
 | `SERVICE_MONGODB_ROOT_PASSWORD` | Masked, Protected | MongoDB 최초 초기화용 root 비밀번호 Secret(`service-mongodb-auth`) |
 | `SERVICE_MONGODB_PASSWORD` | Masked, Protected | service 전용 MongoDB `readWrite` 계정 비밀번호 Secret(`service-mongodb-auth`) |
 | `SERVICE_PUBLIC_BASE_URL`, `ESCROW_PUBLIC_BASE_URL` | Visible | 각 백엔드의 공개 주소(`https://komit.site/service`, `https://komit.site/escrow`). `service-config`, `escrow-config` ConfigMap의 `APP_PUBLIC_BASE_URL`이 됩니다 |
-| `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` | Visible, Protected | `komit.site` 기본 FE가 호출할 실제 BE·AI 주소. `fe-config`에만 들어갑니다 |
+| `BACKEND_API_BASE_URL` | Visible, Protected | `komit.site` 기본 FE가 호출할 실제 BE 주소. `fe-config`에만 들어갑니다 |
+| `AI_API_BASE_URL` | Visible, Protected | `service`가 부를 AI 서비스의 클러스터 안 주소. `service-config`에만 들어갑니다 |
+| `GMS_API_KEY` | **Masked**, Protected | AI 서비스가 모델을 부르는 키. `ai-secret`으로 들어갑니다. 없으면 AI Pod가 기동하지 않습니다 |
 | `TEST_BACKEND_API_BASE_URL` | Visible, Protected | `komit.site/test` FE가 호출할 mock 주소. `fe-test-config`에만 들어갑니다 |
 | `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI` | Masked | 카카오 로그인. fe 실행 환경(`fe-config`). Redirect URI 는 카카오 콘솔에 등록한 배포 주소(`https://komit.site/api/auth/kakao/callback`)와 글자까지 같아야 합니다 |
 | `ACCOUNT_DATA_ENCRYPTION_KEY` | Masked, Protected | 계좌번호와 `userKey`를 암호화해 보관하는 AES-256 키. 정확히 32바이트인 키의 Base64 값이어야 합니다. `service-auth` Secret으로 주입되며, 없으면 service Pod가 기동 중 죽습니다. **한 번 정한 뒤 바꾸면 이미 저장된 암호문을 읽지 못합니다** |
@@ -786,7 +788,9 @@ chmod +x deploy/k3s/deploy.sh
 | `SERVICE_MONGODB_ROOT_PASSWORD` | 예 | MongoDB의 최초 root 계정 비밀번호. `service-mongodb-auth` Secret으로 전달되며 애플리케이션에는 주입하지 않습니다. |
 | `SERVICE_MONGODB_PASSWORD` | 예 | `service` DB 전용 `readWrite` 계정 비밀번호. 같은 Secret을 MongoDB 초기화와 service Pod가 함께 읽습니다. |
 | `SERVICE_PUBLIC_BASE_URL`, `ESCROW_PUBLIC_BASE_URL` | 예 | 각 백엔드가 밖에서 보이는 주소(nginx 경로 접두사 포함). Spring의 `app.public-base-url`이 되고, 없으면 앱이 기동하지 않습니다. 값이 바뀌면 해당 Pod만 다시 뜹니다. |
-| `BACKEND_API_BASE_URL`, `AI_API_BASE_URL` | 예 | 기본 `fe`가 호출할 실제 BE·AI 주소. GitLab CI/CD 변수와 같은 값을 넣으며 `fe-config`에만 들어갑니다. |
+| `BACKEND_API_BASE_URL` | 예 | 기본 `fe`가 호출할 실제 BE 주소. GitLab CI/CD 변수와 같은 값을 넣으며 `fe-config`에만 들어갑니다. |
+| `AI_API_BASE_URL` | 예 | `service`가 부를 AI 서비스 주소. `service-config`에만 들어갑니다. |
+| `GMS_API_KEY` | 예 | AI 서비스가 모델을 부르는 키. `ai-secret`으로 들어갑니다. |
 | `TEST_BACKEND_API_BASE_URL` | 예 | `/test`의 `fe-test`가 호출할 mock 주소. `fe-test-config`에만 들어갑니다. |
 | `ESCROW_API_BASE_URL` | 예 | GitLab CI/CD 값이 `service-config`에 주입됩니다. `http://escrow.komit.svc.cluster.local:8081`로 설정해 실제 Escrow를 사용합니다. |
 | `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI` | 예 | 카카오 로그인 REST API 키와 콜백 주소. fe 의 `/api/auth/kakao` 가 실행 시점에 읽습니다. 없으면 로그인만 500 으로 실패하고 다른 화면은 영향이 없습니다. |
