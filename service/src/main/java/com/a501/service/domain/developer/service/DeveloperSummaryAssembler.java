@@ -5,6 +5,7 @@ import com.a501.service.domain.code.service.CodeQueryService;
 import com.a501.service.domain.contract.service.ContractQueryService;
 import com.a501.service.domain.developer.dto.DeveloperSearchRow;
 import com.a501.service.domain.developer.dto.response.DeveloperSummaryResponse;
+import com.a501.service.domain.developer.repository.DeveloperRepository;
 import com.a501.service.domain.developer.dto.response.RatingResponse;
 import com.a501.service.domain.developer.dto.response.TaskPriceResponse;
 import com.a501.service.domain.file.service.FileLookupService;
@@ -42,6 +43,7 @@ public class DeveloperSummaryAssembler {
     private final UserService userService;
     private final FileLookupService fileLookupService;
     private final CodeQueryService codeQueryService;
+    private final DeveloperRepository developerRepository;
     private final CareerService careerService;
     private final PriceCatalogService priceCatalogService;
     private final DeveloperTechCategoryService techCategoryService;
@@ -51,6 +53,15 @@ public class DeveloperSummaryAssembler {
     /** 조회 결과 순서를 그대로 지키며 조립합니다. 마친 계약 수는 여기서 셉니다. */
     public List<DeveloperSummaryResponse> assemble(List<DeveloperSearchRow> rows) {
         return assemble(rows, null);
+    }
+
+    /**
+     * 식별자로 조립합니다. 목록을 거치지 않고 몇 명을 집어 보여줄 때 씁니다.
+     *
+     * <p>순서는 보장하지 않고, 없거나 프로필이 없는 개발자는 결과에서 빠집니다. 부르는 쪽이 자기 순서로 다시 세웁니다.
+     */
+    public List<DeveloperSummaryResponse> assembleByIds(Collection<Integer> developerIds) {
+        return assemble(developerRepository.findRows(developerIds));
     }
 
     /**

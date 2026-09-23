@@ -1,13 +1,17 @@
 package com.a501.service.domain.diagnosis.service;
 
 import com.a501.service.common.exception.BusinessException;
+import com.a501.service.common.exception.CommonErrorCode;
 import com.a501.service.domain.code.dto.CodeResponse;
 import com.a501.service.domain.code.service.CodeQueryService;
+import com.a501.service.domain.project.dto.TechCategorySummary;
+import com.a501.service.domain.project.service.ProjectService;
 import com.a501.service.domain.diagnosis.DiagnosisErrorCode;
 import com.a501.service.domain.diagnosis.dto.request.UpdateIssueStatusRequest;
 import com.a501.service.domain.diagnosis.dto.response.IssueListResponse;
 import com.a501.service.domain.diagnosis.dto.response.IssueResponse;
 import com.a501.service.domain.diagnosis.dto.response.QaCriterionResponse;
+import com.a501.service.domain.diagnosis.entity.Diagnosis;
 import com.a501.service.domain.diagnosis.entity.Inspection;
 import com.a501.service.domain.diagnosis.entity.Issue;
 import com.a501.service.domain.diagnosis.entity.QaCriterion;
@@ -17,6 +21,7 @@ import com.a501.service.domain.diagnosis.repository.QaCriterionRepository;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -39,6 +44,7 @@ public class IssueQueryService {
     private final QaCriterionRepository qaCriterionRepository;
     private final CodeQueryService codeQueryService;
     private final DiagnosisOwnership diagnosisOwnership;
+    private final ProjectService projectService;
 
     /**
      * 이미 스스로 고친 요구사항을 해결로 내리거나 되돌린다. 같은 상태를 다시 보내도 결과가 같다.
@@ -69,6 +75,51 @@ public class IssueQueryService {
             issue.reopen();
         }
         return toResponse(List.of(issue)).apply(issue);
+    }
+
+    /**
+     * 추천을 만들 때 쓸 입력을 읽는다. 고른 요구사항이 모두 이 진단에서 나온 것인지 가린다.
+     *
+     * <p>고르지 않은 것이 요청서에 실리면 계약까지 따라가므로, 하나라도 섞이면 조용히 버리지 않고 막는다.
+     *
+     * @throws BusinessException {@link DiagnosisErrorCode#DIAGNOSIS_NOT_FOUND} 없거나 남의 진단일 때,
+     *                           {@link CommonErrorCode#INVALID_REQUEST} 이 진단의 요구사항이 아닌 것이 섞였을 때
+     */
+    public DiagnosisMatchInput readMatchInput(
+            Integer diagnosisId, Integer userId, List<Integer> issueIds) {
+        Diagnosis diagnosis = diagnosisOwnership
+                .findOwned(diagnosisId, userId)
+                .orElseThrow(() -> new BusinessException(DiagnosisErrorCode.DIAGNOSIS_NOT_FOUND));
+
+        Set<Integer> known = inspectionRepository
+                .findByDiagnosisIdAndDiagnosisVersionAndDeletedFalse(
+                        diagnosis.getId(), diagnosis.getVersion())
+                .map(inspection -> issueRepository
+                        .findByInspectionIdAndDeletedFalseOrderByIdAsc(inspection.getId())
+                        .stream()
+                        .map(Issue::getId)
+                        .collect(Collectors.toSet()))
+                .orElseGet(Set::of);
+        if (!known.containsAll(issueIds)) {
+            throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
+        }
+
+        Set<Integer> techCodeIds = projectService.findOwned(diagnosis.getProjectId(), userId)
+                .map(project -> project.techCategories().stream()
+                        .map(TechCategorySummary::techCodeId)
+                        .collect(Collectors.toSet()))
+                .orElseGet(Set::of);
+
+        return new DiagnosisMatchInput(
+                diagnosis.getId(),
+                diagnosis.getVersion(),
+                List.copyOf(issueIds),
+                techCodeIds,
+                Map.of(
+                        "diagnosisId", diagnosis.getId(),
+                        "diagnosisVersion", diagnosis.getVersion(),
+                        "issueIds", List.copyOf(issueIds),
+                        "techCodeIds", List.copyOf(techCodeIds)));
     }
 
     public IssueListResponse getIssues(
