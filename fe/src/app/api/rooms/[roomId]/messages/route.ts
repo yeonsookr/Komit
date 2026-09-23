@@ -1,29 +1,29 @@
 import { NextResponse } from "next/server";
-import { getChatMessages, getRoom } from "@/lib/api/services";
+import { getRoomMessages } from "@/lib/api/services";
 import { parseNumericParam, toErrorResponse } from "@/lib/api/route";
 
-const ROOM_NOT_FOUND = { code: "ROOM_NOT_FOUND", message: "방을 찾을 수 없습니다." };
+const CHAT_NOT_FOUND = { code: "CHAT_NOT_FOUND", message: "대화를 찾을 수 없습니다." };
 
 /**
- * GET /api/rooms/{roomId}/messages — 방의 메시지.
+ * GET /api/rooms/{roomId}/messages — 방의 지난 대화.
  *
- * 방을 먼저 조회해 chatRefId 를 얻습니다. 없는 방이면 여기서 404 로 끊기므로
- * 채팅이 실제 서버로 바뀌어도 권한 판단 자리는 그대로입니다.
+ * 위로 올려 읽을 때 부릅니다. 첫 묶음은 서버 컴포넌트가 이미 내려보내므로 여기로
+ * 오는 것은 `before` 가 붙은 요청입니다.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ roomId: string }> },
 ) {
   const { roomId } = await params;
   const id = parseNumericParam(roomId);
 
   if (id === null) {
-    return NextResponse.json(ROOM_NOT_FOUND, { status: 404 });
+    return NextResponse.json(CHAT_NOT_FOUND, { status: 404 });
   }
 
   try {
-    const room = await getRoom(id);
-    return NextResponse.json({ content: await getChatMessages(room.chatRefId) });
+    const before = new URL(request.url).searchParams.get("before") ?? undefined;
+    return NextResponse.json(await getRoomMessages(id, before));
   } catch (error) {
     return toErrorResponse(error);
   }

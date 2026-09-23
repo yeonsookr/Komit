@@ -4,7 +4,13 @@ import { notFound, redirect } from "next/navigation";
 import { SessionStage } from "@/components/domains/room";
 import { Callout } from "@/components/feedback";
 import { Container } from "@/components/layouts";
-import { getChatMessages, getConsultingSession, getContract, getMe, getRoom } from "@/lib/api/services";
+import {
+  getConsultingSession,
+  getContract,
+  getMe,
+  getRoom,
+  getSessionMessages,
+} from "@/lib/api/services";
 import { formatSessionSchedule } from "@/lib/format";
 import { isReceived } from "@/lib/rooms";
 import { ROUTES } from "@/lib/routes";
@@ -101,8 +107,9 @@ export default async function SessionPage({
           roomId={room.roomId}
           counterpartName={room.counterpartName}
           myName={me.name}
+          myUserId={me.userId}
           chatRefId={session.chatRefId}
-          initialMessages={await getChatMessages(session.chatRefId)}
+          initialMessages={(await getSessionMessages(session.sessionId)).content}
           /* 두 사람이 서로 다른 값을 받아야 합니다. 의뢰인이 물러서는 쪽입니다. */
           polite={!isReceived(room, me)}
         />

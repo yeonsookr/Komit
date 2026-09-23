@@ -5,7 +5,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
-@Schema(description = "대화방에서 오간 메시지 한 건.")
+@Schema(description = "대화에서 오간 메시지 한 건.")
 public record ChatMessageResponse(
         @Schema(description = "메시지 식별자.", example = "65f1c2a48b3e4d0012a7f901") String messageId,
         @Schema(

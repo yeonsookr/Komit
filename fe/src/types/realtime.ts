@@ -61,7 +61,10 @@ export interface RealtimePeerPayload {
   userId: number;
 }
 
-export type RealtimeType = RtcSignalType | RealtimeSystemType;
+/** 대화에서 오가는 쪽지. 올릴 때도 받을 때도 같은 종류를 씁니다. */
+export type ChatType = "CHAT_MESSAGE";
+
+export type RealtimeType = RtcSignalType | RealtimeSystemType | ChatType;
 
 /** 지금 프로토콜 판. 서버가 다른 판을 받으면 연결을 닫습니다. */
 export const REALTIME_VERSION = 1;

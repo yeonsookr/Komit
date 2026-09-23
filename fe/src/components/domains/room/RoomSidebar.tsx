@@ -33,8 +33,8 @@ export interface RoomPreview {
 export interface RoomSidebarProps {
   rooms: RoomSummary[];
   me: Me;
-  /** chatRefId 별 미리보기. 없으면 이름만 보입니다. */
-  previews?: Record<string, RoomPreview | undefined>;
+  /** 방 식별자별 미리보기. 없으면 이름만 보입니다. */
+  previews?: Record<number, RoomPreview | undefined>;
 }
 
 /**
@@ -127,7 +127,7 @@ export function RoomSidebar({ rooms, me, previews }: Readonly<RoomSidebarProps>)
                     <RoomLink
                       room={room}
                       active={room.roomId === activeRoomId}
-                      preview={previews?.[room.chatRefId]}
+                      preview={previews?.[room.roomId]}
                     />
                   </li>
                 ))}
