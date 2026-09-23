@@ -28,7 +28,9 @@ class InvalidGmsResponseError(Exception):
 
 
 class ChatClient(Protocol):
-    def complete(self, messages: list[dict[str, str]]) -> str: ...
+    def complete(
+        self, messages: list[dict[str, str]], max_tokens: int | None = None
+    ) -> str: ...
 
 
 def read_local_env(path: Path = ENV_FILE) -> dict[str, str]:
@@ -54,14 +56,25 @@ class GmsChatClient:
             raise GmsUnavailableError("GMS_API_KEY가 설정되지 않았습니다")
         self._base_url = config.get("GMS_API_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
         self._model = config.get("GMS_MODEL", DEFAULT_MODEL)
-        self._max_tokens = int(config.get("GMS_MAX_OUTPUT_TOKENS", "256"))
-        if self._max_tokens < 1:
+        self._default_max_tokens = int(config.get("GMS_MAX_OUTPUT_TOKENS", "256"))
+        if self._default_max_tokens < 1:
             raise ValueError("GMS_MAX_OUTPUT_TOKENS는 양수여야 합니다")
         self.last_usage: dict[str, int] | None = None
 
-    def complete(self, messages: list[dict[str, str]]) -> str:
+    def complete(
+        self, messages: list[dict[str, str]], max_tokens: int | None = None
+    ) -> str:
+        """작업마다 출력 크기가 다르므로 한도를 호출에서 정할 수 있게 둔다.
+
+        확인 문장 세 건과 네 배열 요약은 필요한 길이가 다르다. 한 값으로 묶으면
+        한쪽이 잘리거나 다른 쪽이 필요 이상으로 길어진다. 넘기지 않으면
+        ``GMS_MAX_OUTPUT_TOKENS`` 를 쓴다.
+        """
+        limit = self._default_max_tokens if max_tokens is None else max_tokens
+        if limit < 1:
+            raise ValueError("max_tokens는 양수여야 합니다")
         payload = json.dumps(
-            {"model": self._model, "messages": messages, "max_tokens": self._max_tokens},
+            {"model": self._model, "messages": messages, "max_tokens": limit},
             ensure_ascii=False,
         ).encode("utf-8")
         request = Request(
