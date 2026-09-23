@@ -3,7 +3,7 @@
 무료 상담 채팅으로 만드는 계약서 초안(`contract_draft`)과 구분한다. 이쪽은 컨설팅 세션이
 끝난 뒤의 전사를 읽고 논의·결정·다음 행동·변경점을 가린다.
 
-근거 순번의 실존 검증은 여기서 하지 않는다. `226`이 이 출력 뒤에서 결정적으로 검사한다.
+근거 순번의 실존 검증은 `evidence_validator` 가 이 출력 뒤에서 결정적으로 맡는다.
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import sys
 
+from evidence_validator import validate
 from qa_suggestion import (
     ChatClient,
     GmsChatClient,
@@ -101,14 +102,10 @@ def _check_item(row: object, *, is_change: bool) -> None:
         if len(detail) > MAX_DETAIL_LENGTH:
             raise InvalidGmsResponseError("detail 이 너무 깁니다")
 
-    indexes = row["evidenceUtteranceIndexes"]
-    if not isinstance(indexes, list):
+    # 순번이 정수인지, 범위 안인지, 중복인지는 형식이 아니라 내용이다. 여기서 막으면 항목
+    # 하나 때문에 요약 전체가 사라진다. `evidence_validator` 가 그 항목만 검토로 내린다.
+    if not isinstance(row["evidenceUtteranceIndexes"], list):
         raise InvalidGmsResponseError("evidenceUtteranceIndexes 가 배열이 아닙니다")
-    for index in indexes:
-        if not isinstance(index, int) or isinstance(index, bool) or index < 0:
-            raise InvalidGmsResponseError("근거 순번이 0 이상 정수가 아닙니다")
-    if len(set(indexes)) != len(indexes):
-        raise InvalidGmsResponseError("근거 순번이 중복됩니다")
 
     if not isinstance(row["reviewRequired"], bool):
         raise InvalidGmsResponseError("reviewRequired 가 참거짓이 아닙니다")
@@ -158,7 +155,7 @@ def summarize(
         raise ValueError("전사 발화가 비어 있습니다")
     messages = build_messages(utterances, requirements)
     raw = client.complete(messages, max_tokens=MAX_OUTPUT_TOKENS)
-    return parse_summary(raw, requirements)
+    return validate(parse_summary(raw, requirements), len(utterances))
 
 
 if __name__ == "__main__":

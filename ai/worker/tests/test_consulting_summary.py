@@ -95,13 +95,20 @@ class ConsultingSummaryTest(unittest.TestCase):
         with self.assertRaises(InvalidGmsResponseError):
             parse_summary(summary(changes=[item(kind="DELETE", issueId=None)]))
 
-    def test_근거_순번이_중복되면_실패한다(self):
-        with self.assertRaises(InvalidGmsResponseError):
-            parse_summary(summary(discussed=[item(evidenceUtteranceIndexes=[0, 0])]))
+    def test_순번_내용이_틀려도_형식_오류로_보지_않는다(self):
+        # 실존 검증은 evidence_validator 몫이다. 여기서 막으면 요약 전체가 사라진다.
+        for indexes in ([0, 0], [-1], [99], []):
+            with self.subTest(indexes=indexes):
+                result = parse_summary(
+                    summary(discussed=[item(evidenceUtteranceIndexes=indexes)])
+                )
+                self.assertEqual(
+                    result["discussed"][0]["evidenceUtteranceIndexes"], indexes
+                )
 
-    def test_근거_순번이_음수면_실패한다(self):
+    def test_근거가_목록이_아니면_실패한다(self):
         with self.assertRaises(InvalidGmsResponseError):
-            parse_summary(summary(discussed=[item(evidenceUtteranceIndexes=[-1])]))
+            parse_summary(summary(discussed=[item(evidenceUtteranceIndexes=0)]))
 
     def test_미완성_JSON_은_형식_오류다(self):
         with self.assertRaises(InvalidGmsResponseError):
@@ -122,6 +129,17 @@ class ConsultingSummaryTest(unittest.TestCase):
         client = FakeClient(summary())
         summarize(UTTERANCES, client)
         self.assertEqual(client.max_tokens, MAX_OUTPUT_TOKENS)
+
+    def test_요약은_근거_검증까지_거쳐_돌아온다(self):
+        raw = summary(
+            discussed=[item(evidenceUtteranceIndexes=[0]), item(evidenceUtteranceIndexes=[5])]
+        )
+        result = summarize(UTTERANCES, FakeClient(raw))
+        rows = result["discussed"]
+        self.assertEqual(rows[0]["evidenceUtteranceIndexes"], [0])
+        self.assertIs(rows[0]["reviewRequired"], False)
+        self.assertEqual(rows[1]["evidenceUtteranceIndexes"], [])
+        self.assertIs(rows[1]["reviewRequired"], True)
 
     def test_발화가_없으면_부르지_않는다(self):
         with self.assertRaises(ValueError):

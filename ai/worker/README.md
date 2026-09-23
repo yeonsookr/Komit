@@ -72,6 +72,40 @@ Copy-Item ai\worker\.env.example ai\worker\.env
 고정 응답을 쓰므로 키 없이 실행되고 외부 요청을 하지 않는다. 실제 채팅 저장·조회와
 전환 트리거는 BE 연동 전까지 확인할 수 없다.
 
+## 컨설팅 요약과 근거 검증 (S15P21A201-225, S15P21A201-226)
+
+`docs/ai/summary-change-contract.md`와 `docs/ai/transcript-evidence-contract.md`에 따라
+컨설팅 세션의 병합 전사를 네 갈래로 정리하고, 각 항목이 가리킨 근거 발화가 그 전사에
+실제로 있는지 확인한다. 무료 상담 계약 초안(`224`)과는 다른 입력·다른 출력이다.
+
+| 구분 | 내용 |
+| --- | --- |
+| 입력 | 발화마다 `utteranceIndex` `speaker`(`CLIENT`·`DEVELOPER`) `rawText` `normalizedText` + 기존 요구사항 `issueId` `title` |
+| 출력 | `discussed` `decided` `nextActions` `changes` 네 배열. 항목마다 `title` `detail` `evidenceUtteranceIndexes` `reviewRequired` |
+| 변경 후보 | `changes`는 위 네 개에 더해 `kind`(`UPDATE`·`ADD`)와 `issueId`를 갖는다. `UPDATE`는 입력으로 받은 요구사항 안에서만 고른다 |
+| 근거 검증 | 목록이 비지 않고, 모두 `0 <= index < 발화 수`의 정수이며, 한 항목 안에서 중복되지 않아야 한다 |
+| 검증 실패 | **그 항목만** 근거를 비우고 `reviewRequired=true`로 내린다. 다른 항목은 그대로 둔다 |
+| 생성 실패 | 키 집합·필드 구성이 어긋나면 `InvalidGmsResponseError`. 순번 내용이 틀린 것은 여기에 넣지 않는다 |
+
+`evidenceUtteranceIndexes`와 `reviewRequired`는 AI 내부값이며 Mock·공개 API·Service ERD에
+추가하지 않는다. 순번은 해당 처리 입력 안에서만 유효하고 영속 ID로 쓰지 않는다. 검증은
+순번의 실존과 형식만 보며, 그 발화가 요약 문장을 뒷받침하는지나 당사자가 합의했는지까지
+보증하지 않는다. 문장이 같다는 이유로 범위 밖 순번을 다른 발화로 바꾸거나 누락된 근거를
+만들어 넣지 않는다.
+
+요약은 GMS를 부르지만 근거 검증은 부르지 않는다. 문자열 유사도나 모델의 자기평가로
+통과시키지 않으므로 같은 입력은 언제나 같은 결과를 낸다.
+
+```powershell
+.\.venv\Scripts\python.exe ai\worker\consulting_summary.py <입력 JSON 경로>
+.\.venv\Scripts\python.exe -m unittest discover -s ai\worker\tests -p "test_consulting_summary.py"
+.\.venv\Scripts\python.exe -m unittest discover -s ai\worker\tests -p "test_evidence_validator.py"
+```
+
+입력 JSON은 `utterances`와, 개발 요구사항이 있으면 `requirements`를 가진다. 단위 테스트는
+고정 응답을 쓰므로 키 없이 실행되고 외부 요청을 하지 않는다. 실제 녹음 전사와의 연결,
+세션 종료 시 자동 실행, 결과 저장 위치는 이 모듈 밖이며 BE·`230` 계약에 따라 붙인다.
+
 ## N7: 클로바 자동 전사와 STT 시험 비교
 
 ### 모델과 실행 엔진 선택
