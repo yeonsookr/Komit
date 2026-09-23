@@ -99,14 +99,17 @@ Content-Type: application/json
 
 ## 6. 실패를 어떻게 돌려주나
 
-**AI 자신의 실패는 두 갈래다.** `ai/worker` 가 그 둘만 던진다. 여기에 「받은 요청이 계약과 다르다」가
-더해져 Service 가 가르는 갈래는 셋이 된다.
+AI 쪽 실패는 세 갈래다. `ai/worker` 가 그 셋만 던진다. 갈리는 기준은 **다시 시도하면 되는가**다.
 
 | AI 내부 | 뜻 | AI 서비스 응답 | Service 응답 |
 | --- | --- | --- | --- |
-| `GmsUnavailableError` | 모델에 접속하지 못함. 키가 없거나 호출이 실패함 | `503` | `503 AI_SERVICE_UNAVAILABLE` |
-| `InvalidGmsResponseError` | 접속은 됐으나 계약에 맞는 결과를 만들지 못함 | `502` | `502 AI_RESPONSE_INVALID` |
-| (요청 검증) | 받은 요청이 계약과 다름 | `422` `400` `404` `405` `AI_REQUEST_INVALID` | `500 INTERNAL_ERROR`. AI 고장이 아니므로 사용자에게 재시도를 권하지 않고, Service 가 거부 사유를 `ERROR` 로 남긴다 |
+| `GmsUnavailableError` | 상류에 닿지 못함. 키가 없거나 호출이 실패함. 전사에서는 모델을 올리지 못함 | `503` | `503 AI_SERVICE_UNAVAILABLE` |
+| `InvalidGmsResponseError` | 닿기는 했으나 계약에 맞는 결과를 만들지 못함 | `502` | `502 AI_RESPONSE_INVALID` |
+| `UnusableInputError` | 받은 입력을 쓸 수 없음. 오디오가 깨졌거나 디코딩되지 않음 | **미정** | **미정** |
+
+**셋째의 상태 코드는 아직 정하지 않았다.** 앞의 둘과 달라야 하는 것은 분명하다 — 다시 걸어도
+소용없고 사람이 봐야 하므로, `503` 처럼 재시도를 부르는 코드도 `502` 처럼 AI 탓으로 읽히는
+코드도 맞지 않다. 전사를 Service 에 붙일 때 BE 와 함께 정한다.
 
 **실패 본문**
 

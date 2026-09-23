@@ -31,6 +31,13 @@ class InvalidGmsResponseError(Exception):
     """GMS 출력이 확인 문장 계약에 맞지 않음."""
 
 
+class UnusableInputError(Exception):
+    """받은 입력을 쓸 수 없음. 깨진 오디오처럼 다시 걸어도 소용없는 실패다.
+
+    위 둘과 갈리는 기준은 다시 시도하면 되는가다. 이것은 안 된다 — 사람이 봐야 한다.
+    """
+
+
 class ChatClient(Protocol):
     def complete(self, messages: list[dict[str, str]], max_tokens: int) -> str: ...
 
