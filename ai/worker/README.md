@@ -2,6 +2,40 @@
 
 현재 이 경로는 로컬 STT·GMS 처리 코드의 위치다. 별도 서버나 배포 방식을 확정하지 않는다.
 
+## AI 서비스로 띄우기 (S15P21A201-236)
+
+Service 가 부르는 HTTP 경계다. 아래 모듈들을 경로 뒤에 붙여 두고, 받아 넘기고 실패를 상태
+코드로 바꾸는 일만 한다. 판단은 각 모듈에 있다.
+
+| 경로 | 뒤에 있는 것 |
+| --- | --- |
+| `POST /qa-suggestions` | `qa_suggestion.py` |
+| `POST /contract-draft` | `contract_draft.py` |
+| `POST /consulting-summary` | `consulting_summary.py` + `evidence_validator.py` |
+| `GET /health` | 기동·생존 확인. 모델을 부르지 않는다 |
+
+| 실패 | 상태 | `code` |
+| --- | --- | --- |
+| 모델에 닿지 못함 | `503` | `AI_SERVICE_UNAVAILABLE` |
+| 계약에 맞는 결과를 못 만듦 | `502` | `AI_RESPONSE_INVALID` |
+| 받은 요청이 계약과 다름 | `422` `400` `404` `405` | `AI_REQUEST_INVALID` |
+
+본문은 언제나 `code` 와 `message` 두 필드다. 자세한 것은 `docs/job-contract.md` 에 있다.
+
+`GMS_API_KEY` 가 없으면 **기동하지 않는다.** 키 없이 떠 있으면 모든 요청이 `503` 이 되는데
+배포는 성공한 것처럼 보인다.
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn app:app --host 127.0.0.1 --port 8000 --app-dir ai\worker
+.\.venv\Scripts\python.exe -m unittest discover -s ai\worker\tests -p "test_app.py"
+```
+
+의존성 파일이 둘이다. `requirements.txt` 는 서비스가 뜨는 데 필요한 것만 담고 이미지에
+들어간다. STT 비교 스크립트는 `scripts/requirements.txt` 를 따로 쓴다 — `faster-whisper` 가
+모델 런타임까지 끌고 와 이미지가 GiB 단위로 커진다.
+
+부르는 쪽은 Service 하나다. 브라우저도 FE Route Handler 도 이 서버를 직접 부르지 않는다.
+
 ## 확인 문장 후보 생성 (S15P21A201-223)
 
 `R-REQ-04`에 따라 요구사항 문장 한 건에 대해 저장 전 확인 문장 후보 3건을 만든다.

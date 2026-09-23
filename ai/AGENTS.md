@@ -69,6 +69,8 @@ AI 코드는 Service DB를 읽지도 쓰지도 않습니다. 파일 본문은 �
 
 모듈은 평면에 둡니다. `ai/worker/<작업>.py`와 `ai/worker/tests/test_<작업>.py` 한 쌍입니다. 파일이 몇 개 늘었다고 하위 디렉터리를 파지 않습니다. `scripts/`는 모듈이 아니라 한 번 돌리고 마는 실행 스크립트 자리입니다. `compare_stt.py`가 `222` 모델 비교용으로 거기 있습니다. 다른 모듈이 부를 것이면 `scripts/`에 두지 않습니다.
 
+`app.py`는 HTTP 경계입니다. 받아서 모듈로 넘기고 실패를 상태 코드로 바꾸는 일만 하고, 판단은 모듈에 둡니다. 새 작업을 더할 때 로직을 여기에 쓰지 않습니다.
+
 실패는 두 갈래뿐입니다. `GmsUnavailableError`(상류에 닿지 못함)와 `InvalidGmsResponseError`(출력이 계약과 다름)입니다. 세 번째를 만들지 않습니다.
 
 **구조가 깨진 것과 값이 틀린 것을 구분합니다.** 키 집합·필드 구성·타입이 어긋나면 쓸 수 없는 출력이라 예외로 막습니다. 값이 실재하지 않거나 범위를 벗어난 것은 그 항목만 내립니다.
@@ -88,7 +90,9 @@ if not isinstance(row["evidenceUtteranceIndexes"], list):
 
 결과는 stdout에 JSON으로, 오류와 사용량은 stderr로 냅니다. `logging`을 들이지 않았습니다.
 
-외부 라이브러리를 더하기 전에 표준 라이브러리로 되는지 봅니다. GMS 호출은 `urllib`로 하고 있습니다. `requirements.txt`는 STT 비교 전용이라 GMS 경로에는 쓰이지 않습니다.
+외부 라이브러리를 더하기 전에 표준 라이브러리로 되는지 봅니다. GMS 호출은 `urllib`로 하고 있어 HTTP 클라이언트를 따로 들이지 않았습니다. HTTP **서버**는 표준 라이브러리로 안 됩니다 — `http.server`는 문서가 프로덕션용이 아니라고 적어 둔 시험용이고 동시 요청을 못 받습니다. 그래서 `mock`과 같은 조합(`fastapi` + `uvicorn[standard]`)을 씁니다.
+
+의존성 파일은 둘입니다. `requirements.txt`는 서비스가 뜨는 데 필요한 것만 담고 이미지에 들어갑니다. `scripts/requirements.txt`는 STT 비교 도구용이며 `faster-whisper`가 모델 런타임까지 끌고 와 이미지에 넣지 않습니다.
 
 ## 6. komit-scan — 지시문
 
