@@ -24,6 +24,7 @@ import { useRealtimeConnection, type RealtimeStatus } from "@/hooks/useRealtimeC
 import { useSessionRecorder } from "@/hooks/useSessionRecorder";
 import type { RealtimeEnvelope, RtcSignalType } from "@/types/realtime";
 import { ApiError } from "@/types/api";
+import { useChatChannel } from "@/hooks/useChatChannel";
 import type { ChatMessage } from "@/types/chat";
 
 /** 통화가 어디까지 왔는지 사람 말로. */
@@ -134,6 +135,8 @@ export interface SessionStageProps {
   counterpartName: string;
   /** 내 표시 이름. 보낸 말의 작성자로 씁니다. */
   myName: string;
+  /** 내 사용자 식별자. 어느 말이 내 것인지 가릅니다. */
+  myUserId: number;
   /** 세션 대화. 방 대화와 다른 `chatRefId` 를 씁니다. */
   chatRefId: string;
   initialMessages: ChatMessage[];
@@ -163,13 +166,14 @@ export function SessionStage({
   roomId,
   counterpartName,
   myName,
+  myUserId,
   chatRefId,
   initialMessages,
   polite,
 }: Readonly<SessionStageProps>) {
   const router = useRouter();
   const showToast = useToast();
-  const [messages, setMessages] = React.useState(initialMessages);
+
   const [asking, setAsking] = React.useState(false);
   const [ending, setEnding] = React.useState(false);
   const bottomRef = React.useRef<HTMLDivElement>(null);
@@ -310,28 +314,13 @@ export function SessionStage({
   */
   const recorder = useSessionRecorder(call.localStream, joined);
 
+  /* 대화는 통화와 다른 연결로 엽니다. 한 연결에 둘을 얹으면 한쪽이 끊길 때 같이 끊깁니다. */
+  const chat = useChatChannel({ chatRefId, initialMessages });
+
   React.useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [messages.length]);
+  }, [chat.messages.length]);
 
-  /**
-   * 보내기.
-   * ⚠️ 아직 서버에 저장하지 않습니다. 방 대화와 같습니다(`RoomChatPanel`) — 채팅
-   * 계약이 정해지면 여기서 POST 를 부르고 실패 시 되돌리는 처리를 더합니다.
-   */
-  const send = (body: string) => {
-    setMessages((prev) => [
-      ...prev,
-      {
-        messageId: `local-${Date.now()}`,
-        chatRefId,
-        sender: "ME",
-        authorName: myName,
-        body,
-        sentAt: new Date().toISOString(),
-      },
-    ]);
-  };
 
   /*
     올리지 못한 녹음을 쥐고 있는 자리입니다.
@@ -501,16 +490,16 @@ export function SessionStage({
 
         <ChatRoom
           className="h-[420px] w-full shrink-0 lg:h-auto lg:w-[380px]"
-          footer={<ChatComposer onSend={send} />}
+          footer={<ChatComposer onSend={chat.send} disabled={chat.status !== "OPEN"} />}
         >
-          {messages.map((message) => (
+          {chat.messages.map((message) => (
             <ChatBubble
               key={message.messageId}
-              mine={message.sender === "ME"}
-              author={message.authorName}
+              mine={message.senderUserId === myUserId}
+              author={message.senderUserId === myUserId ? myName : counterpartName}
               time={formatTime(message.sentAt)}
             >
-              {message.body}
+              {message.content}
             </ChatBubble>
           ))}
           <div ref={bottomRef} />

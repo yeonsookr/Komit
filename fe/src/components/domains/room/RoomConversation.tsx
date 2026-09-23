@@ -22,6 +22,8 @@ export interface RoomConversationProps {
   room: RoomDetail;
   initialMessages: ChatMessage[];
   myName: string;
+  /** 내 사용자 식별자. 어느 말이 내 것인지 가릅니다. */
+  myUserId: number;
   /**
    * 갈래를 정할 수 있는지. 갈래는 의뢰인이 정하므로 개발자에게는 버튼을 보이지
    * 않습니다(백엔드도 403 으로 막습니다).
@@ -41,6 +43,7 @@ export function RoomConversation({
   room: initialRoom,
   initialMessages,
   myName,
+  myUserId,
   canConvert,
   banner,
 }: Readonly<RoomConversationProps>) {
@@ -124,6 +127,7 @@ export function RoomConversation({
             room={room}
             initialMessages={initialMessages}
             myName={myName}
+            myUserId={myUserId}
             banner={banner}
           />
         </div>

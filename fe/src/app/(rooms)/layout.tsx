@@ -14,14 +14,14 @@ import type { RoomSummary } from "@/types/room";
  * 계산하면 hydration 이 어긋납니다.
  */
 async function buildPreviews(rooms: RoomSummary[]): Promise<Record<string, RoomPreview>> {
-  const lastMessages = await getLastMessages(rooms.map((room) => room.chatRefId));
+  const lastMessages = await getLastMessages(rooms.map((room) => room.roomId));
   const now = new Date();
 
   return Object.fromEntries(
-    Object.entries(lastMessages).map(([chatRefId, message]) => [
-      chatRefId,
+    Object.entries(lastMessages).map(([roomId, message]) => [
+      roomId,
       message
-        ? { body: message.body, time: formatRelativeTime(message.sentAt, now) }
+        ? { body: message.content, time: formatRelativeTime(message.sentAt, now) }
         : {},
     ]),
   );

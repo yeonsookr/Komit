@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/layouts";
 import { RoomConversation, RoomHeader, SessionBanner } from "@/components/domains/room";
-import { getChatMessages, getContract, getMe, getRoom } from "@/lib/api/services";
+import { getContract, getMe, getRoom, getRoomMessages } from "@/lib/api/services";
 import { isReceived, ROOM_TYPE_LABEL } from "@/lib/rooms";
 import { confirmedSession, sessionPhase } from "@/lib/session";
 import { ROUTES } from "@/lib/routes";
@@ -47,7 +47,7 @@ export default async function RoomPage({ params }: { params: Promise<{ roomId: s
   if (!Number.isInteger(id) || id <= 0) notFound();
 
   const { room, me } = await loadRoom(id);
-  const messages = await getChatMessages(room.chatRefId);
+  const messages = await getRoomMessages(id);
   // 계약서는 갈래가 정해진 방에만 있습니다. 머리의 계약서 줄을 채우는 값입니다.
   const contract: Contract | null =
     room.contractId === null ? null : await getContract(room.contractId);
@@ -66,8 +66,9 @@ export default async function RoomPage({ params }: { params: Promise<{ roomId: s
       {/* 갈래는 의뢰인이 정합니다 — 개발자에게는 버튼을 보이지 않습니다. */}
       <RoomConversation
         room={room}
-        initialMessages={messages}
+        initialMessages={messages.content}
         myName={me.name}
+        myUserId={me.userId}
         canConvert={!isReceived(room, me)}
         banner={
           session === null ? undefined : (
