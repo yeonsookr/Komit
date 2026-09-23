@@ -45,6 +45,31 @@ spec:
           averageUtilization: 70
 
 ---
+# AI 서비스는 GMS 왕복을 기다리기만 해 CPU가 거의 오르지 않습니다. 붙이는 이유는 부하가
+# 아니라 요청이 몰릴 때 동시에 기다릴 자리를 늘리기 위해서입니다.
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ai
+  namespace: komit
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ai
+  minReplicas: 2
+  maxReplicas: 4
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+---
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:

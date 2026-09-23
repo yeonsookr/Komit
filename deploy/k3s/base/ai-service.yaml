@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ai
+  namespace: komit
+  labels:
+    app.kubernetes.io/name: ai
+    app.kubernetes.io/part-of: komit
+spec:
+  # 클러스터 안에서 service Pod만 부릅니다. NodePort로 열지 않습니다.
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ai
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

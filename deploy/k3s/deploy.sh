@@ -8,6 +8,8 @@ ESCROW_IMAGE=${ESCROW_IMAGE:-}
 FE_IMAGE=${FE_IMAGE:-}
 # mock을 보는 테스트용 FE. 같은 소스를 /test 접두사로 구운 별도 이미지입니다.
 FE_TEST_IMAGE=${FE_TEST_IMAGE:-}
+# AI 서비스(Python). service Pod만 클러스터 안에서 부릅니다.
+AI_IMAGE=${AI_IMAGE:-}
 : "${SERVICE_DB_PASSWORD:?SERVICE_DB_PASSWORD is required}"
 : "${ESCROW_DB_PASSWORD:?ESCROW_DB_PASSWORD is required}"
 : "${SERVICE_REDIS_PASSWORD:?SERVICE_REDIS_PASSWORD is required}"
@@ -18,10 +20,13 @@ FE_TEST_IMAGE=${FE_TEST_IMAGE:-}
 : "${ESCROW_PUBLIC_BASE_URL:?ESCROW_PUBLIC_BASE_URL is required}"
 # 루트 fe가 호출할 실제 서버 주소입니다. GitLab CI/CD 변수 값을 실행 환경에 넣습니다.
 : "${BACKEND_API_BASE_URL:?BACKEND_API_BASE_URL is required}"
+# service가 부를 AI 서비스 주소입니다. 클러스터 안 주소이며 밖으로 열지 않습니다.
+# FE는 AI를 직접 부르지 않으므로 fe-config가 아니라 service-config로 들어갑니다.
 : "${AI_API_BASE_URL:?AI_API_BASE_URL is required}"
+# AI 서비스가 GMS를 부르는 키입니다. 없으면 AI Pod가 기동하지 않습니다.
+: "${GMS_API_KEY:?GMS_API_KEY is required}"
 # /test fe가 호출할 mock 주소입니다. 루트와 변수 자체를 분리해 뒤바뀌지 않게 합니다.
 : "${TEST_BACKEND_API_BASE_URL:?TEST_BACKEND_API_BASE_URL is required}"
-: "${TEST_AI_API_BASE_URL:?TEST_AI_API_BASE_URL is required}"
 : "${ESCROW_API_BASE_URL:?ESCROW_API_BASE_URL is required}"
 : "${ESCROW_CLIENT_API_KEY:?ESCROW_CLIENT_API_KEY is required}"
 : "${ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE:?ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE is required}"
@@ -181,10 +186,12 @@ SERVICE_IMAGE=$(resolve_image "$SERVICE_IMAGE" service)
 ESCROW_IMAGE=$(resolve_image "$ESCROW_IMAGE" escrow)
 FE_IMAGE=$(resolve_image "$FE_IMAGE" fe)
 FE_TEST_IMAGE=$(resolve_image "$FE_TEST_IMAGE" fe-test)
+AI_IMAGE=$(resolve_image "$AI_IMAGE" ai)
 echo "service image: $SERVICE_IMAGE"
 echo "escrow image:  $ESCROW_IMAGE"
 echo "fe image:      $FE_IMAGE"
 echo "fe-test image: $FE_TEST_IMAGE"
+echo "ai image:      $AI_IMAGE"
 
 # 1. CloudNativePG 오퍼레이터
 kubectl apply -f "$SCRIPT_DIR/platform/cloudnative-pg.yaml"
@@ -237,6 +244,9 @@ images:
   - name: komit-fe-test
     newName: ${FE_TEST_IMAGE%:*}
     newTag: "${FE_TEST_IMAGE##*:}"
+  - name: komit-ai
+    newName: ${AI_IMAGE%:*}
+    newTag: "${AI_IMAGE##*:}"
 # 값이 바뀌면 ConfigMap 이름의 해시가 바뀌어 fe Pod가 새 값으로 다시 뜹니다.
 configMapGenerator:
   - name: fe-config
@@ -245,19 +255,19 @@ configMapGenerator:
 EOF
 {
   config_literal BACKEND_API_BASE_URL "$BACKEND_API_BASE_URL"
-  config_literal AI_API_BASE_URL "$AI_API_BASE_URL"
   config_literal KAKAO_CLIENT_ID "$KAKAO_CLIENT_ID"
   config_literal KAKAO_REDIRECT_URI "$KAKAO_REDIRECT_URI"
   # `/test`는 mock 전용 변수만 받습니다. 루트 FE 변수와 공유하지 않습니다.
   printf '  - name: fe-test-config\n    namespace: komit\n    literals:\n'
   config_literal BACKEND_API_BASE_URL "$TEST_BACKEND_API_BASE_URL"
-  config_literal AI_API_BASE_URL "$TEST_AI_API_BASE_URL"
   config_literal KAKAO_CLIENT_ID "$KAKAO_CLIENT_ID"
   config_literal KAKAO_REDIRECT_URI "$TEST_KAKAO_REDIRECT_URI"
   # 백엔드가 자기 공개 주소를 알도록 넣습니다. 값이 바뀌면 해당 Pod만 새 값으로 다시 뜹니다.
   printf '  - name: service-config\n    namespace: komit\n    literals:\n'
   config_literal APP_PUBLIC_BASE_URL "$SERVICE_PUBLIC_BASE_URL"
   config_literal ESCROW_API_BASE_URL "$ESCROW_API_BASE_URL"
+  # AI 서비스를 부르는 쪽은 service입니다. FE는 이 주소를 알지 못합니다.
+  config_literal AI_API_BASE_URL "$AI_API_BASE_URL"
   config_literal STORAGE_INTERNAL_ENDPOINT "$STORAGE_INTERNAL_ENDPOINT"
   config_literal STORAGE_PUBLIC_ENDPOINT "$STORAGE_PUBLIC_ENDPOINT"
   config_literal STORAGE_BUCKET "$STORAGE_BUCKET"
@@ -291,6 +301,12 @@ EOF
   printf '  - name: service-storage\n    namespace: komit\n    literals:\n'
   config_literal STORAGE_ACCESS_KEY "$STORAGE_ACCESS_KEY"
   config_literal STORAGE_SECRET_KEY "$STORAGE_SECRET_KEY"
+  # AI 서비스가 GMS를 부르는 키. 값이 바뀌면 이름 해시가 바뀌어 AI Pod가 다시 뜹니다.
+  printf '  - name: ai-secret
+    namespace: komit
+    literals:
+'
+  config_literal GMS_API_KEY "$GMS_API_KEY"
 } >> "$WORK_DIR/apps/kustomization.yaml"
 # 이전 역방향 구성의 Service가 같은 NodePort(30083)를 점유하므로 첫 전환 때만 제거합니다.
 # Deployment는 새 fe-test가 정상 기동한 뒤 제거해 전환 중 진단 로그를 남길 수 있게 합니다.
@@ -315,6 +331,8 @@ rollout() {
 # 파일 저장소가 먼저 준비되어야 service의 업로드·읽기 주소 발급이 바로 동작합니다.
 rollout minio
 kubectl -n komit wait --for=condition=Complete job/minio-init --timeout=300s
+# service가 AI를 부르므로 AI가 먼저 준비되어야 첫 요청이 떨어지지 않습니다.
+rollout ai
 rollout service
 rollout escrow
 rollout fe
