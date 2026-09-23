@@ -103,9 +103,17 @@ public class Issue extends CreatedSoftDeleteEntity {
         this.severity = Objects.requireNonNull(severity, "severity");
     }
 
-    /** 요청서에서 뺀 것으로 표시한다. 계약으로 넘어간 요구사항에는 쓰지 않는다. */
-    public void dropFromRequirements(java.time.LocalDateTime deletedAt) {
-        markDeleted(deletedAt);
+    /**
+     * 요청서에 담긴 것으로 표시한다. 아직 고르지 않은 결함과 갈라야 화면이 요청서 본문을 그릴 수 있다.
+     *
+     * <p>이미 계약으로 넘어간 요구사항은 그대로 둔다. 계약 상태가 제안으로 되돌아가면 안 된다.
+     */
+    public void putIntoRequirements() {
+        if (isContracted()) {
+            return;
+        }
+        status = "SUGGESTED";
+        fixedVersion = null;
     }
 
     /**
@@ -124,6 +132,10 @@ public class Issue extends CreatedSoftDeleteEntity {
 
     public boolean isContracted() {
         return "CONTRACTED".equals(status);
+    }
+
+    public boolean isResolved() {
+        return "RESOLVED".equals(status);
     }
 
     /** 지난 회차에서 이어진 결함임을 남긴다. 최초로 발견한 결함을 가리켜 회차를 거슬러 올라갈 수 있게 한다. (R-SCAN-05) */
