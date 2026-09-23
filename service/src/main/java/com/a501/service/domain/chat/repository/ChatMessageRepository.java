@@ -1,7 +1,7 @@
 package com.a501.service.domain.chat.repository;
 
 import com.a501.service.domain.chat.entity.ChatMessage;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import org.bson.types.ObjectId;
 import org.springframework.data.domain.Limit;
@@ -23,5 +23,5 @@ public interface ChatMessageRepository extends MongoRepository<ChatMessage, Obje
      * 메시지가 와도 경계가 밀리지 않습니다.
      */
     List<ChatMessage> findByRoomIdAndSentAtLessThanOrderBySentAtDescIdDesc(
-            Integer roomId, LocalDateTime before, Limit limit);
+            Integer roomId, Instant before, Limit limit);
 }

@@ -3,7 +3,7 @@ package com.a501.service.domain.chat.repository;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.a501.service.domain.chat.entity.ChatMessage;
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -24,7 +24,7 @@ class ChatMessageRepositoryTest {
     private static final Integer OTHER_ROOM_ID = 101;
     private static final Integer CLIENT_ID = 9001;
     private static final Integer DEVELOPER_USER_ID = 9101;
-    private static final LocalDateTime BASE = LocalDateTime.of(2026, 9, 23, 14, 0);
+    private static final Instant BASE = Instant.parse("2026-09-23T14:00:00Z");
 
     @Container
     @ServiceConnection
@@ -103,7 +103,7 @@ class ChatMessageRepositoryTest {
 
         List<ChatMessage> found =
                 chatMessageRepository.findByRoomIdAndSentAtLessThanOrderBySentAtDescIdDesc(
-                        ROOM_ID, BASE.plusMinutes(2), Limit.of(10));
+                        ROOM_ID, BASE.plusSeconds(120), Limit.of(10));
 
         // 커서와 같은 시각은 이미 본 것이므로 뺍니다.
         assertThat(found).extracting(ChatMessage::getContent).containsExactly("2", "1");
@@ -118,6 +118,6 @@ class ChatMessageRepositoryTest {
 
     private void save(Integer roomId, String content, int minutesLater) {
         chatMessageRepository.save(
-                ChatMessage.of(roomId, DEVELOPER_USER_ID, content, BASE.plusMinutes(minutesLater)));
+                ChatMessage.of(roomId, DEVELOPER_USER_ID, content, BASE.plusSeconds(minutesLater * 60L)));
     }
 }

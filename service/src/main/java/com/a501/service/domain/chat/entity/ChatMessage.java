@@ -1,6 +1,6 @@
 package com.a501.service.domain.chat.entity;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -43,12 +43,17 @@ public class ChatMessage {
     @Field("content")
     private String content;
 
-    /** 보낸 시각. 목록 정렬과 커서 페이징의 기준이다. */
+    /**
+     * 보낸 시각. 목록 정렬과 커서 페이징의 기준이다.
+     *
+     * <p><b>시간대가 붙은 {@link Instant} 로 둔다.</b> 벽시계 시각으로 두면 읽는 서버의 시간대에
+     * 따라 값이 밀리고, 두 사람이 서로 다른 곳에서 보는 대화라 순서가 어긋난다.
+     */
     @Field("sentAt")
-    private LocalDateTime sentAt;
+    private Instant sentAt;
 
     public static ChatMessage of(
-            Integer roomId, Integer senderUserId, String content, LocalDateTime sentAt) {
+            Integer roomId, Integer senderUserId, String content, Instant sentAt) {
         ChatMessage message = new ChatMessage();
         message.roomId = Objects.requireNonNull(roomId, "roomId");
         message.senderUserId = Objects.requireNonNull(senderUserId, "senderUserId");
