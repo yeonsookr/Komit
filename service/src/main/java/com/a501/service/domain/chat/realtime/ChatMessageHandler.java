@@ -45,7 +45,7 @@ public class ChatMessageHandler implements RealtimeDomainHandler {
     public void handle(RealtimePrincipal principal, RealtimeEnvelope envelope) {
         String content = content(envelope);
         ChatMessageResponse saved = chatMessageService.write(
-                Integer.valueOf(principal.channelId()), principal.userId(), content);
+                principal.channelId(), principal.userId(), content);
 
         // 보낸 사람을 빼지 않는다. 넣는 길이 하나여야 누가 어디에 붙어 있든 같은 순서로 받는다.
         relayPublisher.publish(

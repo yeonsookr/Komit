@@ -20,8 +20,8 @@ import org.testcontainers.mongodb.MongoDBContainer;
 @Testcontainers
 @DataMongoTest
 class ChatMessageRepositoryTest {
-    private static final Integer ROOM_ID = 92;
-    private static final Integer OTHER_ROOM_ID = 101;
+    private static final String CHAT_REF_ID = "room-92-chat";
+    private static final String OTHER_CHAT_REF_ID = "session-31-chat";
     private static final Integer CLIENT_ID = 9001;
     private static final Integer DEVELOPER_USER_ID = 9101;
     private static final Instant BASE = Instant.parse("2026-09-23T14:00:00Z");
@@ -42,14 +42,14 @@ class ChatMessageRepositoryTest {
     @DisplayName("보낸 메시지를 그대로 읽는다")
     void saveThenRead() {
         chatMessageRepository.save(
-                ChatMessage.of(ROOM_ID, CLIENT_ID, "결제가 안 붙었다고 하셨죠", BASE));
+                ChatMessage.of(CHAT_REF_ID, CLIENT_ID, "결제가 안 붙었다고 하셨죠", BASE));
 
         ChatMessage found =
-                chatMessageRepository.findByRoomIdOrderBySentAtDescIdDesc(ROOM_ID, Limit.of(10))
+                chatMessageRepository.findByChatRefIdOrderBySentAtDescIdDesc(CHAT_REF_ID, Limit.of(10))
                         .getFirst();
 
         assertThat(found.getId()).isNotNull();
-        assertThat(found.getRoomId()).isEqualTo(ROOM_ID);
+        assertThat(found.getChatRefId()).isEqualTo(CHAT_REF_ID);
         assertThat(found.getSenderUserId()).isEqualTo(CLIENT_ID);
         assertThat(found.getContent()).isEqualTo("결제가 안 붙었다고 하셨죠");
         assertThat(found.getSentAt()).isEqualTo(BASE);
@@ -58,25 +58,25 @@ class ChatMessageRepositoryTest {
     @Test
     @DisplayName("새 메시지가 앞에 온다")
     void newestFirst() {
-        save(ROOM_ID, "첫 번째", 0);
-        save(ROOM_ID, "두 번째", 1);
-        save(ROOM_ID, "세 번째", 2);
+        save(CHAT_REF_ID, "첫 번째", 0);
+        save(CHAT_REF_ID, "두 번째", 1);
+        save(CHAT_REF_ID, "세 번째", 2);
 
         List<ChatMessage> found =
-                chatMessageRepository.findByRoomIdOrderBySentAtDescIdDesc(ROOM_ID, Limit.of(10));
+                chatMessageRepository.findByChatRefIdOrderBySentAtDescIdDesc(CHAT_REF_ID, Limit.of(10));
 
         assertThat(found).extracting(ChatMessage::getContent)
                 .containsExactly("세 번째", "두 번째", "첫 번째");
     }
 
     @Test
-    @DisplayName("다른 방 대화는 섞이지 않는다")
+    @DisplayName("방 대화와 세션 대화는 섞이지 않는다")
     void separatesRooms() {
-        save(ROOM_ID, "상담방 이야기", 0);
-        save(OTHER_ROOM_ID, "개발방 이야기", 1);
+        save(CHAT_REF_ID, "상담방 이야기", 0);
+        save(OTHER_CHAT_REF_ID, "세션 이야기", 1);
 
         List<ChatMessage> found =
-                chatMessageRepository.findByRoomIdOrderBySentAtDescIdDesc(ROOM_ID, Limit.of(10));
+                chatMessageRepository.findByChatRefIdOrderBySentAtDescIdDesc(CHAT_REF_ID, Limit.of(10));
 
         assertThat(found).extracting(ChatMessage::getContent).containsExactly("상담방 이야기");
     }
@@ -84,12 +84,12 @@ class ChatMessageRepositoryTest {
     @Test
     @DisplayName("요청한 건수까지만 가져온다")
     void limitsCount() {
-        save(ROOM_ID, "1", 0);
-        save(ROOM_ID, "2", 1);
-        save(ROOM_ID, "3", 2);
+        save(CHAT_REF_ID, "1", 0);
+        save(CHAT_REF_ID, "2", 1);
+        save(CHAT_REF_ID, "3", 2);
 
         List<ChatMessage> found =
-                chatMessageRepository.findByRoomIdOrderBySentAtDescIdDesc(ROOM_ID, Limit.of(2));
+                chatMessageRepository.findByChatRefIdOrderBySentAtDescIdDesc(CHAT_REF_ID, Limit.of(2));
 
         assertThat(found).extracting(ChatMessage::getContent).containsExactly("3", "2");
     }
@@ -97,13 +97,13 @@ class ChatMessageRepositoryTest {
     @Test
     @DisplayName("커서보다 앞의 대화만 가져온다")
     void readsBeforeCursor() {
-        save(ROOM_ID, "1", 0);
-        save(ROOM_ID, "2", 1);
-        save(ROOM_ID, "3", 2);
+        save(CHAT_REF_ID, "1", 0);
+        save(CHAT_REF_ID, "2", 1);
+        save(CHAT_REF_ID, "3", 2);
 
         List<ChatMessage> found =
-                chatMessageRepository.findByRoomIdAndSentAtLessThanOrderBySentAtDescIdDesc(
-                        ROOM_ID, BASE.plusSeconds(120), Limit.of(10));
+                chatMessageRepository.findByChatRefIdAndSentAtLessThanOrderBySentAtDescIdDesc(
+                        CHAT_REF_ID, BASE.plusSeconds(120), Limit.of(10));
 
         // 커서와 같은 시각은 이미 본 것이므로 뺍니다.
         assertThat(found).extracting(ChatMessage::getContent).containsExactly("2", "1");
@@ -112,12 +112,12 @@ class ChatMessageRepositoryTest {
     @Test
     @DisplayName("대화가 없는 방은 빈 목록이다")
     void emptyRoom() {
-        assertThat(chatMessageRepository.findByRoomIdOrderBySentAtDescIdDesc(ROOM_ID, Limit.of(10)))
+        assertThat(chatMessageRepository.findByChatRefIdOrderBySentAtDescIdDesc(CHAT_REF_ID, Limit.of(10)))
                 .isEmpty();
     }
 
-    private void save(Integer roomId, String content, int minutesLater) {
+    private void save(String chatRefId, String content, int minutesLater) {
         chatMessageRepository.save(
-                ChatMessage.of(roomId, DEVELOPER_USER_ID, content, BASE.plusSeconds(minutesLater * 60L)));
+                ChatMessage.of(chatRefId, DEVELOPER_USER_ID, content, BASE.plusSeconds(minutesLater * 60L)));
     }
 }

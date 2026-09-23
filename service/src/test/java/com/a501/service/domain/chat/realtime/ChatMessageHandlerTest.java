@@ -34,7 +34,7 @@ import tools.jackson.databind.ObjectMapper;
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)
 class ChatMessageHandlerTest {
-    private static final Integer ROOM_ID = 92;
+    private static final String CHAT_REF_ID = "room-92-chat";
     private static final Integer CLIENT_ID = 9001;
     private static final String CONNECTION_ID = "conn-1";
     private static final OffsetDateTime SENT_AT =
@@ -49,7 +49,7 @@ class ChatMessageHandlerTest {
     private ChatMessageHandler handler;
 
     private final RealtimePrincipal principal = new RealtimePrincipal(
-            CLIENT_ID, CONNECTION_ID, RealtimeChannelType.CHAT_ROOM, String.valueOf(ROOM_ID));
+            CLIENT_ID, CONNECTION_ID, RealtimeChannelType.CHAT_ROOM, CHAT_REF_ID);
 
     @BeforeEach
     void setUp() {
@@ -73,7 +73,7 @@ class ChatMessageHandlerTest {
     void savesMessage() {
         handler.handle(principal, envelope("{\"content\":\"안녕하세요\"}"));
 
-        verify(chatMessageService).write(ROOM_ID, CLIENT_ID, "안녕하세요");
+        verify(chatMessageService).write(CHAT_REF_ID, CLIENT_ID, "안녕하세요");
     }
 
     @Test
@@ -88,7 +88,7 @@ class ChatMessageHandlerTest {
 
         RealtimeEnvelope relayed = captor.getValue();
         assertThat(relayed.type()).isEqualTo("CHAT_MESSAGE");
-        assertThat(relayed.channelId()).isEqualTo("92");
+        assertThat(relayed.channelId()).isEqualTo(CHAT_REF_ID);
         assertThat(relayed.payload().get("messageId").asString())
                 .isEqualTo("65f1c2a48b3e4d0012a7f901");
         assertThat(relayed.payload().get("content").asString()).isEqualTo("안녕하세요");
@@ -139,7 +139,7 @@ class ChatMessageHandlerTest {
         handler.handle(principal, envelope("{\"content\":\"안녕하세요\"}"));
 
         // 본문에 적어 보낸 값이 아니라 티켓으로 증명된 사람을 쓴다.
-        verify(chatMessageService).write(ROOM_ID, CLIENT_ID, "안녕하세요");
+        verify(chatMessageService).write(CHAT_REF_ID, CLIENT_ID, "안녕하세요");
     }
 
     private void verifyNothingHappened() {
@@ -154,7 +154,7 @@ class ChatMessageHandlerTest {
                 "CHAT_MESSAGE",
                 "req-1",
                 RealtimeChannelType.CHAT_ROOM,
-                String.valueOf(ROOM_ID),
+                CHAT_REF_ID,
                 payload);
     }
 }
