@@ -42,6 +42,7 @@ app:
     read-url-ttl: 15m
   logging:
     # 이 시간을 넘긴 컨트롤러·서비스 호출은 WARN으로 남깁니다. (common/logging/LoggingAspect)
+    # @SlowCallThreshold 가 붙은 호출은 그 값을 쓰므로 여기에 걸리지 않습니다.
     slow-call-threshold: 1s
   realtime:
     # R-RT-01: 티켓을 받아 WebSocket 을 여는 사이에만 쓰며 한 번 쓰면 바로 지웁니다.

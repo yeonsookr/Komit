@@ -9,6 +9,9 @@ import org.aspectj.lang.ProceedingJoinPoint;
 import org.aspectj.lang.annotation.Around;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Pointcut;
+import org.aspectj.lang.reflect.MethodSignature;
+import org.springframework.boot.convert.DurationStyle;
+import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.stereotype.Component;
 
 /**
@@ -18,7 +21,8 @@ import org.springframework.stereotype.Component;
  * <ul>
  *   <li>컨트롤러({@code domain.*.controller}): 완료를 INFO. 요청 하나에 한 줄이 남아 트래픽과 응답 시간을 보는 기준이 됩니다.</li>
  *   <li>서비스({@code domain.*.service}): 시작·완료를 DEBUG. 운영({@code com.a501: INFO})에서는 꺼지고 로컬에서만 보입니다.</li>
- *   <li>느린 호출: 어느 계층이든 {@link LoggingProperties#slowCallThreshold()}를 넘으면 WARN.</li>
+ *   <li>느린 호출: 어느 계층이든 기준을 넘으면 WARN. 기준은 {@link SlowCallThreshold}가 붙어 있으면 그 값이고(메서드가 클래스보다 앞섭니다),
+ *       없으면 {@link LoggingProperties#slowCallThreshold()}입니다. 적용된 값은 로그 줄의 {@code thresholdMs} 에 남습니다.</li>
  *   <li>{@link BusinessException}: 계약된 실패이므로 코드만 INFO로 남기고 다시 던집니다. 스택은 남기지 않습니다.</li>
  *   <li>그 밖의 예외: 클래스 이름만 DEBUG로 남기고 다시 던집니다. 스택 트레이스는 전역 예외 처리기가 한 번만 기록합니다.</li>
  * </ul>
@@ -83,7 +87,7 @@ public class LoggingAspect {
         log.debug("{} start {}", layer, call);
         try {
             Object result = joinPoint.proceed();
-            logCompleted(layer, call, elapsedMillis(startedAt));
+            logCompleted(layer, call, elapsedMillis(startedAt), thresholdOf(joinPoint));
             return result;
         } catch (BusinessException exception) {
             log.info("{} rejected {} code={} elapsedMs={}",
@@ -96,10 +100,28 @@ public class LoggingAspect {
         }
     }
 
-    private void logCompleted(Layer layer, String call, long elapsedMs) {
-        if (elapsedMs >= properties.slowCallThreshold().toMillis()) {
-            log.warn("{} slow {} elapsedMs={} thresholdMs={}",
-                    layer, call, elapsedMs, properties.slowCallThreshold().toMillis());
+    /**
+     * 이 호출에 적용할 느린 호출 기준.
+     *
+     * <p>{@link SlowCallThreshold} 가 붙어 있으면 그 값을, 없으면 공용 값을 쓴다. 메서드에 붙은 것이
+     * 클래스에 붙은 것보다 앞선다.
+     */
+    private Duration thresholdOf(ProceedingJoinPoint joinPoint) {
+        if (!(joinPoint.getSignature() instanceof MethodSignature signature)) {
+            return properties.slowCallThreshold();
+        }
+        SlowCallThreshold declared = AnnotatedElementUtils.findMergedAnnotation(
+                signature.getMethod(), SlowCallThreshold.class);
+        if (declared == null) {
+            declared = AnnotatedElementUtils.findMergedAnnotation(
+                    joinPoint.getTarget().getClass(), SlowCallThreshold.class);
+        }
+        return declared == null ? properties.slowCallThreshold() : DurationStyle.detectAndParse(declared.value());
+    }
+
+    private void logCompleted(Layer layer, String call, long elapsedMs, Duration threshold) {
+        if (elapsedMs >= threshold.toMillis()) {
+            log.warn("{} slow {} elapsedMs={} thresholdMs={}", layer, call, elapsedMs, threshold.toMillis());
             return;
         }
         if (layer == Layer.CONTROLLER) {
