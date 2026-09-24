@@ -25,7 +25,7 @@ import org.springframework.test.util.ReflectionTestUtils;
  * 진단을 누가 만질 수 있는지 가리는 규칙을 검증합니다.
  *
  * <p>고치는 것과 읽는 것이 갈립니다. 요구사항을 더하거나 다시 검사하는 일은 의뢰인만 하지만, 상담 요청을
- * 받은 개발자는 무엇을 고쳐야 하는지 읽을 수 있어야 합니다. (`R-REQ-03`)
+ * 받은 개발자는 무엇을 고쳐야 하는지 읽을 수 있어야 합니다. (`R-REQ-05`)
  */
 @ExtendWith(MockitoExtension.class)
 @MockitoSettings(strictness = Strictness.LENIENT)

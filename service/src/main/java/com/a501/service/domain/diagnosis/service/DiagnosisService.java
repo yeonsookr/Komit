@@ -89,7 +89,7 @@ public class DiagnosisService {
      * 진단 한 건.
      *
      * <p><b>상담 요청을 받은 개발자에게는 좁혀서 내보낸다.</b> 점수와 결함 수는 요청서에 담기지 않은
-     * 것까지 드러내므로 비운다. 의뢰인이 골라 보낸 것 밖은 보여주지 않기로 한 것이다. (`R-REQ-03`)
+     * 것까지 드러내므로 비운다. 의뢰인이 골라 보낸 것 밖은 보여주지 않기로 한 것이다. (`R-REQ-05`)
      */
     public DiagnosisResponse getDiagnosis(Integer diagnosisId, Integer userId) {
         Diagnosis diagnosis = readableDiagnosis(diagnosisId, userId);
@@ -120,7 +120,7 @@ public class DiagnosisService {
      * 이 진단 회차의 결함. 요청서도 이 목록으로 그린다.
      *
      * <p><b>상담 요청을 받은 개발자에게는 요청서에 담긴 것만 내보낸다.</b> 고르지 않은 것은 의뢰인이
-     * 보여주지 않기로 한 것이다. (`R-REQ-03`)
+     * 보여주지 않기로 한 것이다. (`R-REQ-05`)
      */
     public IssueListResponse getIssues(
             Integer diagnosisId, Integer userId, String status, Boolean input, int page, int size) {
