@@ -1,0 +1,152 @@
+# 통화 중계(TURN). 직접 연결이 안 되는 망에서 영상·소리가 지나가는 길입니다. (R-CON-19)
+#
+# **`hostNetwork` 를 씁니다.** NodePort 는 서버 내부 주소(127.0.0.1·172.17.0.1)에만 열려
+# 있어 밖에서 닿지 않고, 중계는 자기 공인 주소를 상대에게 알려 줘야 하므로 주소를 바꾸는
+# 층이 사이에 끼면 안 됩니다.
+#
+# 로컬에는 두지 않습니다. `deploy/local/docker-compose.yml` 의 coturn 이 그 자리입니다.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coturn-config
+  namespace: komit
+  labels:
+    app.kubernetes.io/name: coturn
+    app.kubernetes.io/part-of: komit
+data:
+  # 공유 비밀·공인 주소·realm 은 여기 없습니다. 기동할 때 Secret 을 읽어 덧붙입니다.
+  turnserver.conf: |
+    listening-port=3478
+
+    # 중계 포트 범위. 보안 그룹에서 이 범위를 UDP 로 열어야 합니다.
+    # 클라이언트가 붙는 포트(3478)와 다릅니다 — 이것은 중계기가 상대에게 보낼 때 쓰는 자리입니다.
+    min-port=49160
+    max-port=49200
+
+    # 계정을 미리 만들지 않습니다. 서버가 공유 비밀로 계산한 자격을 여기서 같은 계산으로
+    # 맞춰 봅니다. 그래서 사용자 목록도, 발급 기록도 없습니다.
+    use-auth-secret
+
+    # 한 사람이 중계기를 다 먹지 못하게 합니다.
+    user-quota=12
+    total-quota=100
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # 내부망 침투를 막습니다. **이것이 빠지면 중계기가 통로가 됩니다.**
+    #
+    # TURN 은 자격을 가진 사람이 지정한 주소로 패킷을 보내 줍니다. 막지 않으면 밖에서
+    # 못 닿는 내부 서비스에 우리 서버를 거쳐 닿을 수 있습니다. k3s 안의 DB·Redis·MinIO 가
+    # 그 사정권입니다.
+    # ─────────────────────────────────────────────────────────────────────────
+    denied-peer-ip=0.0.0.0-0.255.255.255
+    denied-peer-ip=10.0.0.0-10.255.255.255
+    denied-peer-ip=127.0.0.0-127.255.255.255
+    denied-peer-ip=169.254.0.0-169.254.255.255
+    denied-peer-ip=172.16.0.0-172.31.255.255
+    denied-peer-ip=192.168.0.0-192.168.255.255
+    denied-peer-ip=224.0.0.0-255.255.255.255
+
+    # 관리 콘솔을 열지 않습니다. 열면 포트가 하나 더 생기고 지킬 것이 하나 더 늘어납니다.
+    no-cli
+
+    # TLS 는 아직 켜지 않습니다. 인증서를 nginx 가 쥐고 있어 갱신까지 함께 다뤄야 하고,
+    # 그 작업은 **사내망이 3478 을 막는 것을 확인한 뒤에** 합니다 (계획 3.2, 단계 0).
+    no-tls
+    no-dtls
+
+    fingerprint
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coturn
+  namespace: komit
+  labels:
+    app.kubernetes.io/name: coturn
+    app.kubernetes.io/part-of: komit
+spec:
+  # 호스트 포트를 직접 잡으므로 한 노드에 하나뿐입니다. 늘리면 두 번째가 포트를 못 잡습니다.
+  replicas: 1
+  strategy:
+    # 같은 이유로 새 Pod 와 옛 Pod 가 겹칠 수 없습니다. 내리고 올립니다.
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: coturn
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: coturn
+        app.kubernetes.io/part-of: komit
+    spec:
+      hostNetwork: true
+      containers:
+        - name: coturn
+          image: coturn/coturn:4.6
+          imagePullPolicy: IfNotPresent
+          # 공유 비밀을 명령줄에 싣지 않습니다. 서버의 프로세스 목록에 그대로 남습니다.
+          # 설정 파일을 복사해 비밀을 덧붙인 뒤 그것으로 띄웁니다.
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              IP=$(getent hosts "$TURN_PUBLIC_HOST" | awk '{ print $1; exit }')
+              if [ -z "$IP" ]; then
+                echo "TURN_PUBLIC_HOST($TURN_PUBLIC_HOST) 의 주소를 찾지 못했습니다" >&2
+                exit 1
+              fi
+              cp /etc/coturn/turnserver.conf /run/coturn/turnserver.conf
+              # 빈 줄을 먼저 넣습니다. 위 파일이 줄바꿈 없이 끝나면 마지막 줄과 아래
+              # 첫 줄이 붙어 **둘 다 조용히 버려집니다.** 공인 주소가 그렇게 사라지면
+              # 후보는 생기는데 연결만 안 되는, 가장 알아보기 어려운 고장이 됩니다.
+              echo >> /run/coturn/turnserver.conf
+              {
+                echo "external-ip=$IP"
+                echo "realm=$TURN_PUBLIC_HOST"
+                echo "static-auth-secret=$TURN_SHARED_SECRET"
+              } >> /run/coturn/turnserver.conf
+              exec turnserver -c /run/coturn/turnserver.conf
+          env:
+            # 자기 공인 주소를 모르면 닿을 수 없는 주소를 상대에게 알려 줍니다. 후보는
+            # 생기는데 연결이 안 되는, 가장 알아보기 어려운 고장입니다.
+            - name: TURN_PUBLIC_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: coturn-secret
+                  key: TURN_PUBLIC_HOST
+            - name: TURN_SHARED_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: coturn-secret
+                  key: TURN_SHARED_SECRET
+          ports:
+            - name: turn-udp
+              containerPort: 3478
+              protocol: UDP
+            - name: turn-tcp
+              containerPort: 3478
+              protocol: TCP
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              # 중계는 영상이 통째로 지나갑니다. CPU 는 거의 안 쓰고 대역폭을 씁니다.
+              cpu: "500m"
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: config
+              mountPath: /etc/coturn
+              readOnly: true
+            - name: runtime
+              mountPath: /run/coturn
+      volumes:
+        - name: config
+          configMap:
+            name: coturn-config
+        - name: runtime
+          emptyDir: {}

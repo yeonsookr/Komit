@@ -2,6 +2,9 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../base
+  # 통화 중계. hostNetwork 로 공인 주소에 직접 붙으므로 NodePort 패치가 없습니다.
+  # 로컬 k3s 에는 두지 않습니다 — `deploy/local/docker-compose.yml` 이 그 자리입니다.
+  - coturn.yaml
 patches:
   - path: service-nodeport.yaml
   - path: escrow-nodeport.yaml
