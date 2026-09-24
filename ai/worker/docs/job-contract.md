@@ -26,17 +26,16 @@ HTTP다. Service가 AI 서비스에 REST로 요청하고 응답을 받는다. �
 - 권한과 소유권을 볼 수 있는 곳이 Service뿐이다. AI는 사용자 JWT를 받지 않고 DB도 보지 않는다.
 - 입력과 결과가 Service DB에 있다. 중간에 FE가 끼면 결과를 되돌려 넣는 경로가 하나 더 생긴다.
 
-FE에 남아 있는 `aiApi()`와 `AI_API_BASE_URL` 빌드 인자는 2026-09-15에 AI 붙는 방식이 정해지기
-전에 만든 자리이고 부르는 곳이 없다. 걷어내는 일은 별도 이슈로 다룬다.
+FE에 있던 `aiApi()`와 `AI_API_BASE_URL` 빌드 인자는 AI 붙는 방식이 정해지기 전에 만든 자리였고,
+`258`에서 걷어냈다. 지금 FE는 AI 주소를 알지 못한다.
 
 ## 3. 주소와 인증
 
 k3s 안에서만 부르는 ClusterIP다. 외부에 노출하지 않는다. Service → AI 는 같은 클러스터이므로
 별도 인증을 두지 않고 네트워크로만 막는다.
 
-`AI_API_BASE_URL` 은 이미 `k3s-deploy` 의 필수 CI 변수다. 현재는 목을 가리키며, 실제 주소를
-넣는 것은 AI 서비스 배포 작업의 마지막 단계다. 지금은 FE 이미지 빌드 인자와 `fe-config`로
-들어가는데, 부르는 쪽이 Service이므로 배포 작업에서 `service-config`로 옮긴다.
+`AI_API_BASE_URL` 은 `k3s-deploy` 의 필수 CI 변수이고 `service-config` 로만 들어간다. 부르는 쪽이
+Service 이기 때문이다. 자세한 것은 `deploy/k3s/README.md` 의 변수 표에 있다.
 
 **AI 서비스는 `GMS_API_KEY` 없이 기동하지 않는다.** 키가 없으면 모든 요청이 `503`이 되는데
 배포는 성공한 것처럼 보인다. Service가 인증 값이 없을 때 Pod를 띄우지 않는 것과 같은 이유다.
@@ -100,12 +99,14 @@ Content-Type: application/json
 
 ## 6. 실패를 어떻게 돌려주나
 
-AI 쪽 실패는 두 갈래뿐이다. `ai/worker` 가 이미 그 둘만 던진다.
+**AI 자신의 실패는 두 갈래다.** `ai/worker` 가 그 둘만 던진다. 여기에 「받은 요청이 계약과 다르다」가
+더해져 Service 가 가르는 갈래는 셋이 된다.
 
 | AI 내부 | 뜻 | AI 서비스 응답 | Service 응답 |
 | --- | --- | --- | --- |
 | `GmsUnavailableError` | 모델에 접속하지 못함. 키가 없거나 호출이 실패함 | `503` | `503 AI_SERVICE_UNAVAILABLE` |
 | `InvalidGmsResponseError` | 접속은 됐으나 계약에 맞는 결과를 만들지 못함 | `502` | `502 AI_RESPONSE_INVALID` |
+| (요청 검증) | 받은 요청이 계약과 다름 | `422` `400` `404` `405` `AI_REQUEST_INVALID` | `500 INTERNAL_ERROR`. AI 고장이 아니므로 사용자에게 재시도를 권하지 않고, Service 가 거부 사유를 `ERROR` 로 남긴다 |
 
 **실패 본문**
 
@@ -149,10 +150,14 @@ Service는 재시도하지 않는다. AI 서비스 안에서 GMS 호출만 재�
 | 구간 | 값 |
 | --- | --- |
 | FE → Service | Service 기존 설정을 따른다 |
-| **Service → AI** | **미정 — 실측 후.** 확인 문장·계약 초안은 GMS 호출 한 번이라 짧다. 실제 왕복 시간을 재서 정한다 |
+| **Service → AI** | 연결 `3`초 / 읽기 `25`초. `app.ai.connect-timeout`·`app.ai.read-timeout`, 환경변수 `AI_CONNECT_TIMEOUT`·`AI_READ_TIMEOUT`. **실측 전 잠정값이다.** 읽기는 아래 AI → GMS 상한보다 길게 잡는다 — 먼저 끊으면 AI 가 가려낸 `502`·`503` 구분이 Service 에 닿지 못하고 전부 연결 실패로 뭉개진다 |
 | AI → GMS | `20`초 (`ai/worker/qa_suggestion.py` 현재 값) |
 
 **Service → AI 값을 코드에 박지 않는다.** 실측 전까지는 설정값으로 두고 기본값만 잡는다.
+
+Service 쪽은 이 읽기 한도 안에서 끝난 호출을 느린 호출 경고로 보지 않는다. 공용 기준(`1s`)을
+그대로 두면 정상 성공마다 경고가 쌓이므로, 확인 문장 경로에만 `@SlowCallThreshold("30s")` 를 붙였다.
+계약 초안과 컨설팅 요약은 아직 왕복 시간을 재지 않았다. 그 API 를 붙일 때 재서 각자 정한다.
 
 ## 9. 오래 걸리는 작업
 

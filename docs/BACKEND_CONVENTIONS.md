@@ -11,7 +11,7 @@
 - 서로 독립된 Komit 서버와 Escrow 서버의 경계
 - 각 서버의 2개 이상 인스턴스 운영을 위한 이중화 원칙
 - DDD 스타일의 도메인 중심 패키지 구조
-- Controller, Service, Repository, Entity, DTO의 책임
+- Controller, Service, Repository, Entity, DTO, Client의 책임
 - `mock` 서버 Swagger를 단일 기준으로 하는 API 계약 관리 방식
 - PostgreSQL 스키마 관리 방식
 - 보안, 로깅, 테스트, 브랜치와 리뷰 기준
@@ -292,12 +292,14 @@ Client / Frontend
 - 모든 인스턴스가 같은 버전으로 한 번에 교체된다고 가정하지 않습니다. API와 DB migration은 롤링 배포 중 구버전·신버전이 잠시 공존해도 호환되어야 합니다.
 - 파괴적인 컬럼 삭제·이름 변경은 추가 → 양쪽 버전 전환 → 제거 순서의 expand/contract 방식으로 진행합니다.
 
-### 6.8 서버 간 호출
+### 6.8 외부 서버 호출
 
 - Komit에서 Escrow로 보내는 모든 쓰기 요청에는 추적 식별자와 멱등성 기준을 둡니다.
 - 네트워크 오류와 5xx만 제한적으로 재시도하며, 검증·권한·상태 충돌 오류는 자동 재시도하지 않습니다.
 - 재시도는 지수 backoff와 최대 횟수를 설정합니다.
 - 연쇄 장애가 예상되는 동기 호출에는 circuit breaker 또는 명시적인 기능 저하 전략을 검토합니다.
+- 상태를 바꾸지 않는 생성·조회 호출(AI 서비스)은 멱등 키를 두지 않고 재시도하지 않습니다. 실패는 상대가 돌려준 `code`로 갈래를 정해 사용자에게 재시도를 권할지 판단합니다.
+- 타임아웃은 상대가 자기 상한 안에서 실패를 가려 답할 수 있도록 **상대의 내부 상한보다 길게** 잡습니다. 먼저 끊으면 상대가 가려낸 실패 구분이 이쪽에 닿지 못하고 전부 연결 실패로 묶입니다. 값은 코드에 두지 않고 `app.<대상>.connect-timeout`·`read-timeout`으로 둡니다. 근거는 `ai/worker/docs/job-contract.md` 6~8절입니다.
 - 서버 간 요청에도 사용자 token을 무조건 전달하지 말고, 필요한 사용자 맥락과 서버 간 인증 방식을 분리해 설계합니다.
 - 양쪽 로그는 같은 `traceId`/상관관계 ID로 추적할 수 있어야 합니다.
 
@@ -348,8 +350,11 @@ domain/developer/
 ├── dto/
 │   ├── request/
 │   └── response/
+├── client/                 # 바깥 서비스 호출. 필요한 도메인만 생성
 └── exception/              # 도메인 전용 타입이 꼭 필요할 때만 생성
 ```
+
+클라이언트는 그 도메인 안에만 두고 다른 도메인에서 참조하지 않습니다. (7.1) 지금 `domain/auth/client`, `domain/account/client`, `domain/diagnosis/client` 셋이 이 자리를 씁니다.
 
 복잡도가 커지면 도메인 안에서 `application`, `domain`, `infrastructure`, `presentation`으로 발전시킬 수 있습니다. 단, 팀 전체 합의 없이 일부 도메인만 다른 아키텍처로 바꾸지 않습니다.
 
@@ -411,6 +416,16 @@ DeveloperErrorCode
 - Controller 전용 객체인 `HttpServletRequest`, `ResponseEntity`에 의존하지 않습니다.
 - 구현체가 하나라면 인터페이스를 만들지 않고 `@Service` 클래스를 직접 사용합니다.
 - 호출 시작·종료·소요 시간 로그는 `common/logging/LoggingAspect`가 남기므로 서비스에서 같은 내용을 다시 찍지 않습니다. (18.3)
+
+### Client
+
+- 바깥 서비스 호출만 담당합니다. 유스케이스 판단과 권한 확인은 Service의 몫입니다.
+- base URL과 타임아웃은 `app.<대상>.*` 설정으로 주입받고 코드에 두지 않습니다.
+- 공용 `RestClient.Builder` 빈은 싱글턴이고 `baseUrl`·`requestFactory`가 그 자리에서 값을 바꿉니다. 자기 타임아웃이 필요하면 **`clone()`한 사본에만** 요청 팩토리를 겁니다. 원본을 고치면 뒤에 만들어지는 다른 클라이언트까지 그 값을 물려받고, 빈 생성 순서에 따라 결과가 달라집니다.
+- 실패는 상대 계약의 `code`로 갈래를 정해 `BusinessException`으로 옮깁니다. 본문을 읽을 수 없으면 상태 코드로 보조 판정합니다.
+- 상태가 `200`이어도 본문이 계약과 다를 수 있으므로 개수·길이 같은 계약 검증을 여기서 끝냅니다.
+- 응답 본문 값은 로그에 남기지 않습니다. 무엇이 어떻게 어긋났는지만 남깁니다.
+- 참조 구현은 `domain/diagnosis/client/QaSuggestionClient`입니다.
 
 ### Repository
 
@@ -753,9 +768,15 @@ spring:
           time_zone: UTC
 ```
 
-로깅 설정은 두 곳입니다.
+로깅 설정은 세 곳입니다.
 
-- `app.logging.slow-call-threshold` (기본 `1s`): 이 시간을 넘긴 컨트롤러·서비스 호출을 WARN으로 남기는 기준입니다. `common/logging/LoggingProperties`가 바인딩하며 0 이하면 기동에 실패합니다.
+- `app.logging.slow-call-threshold` (기본 `1s`): 이 시간을 넘긴 컨트롤러·서비스 호출을 WARN으로 남기는 기준입니다. `common/logging/LoggingProperties`가 바인딩하며 0 이하면 기동에 실패합니다. `@SlowCallThreshold`가 붙은 호출은 그 값이 이 값을 대신합니다.
+- `common/logging/SlowCallThreshold`: 그 호출만 다른 기준을 둡니다. 컨트롤러·서비스의 메서드나 클래스에 `@SlowCallThreshold("30s")`처럼 붙이며, 메서드에 붙은 것이 클래스보다 앞섭니다. 설계상 오래 걸리는 호출 때문에 공용 값을 올리면 다른 API의 경고가 둔해지므로, 그 호출에만 붙입니다.
+AI 서비스 호출 설정은 셋입니다.
+
+- `app.ai.base-url`: 클러스터 안에서만 부르는 주소입니다. 운영은 `AI_API_BASE_URL`로 주입합니다.
+- `app.ai.connect-timeout` (기본 `3s`), `app.ai.read-timeout` (기본 `25s`): 읽기 한도는 **AI가 모델을 기다리는 상한보다 길어야 합니다.** 먼저 끊으면 AI가 가려낸 `502`·`503` 구분이 이쪽에 닿지 못하고 전부 연결 실패로 묶입니다. 근거는 `ai/worker/docs/job-contract.md` 8절입니다.
+
 - `src/main/resources/logback-spring.xml`: 로그 한 줄의 형식(18.1). 앱 이름은 `spring.application.name`, 인스턴스는 `HOSTNAME`(k3s 파드 이름, 없으면 `local`), 배포 버전은 `APP_VERSION`(없으면 `dev`) 환경변수로 채웁니다. 배포 파이프라인이 `APP_VERSION`을 넣어야 로그로 버전을 구분할 수 있습니다.
 
 ## 15. 보안 규칙
@@ -868,11 +889,12 @@ public class DefaultController {
 | --- | --- | --- |
 | 컨트롤러 완료 | INFO | `CONTROLLER done Class.method(..) elapsedMs=` — 요청 하나에 한 줄. 트래픽과 응답 시간의 기준 |
 | 서비스 시작·완료 | DEBUG | 운영에서는 꺼지고 로컬에서만 보임 |
-| 느린 호출 | WARN | `app.logging.slow-call-threshold`(기본 1s) 이상이면 계층 무관 |
+| 느린 호출 | WARN | 그 호출에 적용된 기준 이상이면 계층 무관. 기본은 `app.logging.slow-call-threshold`(1s)이고, `@SlowCallThreshold`가 붙은 메서드·클래스는 그 값을 씁니다. 적용된 값은 줄의 `thresholdMs=`에 남습니다 |
 | `BusinessException` | INFO | `rejected ... code=` 코드만. 계약된 실패라 스택 없음 |
 | 그 밖의 예외 | DEBUG | 예외 클래스 이름만. 스택은 전역 처리기가 한 번 기록 |
 
 - 메서드 인자와 반환값은 어느 레벨에서도 남기지 않습니다. 토큰·계좌번호·본문이 섞일 수 있습니다.
+- 설계상 오래 걸리는 호출은 공용 기준을 올리지 말고 그 자리에 `@SlowCallThreshold("30s")`를 붙입니다. 공용 값을 올리면 다른 API의 경고가 함께 둔해집니다. 메서드에 붙은 것이 클래스에 붙은 것보다 앞서고, 붙이지 않은 곳은 공용 값을 씁니다. 값의 근거는 붙이는 자리에 주석으로 남깁니다. (설정은 14장)
 - 컨트롤러의 `@InitBinder`·`@ModelAttribute` 메서드는 요청마다 프레임워크가 부르는 준비 작업이라 제외합니다.
 - 리포지토리 계층은 다루지 않습니다. Spring Data 프록시의 타깃이 `SimpleJpaRepository`라 포인트컷이 일관되게 걸리지 않고, SQL은 `org.hibernate.SQL` 로거가 맡습니다.
 - 프록시 기반이므로 같은 빈 안에서 자기 메서드를 부르는 내부 호출은 기록되지 않습니다.
@@ -892,7 +914,7 @@ log.info("Contract accepted. contractId={}, actorId={}", contractId, actorId);
 
 ## 19. 테스트 규칙
 
-참조 구현은 `domain/defaults`와 `common/logging`의 테스트입니다. 새 도메인은 같은 구성으로 씁니다.
+참조 구현은 `domain/defaults`와 `common/logging`의 테스트입니다. 바깥 서비스를 부르는 도메인은 `domain/diagnosis/client`도 함께 봅니다. 새 도메인은 같은 구성으로 씁니다.
 
 ### 단위 테스트
 
@@ -914,6 +936,12 @@ log.info("Contract accepted. contractId={}, actorId={}", contractId, actorId);
 - 파라미터 기본값이 목과 같은지, 범위 위반이 필드별로 나열되는지, 계약 값 enum이 상수 이름(`ID_ASC`)과 공백 섞인 값에서 422인지 확인합니다.
 - 타인의 민감한 리소스 접근이 404로 가려지는지 확인합니다.
 - Escrow는 실패 응답에 `REC`가 포함되지 않는지 확인합니다.
+
+### 바깥 클라이언트 테스트
+
+- 공용 `RestClient.Builder`를 그대로 쓰는 클라이언트는 `MockRestServiceServer.bindTo(builder)`로 요청 주소·본문과 실패 매핑을 검증합니다. (`EscrowAccountClientTest`)
+- 자기 요청 팩토리를 만들어 타임아웃을 거는 클라이언트는 **이 방식을 쓸 수 없습니다.** `MockRestServiceServer`가 빌더의 요청 팩토리 자리에 대역을 연결하는데, 클라이언트가 그 자리를 덮어써 대역이 적용되지 않습니다. JDK 내장 `HttpServer`를 띄워 실제 왕복으로 검증합니다. (`QaSuggestionClientTest`)
+- 검증할 것은 보내는 본문, 계약 위반(개수·길이·빈 값) 거부, 상대 `code`별 오류 코드 매핑, 본문이 계약 형식이 아닐 때의 상태 코드 보조 판정, 읽기 한도 초과입니다.
 
 ### 공통 코드 테스트
 
