@@ -703,6 +703,7 @@ fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
 | `SERVICE_PUBLIC_BASE_URL`, `ESCROW_PUBLIC_BASE_URL` | Visible | 각 백엔드의 공개 주소(`https://komit.site/service`, `https://komit.site/escrow`). `service-config`, `escrow-config` ConfigMap의 `APP_PUBLIC_BASE_URL`이 됩니다 |
 | `BACKEND_API_BASE_URL` | Visible, Protected | `komit.site` 기본 FE가 호출할 실제 BE 주소. `fe-config`에만 들어갑니다 |
 | `AI_API_BASE_URL` | Visible, Protected | `service`가 부를 AI 서비스의 클러스터 안 주소. `service-config`에만 들어갑니다 |
+| `AI_CONNECT_TIMEOUT`, `AI_READ_TIMEOUT` | Visible | **선택.** `service`가 AI 를 기다리는 한도. 넣지 않으면 이미지 기본값(`3s`·`25s`)을 씁니다. 실제로 조정하려면 `deploy.sh`의 `service-config` 생성과 `.gitlab-ci.yml`의 전달 목록에 함께 넣어야 합니다. 값을 정한 이유는 `ai/worker/docs/job-contract.md` 8절에 있습니다 |
 | `GMS_API_KEY` | **Masked**, Protected | AI 서비스가 모델을 부르는 키. `ai-secret`으로 들어갑니다. 없으면 AI Pod가 기동하지 않습니다 |
 | `TEST_BACKEND_API_BASE_URL` | Visible, Protected | `komit.site/test` FE가 호출할 mock 주소. `fe-test-config`에만 들어갑니다 |
 | `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI` | Masked | 카카오 로그인. fe 실행 환경(`fe-config`). Redirect URI 는 카카오 콘솔에 등록한 배포 주소(`https://komit.site/api/auth/kakao/callback`)와 글자까지 같아야 합니다 |

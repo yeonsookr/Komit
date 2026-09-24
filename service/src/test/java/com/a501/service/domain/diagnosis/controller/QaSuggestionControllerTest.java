@@ -9,7 +9,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import static com.a501.service.common.security.SecuritySliceTestSupport.expiredToken;
+
 import com.a501.service.common.exception.BusinessException;
+import com.a501.service.common.exception.CommonErrorCode;
 import com.a501.service.common.security.JwtTokenProvider;
 import com.a501.service.common.security.WebMvcSecurityTest;
 import com.a501.service.domain.diagnosis.DiagnosisErrorCode;
@@ -82,8 +85,9 @@ class QaSuggestionControllerTest {
 
         mockMvc.perform(authenticated(post(PATH)))
                 .andExpect(status().isBadGateway())
-                .andExpect(jsonPath("$.code").value("AI_RESPONSE_INVALID"))
-                .andExpect(jsonPath("$.message").value("확인 문장을 만들지 못했습니다. 잠시 후 다시 시도해 주세요."));
+                .andExpect(content().json(
+                        "{\"code\":\"AI_RESPONSE_INVALID\",\"message\":\"확인 문장을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.\"}",
+                        true));
     }
 
     @Test
@@ -94,25 +98,50 @@ class QaSuggestionControllerTest {
 
         mockMvc.perform(authenticated(post(PATH)))
                 .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.code").value("AI_SERVICE_UNAVAILABLE"))
-                .andExpect(jsonPath("$.message").value("확인 문장 생성 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요."));
+                .andExpect(content().json(
+                        "{\"code\":\"AI_SERVICE_UNAVAILABLE\",\"message\":\"확인 문장 생성 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.\"}",
+                        true));
     }
 
     @Test
     @DisplayName("식별자가 숫자가 아니면 422이고 서비스는 불리지 않는다")
     void nonNumericIssueIdIsInvalidRequest() throws Exception {
         mockMvc.perform(authenticated(post("/api/issues/abc/qa-suggestions")))
-                .andExpect(status().isUnprocessableEntity());
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.message").value("요청 형식이 올바르지 않습니다."))
+                .andExpect(jsonPath("$.errors.length()").value(1))
+                .andExpect(jsonPath("$.errors[0].field").value("issueId"));
 
         verify(qaSuggestionService, never()).suggest(any(), any());
     }
 
     @Test
-    @DisplayName("토큰이 없으면 401이고 서비스는 불리지 않는다")
-    void unauthenticatedIsRejected() throws Exception {
-        mockMvc.perform(post(PATH)).andExpect(status().isUnauthorized());
+    @DisplayName("토큰이 없거나 만료되면 401 UNAUTHORIZED이고 서비스는 불리지 않는다")
+    void unauthenticatedRequestsAreRejected() throws Exception {
+        mockMvc.perform(post(PATH))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().json(
+                        "{\"code\":\"UNAUTHORIZED\",\"message\":\"로그인이 필요합니다.\"}", true));
+        mockMvc.perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer " + expiredToken(USER_ID)))
+                .andExpect(status().isUnauthorized())
+                .andExpect(content().json(
+                        "{\"code\":\"UNAUTHORIZED\",\"message\":\"로그인이 필요합니다.\"}", true));
 
         verify(qaSuggestionService, never()).suggest(any(), any());
+    }
+
+    @Test
+    @DisplayName("AI 가 우리 요청을 거부하면 500 INTERNAL_ERROR다")
+    void ourMistakeIsInternalError() throws Exception {
+        when(qaSuggestionService.suggest(312, USER_ID))
+                .thenThrow(new BusinessException(CommonErrorCode.INTERNAL_ERROR));
+
+        mockMvc.perform(authenticated(post(PATH)))
+                .andExpect(status().isInternalServerError())
+                .andExpect(content().json(
+                        "{\"code\":\"INTERNAL_ERROR\",\"message\":\"요청을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.\"}",
+                        true));
     }
 
     private static List<QaSuggestionResponse> suggestions() {

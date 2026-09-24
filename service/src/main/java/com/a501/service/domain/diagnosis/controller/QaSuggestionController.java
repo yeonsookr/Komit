@@ -1,6 +1,7 @@
 package com.a501.service.domain.diagnosis.controller;
 
 import com.a501.service.common.exception.ErrorResponse;
+import com.a501.service.common.logging.SlowCallThreshold;
 import com.a501.service.common.security.AuthenticatedUser;
 import com.a501.service.domain.diagnosis.dto.response.QaSuggestionListResponse;
 import com.a501.service.domain.diagnosis.service.QaSuggestionService;
@@ -22,9 +23,9 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 확인 문장 후보를 만든다.
  *
- * <p><b>{@code IssueController} 와 나눠 둡니다.</b> 저장된 요구사항을 읽고 고치는 것과 달리 이쪽은
- * 바깥 AI 서비스를 부르고 아무것도 저장하지 않아 실패하는 방식이 다릅니다. 같은 리소스를 두
- * 컨트롤러가 나눠 맡는 것은 {@code RoomController} 와 {@code ChatController} 의 선례를 따릅니다.
+ * <p><b>{@code IssueController} 와 나눠 둔다.</b> 저장된 요구사항을 읽고 고치는 것과 달리 이쪽은
+ * 바깥 AI 서비스를 부르고 아무것도 저장하지 않아 실패하는 방식이 다르다. 같은 리소스를 두
+ * 컨트롤러가 나눠 맡는 것은 {@code RoomController} 와 {@code ChatController} 의 선례를 따른다.
  */
 @Tag(name = "2 사전점검", description = "프로젝트를 검사해 출시 준비 상태를 알아보고 요청서까지 만드는 구간.")
 @RestController
@@ -58,6 +59,10 @@ public class QaSuggestionController {
             @ApiResponse(responseCode = "503", description = "확인 문장 생성 서비스에 연결할 수 없음", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
             @ApiResponse(responseCode = "500", description = "서버 내부 오류", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
     })
+    // 바깥 모델 왕복을 기다리므로 1초를 넘는 것이 정상이다. 공용 기준(1s)을 그대로 두면 성공할
+    // 때마다 WARN 이 쌓여 진짜 이상 신호가 가려진다. 읽기 한도(`app.ai.read-timeout`, 기본 25s)보다
+    // 조금 크게 잡아, 한도 안에서 끝난 호출은 경고로 보지 않는다.
+    @SlowCallThreshold("30s")
     @PostMapping("/issues/{issueId}/qa-suggestions")
     QaSuggestionListResponse suggestQaCriteria(
             @Parameter(description = "요구사항 식별자.", example = "312") @PathVariable Integer issueId,

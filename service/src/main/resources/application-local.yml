@@ -41,6 +41,8 @@ app:
   ai:
     # ai/worker/README.md 의 로컬 실행 포트입니다. 안 띄우면 확인 문장 요청이 503 이 됩니다.
     base-url: ${AI_API_BASE_URL:http://localhost:8000}
+    connect-timeout: ${AI_CONNECT_TIMEOUT:3s}
+    read-timeout: ${AI_READ_TIMEOUT:25s}
   escrow:
     base-url: ${ESCROW_API_BASE_URL:http://localhost:8081}
     client-api-key: ${ESCROW_CLIENT_API_KEY:komit-backend-client-api-key-dev-only}
