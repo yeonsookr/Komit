@@ -65,6 +65,8 @@ export const ROUTES = {
    * 요청서는 따로 저장되는 문서가 아니라 요구사항들을 모아 부르는 이름입니다.
    */
   checkupRequest: (diagnosisId: number) => `/checkup/${diagnosisId}/request`,
+  /** 방에서 여는 요청서. 읽기만 하며, 고치는 일은 의뢰인이 사전점검 화면에서 합니다. (`R-REQ-05`) */
+  roomRequest: (roomId: number) => `/rooms/${roomId}/request`,
   /** 요청서 수정. 요청서의 「요청서 수정하기」가 여기로 옵니다. */
   checkupRequestEdit: (diagnosisId: number) => `/checkup/${diagnosisId}/request/edit`,
 

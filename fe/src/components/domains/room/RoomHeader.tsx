@@ -74,7 +74,7 @@ export function RoomHeader({
         {room.request ? (
           <RequestSummaryBar
             request={room.request}
-            href={ROUTES.checkupRequest(room.request.diagnosisId)}
+            href={ROUTES.roomRequest(room.roomId)}
           />
         ) : (
           <RequestSummaryEmpty />

@@ -122,11 +122,17 @@ public class IssueQueryService {
                         "techCodeIds", List.copyOf(techCodeIds)));
     }
 
+    /**
+     * 이 진단 회차의 결함을 끊어 읽는다. 요청서도 이 목록으로 그린다.
+     *
+     * @param requestOnly 참이면 요청서에 담긴 것만 내려준다. 상담 요청을 받은 개발자가 부를 때 쓴다
+     */
     public IssueListResponse getIssues(
             Integer diagnosisId,
             Short diagnosisVersion,
             String status,
             Boolean input,
+            boolean requestOnly,
             int page,
             int size) {
         Pageable pageable = PageRequest.of(page - 1, size);
@@ -139,7 +145,8 @@ public class IssueQueryService {
         }
 
         Page<Issue> found =
-                issueRepository.findPage(inspection.get().getId(), status, input, pageable);
+                issueRepository.findPage(
+                        inspection.get().getId(), status, input, requestOnly, pageable);
         return IssueListResponse.of(found.map(toResponse(found.getContent())), page);
     }
 

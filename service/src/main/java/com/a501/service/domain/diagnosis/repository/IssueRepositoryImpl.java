@@ -27,10 +27,14 @@ public class IssueRepositoryImpl implements IssueRepositoryCustom {
 
     @Override
     public Page<Issue> findPage(
-            Integer inspectionId, String status, Boolean input, Pageable pageable) {
+            Integer inspectionId,
+            String status,
+            Boolean input,
+            boolean requestOnly,
+            Pageable pageable) {
         List<Issue> content = queryFactory
                 .selectFrom(ISSUE)
-                .where(inInspection(inspectionId), hasStatus(status), isInput(input), notDeleted())
+                .where(inInspection(inspectionId), hasStatus(status), isInput(input), inRequest(requestOnly), notDeleted())
                 .orderBy(ISSUE.id.asc())
                 .offset(pageable.getOffset())
                 .limit(pageable.getPageSize())
@@ -39,7 +43,7 @@ public class IssueRepositoryImpl implements IssueRepositoryCustom {
         JPAQuery<Long> countQuery = queryFactory
                 .select(ISSUE.count())
                 .from(ISSUE)
-                .where(inInspection(inspectionId), hasStatus(status), isInput(input), notDeleted());
+                .where(inInspection(inspectionId), hasStatus(status), isInput(input), inRequest(requestOnly), notDeleted());
 
         return PageableExecutionUtils.getPage(
                 content, pageable, () -> Optional.ofNullable(countQuery.fetchOne()).orElse(0L));
@@ -51,6 +55,16 @@ public class IssueRepositoryImpl implements IssueRepositoryCustom {
 
     private static BooleanExpression hasStatus(String status) {
         return status == null ? null : ISSUE.status.eq(status);
+    }
+
+    /**
+     * 요청서에 담긴 것. 의뢰인이 고른 것과 이미 계약에 들어간 것이다.
+     *
+     * <p>고르지 않은 것은 의뢰인이 보여주지 않기로 한 것이므로 요청을 받은 개발자에게도 내보내지
+     * 않는다.
+     */
+    private static BooleanExpression inRequest(boolean requestOnly) {
+        return requestOnly ? ISSUE.status.in(Issue.REQUEST_STATUSES) : null;
     }
 
     private static BooleanExpression isInput(Boolean input) {
