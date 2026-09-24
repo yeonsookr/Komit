@@ -16,6 +16,10 @@ DEFAULT_MODEL = "gpt-4.1-nano"
 # R-REQ-04: 후보 3건, 각 문장 1~500자.
 CANDIDATE_COUNT = 3
 MAX_TEST_CASE_LENGTH = 500
+# 계약이 허용하는 최대 출력은 3건 × 500자 = 1,500자다. 실측 0.5토큰/자(한국어 432자가
+# 218토큰)로 약 750토큰이고 JSON 구조를 더해 여유를 둔다. 기본값 256으로는 긴 요구사항의
+# 응답이 문장 중간에서 잘려 8회 중 6회가 실패했다. (2026-09-24 실측)
+QA_MAX_OUTPUT_TOKENS = 1024
 ENV_FILE = Path(__file__).with_name(".env")
 
 
@@ -28,9 +32,7 @@ class InvalidGmsResponseError(Exception):
 
 
 class ChatClient(Protocol):
-    def complete(
-        self, messages: list[dict[str, str]], max_tokens: int | None = None
-    ) -> str: ...
+    def complete(self, messages: list[dict[str, str]], max_tokens: int) -> str: ...
 
 
 def read_local_env(path: Path = ENV_FILE) -> dict[str, str]:
@@ -56,21 +58,17 @@ class GmsChatClient:
             raise GmsUnavailableError("GMS_API_KEY가 설정되지 않았습니다")
         self._base_url = config.get("GMS_API_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
         self._model = config.get("GMS_MODEL", DEFAULT_MODEL)
-        self._default_max_tokens = int(config.get("GMS_MAX_OUTPUT_TOKENS", "256"))
-        if self._default_max_tokens < 1:
-            raise ValueError("GMS_MAX_OUTPUT_TOKENS는 양수여야 합니다")
         self.last_usage: dict[str, int] | None = None
 
-    def complete(
-        self, messages: list[dict[str, str]], max_tokens: int | None = None
-    ) -> str:
-        """작업마다 출력 크기가 다르므로 한도를 호출에서 정할 수 있게 둔다.
+    def complete(self, messages: list[dict[str, str]], max_tokens: int) -> str:
+        """작업마다 출력 크기가 다르므로 한도를 호출에서 **반드시** 받는다.
 
-        확인 문장 세 건과 네 배열 요약은 필요한 길이가 다르다. 한 값으로 묶으면
-        한쪽이 잘리거나 다른 쪽이 필요 이상으로 길어진다. 넘기지 않으면
-        ``GMS_MAX_OUTPUT_TOKENS`` 를 쓴다.
+        확인 문장 세 건과 네 배열 요약은 필요한 길이가 다르다. 한 값으로 묶으면 한쪽이
+        잘린다. 예전에는 안 주면 설정에 적힌 기본값을 쓰게 두었는데, 두 작업이 그것을 잊고
+        256 으로 불려 응답이 문장 중간에서 끊겼다. 잊을 수 있는 자리를 없애려고 기본값을
+        두지 않는다. (`ai/AGENTS.md` — 한도는 호출에서 정한다)
         """
-        limit = self._default_max_tokens if max_tokens is None else max_tokens
+        limit = max_tokens
         if limit < 1:
             raise ValueError("max_tokens는 양수여야 합니다")
         payload = json.dumps(
@@ -94,9 +92,14 @@ class GmsChatClient:
         except (ValueError, UnicodeError) as exc:
             raise InvalidGmsResponseError("GMS 응답을 읽을 수 없습니다") from exc
         try:
-            content = body["choices"][0]["message"]["content"]
+            choice = body["choices"][0]
+            content = choice["message"]["content"]
         except (KeyError, IndexError, TypeError) as exc:
             raise InvalidGmsResponseError("GMS 응답에 메시지가 없습니다") from exc
+        # 한도에 걸려 끊긴 응답은 JSON 이 반만 와서 파싱 실패로만 보인다. 원인은 모델이 아니라
+        # 우리가 건 한도이므로 여기서 갈라 둔다. 안 그러면 한도를 의심하기까지 오래 걸린다.
+        if isinstance(choice, dict) and choice.get("finish_reason") == "length":
+            raise InvalidGmsResponseError(f"출력 한도({limit}토큰)에 걸려 응답이 잘렸습니다")
         if not isinstance(content, str):
             raise InvalidGmsResponseError("GMS 메시지가 문자열이 아닙니다")
         usage = body.get("usage") if isinstance(body, dict) else None
@@ -152,7 +155,7 @@ def suggest(requirement: str, client: ChatClient) -> list[dict[str, str]]:
         },
         {"role": "user", "content": requirement},
     ]
-    return parse_suggestions(client.complete(messages))
+    return parse_suggestions(client.complete(messages, max_tokens=QA_MAX_OUTPUT_TOKENS))
 
 
 if __name__ == "__main__":

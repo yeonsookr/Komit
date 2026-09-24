@@ -51,6 +51,7 @@ public class DiagnosisService {
     private final InspectionService inspectionService;
     private final IssueQueryService issueQueryService;
     private final RequirementService requirementService;
+    private final DiagnosisOwnership diagnosisOwnership;
 
     /**
      * 설문을 끝내지 않고 나간 진단. 다시 들어온 사람이 처음부터 하지 않고 이어서 하게 한다.
@@ -84,8 +85,17 @@ public class DiagnosisService {
                 .toList());
     }
 
+    /**
+     * 진단 한 건.
+     *
+     * <p><b>상담 요청을 받은 개발자에게는 좁혀서 내보낸다.</b> 점수와 결함 수는 요청서에 담기지 않은
+     * 것까지 드러내므로 비운다. 의뢰인이 골라 보낸 것 밖은 보여주지 않기로 한 것이다. (`R-REQ-05`)
+     */
     public DiagnosisResponse getDiagnosis(Integer diagnosisId, Integer userId) {
-        Diagnosis diagnosis = ownedDiagnosis(diagnosisId, userId);
+        Diagnosis diagnosis = readableDiagnosis(diagnosisId, userId);
+        if (diagnosisOwnership.isReaderOnly(diagnosis, userId)) {
+            return toRequestResponse(diagnosis, project(diagnosis.getProjectId()));
+        }
         return toResponse(diagnosis, ownedProject(diagnosis.getProjectId(), userId));
     }
 
@@ -106,12 +116,23 @@ public class DiagnosisService {
                 diagnosis.getId(), diagnosis.getProjectId(), diagnosis.getVersion(), result);
     }
 
-    /** 이 회차에서 나온 결함. 진단서 본문과 요구사항 선택, 요청서가 모두 이 목록을 그린다. */
+    /**
+     * 이 진단 회차의 결함. 요청서도 이 목록으로 그린다.
+     *
+     * <p><b>상담 요청을 받은 개발자에게는 요청서에 담긴 것만 내보낸다.</b> 고르지 않은 것은 의뢰인이
+     * 보여주지 않기로 한 것이다. (`R-REQ-05`)
+     */
     public IssueListResponse getIssues(
             Integer diagnosisId, Integer userId, String status, Boolean input, int page, int size) {
-        Diagnosis diagnosis = ownedDiagnosis(diagnosisId, userId);
+        Diagnosis diagnosis = readableDiagnosis(diagnosisId, userId);
         return issueQueryService.getIssues(
-                diagnosis.getId(), diagnosis.getVersion(), status, input, page, size);
+                diagnosis.getId(),
+                diagnosis.getVersion(),
+                status,
+                input,
+                diagnosisOwnership.isReaderOnly(diagnosis, userId),
+                page,
+                size);
     }
 
     /** 검사가 찾지 못했지만 고치고 싶은 것을 직접 적어 넣는다. */
@@ -186,6 +207,40 @@ public class DiagnosisService {
     }
 
     /** 남의 프로젝트에 걸린 진단은 존재를 알리지 않는다. 없는 것과 같은 오류로 답한다. (BACKEND_CONVENTIONS 12.1) */
+    /** 읽을 수 있는 사람인지만 가린다. 의뢰인과, 그 프로젝트에 방이 열린 개발자다. */
+    private Diagnosis readableDiagnosis(Integer diagnosisId, Integer userId) {
+        return diagnosisOwnership
+                .findReadable(diagnosisId, userId)
+                .orElseThrow(() -> new BusinessException(DiagnosisErrorCode.DIAGNOSIS_NOT_FOUND));
+    }
+
+    /** 이미 들여보낼지 가린 뒤에 읽는다. 주인이 아닌 사람도 프로젝트 이름은 봐야 한다. */
+    private ProjectSummary project(Integer projectId) {
+        return projectService
+                .find(projectId)
+                .orElseThrow(() -> new BusinessException(DiagnosisErrorCode.DIAGNOSIS_NOT_FOUND));
+    }
+
+    /**
+     * 요청을 받은 개발자에게 나가는 모양.
+     *
+     * <p>점수와 결함 수를 비운다. 숫자만으로도 요청서 밖에 무엇이 얼마나 있는지 드러난다. 설문 답변은
+     * 애초에 이 응답에 없다 — 예산과 기한이 거기 적히므로 견적 전에 보이면 안 된다. (`R-SCAN-14`)
+     */
+    private DiagnosisResponse toRequestResponse(Diagnosis diagnosis, ProjectSummary project) {
+        return new DiagnosisResponse(
+                diagnosis.getId(),
+                diagnosis.getVersion().intValue(),
+                DiagnosisProjectResponse.from(project),
+                // 의뢰인이 적은 증상이다. 무엇을 고쳐 달라는 것인지라 요청서와 함께 읽어야 한다.
+                diagnosis.getUserInput(),
+                null,
+                null,
+                0,
+                0,
+                0);
+    }
+
     private ProjectSummary ownedProject(Integer projectId, Integer userId) {
         return projectService
                 .findOwned(projectId, userId)

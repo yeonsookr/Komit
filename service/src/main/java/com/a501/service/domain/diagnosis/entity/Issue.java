@@ -7,6 +7,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.util.List;
 import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -17,6 +18,13 @@ import lombok.NoArgsConstructor;
 @Table(name = "issues")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Issue extends CreatedSoftDeleteEntity {
+    /**
+     * 요청서에 담기는 처리 상태. 의뢰인이 고른 것과 이미 계약에 들어간 것이다.
+     *
+     * <p>요청서는 따로 저장되는 문서가 아니라 이 상태의 요구사항들을 모아 부르는 이름이다.
+     */
+    public static final List<String> REQUEST_STATUSES = List.of("SUGGESTED", "CONTRACTED");
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", nullable = false)
