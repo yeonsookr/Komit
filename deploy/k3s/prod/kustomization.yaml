@@ -13,3 +13,13 @@ patches:
   # 파일 저장소. nginx가 file.komit.site를 30090으로 넘깁니다.
   - path: minio-nodeport.yaml
   - path: minio-storage.yaml
+
+# 설정 파일을 그냥 ConfigMap 으로 두면 **고쳐도 Pod 가 그대로 돕니다.** 이름이 안 바뀌어
+# 파드 템플릿이 그대로라 쿠버네티스가 다시 띄울 이유를 못 찾습니다. 손으로 재시작해야
+# 반영되는데, 그것을 잊으면 배포는 성공한 것처럼 보이고 서버만 옛 설정으로 돕니다.
+# 생성기로 만들면 내용이 바뀔 때 이름 해시가 바뀌어 Pod 가 저절로 다시 뜹니다.
+configMapGenerator:
+  - name: coturn-config
+    namespace: komit
+    files:
+      - coturn/turnserver.conf
