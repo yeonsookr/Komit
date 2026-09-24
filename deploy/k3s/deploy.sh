@@ -44,6 +44,11 @@ AI_IMAGE=${AI_IMAGE:-}
 # 계좌번호·userKey 를 암호화해 보관하는 키입니다. 없으면 service Pod 가 기동 중 죽습니다.
 : "${ACCOUNT_DATA_ENCRYPTION_KEY:?ACCOUNT_DATA_ENCRYPTION_KEY is required}"
 : "${KAKAO_CLIENT_SECRET:?KAKAO_CLIENT_SECRET is required}"
+# 통화 중계(prod/coturn.yaml). 공유 비밀은 service 가 자격을 만들고 coturn 이 같은 계산으로
+# 맞춰 보는 값이라 양쪽이 같아야 합니다. 공개 호스트는 화면이 붙을 주소이자 coturn 이 자기
+# 공인 주소를 찾는 이름입니다. (R-CON-19)
+: "${TURN_SHARED_SECRET:?TURN_SHARED_SECRET is required}"
+: "${TURN_PUBLIC_HOST:?TURN_PUBLIC_HOST is required}"
 # 파일 저장소 MinIO(base/minio.yaml). 내부 주소는 service Pod가 부르고(minio.komit.svc.cluster.local:9000),
 # 공개 주소는 브라우저가 열 프리사인 URL의 호스트(https://file.komit.site)입니다. 자격은 MinIO 루트 계정으로도 쓰입니다.
 : "${STORAGE_INTERNAL_ENDPOINT:?STORAGE_INTERNAL_ENDPOINT is required}"
@@ -271,6 +276,10 @@ EOF
   config_literal STORAGE_INTERNAL_ENDPOINT "$STORAGE_INTERNAL_ENDPOINT"
   config_literal STORAGE_PUBLIC_ENDPOINT "$STORAGE_PUBLIC_ENDPOINT"
   config_literal STORAGE_BUCKET "$STORAGE_BUCKET"
+  # 화면이 통화를 열 때 받아 가는 주소들. 자격은 service 가 공유 비밀로 계산해 붙입니다.
+  # 비밀 자체는 service-turn Secret 에 있고 여기 오지 않습니다. (R-CON-19)
+  config_literal TURN_STUN_URLS "stun:$TURN_PUBLIC_HOST:3478"
+  config_literal TURN_URLS "turn:$TURN_PUBLIC_HOST:3478?transport=udp,turn:$TURN_PUBLIC_HOST:3478?transport=tcp"
   printf '  - name: escrow-config\n    namespace: komit\n    literals:\n'
   config_literal APP_PUBLIC_BASE_URL "$ESCROW_PUBLIC_BASE_URL"
   config_literal SSAFY_DEMAND_DEPOSIT_PRODUCT_NO "$SSAFY_DEMAND_DEPOSIT_PRODUCT_NO"
@@ -297,6 +306,14 @@ EOF
   config_literal KAKAO_CLIENT_ID "$KAKAO_CLIENT_ID"
   config_literal KAKAO_CLIENT_SECRET "$KAKAO_CLIENT_SECRET"
   config_literal ESCROW_CLIENT_API_KEY "$ESCROW_CLIENT_API_KEY"
+  # 통화 중계 공유 비밀. service 가 자격을 만들고 coturn 이 같은 계산으로 맞춰 봅니다.
+  # 두 Secret 으로 나눈 것은 값이 바뀌면 양쪽 Pod 가 함께 다시 떠야 하기 때문입니다.
+  printf '  - name: service-turn\n    namespace: komit\n    literals:\n'
+  config_literal TURN_SHARED_SECRET "$TURN_SHARED_SECRET"
+  # coturn 은 자기 공인 주소도 알아야 합니다. 틀리면 후보는 생기는데 연결이 안 됩니다.
+  printf '  - name: coturn-secret\n    namespace: komit\n    literals:\n'
+  config_literal TURN_SHARED_SECRET "$TURN_SHARED_SECRET"
+  config_literal TURN_PUBLIC_HOST "$TURN_PUBLIC_HOST"
   # 파일 저장소 자격. 서비스 인증 키와 수명주기를 분리합니다.
   printf '  - name: service-storage\n    namespace: komit\n    literals:\n'
   config_literal STORAGE_ACCESS_KEY "$STORAGE_ACCESS_KEY"
