@@ -5,57 +5,6 @@
 # 층이 사이에 끼면 안 됩니다.
 #
 # 로컬에는 두지 않습니다. `deploy/local/docker-compose.yml` 의 coturn 이 그 자리입니다.
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: coturn-config
-  namespace: komit
-  labels:
-    app.kubernetes.io/name: coturn
-    app.kubernetes.io/part-of: komit
-data:
-  # 공유 비밀·공인 주소·realm 은 여기 없습니다. 기동할 때 Secret 을 읽어 덧붙입니다.
-  turnserver.conf: |
-    listening-port=3478
-
-    # 중계 포트 범위. 보안 그룹에서 이 범위를 UDP 로 열어야 합니다.
-    # 클라이언트가 붙는 포트(3478)와 다릅니다 — 이것은 중계기가 상대에게 보낼 때 쓰는 자리입니다.
-    min-port=49160
-    max-port=49200
-
-    # 계정을 미리 만들지 않습니다. 서버가 공유 비밀로 계산한 자격을 여기서 같은 계산으로
-    # 맞춰 봅니다. 그래서 사용자 목록도, 발급 기록도 없습니다.
-    use-auth-secret
-
-    # 한 사람이 중계기를 다 먹지 못하게 합니다.
-    user-quota=12
-    total-quota=100
-
-    # ─────────────────────────────────────────────────────────────────────────
-    # 내부망 침투를 막습니다. **이것이 빠지면 중계기가 통로가 됩니다.**
-    #
-    # TURN 은 자격을 가진 사람이 지정한 주소로 패킷을 보내 줍니다. 막지 않으면 밖에서
-    # 못 닿는 내부 서비스에 우리 서버를 거쳐 닿을 수 있습니다. k3s 안의 DB·Redis·MinIO 가
-    # 그 사정권입니다.
-    # ─────────────────────────────────────────────────────────────────────────
-    denied-peer-ip=0.0.0.0-0.255.255.255
-    denied-peer-ip=10.0.0.0-10.255.255.255
-    denied-peer-ip=127.0.0.0-127.255.255.255
-    denied-peer-ip=169.254.0.0-169.254.255.255
-    denied-peer-ip=172.16.0.0-172.31.255.255
-    denied-peer-ip=192.168.0.0-192.168.255.255
-    denied-peer-ip=224.0.0.0-255.255.255.255
-
-    # 관리 콘솔을 열지 않습니다. 열면 포트가 하나 더 생기고 지킬 것이 하나 더 늘어납니다.
-    no-cli
-
-    # TLS 는 아직 켜지 않습니다. 인증서를 nginx 가 쥐고 있어 갱신까지 함께 다뤄야 하고,
-    # 그 작업은 **사내망이 3478 을 막는 것을 확인한 뒤에** 합니다 (계획 3.2, 단계 0).
-    no-tls
-    no-dtls
-
-    fingerprint
----
 apiVersion: apps/v1
 kind: Deployment
 metadata:
