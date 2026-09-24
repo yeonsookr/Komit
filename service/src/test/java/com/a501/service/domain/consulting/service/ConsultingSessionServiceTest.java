@@ -18,6 +18,7 @@ import com.a501.service.domain.consulting.repository.ConsultingSessionRepository
 import com.a501.service.domain.consulting.repository.ParticipationRecordRepository;
 import com.a501.service.domain.consulting.repository.ReservationRepository;
 import com.a501.service.domain.contract.dto.ContractParties;
+import com.a501.service.common.realtime.turn.TurnCredentialIssuer;
 import com.a501.service.domain.contract.service.ContractQueryService;
 import com.a501.service.domain.file.service.FileLookupService;
 import org.springframework.context.ApplicationEventPublisher;
@@ -54,6 +55,7 @@ class ConsultingSessionServiceTest {
     private final ReservationRepository reservationRepository = mock(ReservationRepository.class);
     private final ContractQueryService contractQueryService = mock(ContractQueryService.class);
     private final FileLookupService fileLookupService = mock(FileLookupService.class);
+    private final TurnCredentialIssuer turnCredentialIssuer = mock(TurnCredentialIssuer.class);
     private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
 
     private final ConsultingSessionService service =
@@ -64,6 +66,7 @@ class ConsultingSessionServiceTest {
                     contractQueryService,
                     fileLookupService,
                     events,
+                    turnCredentialIssuer,
                     Clock.fixed(NOW, ZoneOffset.UTC));
 
     @BeforeEach

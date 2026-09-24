@@ -43,6 +43,16 @@ app:
   logging:
     # 이 시간을 넘긴 컨트롤러·서비스 호출은 WARN으로 남깁니다. (common/logging/LoggingAspect)
     slow-call-threshold: 1s
+  turn:
+    # 통화가 붙는 첫 단계. 비워 두면 브라우저가 상대와 직접 꽂을 방법을 못 찾습니다.
+    stun-urls: ${TURN_STUN_URLS:}
+    # 중계 주소. 비워 두면 중계 없이 직접 연결만 씁니다 — 중계 서버가 없는 환경에서도
+    # 통화는 되어야 하므로 기동을 막지 않습니다.
+    turn-urls: ${TURN_URLS:}
+    # 우리 서버와 중계 서버만 아는 값. 이것이 나가면 누구나 우리 중계기를 씁니다.
+    shared-secret: ${TURN_SHARED_SECRET:}
+    # R-CON-19: 발급한 자격은 취소할 수 없어 수명이 곧 악용 가능한 시간입니다.
+    credential-ttl: 10m
   realtime:
     # R-RT-01: 티켓을 받아 WebSocket 을 여는 사이에만 쓰며 한 번 쓰면 바로 지웁니다.
     ticket-ttl: 30s

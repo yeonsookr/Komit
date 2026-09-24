@@ -1,5 +1,6 @@
 package com.a501.service.domain.consulting.controller;
 
+import com.a501.service.common.realtime.turn.dto.IceServersResponse;
 import com.a501.service.common.security.AuthenticatedUser;
 import com.a501.service.domain.consulting.dto.request.CreateSessionRecordingRequest;
 import com.a501.service.domain.consulting.dto.response.ConsultingSessionResponse;
@@ -90,6 +91,31 @@ public class ConsultingSessionController {
             @PathVariable Integer sessionId,
             @Valid @RequestBody CreateSessionRecordingRequest request) {
         return sessionService.attachRecording(user.userId(), sessionId, request.fileId());
+    }
+
+    @Operation(
+            summary = "통화가 쓸 ICE 서버 받기",
+            description =
+                    """
+                    브라우저가 상대와 연결할 때 쓰는 주소와 자격을 돌려준다. 그대로 \
+                    RTCPeerConnection 에 넣는다.
+
+                    **중계 자격은 짧게 산다 (R-CON-19).** 통화가 그보다 길어지면 화면이 다시 \
+                    불러 갈아 끼운다. 언제 다시 불러야 하는지는 expiresAt 으로 안다.
+
+                    자격은 발급한 뒤 취소할 수 없다. 그래서 세션 당사자에게만 준다 — 우리 \
+                    서버로 남의 트래픽을 흘릴 수 있는 열쇠다.
+
+                    중계 서버를 두지 않은 환경에서는 STUN 만 돌아오고 expiresAt 이 없다. \
+                    통화는 직접 연결로 붙는다.
+
+                    - 200: 받았을 때
+                    - 401 UNAUTHORIZED: 로그인하지 않았을 때
+                    - 404 SESSION_NOT_FOUND: 없는 세션이거나 요청자가 그 세션의 당사자가 아닐 때""")
+    @GetMapping("/{sessionId}/ice-servers")
+    IceServersResponse iceServers(
+            @AuthenticationPrincipal AuthenticatedUser user, @PathVariable Integer sessionId) {
+        return sessionService.iceServers(user.userId(), sessionId);
     }
 
     @Operation(
