@@ -1,11 +1,14 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { buttonClass } from "@/components/buttons/buttonStyles";
 import { Container } from "@/components/layouts";
 import { EmptyState } from "@/components/feedback";
 import { RequirementList } from "@/components/domains/checkup";
 import { RoomHeader } from "@/components/domains/room";
-import { getContract, getDiagnosis, getIssues, getMe, getRoom } from "@/lib/api/services";
+import { getContract, getIssues, getMe, getRoom } from "@/lib/api/services";
 import { isInRequest } from "@/lib/diagnosisReport";
+import { isReceived } from "@/lib/rooms";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
 import type { Contract } from "@/types/contract";
@@ -94,6 +97,21 @@ export default async function RoomRequestPage({
             emptyTitle="요청서에 담긴 요구사항이 없습니다"
             emptyDescription="의뢰인이 요구사항을 다시 고르면 여기에 나타납니다."
           />
+
+          {/*
+            의뢰인에게만 고치러 갈 길을 얹습니다. 개발자에게 보이면 안 되는 것을 가리는 것이
+            아니라, 의뢰인이 방에서 사전점검 화면으로 건너갈 자리가 없어 두는 것입니다.
+          */}
+          {!isReceived(room, me) && (
+            <div className="mt-6 flex justify-end">
+              <Link
+                href={ROUTES.checkupRequest(room.request.diagnosisId)}
+                className={buttonClass({ variant: "outline" })}
+              >
+                요청서 수정하기
+              </Link>
+            </div>
+          )}
         </section>
       )}
     </Container>
