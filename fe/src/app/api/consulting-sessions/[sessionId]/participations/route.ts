@@ -1,9 +1,30 @@
 import { NextResponse } from "next/server";
-import { joinConsultingSession } from "@/lib/api/services";
+import { getSessionParticipations, joinConsultingSession } from "@/lib/api/services";
 import { parseNumericParam, toErrorResponse } from "@/lib/api/route";
 import { SESSION_PENDING_CONSENT_STATUS } from "@/lib/session";
 
 const SESSION_NOT_FOUND = { code: "SESSION_NOT_FOUND", message: "세션을 찾을 수 없습니다." };
+
+/**
+ * GET /api/consulting-sessions/{sessionId}/participations — 이 세션에 동의한 사람들.
+ *
+ * **목록에 있다는 것이 곧 동의했다는 뜻입니다** (`R-CON-17`). 세션 화면이 자기를 찾아
+ * 보고, 없으면 방으로 돌려보냅니다.
+ */
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ sessionId: string }> },
+) {
+  const { sessionId } = await params;
+  const id = parseNumericParam(sessionId);
+  if (id === null) return NextResponse.json(SESSION_NOT_FOUND, { status: 404 });
+
+  try {
+    return NextResponse.json(await getSessionParticipations(id));
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
 
 /**
  * POST /api/consulting-sessions/{sessionId}/participations — 동의와 세션 입장.

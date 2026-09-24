@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.a501.service.common.exception.BusinessException;
 import com.a501.service.domain.consulting.ConsultingErrorCode;
+import com.a501.service.domain.consulting.dto.response.SessionParticipationResponse;
 import com.a501.service.domain.consulting.entity.ConsultingSession;
 import com.a501.service.domain.consulting.entity.ParticipationRecord;
 import com.a501.service.domain.consulting.entity.Reservation;
@@ -119,6 +120,49 @@ class ConsultingSessionServiceTest {
         givenParticipants();
 
         assertThatThrownBy(() -> service.getSession(CLIENT_ID, SESSION_ID))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ConsultingErrorCode.SESSION_NOT_FOUND);
+    }
+
+    /*
+       화면이 「내가 이미 동의했나」를 가리는 근거다. 행이 있다는 것이 곧 동의다 (R-CON-17).
+       이것이 없으면 통화 중에 새로고침한 사람에게 안내부터 다시 묻게 된다.
+    */
+    @Test
+    void 동의한_사람만_참가자_기록에_있다() {
+        givenParticipants(CLIENT_ID);
+
+        var records = service.participations(CLIENT_ID, SESSION_ID);
+
+        assertThat(records).hasSize(1);
+        assertThat(records.getFirst().userId()).isEqualTo(CLIENT_ID);
+        assertThat(records.getFirst().consentedAt()).isEqualTo(NOW_AT.atOffset(ZoneOffset.UTC));
+        // 아직 상대를 기다리는 중이라 들어간 시각은 없다.
+        assertThat(records.getFirst().joinedAt()).isNull();
+    }
+
+    @Test
+    void 아무도_동의하지_않았으면_빈_목록이다() {
+        givenParticipants();
+
+        assertThat(service.participations(CLIENT_ID, SESSION_ID)).isEmpty();
+    }
+
+    /** 상대가 이미 동의했는지도 안내에 적어야 해서 함께 준다. (R-CON-13) */
+    @Test
+    void 상대의_기록도_함께_준다() {
+        givenParticipants(CLIENT_ID, DEVELOPER_ID);
+
+        assertThat(service.participations(CLIENT_ID, SESSION_ID))
+                .extracting(SessionParticipationResponse::userId)
+                .containsExactly(CLIENT_ID, DEVELOPER_ID);
+    }
+
+    @Test
+    void 당사자가_아니면_참가자_기록도_볼_수_없다() {
+        givenParticipants(CLIENT_ID, DEVELOPER_ID);
+
+        assertThatThrownBy(() -> service.participations(OUTSIDER_ID, SESSION_ID))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ConsultingErrorCode.SESSION_NOT_FOUND);
     }

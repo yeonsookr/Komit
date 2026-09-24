@@ -56,19 +56,17 @@ function stageNotice(
 /**
  * 입장이 어디까지 왔는지.
  *
- * - `JOINING` — 동의와 입장을 보내는 중
+ * **동의는 방에서 끝내고 옵니다** (`SessionEntryDialog`). 그래서 여기에 「보내는 중」이
+ * 없습니다 — 이 화면에 닿은 사람은 이미 동의한 사람입니다.
+ *
  * - `PENDING` — 내 동의는 남았고 상대를 기다리는 중 (`R-CON-13`)
  * - `ENTERED` — 양쪽이 모여 실제로 들어옴
  * - `FAILED` — 들어가지 못함
  */
-type EntryState = "JOINING" | "PENDING" | "ENTERED" | "FAILED";
+type EntryState = "PENDING" | "ENTERED" | "FAILED";
 
 /** 아직 무대를 열 수 없는 때에 적는 말. */
 const ENTRY_NOTICE: Record<Exclude<EntryState, "ENTERED">, { title: string; body: string }> = {
-  JOINING: {
-    title: "세션에 들어가는 중입니다",
-    body: "잠시만 기다려 주세요.",
-  },
   PENDING: {
     title: "상대방의 동의를 기다리고 있습니다",
     body:
@@ -141,6 +139,13 @@ export interface SessionStageProps {
   chatRefId: string;
   initialMessages: ChatMessage[];
   /**
+   * 양쪽이 모여 세션이 이미 시작됐는지.
+   *
+   * **화면이 스스로 알 수 없는 값이라 서버가 내려보냅니다.** 거짓이면 내 동의만 들어가
+   * 있고 상대를 기다리는 중입니다 (`R-CON-13`).
+   */
+  entered: boolean;
+  /**
    * 통화 제안이 엇갈렸을 때 물러설 쪽인지.
    *
    * **두 사람이 서로 다른 값을 받아야 합니다.** 같으면 둘 다 물러서거나 둘 다 버팁니다.
@@ -169,6 +174,7 @@ export function SessionStage({
   myUserId,
   chatRefId,
   initialMessages,
+  entered,
   polite,
 }: Readonly<SessionStageProps>) {
   const router = useRouter();
@@ -177,14 +183,15 @@ export function SessionStage({
   const [asking, setAsking] = React.useState(false);
   const [ending, setEnding] = React.useState(false);
   const bottomRef = React.useRef<HTMLDivElement>(null);
-  const [entry, setEntry] = React.useState<EntryState>("JOINING");
+  const [entry, setEntry] = React.useState<EntryState>(entered ? "ENTERED" : "PENDING");
 
   /*
-    동의하고 들어갑니다.
+    같은 입장 요청을 한 번 더 보냅니다.
 
-    **이 요청은 기록이 아니라 관문입니다.** 같은 요청 하나가 녹음·전사·요약 동의와
-    입장을 겸하고, 양쪽이 모두 보내야 실제로 들어갑니다 (`R-CON-13`). 먼저 보낸 쪽은
-    201 이 아니라 202 를 받고 상대를 기다립니다.
+    **동의를 받으려는 것이 아닙니다** — 그것은 방에서 이미 끝냈습니다. 상대가 뒤늦게
+    동의하면 서버 안에서는 두 사람 모두 입장 처리가 끝나는데, 기다리던 쪽은 그 응답을
+    받은 적이 없어 한 번은 물어야 합니다. 같은 사람이 다시 보내도 동의는 한 번만
+    기록됩니다 (`R-CON-17`).
 
     202 는 2xx 라 오류로 잡히지 않습니다. 결과를 버리면 들어가지도 않은 사람에게
     무대가 그대로 열리므로 여기서 기다려 갈라야 합니다.
@@ -198,21 +205,14 @@ export function SessionStage({
     }
   }, [sessionId]);
 
-  React.useEffect(() => {
-    let alive = true;
-    void join().then((next) => {
-      if (alive) setEntry(next);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [join]);
-
   /*
-    동의한 순간부터 채널에 들어갑니다. 상대가 들어온 것을 서버가 알려 줄 수 있어야 하기
-    때문입니다. 실제 입장과 세션 시작은 입장 API 가 막습니다 (`R-CON-17`).
+    이 화면에 닿은 사람은 이미 동의한 사람입니다. 그래서 곧바로 채널에 들어갑니다 —
+    상대가 들어온 것을 서버가 알려 줄 수 있어야 하기 때문입니다.
+
+    들어가지 못한 때에만 접습니다. 기다리는 중에도 채널은 열어 두어야, 상대가 동의한
+    것을 서버가 알려 줄 수 있습니다.
   */
-  const consented = entry === "PENDING" || entry === "ENTERED";
+  const failed = entry === "FAILED";
   const joined = entry === "ENTERED";
 
   /*
@@ -252,7 +252,7 @@ export function SessionStage({
   const realtime = useRealtimeConnection({
     channel: "CONSULTING_SESSION",
     channelId: String(sessionId),
-    enabled: consented,
+    enabled: !failed,
     onMessage: React.useCallback(
       (envelope: RealtimeEnvelope) => {
         // 참가 알림은 통화보다 먼저 봅니다. 기다리는 동안에는 통화가 아직 없어서,
@@ -286,12 +286,12 @@ export function SessionStage({
   */
   const [socketOpened, setSocketOpened] = React.useState(false);
   React.useEffect(() => {
-    if (!consented) {
+    if (failed) {
       setSocketOpened(false);
       return;
     }
     if (realtime.status === "OPEN") setSocketOpened(true);
-  }, [consented, realtime.status]);
+  }, [failed, realtime.status]);
 
   /*
     통화에 쓸 주소와 자격. 비밀은 서버에만 있고 화면은 시한부 자격만 받아 씁니다
@@ -310,7 +310,7 @@ export function SessionStage({
     화면도 소리도 받지 못하므로 감출 것이 없고, 들어가기 전에 장치를 확인할 수 있습니다.
   */
   const call = usePeerConnection({
-    enabled: consented && socketOpened,
+    enabled: !failed && socketOpened,
     polite,
     send: realtime.send,
     loadIceServers,

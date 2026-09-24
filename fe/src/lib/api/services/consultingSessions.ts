@@ -5,6 +5,7 @@ import type { IceServersResponse } from "@/types/realtime";
 import type {
   ApplySummaryChangesRequest,
   ConsultingSession,
+  SessionParticipation,
   SessionRecording,
   SessionSummary,
 } from "@/types/contract";
@@ -26,6 +27,22 @@ import { authenticatedBackendApi } from "../server";
 export async function getConsultingSession(sessionId: number): Promise<ConsultingSession> {
   const { data } = await authenticatedBackendApi().get<ConsultingSession>(
     BACKEND.CONSULTING_SESSION(sessionId),
+  );
+  return data;
+}
+
+/**
+ * 이 세션에 동의한 사람들.
+ *
+ * **목록에 있다는 것이 곧 동의했다는 뜻입니다** (`R-CON-17`). 세션 화면은 이것으로
+ * 자기가 이미 동의했는지 가립니다 — 없으면 방으로 돌려보냅니다. 동의는 방의 입장
+ * 안내에서만 받으므로, 주소를 직접 열어 그 자리를 건너뛰지 못하게 합니다.
+ */
+export async function getSessionParticipations(
+  sessionId: number,
+): Promise<SessionParticipation[]> {
+  const { data } = await authenticatedBackendApi().get<SessionParticipation[]>(
+    BACKEND.SESSION_PARTICIPATIONS(sessionId),
   );
   return data;
 }

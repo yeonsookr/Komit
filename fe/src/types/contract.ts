@@ -140,6 +140,19 @@ export interface ConsultingSession {
 }
 
 /**
+ * 세션 참가자 한 사람의 기록.
+ *
+ * **여기 있다는 것이 곧 동의했다는 뜻입니다** (`R-CON-17`). 화면은 이 목록으로 자기가
+ * 이미 동의했는지 가려, 세션 화면을 열지 방으로 돌려보낼지 정합니다.
+ */
+export interface SessionParticipation {
+  userId: number;
+  consentedAt: string;
+  /** 실제로 들어간 시각. 상대 동의를 기다리는 중이면 `null` 입니다. */
+  joinedAt: string | null;
+}
+
+/**
  * 올라간 세션 녹음 하나.
  *
  * **참가자마다 한 건입니다.** 두 사람 소리를 한 파일로 합치지 않습니다 — 파일이 곧

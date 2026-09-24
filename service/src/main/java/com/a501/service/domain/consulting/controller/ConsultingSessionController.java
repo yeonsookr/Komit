@@ -4,11 +4,13 @@ import com.a501.service.common.realtime.turn.dto.IceServersResponse;
 import com.a501.service.common.security.AuthenticatedUser;
 import com.a501.service.domain.consulting.dto.request.CreateSessionRecordingRequest;
 import com.a501.service.domain.consulting.dto.response.ConsultingSessionResponse;
+import com.a501.service.domain.consulting.dto.response.SessionParticipationResponse;
 import com.a501.service.domain.consulting.dto.response.SessionRecordingResponse;
 import com.a501.service.domain.consulting.service.ConsultingSessionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -42,6 +44,29 @@ public class ConsultingSessionController {
     ConsultingSessionResponse getSession(
             @AuthenticationPrincipal AuthenticatedUser user, @PathVariable Integer sessionId) {
         return sessionService.getSession(user.userId(), sessionId);
+    }
+
+    @Operation(
+            summary = "세션 참가자 기록",
+            description =
+                    """
+                    이 세션에 동의한 사람들의 기록을 돌려준다.
+
+                    **목록에 있다는 것이 곧 동의했다는 뜻이다 (R-CON-17).** 화면은 이것으로 \
+                    자기가 이미 동의했는지 가린다 — 없으면 입장 안내를 보여 주고, 있으면 \
+                    곧장 세션으로 보낸다. 통화 중에 새로고침해도 안내부터 다시 묻지 않는 \
+                    근거가 이 목록이다.
+
+                    상대의 기록도 함께 준다. 같은 세션의 두 사람이고, 「상대는 이미 동의했다」를 \
+                    안내에 적으려면 필요하다 (R-CON-13).
+
+                    - 200: 받았을 때. 아직 아무도 동의하지 않았으면 빈 목록이다
+                    - 401 UNAUTHORIZED: 로그인하지 않았을 때
+                    - 404 SESSION_NOT_FOUND: 없는 세션이거나 요청자가 그 세션의 당사자가 아닐 때""")
+    @GetMapping("/{sessionId}/participations")
+    List<SessionParticipationResponse> participations(
+            @AuthenticationPrincipal AuthenticatedUser user, @PathVariable Integer sessionId) {
+        return sessionService.participations(user.userId(), sessionId);
     }
 
     @Operation(
