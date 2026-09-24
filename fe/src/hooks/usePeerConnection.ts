@@ -22,6 +22,48 @@ const MEDIA: MediaStreamConstraints = {
  */
 const PEER_AWAY_GRACE_MS = 15_000;
 
+/**
+ * 어느 길로 붙었는지 한 줄 남깁니다.
+ *
+ * **붙었다는 사실만으로는 중계가 일했는지 알 수 없습니다.** 직접 붙어도 중계를 타도
+ * 화면에는 똑같이 상대 얼굴이 뜹니다. 그래서 제약 망에서 확인할 때 「TURN 이 실제로
+ * 쓰였나」를 가릴 근거가 없습니다.
+ *
+ * **중계가 TCP 로 떨어진 것도 여기서만 보입니다.** 그래도 통화는 붙지만 지연이 늘고
+ * 화질이 떨어집니다. 조용히 나빠지는 쪽이라 보이게 해 두지 않으면 영영 모릅니다.
+ *
+ * 보이게만 하고 아무것도 막지 않습니다.
+ */
+interface CandidateStats {
+  /** `host`(직접) · `srflx`(공인 주소를 알아내 직접) · `relay`(중계). */
+  candidateType?: string;
+  /** 나와 중계 서버 사이의 규약. 중계로 붙었을 때만 있습니다. */
+  relayProtocol?: string;
+}
+
+async function reportSelectedPath(peer: RTCPeerConnection): Promise<void> {
+  let stats: RTCStatsReport;
+  try {
+    stats = await peer.getStats();
+  } catch {
+    return;
+  }
+
+  let pair: RTCIceCandidatePairStats | undefined;
+  stats.forEach((report) => {
+    if (report.type === "candidate-pair" && report.state === "succeeded" && report.nominated) {
+      pair = report as RTCIceCandidatePairStats;
+    }
+  });
+  if (!pair) return;
+
+  const local = stats.get(pair.localCandidateId) as CandidateStats | undefined;
+  const remote = stats.get(pair.remoteCandidateId) as CandidateStats | undefined;
+  // relayProtocol 은 나와 중계 서버 사이의 규약입니다. 중계로 붙었을 때만 있습니다.
+  const via = local?.relayProtocol ? ` (${local.relayProtocol})` : "";
+  console.info(`[call] ${local?.candidateType}${via} ↔ ${remote?.candidateType} 로 붙었습니다`);
+}
+
 export type CallStatus =
   | "IDLE"
   | "NEED_PERMISSION"
@@ -310,6 +352,7 @@ export function usePeerConnection({
         if (!alive) return;
         if (peer.connectionState === "connected") {
           setStatus("CONNECTED");
+          void reportSelectedPath(peer);
         } else if (peer.connectionState === "failed") {
           const id = createRtcNegotiationId();
           replaceNegotiation(id);

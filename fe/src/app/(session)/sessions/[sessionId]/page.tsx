@@ -10,6 +10,7 @@ import {
   getMe,
   getRoom,
   getSessionMessages,
+  getSessionParticipations,
 } from "@/lib/api/services";
 import { formatSessionSchedule } from "@/lib/format";
 import { isReceived } from "@/lib/rooms";
@@ -29,8 +30,12 @@ async function loadSession(sessionId: number) {
   try {
     const session = await getConsultingSession(sessionId);
     const contract = await getContract(session.contractId);
-    const [room, me] = await Promise.all([getRoom(contract.roomId), getMe()]);
-    return { session, room, me };
+    const [room, me, participants] = await Promise.all([
+      getRoom(contract.roomId),
+      getMe(),
+      getSessionParticipations(sessionId),
+    ]);
+    return { session, room, me, participants };
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) notFound();
     if (error instanceof ApiError && error.status === 401) redirect(ROUTES.login);
@@ -68,7 +73,7 @@ export default async function SessionPage({
   const { sessionId } = await params;
   const id = parseSessionId(sessionId);
 
-  const { session, room, me } = await loadSession(id);
+  const { session, room, me, participants } = await loadSession(id);
   const phase = sessionPhase(session);
 
   /*
@@ -76,6 +81,17 @@ export default async function SessionPage({
     없으니, 볼 것이 있는 곳(요약)으로 곧장 보냅니다.
   */
   if (phase === "ENDED") redirect(ROUTES.roomSummary(room.roomId));
+
+  /*
+    동의하지 않은 사람은 이 화면에 머물 수 없습니다. 동의는 방의 입장 안내에서만 받으므로
+    (`R-CON-17`) 주소를 직접 열어 그 자리를 건너뛴 것입니다. 방으로 돌려보내면 배너의
+    「입장」이 바로 그 안내를 띄웁니다.
+
+    이 화면이 읽는 세션 대화도 동의한 사람에게만 열려 있어, 돌려보내지 않으면 안내 대신
+    오류를 보게 됩니다.
+  */
+  const consented = participants.some((participant) => participant.userId === me.userId);
+  if (!consented) redirect(ROUTES.room(room.roomId));
 
   const counterpart = isReceived(room, me)
     ? room.counterpartName
@@ -104,6 +120,8 @@ export default async function SessionPage({
       ) : (
         <SessionStage
           sessionId={session.sessionId}
+          /* 양쪽이 모여 시작했으면 들어간 것이고, 아니면 아직 상대를 기다립니다. */
+          entered={session.startedAt !== null}
           roomId={room.roomId}
           counterpartName={room.counterpartName}
           myName={me.name}

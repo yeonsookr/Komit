@@ -4,6 +4,7 @@ export * from "./RoomHeader";
 export * from "./RoomTabs";
 export * from "./RoomChatPanel";
 export * from "./SessionBanner";
+export * from "./SessionEntryDialog";
 export * from "./SessionStage";
 export * from "./SessionSummaryBar";
 export * from "./SessionSummaryView";
