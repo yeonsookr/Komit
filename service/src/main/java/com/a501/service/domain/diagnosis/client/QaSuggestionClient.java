@@ -25,11 +25,11 @@ import org.springframework.web.client.RestClientResponseException;
  * <p><b>실패는 상태 코드가 아니라 {@code code} 로 가른다.</b> AI 서비스는 실패를 셋으로 나눈다 —
  * 모델에 닿지 못한 것(`AI_SERVICE_UNAVAILABLE`), 닿았으나 계약에 맞는 결과를 못 만든 것
  * (`AI_RESPONSE_INVALID`), 그리고 **받은 요청이 계약과 다른 것**(`AI_REQUEST_INVALID`)이다.
- * 셋째는 AI 고장이 아니라 이쪽 잘못이므로 사용자에게 재시도를 권하면 안 된다.
+ * 셋째는 AI 고장이 아니라 Service 가 잘못 보낸 것이므로 사용자에게 재시도를 권하면 안 된다.
  * (`ai/worker/docs/job-contract.md` 6절)
  *
  * <p><b>공용 {@code RestClient.Builder} 의 타임아웃을 그대로 쓰지 않는다.</b> 공용 설정은 읽기
- * 5초인데 AI 서비스는 모델 왕복을 더 오래 기다린다. 먼저 끊으면 AI 가 가려낸 갈래가 이쪽에
+ * 5초인데 AI 서비스는 모델 왕복을 더 오래 기다린다. 먼저 끊으면 AI 가 가려낸 갈래가 Service 에
  * 닿지 못하고 전부 연결 실패로 뭉개진다.
  */
 @Slf4j
@@ -60,7 +60,7 @@ public class QaSuggestionClient {
         JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
         requestFactory.setReadTimeout(readTimeout);
         // 주입받은 빌더는 싱글턴이고 `requestFactory` 는 그 자리에서 값을 바꾼다. 그대로 쓰면 뒤에
-        // 만들어지는 다른 클라이언트까지 이 한도를 물려받는다. 사본을 떠서 우리 것만 바꾼다.
+        // 만들어지는 다른 클라이언트까지 이 한도를 물려받는다. 사본을 떠서 이 클라이언트 것만 바꾼다.
         this.client = builder.clone().baseUrl(baseUrl).requestFactory(requestFactory).build();
     }
 
@@ -69,7 +69,7 @@ public class QaSuggestionClient {
      *
      * @throws BusinessException {@link DiagnosisErrorCode#AI_RESPONSE_INVALID} 계약과 다른 답이 왔을 때,
      *                           {@link DiagnosisErrorCode#AI_SERVICE_UNAVAILABLE} 닿지 못했을 때,
-     *                           {@link CommonErrorCode#INTERNAL_ERROR} 우리가 계약과 다르게 보냈을 때
+     *                           {@link CommonErrorCode#INTERNAL_ERROR} Service 가 계약과 다르게 보냈을 때
      */
     public List<QaSuggestionResponse> suggest(String requirement) {
         Suggestions body;
@@ -113,7 +113,7 @@ public class QaSuggestionClient {
     /**
      * 실패 본문의 {@code code} 로 갈래를 정한다.
      *
-     * <p>본문을 못 읽으면 상태 코드로 보조 판정한다. {@code 4xx} 는 우리가 잘못 보냈다는 뜻이므로
+     * <p>본문을 못 읽으면 상태 코드로 보조 판정한다. {@code 4xx} 는 Service 가 잘못 보냈다는 뜻이므로
      * 사용자에게 재시도를 권하지 않는다.
      */
     private ErrorCode mapFailure(RestClientResponseException exception) {
@@ -125,21 +125,23 @@ public class QaSuggestionClient {
             code = failure == null || failure.code() == null ? "" : failure.code();
             message = failure == null || failure.message() == null ? "" : failure.message();
         } catch (RuntimeException broken) {
-            // 계약 형식이 아닌 본문이다. 아래에서 상태 코드로 가른다. 프록시가 끼어든 때가 이렇다.
-            log.warn("qa-suggestion 실패 본문이 계약 형식이 아님: status={}", status);
-            return fallback(status);
+            // 계약 형식이 아닌 본문이다. 프록시가 끼어든 때가 이렇다. 아래에서 상태 코드로 가른다.
+            // 여기서 바로 돌려주면 `4xx` 가 500 으로 갈리고도 ERROR 없이 나간다.
+            code = "";
+            message = "본문이 계약 형식이 아니다";
         }
         ErrorCode mapped = switch (code) {
             case UNAVAILABLE -> DiagnosisErrorCode.AI_SERVICE_UNAVAILABLE;
             case RESPONSE_INVALID -> DiagnosisErrorCode.AI_RESPONSE_INVALID;
-            // 우리가 계약과 다르게 보냈다. AI 고장이 아니므로 재시도를 권하지 않는다.
+            // Service 가 계약과 다르게 보냈다. AI 고장이 아니므로 재시도를 권하지 않는다.
             case REQUEST_INVALID -> CommonErrorCode.INTERNAL_ERROR;
             default -> fallback(status);
         };
         if (mapped == CommonErrorCode.INTERNAL_ERROR) {
-            // 이쪽 결함이다. AI 가 실어 보낸 거부 사유가 유일한 단서이므로 함께 남기고 ERROR 로 올린다.
+            // Service 가 잘못 보낸 것이다. 거부 사유가 유일한 단서이므로 함께 남기고 ERROR 로 올린다.
             // `handleBusiness` 는 로그를 남기지 않아 여기서 안 남기면 500 이 조용히 나간다.
-            log.error("qa-suggestion 요청이 AI 계약과 다름: status={} code={} reason={}", status, code, message);
+            log.error("qa-suggestion 호출 실패: 보낸 요청이 잘못됐다. 재시도해도 같다 status={} code={} reason={}",
+                    status, code, message);
         } else {
             log.warn("qa-suggestion 호출 실패: status={} code={} reason={}", status, code, message);
         }

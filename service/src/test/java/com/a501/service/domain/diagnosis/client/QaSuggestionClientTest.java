@@ -3,6 +3,10 @@ package com.a501.service.domain.diagnosis.client;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.a501.service.common.exception.BusinessException;
 import com.a501.service.common.exception.CommonErrorCode;
 import com.a501.service.domain.diagnosis.DiagnosisErrorCode;
@@ -16,6 +20,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.client.RestClient;
 
 /**
@@ -38,9 +43,16 @@ class QaSuggestionClientTest {
     /** 가짜 서버가 받은 요청 본문. 무엇을 보냈는지 검증하려고 담아 둔다. */
     private volatile String received;
     private QaSuggestionClient client;
+    /** 500 은 `handleBusiness` 가 로그를 남기지 않는다. 여기서 남기는지 직접 본다. */
+    private final Logger clientLogger = (Logger) LoggerFactory.getLogger(QaSuggestionClient.class);
+
+    private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
 
     @BeforeEach
     void startServer() throws IOException {
+        logs.list.clear();
+        logs.start();
+        clientLogger.addAppender(logs);
         // 프레임워크 기본 수명주기에 기대지 않고 여기서 되돌린다.
         status = 200;
         body = GOOD;
@@ -68,6 +80,7 @@ class QaSuggestionClientTest {
 
     @AfterEach
     void stopServer() {
+        clientLogger.detachAppender(logs);
         server.stop(0);
     }
 
@@ -219,6 +232,7 @@ class QaSuggestionClientTest {
         assertThatThrownBy(() -> client().suggest("   "))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", CommonErrorCode.INTERNAL_ERROR);
+        assertThat(logs.list).anyMatch(event -> event.getLevel() == Level.ERROR);
     }
 
     @Test
@@ -231,6 +245,20 @@ class QaSuggestionClientTest {
         assertThatThrownBy(() -> client().suggest("요구사항"))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", CommonErrorCode.INTERNAL_ERROR);
+        assertThat(logs.list).anyMatch(event -> event.getLevel() == Level.ERROR);
+    }
+
+    @Test
+    @DisplayName("계약 형식이 아닌 본문이 4xx 로 와도 우리 잘못이고 ERROR 로 남는다")
+    void brokenBodyOn4xxIsLoggedAsError() {
+        status = 404;
+        body = "<html>proxy not found</html>";
+
+        assertThatThrownBy(() -> client().suggest("요구사항"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", CommonErrorCode.INTERNAL_ERROR);
+        // 본문을 못 읽어도 500 이 조용히 나가면 안 된다. 원인을 볼 곳이 이 한 줄뿐이다.
+        assertThat(logs.list).anyMatch(event -> event.getLevel() == Level.ERROR);
     }
 
     @Test
