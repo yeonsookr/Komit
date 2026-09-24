@@ -86,3 +86,26 @@ export interface CreateRealtimeTicketRequest {
 export interface RealtimeTicket {
   ticket: string;
 }
+
+/**
+ * 통화를 열 때 받아 가는 ICE 서버 한 줄.
+ *
+ * 브라우저의 `RTCIceServer` 와 같은 모양이라 그대로 `RTCPeerConnection` 에 넣습니다.
+ * STUN 은 자격을 받지 않아 아이디와 비밀번호가 없습니다.
+ */
+export interface IceServer {
+  urls: string[];
+  username?: string;
+  credential?: string;
+}
+
+export interface IceServersResponse {
+  iceServers: IceServer[];
+  /**
+   * 중계 자격이 죽는 시각. 중계 서버를 두지 않은 환경에서는 없습니다.
+   *
+   * 수명이 한 통화보다 길어서(`R-CON-19`) 화면은 이 값을 보고 움직이지 않습니다.
+   * 그 전제가 깨졌는지 확인할 때 쓰는 값입니다.
+   */
+  expiresAt?: string;
+}

@@ -77,6 +77,8 @@ export const BACKEND = {
   CONSULTING_SESSION: (sessionId: number) => `/api/consulting-sessions/${sessionId}`,
   SESSION_PARTICIPATIONS: (sessionId: number) =>
     `/api/consulting-sessions/${sessionId}/participations`,
+  SESSION_ICE_SERVERS: (sessionId: number) =>
+    `/api/consulting-sessions/${sessionId}/ice-servers`,
   SESSION_END: (sessionId: number) => `/api/consulting-sessions/${sessionId}/end`,
   SESSION_RECORDINGS: (sessionId: number) =>
     `/api/consulting-sessions/${sessionId}/recordings`,
@@ -169,6 +171,8 @@ export const INTERNAL = {
   CONSULTING_SESSION: (sessionId: number) => `/api/consulting-sessions/${sessionId}`,
   SESSION_PARTICIPATIONS: (sessionId: number) =>
     `/api/consulting-sessions/${sessionId}/participations`,
+  SESSION_ICE_SERVERS: (sessionId: number) =>
+    `/api/consulting-sessions/${sessionId}/ice-servers`,
   SESSION_END: (sessionId: number) => `/api/consulting-sessions/${sessionId}/end`,
   SESSION_RECORDINGS: (sessionId: number) =>
     `/api/consulting-sessions/${sessionId}/recordings`,

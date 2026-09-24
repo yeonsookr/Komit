@@ -249,7 +249,8 @@ public class ConsultingSessionService {
      * 열쇠라, 로그인만 했다고 주면 세션에 들어오지도 않은 사람이 중계기를 씁니다.
      *
      * <p><b>끝난 세션에도 줍니다.</b> 종료 직후 정리하는 동안 화면이 한 번 더 부를 수 있고,
-     * 거절해서 얻는 것이 없습니다. 자격은 어차피 짧게 삽니다.
+     * 거절해서 얻는 것이 없습니다 — 같은 사람이 통화 중에 이미 받아 갔고 그 자격은 아직
+     * 살아 있습니다 (`R-CON-19`).
      *
      * @throws BusinessException {@link ConsultingErrorCode#SESSION_NOT_FOUND} — 없거나 지워진
      *     세션, 또는 요청자가 당사자가 아닌 경우
