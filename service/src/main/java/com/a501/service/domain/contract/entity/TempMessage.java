@@ -7,6 +7,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -31,4 +32,13 @@ public class TempMessage extends SoftDeleteEntity {
     @ColumnDefault("FALSE")
     @Column(name = "is_client", nullable = false)
     private boolean client = false;
+
+    /** 계약서와 함께 남기는 전달 메시지. 누가 남겼는지로 화면의 좌우가 갈립니다. */
+    public static TempMessage of(Integer contractId, String content, boolean client) {
+        TempMessage message = new TempMessage();
+        message.contractId = Objects.requireNonNull(contractId, "contractId");
+        message.content = Objects.requireNonNull(content, "content");
+        message.client = client;
+        return message;
+    }
 }

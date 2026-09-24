@@ -8,6 +8,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -66,5 +67,38 @@ public class ConsultingSession extends SoftDeleteEntity {
 
     public boolean isEnded() {
         return endedAt != null;
+    }
+
+    /**
+     * 계약서에 적힌 세션 하나.
+     *
+     * <p>{@code chatRefId} 는 아직 비어 있습니다. 식별자가 있어야 지을 수 있는 값이라 저장한 뒤
+     * {@link #assignChatRef()} 로 채웁니다.
+     */
+    public static ConsultingSession of(
+            Integer consultingAgreementId, int price, int durationMinutes) {
+        ConsultingSession session = new ConsultingSession();
+        session.consultingAgreementId =
+                Objects.requireNonNull(consultingAgreementId, "consultingAgreementId");
+        session.price = price;
+        session.durationMinutes = durationMinutes;
+        session.chatRefId = "";
+        return session;
+    }
+
+    /**
+     * 식별자가 정해진 뒤 채팅 참조 키를 짓습니다.
+     *
+     * <p>방과 한 이름 공간을 쓰므로 앞자리로 가릅니다. 세션 대화는 방 대화와 따로 쌓입니다.
+     * (`R-MATCH-06`)
+     */
+    public void assignChatRef() {
+        this.chatRefId = "session-" + id + "-chat";
+    }
+
+    /** 협의 중에 다시 보낸 계약서로 내용을 바꿉니다. */
+    public void rewrite(int price, int durationMinutes) {
+        this.price = price;
+        this.durationMinutes = durationMinutes;
     }
 }
