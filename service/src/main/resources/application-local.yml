@@ -41,6 +41,18 @@ app:
   escrow:
     base-url: ${ESCROW_API_BASE_URL:http://localhost:8081}
     client-api-key: ${ESCROW_CLIENT_API_KEY:komit-backend-client-api-key-dev-only}
+  turn:
+    # `deploy/local/docker-compose.yml` 의 coturn 을 가리킵니다. 그것이 STUN 도 겸하므로
+    # 로컬에서도 외부 STUN 을 쓰지 않습니다.
+    #
+    # coturn 을 띄우지 않았다면 이 값들을 비워 두세요. 그러면 ICE 목록이 비어
+    # 직접 연결만 쓰게 되는데, 같은 기계나 같은 랜에서는 그래도 통화가 붙습니다.
+    stun-urls: stun:localhost:3478
+    turn-urls:
+      - turn:localhost:3478?transport=udp
+      - turn:localhost:3478?transport=tcp
+    # 개발 전용 값입니다. `deploy/local/coturn/turnserver.conf` 와 같아야 합니다.
+    shared-secret: local-only-not-a-real-secret
   realtime:
     # 로컬은 프론트(3000)와 서버(8080)의 출처가 달라 열어 줍니다.
     allowed-origins:
