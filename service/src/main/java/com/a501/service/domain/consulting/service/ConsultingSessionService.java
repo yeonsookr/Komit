@@ -1,6 +1,8 @@
 package com.a501.service.domain.consulting.service;
 
 import com.a501.service.common.exception.BusinessException;
+import com.a501.service.common.realtime.turn.TurnCredentialIssuer;
+import com.a501.service.common.realtime.turn.dto.IceServersResponse;
 import com.a501.service.domain.consulting.ConsultingEntryPolicy;
 import com.a501.service.domain.consulting.ConsultingErrorCode;
 import com.a501.service.domain.consulting.dto.response.ConsultingSessionResponse;
@@ -54,6 +56,7 @@ public class ConsultingSessionService {
     private final ContractQueryService contractQueryService;
     private final FileLookupService fileLookupService;
     private final ApplicationEventPublisher events;
+    private final TurnCredentialIssuer turnCredentialIssuer;
     private final Clock clock;
 
     @Autowired
@@ -63,7 +66,8 @@ public class ConsultingSessionService {
             ReservationRepository reservationRepository,
             ContractQueryService contractQueryService,
             FileLookupService fileLookupService,
-            ApplicationEventPublisher events) {
+            ApplicationEventPublisher events,
+            TurnCredentialIssuer turnCredentialIssuer) {
         this(
                 sessionRepository,
                 participationRepository,
@@ -71,6 +75,7 @@ public class ConsultingSessionService {
                 contractQueryService,
                 fileLookupService,
                 events,
+                turnCredentialIssuer,
                 Clock.systemUTC());
     }
 
@@ -235,6 +240,23 @@ public class ConsultingSessionService {
     private ConsultingSessionResponse response(
             ConsultingSession session, ContractParties parties, Reservation reservation) {
         return ConsultingSessionResponse.of(session, parties.contractId(), reservation);
+    }
+
+    /**
+     * 이 세션의 통화가 쓸 ICE 서버 목록을 돌려줍니다. (`R-CON-19`)
+     *
+     * <p><b>세션 당사자에게만 줍니다.</b> 중계 자격은 우리 서버로 남의 트래픽을 흘릴 수 있는
+     * 열쇠라, 로그인만 했다고 주면 세션에 들어오지도 않은 사람이 중계기를 씁니다.
+     *
+     * <p><b>끝난 세션에도 줍니다.</b> 종료 직후 정리하는 동안 화면이 한 번 더 부를 수 있고,
+     * 거절해서 얻는 것이 없습니다. 자격은 어차피 짧게 삽니다.
+     *
+     * @throws BusinessException {@link ConsultingErrorCode#SESSION_NOT_FOUND} — 없거나 지워진
+     *     세션, 또는 요청자가 당사자가 아닌 경우
+     */
+    public IceServersResponse iceServers(Integer userId, Integer sessionId) {
+        findParties(findSession(sessionId), userId);
+        return turnCredentialIssuer.issue(userId);
     }
 
     private ConsultingSession findSessionForEntry(Integer sessionId) {
