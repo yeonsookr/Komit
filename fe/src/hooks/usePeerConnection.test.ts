@@ -94,7 +94,11 @@ class FakePeerConnection {
 
   readonly senders: Array<{ track: unknown; replaced: unknown[]; replaceTrack: (next: unknown) => Promise<void> }> = [];
 
-  constructor() {
+  /** 열 때 받은 설정. */
+  readonly configurations: RTCConfiguration[] = [];
+
+  constructor(configuration?: RTCConfiguration) {
+    if (configuration) this.configurations.push(configuration);
     FakePeerConnection.instances.push(this);
   }
 
@@ -147,6 +151,9 @@ class FakePeerConnection {
   }
 }
 
+/** 중계를 보지 않는 시험의 기본값. 받아 오는 자리만 채우고 목록은 비운다. */
+const noIceServers = () => Promise.resolve<RTCIceServer[]>([]);
+
 const flush = async () => {
   await Promise.resolve();
   await Promise.resolve();
@@ -174,6 +181,7 @@ describe("usePeerConnection", () => {
         sent.push({ type, payload: payload as Record<string, unknown> });
         return true;
       },
+      loadIceServers: noIceServers,
     });
     await flush();
 
@@ -220,6 +228,7 @@ describe("usePeerConnection", () => {
         sent.push({ type, payload: payload as Record<string, unknown> });
         return true;
       },
+      loadIceServers: noIceServers,
     });
     await flush();
 
@@ -260,7 +269,12 @@ describe("usePeerConnection", () => {
     vi.stubGlobal("navigator", {
       mediaDevices: { getUserMedia: vi.fn().mockReturnValue(permission) },
     });
-    const call = usePeerConnection({ enabled: true, polite: false, send: () => true });
+    const call = usePeerConnection({
+      enabled: true,
+      polite: false,
+      send: () => true,
+      loadIceServers: noIceServers,
+    });
 
     call.toggleMic();
     call.toggleCamera();
@@ -277,7 +291,12 @@ describe("usePeerConnection", () => {
     vi.stubGlobal("navigator", {
       mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(stream) },
     });
-    const call = usePeerConnection({ enabled: true, polite: true, send: () => true });
+    const call = usePeerConnection({
+      enabled: true,
+      polite: true,
+      send: () => true,
+      loadIceServers: noIceServers,
+    });
     await flush();
     const peer = FakePeerConnection.instances[0];
 
@@ -303,7 +322,12 @@ describe("usePeerConnection", () => {
     vi.stubGlobal("navigator", {
       mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(stream) },
     });
-    const call = usePeerConnection({ enabled: true, polite: true, send: () => true });
+    const call = usePeerConnection({
+      enabled: true,
+      polite: true,
+      send: () => true,
+      loadIceServers: noIceServers,
+    });
     await flush();
     const peer = FakePeerConnection.instances[0];
 
@@ -339,6 +363,7 @@ describe("usePeerConnection", () => {
         sent.push(type);
         return true;
       },
+      loadIceServers: noIceServers,
     });
     await flush();
 
@@ -361,7 +386,12 @@ describe("usePeerConnection", () => {
         getDisplayMedia: vi.fn().mockResolvedValue(screen),
       },
     });
-    const call = usePeerConnection({ enabled: true, polite: true, send: () => true });
+    const call = usePeerConnection({
+      enabled: true,
+      polite: true,
+      send: () => true,
+      loadIceServers: noIceServers,
+    });
     await flush();
 
     const sender = FakePeerConnection.instances[0].videoSender();
@@ -381,7 +411,12 @@ describe("usePeerConnection", () => {
     vi.stubGlobal("navigator", {
       mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(stream) },
     });
-    const call = usePeerConnection({ enabled: true, polite: true, send: () => true });
+    const call = usePeerConnection({
+      enabled: true,
+      polite: true,
+      send: () => true,
+      loadIceServers: noIceServers,
+    });
     await flush();
     const peer = FakePeerConnection.instances[0];
 
@@ -397,5 +432,67 @@ describe("usePeerConnection", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("통화를 열 때 받아 온 ICE 서버를 그대로 넣는다", async () => {
+    vi.stubGlobal("navigator", {
+      mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(new FakeStream()) },
+    });
+    const issued: RTCIceServer[] = [
+      { urls: ["stun:turn.komit.site:3478"] },
+      { urls: ["turn:turn.komit.site:3478?transport=udp"], username: "1:12", credential: "sig" },
+    ];
+    usePeerConnection({
+      enabled: true,
+      polite: true,
+      send: () => true,
+      loadIceServers: () => Promise.resolve(issued),
+    });
+    await flush();
+
+    expect(FakePeerConnection.instances[0].configurations).toEqual([{ iceServers: issued }]);
+  });
+
+  it("받지 못해도 통화는 연다", async () => {
+    vi.stubGlobal("navigator", {
+      mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(new FakeStream()) },
+    });
+    usePeerConnection({
+      enabled: true,
+      polite: true,
+      send: () => true,
+      loadIceServers: () => Promise.reject(new Error("서버가 답하지 않았다")),
+    });
+    await flush();
+
+    expect(FakePeerConnection.instances).toHaveLength(1);
+    expect(FakePeerConnection.instances[0].configurations).toEqual([{ iceServers: [] }]);
+  });
+
+  /*
+    자격 수명이 한 통화보다 길어서(`R-CON-19`) 통화 도중에 다시 받을 일이 없다.
+
+    **여기서 다시 받게 만들면 안 된다.** 길을 다시 뚫는 때는 망이 이미 망가진 때라,
+    그 자리에 요청을 하나 더 걸면 회복이 가장 급할 때 서버 응답을 기다리게 된다.
+  */
+  it("길을 다시 뚫을 때 자격을 다시 받지 않는다", async () => {
+    vi.stubGlobal("navigator", {
+      mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(new FakeStream()) },
+    });
+    const loadIceServers = vi.fn().mockResolvedValue([]);
+    const call = usePeerConnection({
+      enabled: true,
+      polite: true,
+      send: () => true,
+      loadIceServers,
+    });
+    await flush();
+
+    const peer = FakePeerConnection.instances[0];
+    call.accept("RTC_ICE_RESTART", { negotiationId: "gen-2" });
+    await flush();
+
+    expect(peer.restarted).toBe(true);
+    expect(loadIceServers).toHaveBeenCalledTimes(1);
   });
 });

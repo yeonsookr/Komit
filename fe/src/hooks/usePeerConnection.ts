@@ -9,8 +9,6 @@ import type {
   RtcSignalType,
 } from "@/types/realtime";
 
-const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
-
 const MEDIA: MediaStreamConstraints = {
   audio: { echoCancellation: true, noiseSuppression: true },
   video: { width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -40,6 +38,13 @@ export interface UsePeerConnectionOptions {
   /** 동시에 제안했을 때 자기 제안을 버리고 상대 제안을 받을 쪽인지. */
   polite: boolean;
   send: (type: RtcSignalType, payload?: unknown) => boolean;
+  /**
+   * 상대를 찾는 데 쓸 주소와 자격을 받아 옵니다. 통화를 열 때 한 번 부릅니다.
+   *
+   * 값을 받지 않고 **받아 오는 함수**를 받습니다. 중계 자격은 사람마다 다르고 시한부라
+   * 미리 만들어 둘 수 없습니다 (`R-CON-19`).
+   */
+  loadIceServers: () => Promise<RTCIceServer[]>;
 }
 
 export interface PeerConnection {
@@ -73,6 +78,7 @@ export function usePeerConnection({
   enabled,
   polite,
   send,
+  loadIceServers,
 }: UsePeerConnectionOptions): PeerConnection {
   const [status, setStatus] = React.useState<CallStatus>("IDLE");
   const [localStream, setLocalStream] = React.useState<MediaStream | null>(null);
@@ -110,6 +116,11 @@ export function usePeerConnection({
   React.useEffect(() => {
     politeRef.current = polite;
   }, [polite]);
+
+  const loadIceServersRef = React.useRef(loadIceServers);
+  React.useEffect(() => {
+    loadIceServersRef.current = loadIceServers;
+  }, [loadIceServers]);
 
   const replaceNegotiation = React.useCallback((nextId: RtcNegotiationId) => {
     const previousId = activeNegotiationId.current;
@@ -256,7 +267,19 @@ export function usePeerConnection({
       localRef.current = stream;
       setLocalStream(stream);
 
-      const peer = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      /*
+        통화 내내 쓸 값이라 여는 순간에 한 번만 받습니다. 자격 수명이 한 통화보다 길어
+        도중에 죽지 않습니다 (`R-CON-19`). 길을 다시 뚫을 때도 그대로 씁니다.
+      */
+      let iceServers: RTCIceServer[] = [];
+      try {
+        iceServers = await loadIceServersRef.current();
+      } catch {
+        // 못 받아도 통화는 엽니다. 같은 망에 있는 사이는 중계 없이도 붙습니다.
+      }
+      if (!alive) return;
+
+      const peer = new RTCPeerConnection({ iceServers });
       peerRef.current = peer;
       const initialId = createRtcNegotiationId();
       replaceNegotiation(initialId);

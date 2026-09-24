@@ -1,6 +1,7 @@
 import "server-only";
 
 import { SESSION_PENDING_CONSENT_STATUS } from "@/lib/session";
+import type { IceServersResponse } from "@/types/realtime";
 import type {
   ApplySummaryChangesRequest,
   ConsultingSession,
@@ -59,6 +60,26 @@ export async function joinConsultingSession(sessionId: number): Promise<SessionJ
     entered: response.status !== SESSION_PENDING_CONSENT_STATUS,
     session: response.data,
   };
+}
+
+/**
+ * 통화에 쓸 ICE 서버 목록.
+ *
+ * 브라우저가 상대를 찾고, 직접 못 찾으면 중계로 도는 데 쓰는 주소와 자격입니다.
+ * 받은 값을 그대로 `RTCPeerConnection` 에 넣습니다.
+ *
+ * 발급한 뒤에는 취소할 수 없어서 수명이 곧 악용당할 수 있는 시간입니다. 그렇다고
+ * 짧게 둘 수는 없습니다 — **통화 도중에 죽으면 중계를 다시 얻을 길이 없습니다.**
+ * 그래서 수명을 한 통화보다 길게 두고 (`R-CON-19`), 화면은 통화를 열 때 한 번
+ * 받아 그대로 씁니다.
+ *
+ * 세션 당사자가 아니면 404 입니다.
+ */
+export async function getSessionIceServers(sessionId: number): Promise<IceServersResponse> {
+  const { data } = await authenticatedBackendApi().get<IceServersResponse>(
+    BACKEND.SESSION_ICE_SERVERS(sessionId),
+  );
+  return data;
 }
 
 /**

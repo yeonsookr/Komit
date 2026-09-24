@@ -22,7 +22,7 @@ import {
 } from "@/hooks/usePeerConnection";
 import { useRealtimeConnection, type RealtimeStatus } from "@/hooks/useRealtimeConnection";
 import { useSessionRecorder } from "@/hooks/useSessionRecorder";
-import type { RealtimeEnvelope, RtcSignalType } from "@/types/realtime";
+import type { IceServersResponse, RealtimeEnvelope, RtcSignalType } from "@/types/realtime";
 import { ApiError } from "@/types/api";
 import { useChatChannel } from "@/hooks/useChatChannel";
 import type { ChatMessage } from "@/types/chat";
@@ -294,6 +294,18 @@ export function SessionStage({
   }, [consented, realtime.status]);
 
   /*
+    통화에 쓸 주소와 자격. 비밀은 서버에만 있고 화면은 시한부 자격만 받아 씁니다
+    (`R-CON-19`). 통화를 열 때 한 번 부릅니다 — 수명이 한 통화보다 길어 도중에
+    다시 받을 일이 없습니다.
+  */
+  const loadIceServers = React.useCallback(async () => {
+    const { data } = await clientApi.get<IceServersResponse>(
+      INTERNAL.SESSION_ICE_SERVERS(sessionId),
+    );
+    return data.iceServers;
+  }, [sessionId]);
+
+  /*
     동의한 사람은 기다리는 동안에도 자기 카메라를 켭니다. 상대는 아직 통화가 없어 내
     화면도 소리도 받지 못하므로 감출 것이 없고, 들어가기 전에 장치를 확인할 수 있습니다.
   */
@@ -301,6 +313,7 @@ export function SessionStage({
     enabled: consented && socketOpened,
     polite,
     send: realtime.send,
+    loadIceServers,
   });
 
   React.useEffect(() => {
