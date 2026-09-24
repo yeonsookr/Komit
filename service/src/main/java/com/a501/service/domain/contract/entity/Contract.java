@@ -7,6 +7,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -16,6 +17,8 @@ import lombok.NoArgsConstructor;
 @Table(name = "contracts")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Contract extends SoftDeleteEntity {
+    private static final String NEGOTIATING = "NEGOTIATING";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", nullable = false)
@@ -47,4 +50,30 @@ public class Contract extends SoftDeleteEntity {
 
     @Column(name = "developer_signature_id")
     private Integer developerSignatureId;
+
+    /**
+     * 개발자가 써서 보낸 계약서. 아직 아무도 서명하지 않아 협의중으로 시작합니다.
+     *
+     * <p>체결 여부는 이 status 로만 봅니다. 컨설팅·개발 쪽 status 는 체결된 뒤의 진행을 담는
+     * 값이라, 협의중인 동안에는 의미가 없습니다.
+     */
+    public static Contract of(Integer roomId, ContractType type) {
+        Contract contract = new Contract();
+        contract.roomId = Objects.requireNonNull(roomId, "roomId");
+        contract.contractType = type.name();
+        contract.contractTypeGroup = "CONTRACT_TYPE";
+        contract.status = NEGOTIATING;
+        contract.statusGroup = "CONTRACT_STATUS";
+        return contract;
+    }
+
+    /** 한쪽이라도 서명했는지. 서명 뒤에는 고칠 수 없습니다. (`R-CON-02`) */
+    public boolean isSigned() {
+        return clientSignatureId != null || developerSignatureId != null;
+    }
+
+    public enum ContractType {
+        CONSULTING,
+        DEVELOPMENT
+    }
 }

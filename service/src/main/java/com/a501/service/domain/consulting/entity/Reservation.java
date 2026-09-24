@@ -8,6 +8,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -33,4 +34,24 @@ public class Reservation extends SoftDeleteEntity {
 
     @Column(name = "consulting_session_id", nullable = false)
     private Integer consultingSessionId;
+
+    /**
+     * 개발자가 계약서에 적어 보낸 시각. 아직 의뢰인이 서명하지 않아 제안된 상태입니다.
+     *
+     * <p>한 세션에 예약을 여러 번 잡을 수 있어 확정된 것은 상태로 가립니다.
+     */
+    public static Reservation of(Integer consultingSessionId, LocalDateTime scheduledAt) {
+        Reservation reservation = new Reservation();
+        reservation.consultingSessionId =
+                Objects.requireNonNull(consultingSessionId, "consultingSessionId");
+        reservation.scheduledAt = Objects.requireNonNull(scheduledAt, "scheduledAt");
+        reservation.status = "PROPOSED";
+        reservation.statusGroup = "RESERVATION_STATUS";
+        return reservation;
+    }
+
+    /** 협의 중에 다시 보낸 계약서로 시각을 바꿉니다. */
+    public void reschedule(LocalDateTime scheduledAt) {
+        this.scheduledAt = Objects.requireNonNull(scheduledAt, "scheduledAt");
+    }
 }

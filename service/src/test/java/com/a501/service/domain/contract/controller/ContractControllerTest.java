@@ -16,6 +16,7 @@ import com.a501.service.domain.contract.dto.response.ConsultingAgreementResponse
 import com.a501.service.domain.contract.dto.response.ContractResponse;
 import com.a501.service.domain.contract.dto.response.SignatureResponse;
 import com.a501.service.domain.contract.dto.response.TempMessageResponse;
+import com.a501.service.domain.contract.service.ConsultingContractWriteService;
 import com.a501.service.domain.contract.service.ContractDetailService;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -38,6 +39,8 @@ class ContractControllerTest {
     private JwtTokenProvider tokenProvider;
     @MockitoBean
     private ContractDetailService contractDetailService;
+    @MockitoBean
+    private ConsultingContractWriteService consultingContractWriteService;
 
     @Test
     void returnsTheContractWithOnlyOneBranchFilled() throws Exception {
