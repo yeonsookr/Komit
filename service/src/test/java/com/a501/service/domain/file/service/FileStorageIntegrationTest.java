@@ -43,9 +43,11 @@ class FileStorageIntegrationTest {
     @ServiceConnection(name = "redis")
     static GenericContainer<?> redis = new GenericContainer<>("redis:8-alpine").withExposedPorts(6379);
 
+    // MinIO가 2026년 9월 quay.io·Docker Hub 공개 이미지를 내려 팀 계정(komit2026)에 사본을 둡니다.
+    // 배포(deploy/k3s/base/minio.yaml, deploy/local/docker-compose.yml)와 같은 태그를 씁니다.
     @Container
     static MinIOContainer minio = new MinIOContainer(
-            DockerImageName.parse("quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z")
+            DockerImageName.parse("komit2026/minio:RELEASE.2025-09-07T16-13-09Z")
                     .asCompatibleSubstituteFor("minio/minio"));
 
     @Autowired
