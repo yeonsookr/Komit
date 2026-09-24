@@ -106,6 +106,19 @@ services:
       /bin/sh -c "mc alias set local http://minio:9000 minioadmin minioadmin &&
       mc mb --ignore-existing local/komit"
 
+  # 통화 중계(TURN). 직접 연결이 안 되는 망에서만 실제로 쓰이지만, 로컬에도 띄워 두면
+  # 개발 중에 중계 경로가 계속 밟힌다. 안 밟히는 길은 썩는다. (R-CON-19)
+  coturn:
+    image: coturn/coturn:4.6
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      # 중계 포트. turnserver.conf 의 min-port~max-port 와 같아야 한다.
+      - "49160-49200:49160-49200/udp"
+
   service:
     build:
       context: ../../service
