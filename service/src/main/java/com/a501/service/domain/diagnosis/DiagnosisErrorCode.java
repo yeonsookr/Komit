@@ -39,7 +39,17 @@ public enum DiagnosisErrorCode implements ErrorCode {
     ISSUE_STATUS_CONFLICT(
             HttpStatus.CONFLICT,
             "ISSUE_STATUS_CONFLICT",
-            "계약에 포함된 요구사항은 상태를 바꿀 수 없습니다.");
+            "계약에 포함된 요구사항은 상태를 바꿀 수 없습니다."),
+    /** AI 서비스는 닿았으나 계약에 맞는 후보를 만들지 못했다. 다시 부르면 될 수 있어 재시도를 안내한다. */
+    AI_RESPONSE_INVALID(
+            HttpStatus.BAD_GATEWAY,
+            "AI_RESPONSE_INVALID",
+            "확인 문장을 만들지 못했습니다. 잠시 후 다시 시도해 주세요."),
+    /** AI 서비스에 닿지 못했다. 요청 자체는 옳으므로 사용자에게 고칠 것을 묻지 않는다. */
+    AI_SERVICE_UNAVAILABLE(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "AI_SERVICE_UNAVAILABLE",
+            "확인 문장 생성 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.");
 
     private final HttpStatus status;
     private final String code;
