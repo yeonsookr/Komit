@@ -30,6 +30,11 @@ MAX_TOPIC_LENGTH = 255
 # 목 WriteDevelopmentContractRequest: milestones와 qaCriteria는 하나 이상.
 MIN_MILESTONE_COUNT = 1
 MIN_QA_CRITERIA_COUNT = 1
+# 마일스톤과 확인 문장의 개수에 상한이 없어 계산으로는 못 낸다. 실측으로 잡는다 —
+# 요구사항 6건·마일스톤 2~3개가 174~255토큰이었고, 컨설팅 초안은 62토큰이었다.
+# 제외 사유가 채워지고 문장이 길어지면 기본값 256을 바로 넘으므로 여유를 크게 둔다.
+# (2026-09-24 실측)
+DRAFT_MAX_OUTPUT_TOKENS = 2048
 # AI가 채우는 필드만. 나머지는 개발자 입력 필드다.
 DRAFT_FIELDS = {
     CONSULTING: {"topic", "detail"},
@@ -44,7 +49,11 @@ def _require_text(value: Any, message: str) -> str:
 
 
 def _require_known_id(value: Any, known: frozenset[int], message: str) -> int:
-    if isinstance(value, bool) or not isinstance(value, int) or value not in known:
+    # 타입이 틀린 것과 모르는 식별자를 갈라 말한다. 모델이 식별자를 "312" 처럼 문자열로
+    # 내놓는 일이 잦은데, 한 문구로 묶으면 목록에 없는 것으로 읽혀 원인을 못 찾는다.
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise InvalidGmsResponseError("요구사항 식별자는 따옴표 없는 숫자여야 합니다")
+    if value not in known:
         raise InvalidGmsResponseError(message)
     return value
 
@@ -206,9 +215,13 @@ CONSULTING_INSTRUCTION = (
 )
 DEVELOPMENT_INSTRUCTION = (
     "개발 계약 초안을 만듭니다. draft는 issueIds, milestones, rejectedIssues만 가집니다. "
-    "issueIds와 rejectedIssues[].issueId는 아래 요구사항 목록의 식별자 중에서만 고르고, "
-    "같은 식별자를 양쪽에 함께 넣지 마세요. 제외 사유가 대화에 없으면 그 요구사항을 "
-    "rejectedIssues에 넣지 마세요. milestones는 하나 이상이며 각 항목은 title과 "
+    "issueIds와 rejectedIssues[].issueId는 아래 요구사항 목록에서 그 줄 맨 앞의 숫자를 "
+    '따옴표 없는 JSON 숫자로 적습니다. "312" 가 아니라 312 입니다. 목록에 없는 숫자는 '
+    "적지 말고, 같은 식별자를 양쪽에 함께 넣지 마세요. rejectedIssues의 항목은 issueId와 "
+    "reason 두 개를 모두 가진 객체입니다. 숫자만 적지 말고 reason 에 대화에 나온 제외 사유를 "
+    "적으세요. 제외 사유가 대화에 없으면 그 요구사항을 rejectedIssues에 넣지 말고, 뺄 것이 "
+    "하나도 없으면 rejectedIssues를 빈 배열로 둡니다. 세 칸은 언제나 모두 있어야 합니다. "
+    "milestones는 하나 이상이며 각 항목은 title과 "
     "qaCriteria만 가집니다. qaCriteria는 의뢰인이 직접 실행해 통과 여부를 판단할 수 있는 "
     f"확인 문장을 하나 이상 담고 각 문장은 1~{MAX_TEST_CASE_LENGTH}자입니다."
 )
@@ -255,7 +268,9 @@ def draft_contract(
         raise ValueError("계약 유형은 CONSULTING 또는 DEVELOPMENT입니다")
     rows = normalize_messages(messages)
     known = normalize_issues(issues)
-    raw = client.complete(build_messages(target_type, rows, known))
+    raw = client.complete(
+        build_messages(target_type, rows, known), max_tokens=DRAFT_MAX_OUTPUT_TOKENS
+    )
     return parse_draft(raw, target_type, (row["issueId"] for row in known))
 
 

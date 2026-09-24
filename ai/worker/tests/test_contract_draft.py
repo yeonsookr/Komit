@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from contract_draft import (  # noqa: E402
+    DRAFT_MAX_OUTPUT_TOKENS,
     InvalidGmsResponseError,
     draft_contract,
     normalize_messages,
@@ -55,9 +56,11 @@ class FakeClient:
     def __init__(self, raw):
         self.raw = raw
         self.messages = None
+        self.max_tokens = None
 
-    def complete(self, messages):
+    def complete(self, messages, max_tokens=None):
         self.messages = messages
+        self.max_tokens = max_tokens
         return self.raw
 
 
@@ -135,6 +138,24 @@ class ContractDraftTest(unittest.TestCase):
         for draft in bad:
             with self.subTest(draft=sorted(draft)), self.assertRaises(InvalidGmsResponseError):
                 parse_draft(payload(draft), "DEVELOPMENT", (312, 313))
+
+    def test_draft_uses_its_own_output_limit(self):
+        """기본값(256)으로는 요구사항 여러 건짜리 초안이 잘린다. 작업별 한도를 넘겨야 한다."""
+        client = FakeClient(payload(CONSULTING_DRAFT))
+        draft_contract("CONSULTING", MESSAGES, client)
+        self.assertEqual(client.max_tokens, DRAFT_MAX_OUTPUT_TOKENS)
+
+    def test_string_issue_ids_are_told_apart_from_unknown_ones(self):
+        """모델이 식별자를 "312" 처럼 문자열로 내놓는다. 목록에 없는 것과 갈라 말해야 한다."""
+        as_text = {**DEVELOPMENT_DRAFT, "issueIds": ["312"], "rejectedIssues": []}
+        with self.assertRaises(InvalidGmsResponseError) as caught:
+            parse_draft(payload(as_text), "DEVELOPMENT", (312, 313))
+        self.assertIn("숫자", str(caught.exception))
+
+        unknown = {**DEVELOPMENT_DRAFT, "issueIds": [999], "rejectedIssues": []}
+        with self.assertRaises(InvalidGmsResponseError) as caught:
+            parse_draft(payload(unknown), "DEVELOPMENT", (312, 313))
+        self.assertIn("입력에 없는", str(caught.exception))
 
     def test_unfinished_consultation_makes_no_draft(self):
         client = FakeClient(payload(None, proceed=False))
