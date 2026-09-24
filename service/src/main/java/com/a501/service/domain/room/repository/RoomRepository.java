@@ -22,6 +22,9 @@ public interface RoomRepository extends JpaRepository<Room, Integer> {
 
     List<Room> findByDeveloperIdAndDeletedFalse(Integer developerId);
 
+    /** 이 프로젝트에 이 개발자의 방이 있는지. 요청서를 받은 개발자인지 가릴 때 씁니다. */
+    boolean existsByProjectIdAndDeveloperIdAndDeletedFalse(Integer projectId, Integer developerId);
+
     /**
      * 이 프로젝트에서 이 개발자들과 열려 있는 상담방. 몇 번을 요청해도 방은 개발자마다 하나이므로,
      * 새로 열기 전에 이미 있는 방을 찾습니다.

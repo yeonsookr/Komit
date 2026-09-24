@@ -59,6 +59,25 @@ public class RoomQueryService {
     }
 
     /**
+     * 이 프로젝트에 방을 가진 개발자인지.
+     *
+     * <p>상담 요청을 받으면 방이 열리므로, 방이 있다는 것이 곧 이 프로젝트의 요청서를 받은 개발자라는
+     * 뜻입니다. 같은 요청서를 여러 개발자에게 보낼 수 있고 (`R-REQ-03`) 받은 쪽은 무엇을 고쳐야 하는지
+     * 읽을 수 있어야 합니다.
+     *
+     * <p>갈래가 정해져 닫힌 방도 셉니다. 계약으로 넘어간 뒤에도 요청서를 계속 봐야 합니다.
+     *
+     * @param userId 사용자 식별자. 개발자 식별자가 아닙니다
+     */
+    public boolean hasRoomAsDeveloper(Integer projectId, Integer userId) {
+        Integer developerId = developerLookupService.findDeveloperId(userId);
+        if (projectId == null || developerId == null) {
+            return false;
+        }
+        return roomRepository.existsByProjectIdAndDeveloperIdAndDeletedFalse(projectId, developerId);
+    }
+
+    /**
      * 이 방의 두 당사자.
      *
      * <p>방이 없거나, 그 프로젝트나 개발자를 찾을 수 없으면 비어 있습니다.

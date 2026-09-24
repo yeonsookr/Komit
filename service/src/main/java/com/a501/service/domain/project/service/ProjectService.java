@@ -39,6 +39,19 @@ public class ProjectService {
                         ProjectSummary.of(project, projectTechCategoryRepository.findTechCategories(project.getId())));
     }
 
+    /**
+     * 주인을 따지지 않고 읽는다.
+     *
+     * <p><b>부르는 쪽이 이미 볼 수 있는 사람인지 가린 뒤에만 쓴다.</b> 상담 요청을 받은 개발자처럼
+     * 주인은 아니지만 읽어야 하는 자리가 있어 둔다.
+     */
+    public Optional<ProjectSummary> find(Integer projectId) {
+        return projectRepository
+                .findByIdAndDeletedFalse(projectId)
+                .map(project -> ProjectSummary.of(
+                        project, projectTechCategoryRepository.findTechCategories(project.getId())));
+    }
+
     /** 의뢰인이 가진 프로젝트. 이름만 쓰는 목록 화면을 위해 기술 목록은 비워 둔다. */
     public List<ProjectSummary> findAllOwned(Integer clientId) {
         return projectRepository.findByClientIdAndDeletedFalseOrderByIdDesc(clientId).stream()
