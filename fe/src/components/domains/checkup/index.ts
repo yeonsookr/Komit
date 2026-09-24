@@ -6,6 +6,7 @@ export * from "./DiagnosisReport";
 export * from "./IssueGroupList";
 export * from "./QuestionField";
 export * from "./RequestForm";
+export * from "./RequirementList";
 export * from "./RequestFormEditor";
 export * from "./RequirementPicker";
 export * from "./ScanFileStep";
