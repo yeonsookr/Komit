@@ -48,7 +48,9 @@ spec:
           type: RuntimeDefault
       containers:
         - name: minio
-          image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
+          # MinIO가 2026년 9월 quay.io·Docker Hub 공개 이미지를 내려 팀 Docker Hub 계정에 둔 사본을 씁니다.
+          # 테스트(FileStorageIntegrationTest)와 로컬 compose도 같은 태그를 봅니다.
+          image: komit2026/minio:RELEASE.2025-09-07T16-13-09Z
           args: ["server", "/data", "--console-address", ":9001"]
           ports:
             - name: s3
@@ -149,7 +151,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: mc
-          image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+          image: komit2026/mc:RELEASE.2025-08-13T08-35-41Z
           command: ["/bin/sh", "-ec"]
           args:
             - |
