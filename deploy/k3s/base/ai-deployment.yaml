@@ -24,8 +24,9 @@ spec:
         app.kubernetes.io/name: ai
         app.kubernetes.io/part-of: komit
     spec:
-      # GMS 왕복이 20초까지 걸립니다. 처리 중에 끊기지 않도록 service와 같은 여유를 둡니다.
-      terminationGracePeriodSeconds: 30
+      # 컨설팅 요약은 GMS 를 120초까지 기다립니다 (consulting_summary.py). 처리 중에 끊기면
+      # 요약이 비어 남으므로 그보다 길게 둡니다.
+      terminationGracePeriodSeconds: 130
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001

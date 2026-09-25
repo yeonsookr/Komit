@@ -22,7 +22,9 @@ spec:
         app.kubernetes.io/name: service
         app.kubernetes.io/part-of: komit
     spec:
-      terminationGracePeriodSeconds: 30
+      # 뒤에서 돌던 세션 요약이 끝나기를 150초까지 기다린다 (application.yml
+      # spring.task.execution.shutdown). 그보다 길어야 k3s 가 중간에 끊지 않는다.
+      terminationGracePeriodSeconds: 160
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
