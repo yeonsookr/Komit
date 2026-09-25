@@ -2,9 +2,12 @@ package com.a501.service.domain.contract.controller;
 
 import com.a501.service.common.security.AuthenticatedUser;
 import com.a501.service.domain.contract.dto.request.AmendConsultingContractRequest;
+import com.a501.service.domain.contract.dto.request.DepositRequest;
 import com.a501.service.domain.contract.dto.request.SignContractRequest;
 import com.a501.service.domain.contract.dto.response.ContractResponse;
+import com.a501.service.domain.contract.dto.response.DepositResponse;
 import com.a501.service.domain.contract.service.ConsultingContractWriteService;
+import com.a501.service.domain.contract.service.ContractDepositService;
 import com.a501.service.domain.contract.service.ContractDetailService;
 import com.a501.service.domain.contract.service.ContractSignatureService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -30,6 +33,7 @@ public class ContractController {
     private final ContractDetailService contractDetailService;
     private final ConsultingContractWriteService consultingContractWriteService;
     private final ContractSignatureService contractSignatureService;
+    private final ContractDepositService contractDepositService;
 
     @Operation(
             summary = "계약서 조회",
@@ -95,5 +99,48 @@ public class ContractController {
             @PathVariable Integer contractId,
             @Valid @RequestBody SignContractRequest request) {
         return contractSignatureService.sign(contractId, user.userId(), request);
+    }
+
+    @Operation(
+            summary = "계약 금액 예치",
+            description =
+                    """
+                    계약 금액을 Escrow 에 맡긴다. **돈의 원장은 이 서버가 갖지 않는다** — 결제와 \
+                    보관은 Escrow 가 맡고 여기서는 걸어 달라고 부탁할 뿐이다.
+
+                    **돈은 회원가입 때 발급한 의뢰인의 계좌에서 빠진다.** 계좌를 따로 고르지 \
+                    않는다.
+
+                    **예치는 의뢰인만 한다.** 돈을 내는 쪽이다. 방의 당사자는 계약이 있다는 것을 \
+                    알고 있으므로 개발자에게는 감추지 않고 403 으로 답한다.
+
+                    - 201: 예치를 걸었을 때. 결제가 바로 확인되면 DEPOSITED, 기다리는 중이면 PENDING
+                    - 401 UNAUTHORIZED: 로그인하지 않았을 때
+                    - 403 FORBIDDEN: 이 계약의 의뢰인이 아닐 때
+                    - 404 CONTRACT_NOT_FOUND: 없는 계약이거나 요청자가 그 계약의 당사자가 아닐 때
+                    - 409 ALREADY_DEPOSITED: 이미 예치했을 때
+                    - 422 INVALID_REQUEST: paymentMethodId 나 idempotencyKey 가 없을 때""")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PostMapping("/{contractId}/deposit")
+    DepositResponse deposit(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable Integer contractId,
+            @Valid @RequestBody DepositRequest request) {
+        return contractDepositService.deposit(contractId, user.userId(), request);
+    }
+
+    @Operation(
+            summary = "예치 상태 조회",
+            description =
+                    """
+                    이 계약의 예치 상태를 읽는다. 상태는 Escrow 에 물어 그대로 옮긴다.
+
+                    - 200: 예치를 건 적이 있을 때
+                    - 401 UNAUTHORIZED: 로그인하지 않았을 때
+                    - 404 CONTRACT_NOT_FOUND: 없는 계약이거나, 당사자가 아니거나, 아직 예치를 걸지 않았을 때""")
+    @GetMapping("/{contractId}/deposit")
+    DepositResponse getDeposit(
+            @AuthenticationPrincipal AuthenticatedUser user, @PathVariable Integer contractId) {
+        return contractDepositService.getDeposit(contractId, user.userId());
     }
 }
