@@ -1,3 +1,4 @@
+import http.client
 import io
 import json
 import sys
@@ -236,6 +237,18 @@ class Client(unittest.TestCase):
         with mock.patch("urllib.request.urlopen", side_effect=http_error(403)):
             with self.assertRaises(ServiceUnreachableError):
                 self.client.download("https://file.example/a", mock.Mock())
+
+    def test_받는_도중_끊기면_닿지_못한_것으로_본다(self):
+        for error in (ConnectionResetError(10054, "reset"), http.client.IncompleteRead(b"par")):
+            response = FakeResponse(200)
+            response.read = mock.Mock(side_effect=error)
+            with self.subTest(error=type(error).__name__):
+                with mock.patch("urllib.request.urlopen", return_value=response):
+                    with self.assertRaises(ServiceUnreachableError):
+                        self.client.download("https://file.example/a", mock.Mock())
+                with mock.patch("urllib.request.urlopen", return_value=response):
+                    with self.assertRaises(ServiceUnreachableError):
+                        self.client.claim()
 
 
 if __name__ == "__main__":

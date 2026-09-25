@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import http.client
 import json
 import sys
 import tempfile
@@ -48,6 +49,10 @@ HTTP_TIMEOUT_SECONDS = 30
 # Service 가 이 둘을 보고 작업을 되돌릴지 사람에게 넘길지 정한다.
 RETRYABLE = "TRANSCRIBER_UNAVAILABLE"
 UNUSABLE = "AUDIO_UNUSABLE"
+
+# 연결이 안 되거나 받는 도중 끊긴 것. 끊기면 `URLError` 가 아니라 `ConnectionResetError`·
+# `IncompleteRead` 가 나므로 `OSError` 와 `HTTPException` 으로 넓게 잡는다.
+CONNECTION_ERRORS = (OSError, http.client.HTTPException)
 
 # 로컬에서 Spring·MinIO 를 띄워 시험할 때만 http 를 받는다.
 LOCAL_HOSTS = ("localhost", "127.0.0.1")
@@ -116,8 +121,8 @@ class ServiceClient:
             if error.code == 404:
                 raise UnusableInputError(f"{destination.name} 가 저장소에 없습니다") from error
             raise ServiceUnreachableError(f"녹음을 받지 못했습니다: {error}") from error
-        except (urllib.error.URLError, TimeoutError) as error:
-            raise ServiceUnreachableError(f"녹음을 받지 못했습니다: {error}") from error
+        except CONNECTION_ERRORS as error:
+            raise ServiceUnreachableError(f"녹음을 받지 못했습니다: {error!r}") from error
 
     def _post(self, path: str, payload: dict) -> tuple[int, dict | None]:
         request = urllib.request.Request(
@@ -137,8 +142,8 @@ class ServiceClient:
             if error.code in (401, 403):
                 raise TokenRejectedError(f"{path}: {error.code}") from error
             raise ServiceUnreachableError(f"{path}: {error.code}") from error
-        except (urllib.error.URLError, TimeoutError) as error:
-            raise ServiceUnreachableError(f"{path} 에 닿지 못했습니다: {error}") from error
+        except CONNECTION_ERRORS as error:
+            raise ServiceUnreachableError(f"{path} 에 닿지 못했습니다: {error!r}") from error
 
 
 def parse_job(body) -> Job:
