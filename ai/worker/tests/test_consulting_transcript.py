@@ -147,6 +147,18 @@ class Failures(unittest.TestCase):
         with self.assertRaises(UnusableInputError):
             transcribe_track(못읽는모델(), Track("CLIENT", "깨진파일.webm"))
 
+    def test_실패_사유에_노트북_경로를_싣지_않는다(self):
+        """사유는 Service 로그에 남는다. 전체 경로에는 노트북 계정 이름이 들어 있다."""
+        class 못읽는모델:
+            def transcribe(self, *args, **kwargs):
+                raise RuntimeError("Invalid data found when processing input")
+
+        with self.assertRaises(UnusableInputError) as caught:
+            transcribe_track(못읽는모델(), Track("CLIENT", "C:/Users/someone/Temp/tmp1/CLIENT.webm"))
+
+        self.assertIn("CLIENT.webm", str(caught.exception))
+        self.assertNotIn("someone", str(caught.exception))
+
     def test_전사하다_GPU_가_멈추면_다시_걸어_볼_갈래로_던진다(self):
         """오디오는 멀쩡하다. 사람에게 넘기면 다시 받아 가지 않는다."""
         for message in ("CUDA failed with error out of memory", "Library cublas64_12.dll is not found"):

@@ -226,6 +226,12 @@ class Client(unittest.TestCase):
             with self.assertRaises(ServiceUnreachableError):
                 self.client.claim()
 
+    def test_녹음_파일이_없으면_쓸_수_없는_것으로_본다(self):
+        # 다시 받아 가게 두면 같은 세션이 계속 나와 뒤의 세션이 막힌다.
+        with mock.patch("urllib.request.urlopen", side_effect=http_error(404)):
+            with self.assertRaises(UnusableInputError):
+                self.client.download("https://file.example/a", Path("CLIENT.webm"))
+
     def test_녹음_주소가_만료되면_닿지_못한_것으로_본다(self):
         with mock.patch("urllib.request.urlopen", side_effect=http_error(403)):
             with self.assertRaises(ServiceUnreachableError):

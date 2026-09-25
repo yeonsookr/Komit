@@ -110,6 +110,12 @@ class ServiceClient:
         try:
             with urllib.request.urlopen(url, timeout=HTTP_TIMEOUT_SECONDS) as response:
                 destination.write_bytes(response.read())
+        except urllib.error.HTTPError as error:
+            # 파일이 없으면 다시 받아도 없다. 다시 받아 가게 두면 Service 가 같은 세션을 계속
+            # 내줘 뒤의 세션이 영영 차례를 얻지 못한다. 만료(403)는 새 주소로 다시 받으면 된다.
+            if error.code == 404:
+                raise UnusableInputError(f"{destination.name} 가 저장소에 없습니다") from error
+            raise ServiceUnreachableError(f"녹음을 받지 못했습니다: {error}") from error
         except (urllib.error.URLError, TimeoutError) as error:
             raise ServiceUnreachableError(f"녹음을 받지 못했습니다: {error}") from error
 

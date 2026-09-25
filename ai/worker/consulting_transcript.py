@@ -182,10 +182,11 @@ def transcribe_track(model, track: Track, gap_seconds: float = SPLIT_GAP_SECONDS
     except GmsUnavailableError:
         raise
     except Exception as error:
+        # 파일 이름만 싣는다. 이 사유는 Service 로그에 남는데 전체 경로에는 노트북 계정 이름이 있다.
         # GPU 메모리가 모자라거나 CUDA 라이브러리가 떨어진 것은 장비 문제라 다시 걸면 된다.
         if any(word in str(error) for word in GPU_ERROR_WORDS):
-            raise GmsUnavailableError(f"{track.path} 를 전사하다 GPU 가 멈췄습니다: {error}") from error
-        raise UnusableInputError(f"{track.path} 를 읽지 못했습니다: {error}") from error
+            raise GmsUnavailableError(f"{Path(track.path).name} 를 전사하다 GPU 가 멈췄습니다: {error}") from error
+        raise UnusableInputError(f"{Path(track.path).name} 를 읽지 못했습니다: {error}") from error
 
     return {"speaker": track.speaker, "pieces": pieces}
 
