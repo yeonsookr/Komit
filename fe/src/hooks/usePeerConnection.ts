@@ -9,8 +9,6 @@ import type {
   RtcSignalType,
 } from "@/types/realtime";
 
-const ICE_SERVERS: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
-
 const MEDIA: MediaStreamConstraints = {
   audio: { echoCancellation: true, noiseSuppression: true },
   video: { width: { ideal: 1280 }, height: { ideal: 720 } },
@@ -23,6 +21,42 @@ const MEDIA: MediaStreamConstraints = {
  * (`useRealtimeConnection` 의 재시도는 최대 10초)보다 넉넉히 두고, 그때까지 안 오면 접습니다.
  */
 const PEER_AWAY_GRACE_MS = 15_000;
+
+interface CandidateStats {
+  /** `host`(직접) · `srflx`(공인 주소를 알아내 직접) · `relay`(중계). */
+  candidateType?: string;
+  /** 나와 중계 서버 사이의 규약. 중계로 붙었을 때만 있습니다. */
+  relayProtocol?: string;
+}
+
+/**
+ * 어느 길로 붙었는지 한 줄 남깁니다. 보이게만 하고 아무것도 막지 않습니다.
+ *
+ * **붙었다는 사실만으로는 중계가 일했는지 알 수 없습니다.** 직접 붙어도 중계를 타도
+ * 화면에는 똑같이 상대 얼굴이 뜹니다. 중계가 TCP 로 떨어진 것도 여기서만 보입니다 —
+ * 그래도 통화는 붙지만 지연이 늘고 화질이 떨어지는, 조용히 나빠지는 쪽입니다.
+ */
+async function reportSelectedPath(peer: RTCPeerConnection): Promise<void> {
+  let stats: RTCStatsReport;
+  try {
+    stats = await peer.getStats();
+  } catch {
+    return;
+  }
+
+  let pair: RTCIceCandidatePairStats | undefined;
+  stats.forEach((report) => {
+    if (report.type === "candidate-pair" && report.state === "succeeded" && report.nominated) {
+      pair = report as RTCIceCandidatePairStats;
+    }
+  });
+  if (!pair) return;
+
+  const local = stats.get(pair.localCandidateId) as CandidateStats | undefined;
+  const remote = stats.get(pair.remoteCandidateId) as CandidateStats | undefined;
+  const via = local?.relayProtocol ? ` (${local.relayProtocol})` : "";
+  console.info(`[call] ${local?.candidateType}${via} ↔ ${remote?.candidateType} 로 붙었습니다`);
+}
 
 export type CallStatus =
   | "IDLE"
@@ -40,6 +74,13 @@ export interface UsePeerConnectionOptions {
   /** 동시에 제안했을 때 자기 제안을 버리고 상대 제안을 받을 쪽인지. */
   polite: boolean;
   send: (type: RtcSignalType, payload?: unknown) => boolean;
+  /**
+   * 상대를 찾는 데 쓸 주소와 자격을 받아 옵니다. 통화를 열 때 한 번 부릅니다.
+   *
+   * 값을 받지 않고 **받아 오는 함수**를 받습니다. 중계 자격은 사람마다 다르고 시한부라
+   * 미리 만들어 둘 수 없습니다 (`R-CON-19`).
+   */
+  loadIceServers: () => Promise<RTCIceServer[]>;
 }
 
 export interface PeerConnection {
@@ -73,6 +114,7 @@ export function usePeerConnection({
   enabled,
   polite,
   send,
+  loadIceServers,
 }: UsePeerConnectionOptions): PeerConnection {
   const [status, setStatus] = React.useState<CallStatus>("IDLE");
   const [localStream, setLocalStream] = React.useState<MediaStream | null>(null);
@@ -110,6 +152,11 @@ export function usePeerConnection({
   React.useEffect(() => {
     politeRef.current = polite;
   }, [polite]);
+
+  const loadIceServersRef = React.useRef(loadIceServers);
+  React.useEffect(() => {
+    loadIceServersRef.current = loadIceServers;
+  }, [loadIceServers]);
 
   const replaceNegotiation = React.useCallback((nextId: RtcNegotiationId) => {
     const previousId = activeNegotiationId.current;
@@ -256,7 +303,19 @@ export function usePeerConnection({
       localRef.current = stream;
       setLocalStream(stream);
 
-      const peer = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+      /*
+        통화 내내 쓸 값이라 여는 순간에 한 번만 받습니다. 자격 수명이 한 통화보다 길어
+        도중에 죽지 않습니다 (`R-CON-19`). 길을 다시 뚫을 때도 그대로 씁니다.
+      */
+      let iceServers: RTCIceServer[] = [];
+      try {
+        iceServers = await loadIceServersRef.current();
+      } catch {
+        // 못 받아도 통화는 엽니다. 같은 망에 있는 사이는 중계 없이도 붙습니다.
+      }
+      if (!alive) return;
+
+      const peer = new RTCPeerConnection({ iceServers });
       peerRef.current = peer;
       const initialId = createRtcNegotiationId();
       replaceNegotiation(initialId);
@@ -287,6 +346,7 @@ export function usePeerConnection({
         if (!alive) return;
         if (peer.connectionState === "connected") {
           setStatus("CONNECTED");
+          void reportSelectedPath(peer);
         } else if (peer.connectionState === "failed") {
           const id = createRtcNegotiationId();
           replaceNegotiation(id);

@@ -2,6 +2,9 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../base
+  # 통화 중계. hostNetwork 로 공인 주소에 직접 붙으므로 NodePort 패치가 없습니다.
+  # 로컬 k3s 에는 두지 않습니다 — `deploy/local/docker-compose.yml` 이 그 자리입니다.
+  - coturn.yaml
 patches:
   - path: service-nodeport.yaml
   - path: escrow-nodeport.yaml
@@ -10,3 +13,11 @@ patches:
   # 파일 저장소. nginx가 file.komit.site를 30090으로 넘깁니다.
   - path: minio-nodeport.yaml
   - path: minio-storage.yaml
+
+# 생성기로 만들어야 내용이 바뀔 때 이름 해시가 바뀌어 Pod 가 다시 뜬다. 이름이 고정된
+# ConfigMap 으로 두면 고쳐도 파드 템플릿이 그대로라 옛 설정으로 계속 돈다.
+configMapGenerator:
+  - name: coturn-config
+    namespace: komit
+    files:
+      - coturn/turnserver.conf

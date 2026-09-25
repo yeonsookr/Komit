@@ -5067,6 +5067,52 @@ class ConsultingSessionResponse(BaseModel):
     )
 
 
+class SessionParticipationResponse(BaseModel):
+    """세션 참가자 한 사람의 기록."""
+
+    userId: int = Field(description="참가자 사용자 식별자.", examples=[12])
+    consentedAt: str = Field(
+        description="녹음·전사·요약에 동의한 시각.",
+        examples=["2026-08-29T13:55:00+09:00"],
+    )
+    joinedAt: str | None = Field(
+        description="실제로 들어간 시각. 상대 동의를 기다리는 중이면 null이다.",
+        examples=[None],
+    )
+
+
+class IceServerResponse(BaseModel):
+    """브라우저가 그대로 RTCPeerConnection에 넣는 ICE 서버 한 줄."""
+
+    urls: list[str] = Field(
+        description="같은 자격으로 쓰는 주소들.",
+        examples=[["turn:turn.komit.site:3478?transport=udp"]],
+    )
+    username: str | None = Field(
+        default=None,
+        description="시한부 자격의 아이디. STUN에는 없다.",
+        examples=["1790238175:12"],
+    )
+    credential: str | None = Field(
+        default=None,
+        description="시한부 자격의 비밀번호. STUN에는 없다.",
+        examples=["8mCPiF2R1qkHrDbY0dzXqA1sZ0w="],
+    )
+
+
+class IceServersResponse(BaseModel):
+    """통화를 열 때 화면이 받아 가는 ICE 서버 목록."""
+
+    iceServers: list[IceServerResponse] = Field(
+        description="브라우저에 그대로 넣는 목록.",
+    )
+    expiresAt: str | None = Field(
+        default=None,
+        description="중계 자격이 죽는 시각. 중계 서버를 두지 않은 환경에서는 없다.",
+        examples=["2026-08-29T16:00:00+09:00"],
+    )
+
+
 class SignatureResponse(BaseModel):
     """계약서에 남긴 서명 하나."""
 
@@ -5413,6 +5459,8 @@ SIGNED_CONTRACT_ID = 409
 NOT_FOUND_SESSION_ID = 404
 NOT_OPEN_SESSION_ID = 409
 PENDING_CONSENT_SESSION_ID = 203
+# 아직 아무도 동의하지 않은 세션. 입장 안내 화면을 재현한다. (R-CON-17)
+NO_CONSENT_SESSION_ID = 205
 NO_SUMMARY_SESSION_ID = 202
 NOT_ENDED_SESSION_ID = 400
 RECORDED_SESSION_ID = 410
@@ -5430,6 +5478,45 @@ SESSION_EXAMPLE = {
     "startedAt": None,
     "endedAt": None,
     "chatRefId": "session-55-chat",
+}
+
+# 양쪽이 동의하고 들어간 세션. 기본 흐름이다.
+SESSION_PARTICIPATIONS_EXAMPLE = [
+    {
+        "userId": 12,
+        "consentedAt": "2026-08-29T13:55:00+09:00",
+        "joinedAt": "2026-08-29T14:00:00+09:00",
+    },
+    {
+        "userId": 30,
+        "consentedAt": "2026-08-29T13:58:00+09:00",
+        "joinedAt": "2026-08-29T14:00:00+09:00",
+    },
+]
+
+# 나만 동의하고 상대를 기다리는 중. 들어간 시각이 아직 없다. (R-CON-13)
+SESSION_PARTICIPATIONS_PENDING_EXAMPLE = [
+    {
+        "userId": 12,
+        "consentedAt": "2026-08-29T13:55:00+09:00",
+        "joinedAt": None,
+    },
+]
+
+# 중계 서버를 둔 환경의 응답. 자격은 사람마다 다르고 시한부다. (R-CON-19)
+ICE_SERVERS_EXAMPLE = {
+    "iceServers": [
+        {"urls": ["stun:turn.komit.site:3478"]},
+        {
+            "urls": [
+                "turn:turn.komit.site:3478?transport=udp",
+                "turn:turn.komit.site:3478?transport=tcp",
+            ],
+            "username": "1790238175:12",
+            "credential": "8mCPiF2R1qkHrDbY0dzXqA1sZ0w=",
+        },
+    ],
+    "expiresAt": "2026-08-29T16:00:00+09:00",
 }
 
 CONSULTING_CONTRACT_EXAMPLE = {
@@ -5897,6 +5984,101 @@ def get_consulting_session(
     # 물어본 식별자를 그대로 돌려준다. 화면은 이 값으로 입장·종료를 부르므로, 고정값을
     # 주면 203 같은 재현용 식별자로 들어와도 55의 흐름이 나와 재현이 되지 않는다.
     return ConsultingSessionResponse(**{**SESSION_EXAMPLE, "sessionId": sessionId})
+
+
+@router.get(
+    "/consulting-sessions/{sessionId}/participations",
+    response_model=list[SessionParticipationResponse],
+    tags=[AREA4_TAG],
+    responses={
+        200: {
+            "content": {
+                "application/json": {"example": SESSION_PARTICIPATIONS_EXAMPLE}
+            }
+        },
+        **SESSION_ERRORS,
+    },
+    summary="세션 참가자 기록",
+    description=(
+        "**화면 — 세션 입장 안내**\n\n"
+        "이 세션에 동의한 사람들의 기록을 돌려준다. **목록에 있다는 것이 곧 동의했다는 "
+        "뜻이다.** (R-CON-17)\n\n"
+        "화면은 이것으로 자기가 이미 동의했는지 가린다. 없으면 입장 안내를 보여 주고, "
+        "있으면 곧장 세션으로 보낸다. 통화 중에 새로고침해도 안내부터 다시 묻지 않는 "
+        "근거가 이 목록이다.\n\n"
+        "상대의 기록도 함께 준다. 「상대방은 이미 동의했습니다」를 안내에 적으려면 "
+        "필요하다. (R-CON-13)\n\n"
+        "- **200**: 받았을 때. `205`는 빈 목록, `203`은 나 하나만 돌아온다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **404 / SESSION_NOT_FOUND**: `sessionId`가 404일 때\n"
+        "- **500 / INTERNAL_ERROR**: 기록을 읽지 못했을 때"
+    ),
+)
+def get_session_participations(
+    sessionId: Annotated[
+        int,
+        Path(
+            description=(
+                "컨설팅 세션 식별자. 404는 없음, 205는 아무도 동의하지 않음, "
+                "203은 나만 동의함 재현용 예약값이다."
+            ),
+            examples=[SESSION_ID],
+        ),
+    ],
+) -> list[SessionParticipationResponse] | JSONResponse:
+    if sessionId == NOT_FOUND_SESSION_ID:
+        return _error_response(404, SESSION_NOT_FOUND)
+    if sessionId == NO_CONSENT_SESSION_ID:
+        return []
+    if sessionId == PENDING_CONSENT_SESSION_ID:
+        return [
+            SessionParticipationResponse(**record)
+            for record in SESSION_PARTICIPATIONS_PENDING_EXAMPLE
+        ]
+    return [
+        SessionParticipationResponse(**record)
+        for record in SESSION_PARTICIPATIONS_EXAMPLE
+    ]
+
+
+@router.get(
+    "/consulting-sessions/{sessionId}/ice-servers",
+    response_model=IceServersResponse,
+    tags=[AREA4_TAG],
+    responses={
+        200: {"content": {"application/json": {"example": ICE_SERVERS_EXAMPLE}}},
+        **SESSION_ERRORS,
+    },
+    summary="통화에 쓸 주소와 자격",
+    description=(
+        "**화면 — 세션 통화**\n\n"
+        "브라우저가 상대와 연결할 때 쓰는 주소와 자격을 돌려준다. 그대로 "
+        "`RTCPeerConnection`에 넣는다.\n\n"
+        "**중계 자격은 한 통화보다 오래 산다.** (R-CON-19) 통화 도중에 죽으면 중계를 "
+        "다시 얻을 길이 없어서다. 화면은 통화를 열 때 한 번 부르면 된다.\n\n"
+        "자격은 발급한 뒤 취소할 수 없다. 그래서 세션 당사자에게만 준다 — 우리 서버로 "
+        "남의 트래픽을 흘릴 수 있는 열쇠다.\n\n"
+        "**이 값들은 어디에도 저장하지 않는다.** 공유 비밀로 계산해 발급하고 중계 서버가 "
+        "같은 계산으로 맞춰 보므로 ERD에 자리가 없다. 속성 이름은 브라우저 WebRTC 규격이 "
+        "정한 것이라 바꿀 수 없다. (`mock/AGENTS.md` — 발급만 하고 저장하지 않는 자격)\n\n"
+        "- **200**: 받았을 때\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **404 / SESSION_NOT_FOUND**: `sessionId`가 404일 때\n"
+        "- **500 / INTERNAL_ERROR**: 자격을 만들지 못했을 때"
+    ),
+)
+def get_session_ice_servers(
+    sessionId: Annotated[
+        int,
+        Path(
+            description="컨설팅 세션 식별자. 404는 없음 재현용 예약값이다.",
+            examples=[SESSION_ID],
+        ),
+    ],
+) -> IceServersResponse | JSONResponse:
+    if sessionId == NOT_FOUND_SESSION_ID:
+        return _error_response(404, SESSION_NOT_FOUND)
+    return IceServersResponse(**ICE_SERVERS_EXAMPLE)
 
 
 @router.post(

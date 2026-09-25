@@ -2,6 +2,9 @@
 # 원본은 ai/komit-scan/skills/ 에 있다. 쓰려면 그것을 여기로 복사한다.
 .claude/skills/
 
+# Claude Code 가 개발 서버를 띄우는 설정. 쓰는 사람 기계에만 있으면 된다.
+.claude/launch.json
+
 # 로컬 compose 개인 값
 deploy/local/.env
 fe/.env

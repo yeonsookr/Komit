@@ -1,9 +1,12 @@
 package com.a501.service.domain.consulting.service;
 
 import com.a501.service.common.exception.BusinessException;
+import com.a501.service.common.realtime.turn.TurnCredentialIssuer;
+import com.a501.service.common.realtime.turn.dto.IceServersResponse;
 import com.a501.service.domain.consulting.ConsultingEntryPolicy;
 import com.a501.service.domain.consulting.ConsultingErrorCode;
 import com.a501.service.domain.consulting.dto.response.ConsultingSessionResponse;
+import com.a501.service.domain.consulting.dto.response.SessionParticipationResponse;
 import com.a501.service.domain.consulting.dto.response.SessionRecordingResponse;
 import com.a501.service.domain.consulting.entity.ConsultingSession;
 import com.a501.service.domain.consulting.entity.ParticipationRecord;
@@ -54,6 +57,7 @@ public class ConsultingSessionService {
     private final ContractQueryService contractQueryService;
     private final FileLookupService fileLookupService;
     private final ApplicationEventPublisher events;
+    private final TurnCredentialIssuer turnCredentialIssuer;
     private final Clock clock;
 
     @Autowired
@@ -63,7 +67,8 @@ public class ConsultingSessionService {
             ReservationRepository reservationRepository,
             ContractQueryService contractQueryService,
             FileLookupService fileLookupService,
-            ApplicationEventPublisher events) {
+            ApplicationEventPublisher events,
+            TurnCredentialIssuer turnCredentialIssuer) {
         this(
                 sessionRepository,
                 participationRepository,
@@ -71,6 +76,7 @@ public class ConsultingSessionService {
                 contractQueryService,
                 fileLookupService,
                 events,
+                turnCredentialIssuer,
                 Clock.systemUTC());
     }
 
@@ -88,6 +94,34 @@ public class ConsultingSessionService {
         ContractParties parties = findParties(session, userId);
         return ConsultingSessionResponse.of(
                 session, parties.contractId(), findReservation(sessionId));
+    }
+
+    /**
+     * 이 세션에 동의한 사람들의 기록.
+     *
+     * <p><b>목록에 있다는 것이 곧 동의했다는 뜻입니다</b> (`R-CON-17`). 화면은 이것으로 자기가
+     * 이미 동의했는지 가려, 안내를 다시 물을지 곧장 세션으로 보낼지 정합니다. 통화 중에
+     * 새로고침해도 안내부터 다시 묻지 않으려면 이 판단이 서버 쪽 사실에 붙어 있어야 합니다.
+     *
+     * <p>상대의 기록도 함께 줍니다. 같은 세션의 두 사람이고, 「상대는 이미 동의했다」를 안내에
+     * 적으려면 필요합니다 (`R-CON-13`).
+     *
+     * <p><b>끝난 세션에도 줍니다.</b> 지난 세션에 누가 언제 동의했는지는 그 뒤에도 볼 수 있어야
+     * 하고, 막아서 얻는 것이 없습니다.
+     *
+     * @param userId 인증된 사용자
+     * @param sessionId 세션 id
+     * @return 동의한 사람들의 기록. 아직 아무도 없으면 빈 목록
+     * @throws BusinessException {@link ConsultingErrorCode#SESSION_NOT_FOUND} — 없거나 지워진
+     *     세션, 또는 요청자가 당사자가 아닌 경우
+     */
+    public List<SessionParticipationResponse> participations(Integer userId, Integer sessionId) {
+        findParties(findSession(sessionId), userId);
+        return participationRepository
+                .findAllByConsultingSessionIdAndDeletedFalse(sessionId)
+                .stream()
+                .map(SessionParticipationResponse::from)
+                .toList();
     }
 
     /**
@@ -235,6 +269,24 @@ public class ConsultingSessionService {
     private ConsultingSessionResponse response(
             ConsultingSession session, ContractParties parties, Reservation reservation) {
         return ConsultingSessionResponse.of(session, parties.contractId(), reservation);
+    }
+
+    /**
+     * 이 세션의 통화가 쓸 ICE 서버 목록을 돌려줍니다. (`R-CON-19`)
+     *
+     * <p><b>세션 당사자에게만 줍니다.</b> 중계 자격은 우리 서버로 남의 트래픽을 흘릴 수 있는
+     * 열쇠라, 로그인만 했다고 주면 세션에 들어오지도 않은 사람이 중계기를 씁니다.
+     *
+     * <p><b>끝난 세션에도 줍니다.</b> 종료 직후 정리하는 동안 화면이 한 번 더 부를 수 있고,
+     * 거절해서 얻는 것이 없습니다 — 같은 사람이 통화 중에 이미 받아 갔고 그 자격은 아직
+     * 살아 있습니다 (`R-CON-19`).
+     *
+     * @throws BusinessException {@link ConsultingErrorCode#SESSION_NOT_FOUND} — 없거나 지워진
+     *     세션, 또는 요청자가 당사자가 아닌 경우
+     */
+    public IceServersResponse iceServers(Integer userId, Integer sessionId) {
+        findParties(findSession(sessionId), userId);
+        return turnCredentialIssuer.issue(userId);
     }
 
     private ConsultingSession findSessionForEntry(Integer sessionId) {

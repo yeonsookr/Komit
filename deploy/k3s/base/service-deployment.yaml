@@ -57,6 +57,12 @@ spec:
             # MinIO/S3 호환 저장소 자격. 저장소 배포와 Service 연결 주소는 환경별 설정이 소유합니다.
             - secretRef:
                 name: service-storage
+            # 통화 중계 공유 비밀 (R-CON-19). 중계 서버를 두지 않은 환경에는 없으므로
+            # optional 입니다 — 로컬 k3s 가 그렇습니다. 주소(TURN_URLS)가 있는데 비밀이
+            # 없으면 service 가 기동하면서 죽습니다. 조용히 중계 없이 뜨지 않습니다.
+            - secretRef:
+                name: service-turn
+                optional: true
           env:
             # 일반 트랜잭션은 Primary(-rw), readOnly 트랜잭션은 Standby(-ro)로 접속합니다.
             - name: DB_URL
