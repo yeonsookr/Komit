@@ -7,7 +7,8 @@
 export type ContractType = "CONSULTING" | "DEVELOPMENT";
 
 /** 계약서 진행. 양쪽이 서명해야 SIGNED 입니다 (R-CON-01). */
-export type ContractStatus = "NEGOTIATING" | "AGREED" | "SIGNED";
+/** `CANCELLED` 는 개발자가 서명하기 전에 의뢰인이 취소한 계약입니다. 되돌리지 않습니다 (R-CON-21). */
+export type ContractStatus = "NEGOTIATING" | "AGREED" | "SIGNED" | "CANCELLED";
 
 /**
  * 개발 진행. PRE_SIGNED 는 계약서를 주고받으며 조정하는 가계약 상태이고,

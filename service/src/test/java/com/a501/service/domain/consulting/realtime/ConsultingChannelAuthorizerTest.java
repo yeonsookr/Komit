@@ -1,5 +1,6 @@
 package com.a501.service.domain.consulting.realtime;
 
+import com.a501.service.domain.contract.service.ContractQueryService;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -43,12 +44,14 @@ class ConsultingChannelAuthorizerTest {
     private final ParticipationRecordRepository participationRepository =
             mock(ParticipationRecordRepository.class);
     private final ReservationRepository reservationRepository = mock(ReservationRepository.class);
+    private final ContractQueryService contractQueryService = mock(ContractQueryService.class);
 
     private final ConsultingChannelAuthorizer authorizer =
             new ConsultingChannelAuthorizer(
                     sessionRepository,
                     participationRepository,
                     reservationRepository,
+                    contractQueryService,
                     Clock.fixed(NOW, ZoneOffset.UTC));
 
     @Test
@@ -63,6 +66,20 @@ class ConsultingChannelAuthorizerTest {
         givenReservation(SCHEDULED_AT);
 
         assertThatCode(() -> authorizer.authorize(CLIENT_ID, "42")).doesNotThrowAnyException();
+    }
+
+    /** R-CON-21: 취소된 계약의 세션에는 통화 채널을 열지 않는다. 입장 API 와 같은 판정이다. */
+    @Test
+    void 취소된_계약의_세션은_막는다() {
+        givenSession(null);
+        givenParticipants(CLIENT_ID, DEVELOPER_ID);
+        givenReservation(SCHEDULED_AT);
+        when(contractQueryService.isCancelledByConsultingAgreementId(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(true);
+
+        assertThatThrownBy(() -> authorizer.authorize(CLIENT_ID, "42"))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ConsultingErrorCode.SESSION_CANCELLED);
     }
 
     @Test

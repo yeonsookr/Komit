@@ -59,6 +59,13 @@ app:
     # R-CON-19: 발급한 자격은 취소할 수 없어 수명이 곧 악용 가능한 시간입니다. 그래도
     # 한 통화보다는 길게 둡니다 — 통화 도중에 죽으면 중계를 다시 얻을 길이 없습니다.
     credential-ttl: 2h
+  settlement:
+    # 컨설팅 자동 지급(R-CON-10)을 몇 분마다 볼지. 이의 제기 기간이 일 단위라 몇 분 늦어도 됩니다.
+    payout-initial-delay: 1m
+    payout-interval: 5m
+    # 한 계약의 지급을 한 서버만 하게 잡는 잠금의 수명. Escrow 호출 세 번(목록·상세·지급)의
+    # 읽기 한도 합보다 길어야, 잡은 서버가 일하는 도중에 다른 서버가 끼어들지 않습니다.
+    payout-lock-ttl: 3m
   realtime:
     # R-RT-01: 티켓을 받아 WebSocket 을 여는 사이에만 쓰며 한 번 쓰면 바로 지웁니다.
     ticket-ttl: 30s

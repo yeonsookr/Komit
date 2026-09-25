@@ -60,6 +60,8 @@ export function sessionElapsedMinutes(session: ConsultingSession): number | null
  */
 export function confirmedSession(contract: Contract | null): ConsultingSession | null {
   if (contract === null || contract.contractType !== "CONSULTING") return null;
+  // 취소된 계약의 세션에는 들어갈 수 없습니다. 배너를 띄우지 않습니다 (R-CON-21).
+  if (contract.status === "CANCELLED") return null;
 
   const session = contract.consulting?.sessions[0] ?? null;
   return session?.reservation.status === "CONFIRMED" ? session : null;

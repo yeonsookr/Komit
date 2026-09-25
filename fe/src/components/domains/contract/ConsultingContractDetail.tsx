@@ -1,11 +1,20 @@
 import Link from "next/link";
 import { buttonClass } from "@/components/buttons/buttonStyles";
 import { Card, CardHeader, KeyValueRow, Money } from "@/components/common";
-import { hasSigned, isSignedByBoth } from "@/lib/contract";
+import { Callout } from "@/components/feedback";
+import { canCancel, hasSigned, isCancelled, isSignedByBoth } from "@/lib/contract";
 import { formatDateTimeLabel, formatSessionSchedule } from "@/lib/format";
 import { ROUTES } from "@/lib/routes";
 import type { Contract } from "@/types/contract";
+import { CancelContractButton } from "./CancelContractButton";
 import { SignContractButton } from "./SignContractButton";
+
+/** 계약서 제목 아래 한 줄. 취소가 서명보다 앞섭니다 — 취소된 계약은 성립하지 않습니다. */
+function statusLine(cancelled: boolean, signed: boolean): string {
+  if (cancelled) return "의뢰인이 계약을 취소했습니다.";
+  if (signed) return "양쪽이 서명해 계약이 성립했습니다.";
+  return "협의 중 · 아직 서명하지 않았습니다";
+}
 
 export interface ConsultingContractDetailProps {
   roomId: number;
@@ -27,6 +36,9 @@ export interface ConsultingContractDetailProps {
  *
  * 양쪽이 서명해야 성립하고 그 뒤에는 고칠 수 없습니다 (R-CON-01·R-CON-02).
  * 의뢰인은 서명하면서 세션 대금을 냅니다 (R-CON-07).
+ *
+ * 개발자가 서명하기 전이면 의뢰인이 계약을 취소할 수 있고, 취소된 계약은 서명·세션을 받지
+ * 않습니다 (R-CON-21). 취소된 계약서는 내용만 보여주고 버튼을 모두 내립니다.
  */
 export function ConsultingContractDetail({
   roomId,
@@ -40,6 +52,7 @@ export function ConsultingContractDetail({
   if (consulting === null) return null;
 
   const signed = isSignedByBoth(contract);
+  const cancelled = isCancelled(contract);
   const mine = hasSigned(contract, myUserId);
   // 지금은 계약 하나에 세션 하나입니다. 목 명세가 배열로 두어 나중에 늘릴 여지만 남겼습니다.
   const session = consulting.sessions[0] ?? null;
@@ -59,11 +72,17 @@ export function ConsultingContractDetail({
       <header>
         <h2 className="text-xl font-bold text-fg">계약서</h2>
         <p className="mt-1 text-[13px] text-fg-subtle">
-          {signed
-            ? "양쪽이 서명해 계약이 성립했습니다."
-            : "협의 중 · 아직 서명하지 않았습니다"}
+          {statusLine(cancelled, signed)}
         </p>
       </header>
+
+      {cancelled && (
+        <Callout tone="neutral" title="취소된 계약입니다." className="mt-6">
+          {received
+            ? "의뢰인이 계약을 취소해 서명할 수 없고, 이 계약의 세션도 열리지 않습니다."
+            : "이 계약의 세션은 열리지 않습니다. 예치한 금액은 가입할 때 발급한 계좌로 돌아갑니다."}
+        </Callout>
+      )}
 
       <div className="mt-6">
         <CardHeader
@@ -129,7 +148,7 @@ export function ConsultingContractDetail({
         </div>
       )}
 
-      {!signed && (
+      {!signed && !cancelled && (
         <div className="mt-10">
           <p className="text-[13px] text-fg-subtle">
             서명하면 계약서는 더 이상 수정할 수 없습니다.
@@ -142,6 +161,13 @@ export function ConsultingContractDetail({
               >
                 수정하기
               </Link>
+            )}
+            {canCancel(contract, received) && (
+              <CancelContractButton
+                contractId={contract.contractId}
+                counterpartName={counterpartName}
+                deposited={mine}
+              />
             )}
             {mine ? (
               <p className="self-center text-[13px] text-fg-subtle">

@@ -7,8 +7,9 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.a501.service.domain.contract.entity.ConsultingAgreement;
+import com.a501.service.domain.contract.dto.ConsultingPayoutTarget;
 import com.a501.service.domain.contract.dto.ContractProgressView;
+import com.a501.service.domain.contract.entity.ConsultingAgreement;
 import com.a501.service.domain.contract.entity.Contract;
 import com.a501.service.domain.contract.entity.DevelopmentContract;
 import com.a501.service.domain.contract.repository.ConsultingAgreementRepository;
@@ -93,6 +94,35 @@ class ContractQueryServiceTest {
         when(roomQueryService.findParties(ROOM_ID)).thenReturn(Optional.empty());
 
         assertThat(service.findPartiesByConsultingAgreementId(AGREEMENT_ID)).isEmpty();
+    }
+
+    @Test
+    void 지급_대상은_양측이_서명한_컨설팅_계약이다() {
+        ConsultingAgreement agreement = ConsultingAgreement.of(CONTRACT_ID, "결제 오류 상담", 50_000);
+        ReflectionTestUtils.setField(agreement, "id", AGREEMENT_ID);
+        when(agreementRepository.findByStatusNotInAndDeletedFalse(List.of("COMPLETED", "TERMINATED")))
+                .thenReturn(List.of(agreement));
+        Contract contract = Contract.of(ROOM_ID, Contract.ContractType.CONSULTING);
+        ReflectionTestUtils.setField(contract, "id", CONTRACT_ID);
+        contract.sign(true, 1, null);
+        contract.sign(false, 2, "계약 문구");
+        when(contractRepository.findAllById(List.of(CONTRACT_ID))).thenReturn(List.of(contract));
+
+        assertThat(service.findUnpaidConsultingContracts()).containsExactly(
+                new ConsultingPayoutTarget(CONTRACT_ID, AGREEMENT_ID, 50_000, CLIENT_ID, DEVELOPER_ID));
+    }
+
+    @Test
+    void 한쪽만_서명한_계약은_지급_대상이_아니다() {
+        ConsultingAgreement agreement = ConsultingAgreement.of(CONTRACT_ID, "결제 오류 상담", 50_000);
+        when(agreementRepository.findByStatusNotInAndDeletedFalse(List.of("COMPLETED", "TERMINATED")))
+                .thenReturn(List.of(agreement));
+        Contract contract = Contract.of(ROOM_ID, Contract.ContractType.CONSULTING);
+        ReflectionTestUtils.setField(contract, "id", CONTRACT_ID);
+        contract.sign(true, 1, null);
+        when(contractRepository.findAllById(List.of(CONTRACT_ID))).thenReturn(List.of(contract));
+
+        assertThat(service.findUnpaidConsultingContracts()).isEmpty();
     }
 
     /** R-ACC-05: 협의 중인 계약도 마치지 않은 것이고, 상담 합의·개발 계약이 완료·파기돼야 마친 것이다. */

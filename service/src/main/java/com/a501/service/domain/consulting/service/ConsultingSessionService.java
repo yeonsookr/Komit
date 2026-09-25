@@ -148,6 +148,10 @@ public class ConsultingSessionService {
         // 못 보고 대기에 머뭅니다.
         ConsultingSession session = findSessionForEntry(sessionId);
         ContractParties parties = findParties(session, userId);
+        // R-CON-21: 취소된 계약의 세션은 열지 않는다. 동의도 남기지 않는다.
+        if (contractQueryService.isCancelledByConsultingAgreementId(session.getConsultingAgreementId())) {
+            throw new BusinessException(ConsultingErrorCode.SESSION_CANCELLED);
+        }
         Reservation reservation = findReservation(sessionId);
 
         LocalDateTime now = LocalDateTime.now(clock);

@@ -73,18 +73,23 @@ public class ContractSignatureService {
      * 서명판에 그린 그림으로 서명한다.
      *
      * @throws BusinessException {@link ContractErrorCode#CONTRACT_NOT_FOUND} 없거나 내 계약이 아닐 때,
+     *                           {@link ContractErrorCode#CONTRACT_CANCELLED} 의뢰인이 취소한 계약일 때,
      *                           {@link ContractErrorCode#ALREADY_SIGNED_BY_ME} 이미 내가 서명했을 때
      */
     @Transactional
     public ContractResponse sign(Integer contractId, Integer userId, SignContractRequest request) {
+        // 취소와 겹치지 않도록 행을 잠근다. 취소가 먼저 끝났으면 여기서 그 결과를 본다. (R-CON-21)
         Contract contract = contractRepository
-                .findByIdAndDeletedFalse(contractId)
+                .findWithLockByIdAndDeletedFalse(contractId)
                 .orElseThrow(() -> new BusinessException(ContractErrorCode.CONTRACT_NOT_FOUND));
         // 당사자가 아니면 계약이 있다는 사실도 알리지 않는다. (BACKEND_CONVENTIONS 12.1)
         RoomParties parties = roomQueryService
                 .findParties(contract.getRoomId())
                 .filter(found -> found.includes(userId))
                 .orElseThrow(() -> new BusinessException(ContractErrorCode.CONTRACT_NOT_FOUND));
+        if (contract.isCancelled()) {
+            throw new BusinessException(ContractErrorCode.CONTRACT_CANCELLED);
+        }
 
         boolean client = Objects.equals(parties.clientId(), userId);
         if (contract.isSignedBy(client)) {
