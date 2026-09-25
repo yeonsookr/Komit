@@ -95,7 +95,8 @@ class ConsultingContractWriteServiceTest {
 
         contract = Contract.of(ROOM_ID, Contract.ContractType.CONSULTING);
         ReflectionTestUtils.setField(contract, "id", CONTRACT_ID);
-        agreement = ConsultingAgreement.of(CONTRACT_ID, "회원탈퇴 경로를 봅니다", 50_000);
+        agreement = ConsultingAgreement.of(
+                CONTRACT_ID, "회원탈퇴 경로를 봅니다", 50_000, "관리자 화면 접근 경로를 확인합니다");
         ReflectionTestUtils.setField(agreement, "id", 7);
         session = ConsultingSession.of(7, 50_000, 30);
         ReflectionTestUtils.setField(session, "id", 31);
@@ -121,10 +122,22 @@ class ConsultingContractWriteServiceTest {
     @Test
     @DisplayName("개발자가 쓰면 계약·합의·세션·예약이 함께 생긴다")
     void writesFourRows() {
-        service.write(ROOM_ID, DEVELOPER_USER_ID, request(FUTURE, 50_000));
+        service.write(
+                ROOM_ID,
+                DEVELOPER_USER_ID,
+                new WriteConsultingContractRequest(
+                        "회원탈퇴 경로를 봅니다",
+                        FUTURE,
+                        30,
+                        50_000,
+                        "탈퇴 데이터 보관 방법을 확인합니다",
+                        null));
 
         verify(contractRepository).save(any(Contract.class));
-        verify(consultingAgreementRepository).save(any(ConsultingAgreement.class));
+        ArgumentCaptor<ConsultingAgreement> agreementCaptor =
+                ArgumentCaptor.forClass(ConsultingAgreement.class);
+        verify(consultingAgreementRepository).save(agreementCaptor.capture());
+        assertThat(agreementCaptor.getValue().getDetail()).isEqualTo("탈퇴 데이터 보관 방법을 확인합니다");
         verify(consultingSessionRepository).save(any(ConsultingSession.class));
         verify(reservationRepository).save(any(Reservation.class));
     }
@@ -202,8 +215,28 @@ class ConsultingContractWriteServiceTest {
         assertThat(session.getPrice()).isEqualTo(70_000);
         // 비워 둔 칸은 그대로 둔다.
         assertThat(agreement.getTopic()).isEqualTo("회원탈퇴 경로를 봅니다");
+        assertThat(agreement.getDetail()).isEqualTo("관리자 화면 접근 경로를 확인합니다");
         assertThat(session.getDurationMinutes()).isEqualTo(30);
         assertThat(reservation.getScheduledAt()).isEqualTo(FUTURE.toLocalDateTime());
+    }
+
+    @Test
+    @DisplayName("상세 설명을 보내면 바꾸고 보내지 않으면 유지한다")
+    void amendsDetailOnlyWhenGiven() {
+        service.amend(
+                CONTRACT_ID,
+                CLIENT_ID,
+                new AmendConsultingContractRequest(
+                        null, null, null, null, "결제 실패 재현 방법도 확인합니다", null));
+
+        assertThat(agreement.getDetail()).isEqualTo("결제 실패 재현 방법도 확인합니다");
+
+        service.amend(
+                CONTRACT_ID,
+                CLIENT_ID,
+                new AmendConsultingContractRequest(null, null, null, 70_000, null, null));
+
+        assertThat(agreement.getDetail()).isEqualTo("결제 실패 재현 방법도 확인합니다");
     }
 
     @Test

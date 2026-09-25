@@ -1,6 +1,11 @@
+"use client";
+
 import Link from "next/link";
+import * as React from "react";
+import { Button } from "@/components/buttons";
 import { buttonClass } from "@/components/buttons/buttonStyles";
 import { ChatSessionBanner } from "@/components/domains/chat";
+import { SessionEntryDialog } from "./SessionEntryDialog";
 import { formatSessionSchedule } from "@/lib/format";
 import { ROUTES } from "@/lib/routes";
 import {
@@ -35,9 +40,13 @@ export interface SessionBannerProps {
  * 때는 서버가 그릴 때 정합니다. 화면을 열어 둔 채 시각이 지나면 바뀌지 않으므로,
  * 들어갈 수 있게 되었는데 버튼이 없으면 새로고침하면 됩니다. 1초마다 세어 다시 그리는
  * 것은 이 값이 분 단위로 바뀌는 데 비해 값이 맞지 않습니다.
+ *
+ * **입장은 바로 가지 않고 동의를 먼저 받습니다** (`R-CON-17`). 그 팝업이
+ * `SessionEntryDialog` 입니다.
  */
 export function SessionBanner({ session, phase, roomId }: Readonly<SessionBannerProps>) {
   const schedule = formatSessionSchedule(session.reservation.scheduledAt);
+  const [asking, setAsking] = React.useState(false);
 
   if (phase === "ENDED") {
     const elapsed = sessionElapsedMinutes(session);
@@ -66,12 +75,14 @@ export function SessionBanner({ session, phase, roomId }: Readonly<SessionBanner
       }
       action={
         phase === "OPEN" ? (
-          <Link
-            href={ROUTES.session(session.sessionId)}
-            className={buttonClass({ variant: "primary" })}
-          >
-            입장
-          </Link>
+          <>
+            <Button onClick={() => setAsking(true)}>입장</Button>
+            <SessionEntryDialog
+              open={asking}
+              onClose={() => setAsking(false)}
+              sessionId={session.sessionId}
+            />
+          </>
         ) : undefined
       }
     />

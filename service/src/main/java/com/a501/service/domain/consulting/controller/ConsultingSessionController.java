@@ -1,13 +1,16 @@
 package com.a501.service.domain.consulting.controller;
 
+import com.a501.service.common.realtime.turn.dto.IceServersResponse;
 import com.a501.service.common.security.AuthenticatedUser;
 import com.a501.service.domain.consulting.dto.request.CreateSessionRecordingRequest;
 import com.a501.service.domain.consulting.dto.response.ConsultingSessionResponse;
+import com.a501.service.domain.consulting.dto.response.SessionParticipationResponse;
 import com.a501.service.domain.consulting.dto.response.SessionRecordingResponse;
 import com.a501.service.domain.consulting.service.ConsultingSessionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -41,6 +44,29 @@ public class ConsultingSessionController {
     ConsultingSessionResponse getSession(
             @AuthenticationPrincipal AuthenticatedUser user, @PathVariable Integer sessionId) {
         return sessionService.getSession(user.userId(), sessionId);
+    }
+
+    @Operation(
+            summary = "세션 참가자 기록",
+            description =
+                    """
+                    이 세션에 동의한 사람들의 기록을 돌려준다.
+
+                    **목록에 있다는 것이 곧 동의했다는 뜻이다 (R-CON-17).** 화면은 이것으로 \
+                    자기가 이미 동의했는지 가린다 — 없으면 입장 안내를 보여 주고, 있으면 \
+                    곧장 세션으로 보낸다. 통화 중에 새로고침해도 안내부터 다시 묻지 않는 \
+                    근거가 이 목록이다.
+
+                    상대의 기록도 함께 준다. 같은 세션의 두 사람이고, 「상대는 이미 동의했다」를 \
+                    안내에 적으려면 필요하다 (R-CON-13).
+
+                    - 200: 받았을 때. 아직 아무도 동의하지 않았으면 빈 목록이다
+                    - 401 UNAUTHORIZED: 로그인하지 않았을 때
+                    - 404 SESSION_NOT_FOUND: 없는 세션이거나 요청자가 그 세션의 당사자가 아닐 때""")
+    @GetMapping("/{sessionId}/participations")
+    List<SessionParticipationResponse> participations(
+            @AuthenticationPrincipal AuthenticatedUser user, @PathVariable Integer sessionId) {
+        return sessionService.participations(user.userId(), sessionId);
     }
 
     @Operation(
@@ -90,6 +116,32 @@ public class ConsultingSessionController {
             @PathVariable Integer sessionId,
             @Valid @RequestBody CreateSessionRecordingRequest request) {
         return sessionService.attachRecording(user.userId(), sessionId, request.fileId());
+    }
+
+    @Operation(
+            summary = "통화가 쓸 ICE 서버 받기",
+            description =
+                    """
+                    브라우저가 상대와 연결할 때 쓰는 주소와 자격을 돌려준다. 그대로 \
+                    RTCPeerConnection 에 넣는다.
+
+                    **중계 자격은 한 통화보다 오래 산다 (R-CON-19).** 통화 도중에 죽으면 \
+                    중계를 다시 얻을 길이 없어서다. 화면은 통화를 열 때 한 번 부르면 된다. \
+                    expiresAt 은 그 전제가 깨졌는지 보라고 함께 준다.
+
+                    자격은 발급한 뒤 취소할 수 없다. 그래서 세션 당사자에게만 준다 — 우리 \
+                    서버로 남의 트래픽을 흘릴 수 있는 열쇠다.
+
+                    중계 서버를 두지 않은 환경에서는 STUN 만 돌아오고 expiresAt 이 없다. \
+                    통화는 직접 연결로 붙는다.
+
+                    - 200: 받았을 때
+                    - 401 UNAUTHORIZED: 로그인하지 않았을 때
+                    - 404 SESSION_NOT_FOUND: 없는 세션이거나 요청자가 그 세션의 당사자가 아닐 때""")
+    @GetMapping("/{sessionId}/ice-servers")
+    IceServersResponse iceServers(
+            @AuthenticationPrincipal AuthenticatedUser user, @PathVariable Integer sessionId) {
+        return sessionService.iceServers(user.userId(), sessionId);
     }
 
     @Operation(

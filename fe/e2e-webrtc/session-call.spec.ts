@@ -3,8 +3,13 @@ import { expect, test, type Browser, type BrowserContext, type Page } from '@pla
 /**
  * 두 브라우저가 실제로 통화를 붙이는지 봅니다.
  *
- * **미리 올려 두어야 하는 것** — PostgreSQL, Redis, Spring(8080), FE 개발 서버(3000).
+ * **미리 올려 두어야 하는 것** — PostgreSQL, Redis, Spring(8080), FE 개발 서버(3000),
+ * 그리고 **coturn(3478)**. 이 시험은 직접 연결을 막고 중계로만 붙이므로 중계 서버가 없으면
+ * 통화가 아예 붙지 않습니다. `deploy/local/docker-compose.yml` 의 `coturn` 입니다.
+ *
  * 그리고 아직 아무도 동의하지 않은 세션 하나와 그 세션 당사자 두 사람의 토큰입니다.
+ *
+ * 세션은 **아직 아무도 동의하지 않은** 것이어야 합니다. 시험이 방의 입장 안내부터 거칩니다.
  *
  *   E2E_SESSION_ID=6003
  *   E2E_TOKEN_CLIENT=<의뢰인 토큰>
@@ -33,6 +38,10 @@ function trace(page: Page, who: string): void {
   if (!TRACE) return;
 
   page.on('pageerror', (error) => console.log(`[${who}] 화면 오류 ${error.message}`));
+  // 어느 길로 붙었는지. 중계를 강제했으므로 relay 가 아니면 강제가 먹지 않은 것이다.
+  page.on('console', (message) => {
+    if (message.text().startsWith('[call]')) console.log(`[${who}] ${message.text()}`);
+  });
   page.on('response', (response) => {
     if (response.url().includes('/api/')) {
       console.log(`[${who}] ${response.status()} ${response.url().replace(BASE_URL, '')}`);
@@ -51,17 +60,56 @@ function trace(page: Page, who: string): void {
   });
 }
 
+/**
+ * 직접 연결을 막아 **중계로만** 붙게 합니다.
+ *
+ * **이것이 없으면 중계 경로를 아무도 시험하지 않습니다.** 두 브라우저가 같은 기계에 있어
+ * 후보를 다 만들면 언제나 host 로 붙고, coturn 이 꺼져 있어도 전부 통과합니다. 중계는
+ * 평소에 안 밟는 길이라 시험이 없으면 썩습니다.
+ *
+ * 앱 코드는 건드리지 않습니다. 시험만 쓰는 값을 화면에 심으면 운영에서도 돌 수 있습니다.
+ */
+async function forceRelay(context: BrowserContext): Promise<void> {
+  await context.addInitScript(() => {
+    const Native = window.RTCPeerConnection;
+    class RelayOnly extends Native {
+      constructor(config?: RTCConfiguration) {
+        super({ ...config, iceTransportPolicy: 'relay' });
+      }
+    }
+    window.RTCPeerConnection = RelayOnly as unknown as typeof RTCPeerConnection;
+  });
+}
+
 /** 그 사람 몫의 브라우저 하나. 쿠키가 섞이지 않게 context 를 따로 씁니다. */
 async function openAs(browser: Browser, token: string, who: string) {
   const context: BrowserContext = await browser.newContext({
     permissions: ['camera', 'microphone'],
   });
+  await forceRelay(context);
   // 카카오를 거치지 않고 로그인한 상태로 만듭니다. 이 쿠키는 Next 서버가 읽습니다.
   await context.addCookies([{ name: ACCESS_TOKEN_COOKIE, value: token, url: BASE_URL }]);
 
   const page = await context.newPage();
   trace(page, who);
   return { context, page };
+}
+
+/**
+ * 방의 입장 안내를 거쳐 세션으로 들어갑니다.
+ *
+ * 세션 주소를 바로 열면, 아직 동의하지 않은 사람은 방으로 되돌아옵니다. 동의는 방에서만
+ * 받기 때문입니다 (`R-CON-17`). 이미 동의한 사람은 그대로 세션이 열리므로 안내를 건너뜁니다.
+ */
+async function enterSession(page: Page): Promise<void> {
+  await page.goto(`/sessions/${SESSION_ID}`);
+  if (page.url().includes(`/sessions/${SESSION_ID}`)) return;
+
+  await page.getByRole('button', { name: '입장' }).click();
+  const dialog = page.getByRole('dialog');
+  for (const box of await dialog.getByRole('checkbox').all()) await box.check();
+  await dialog.getByRole('button', { name: '입장' }).click();
+  await page.waitForURL(`**/sessions/${SESSION_ID}`, { timeout: CONNECT_TIMEOUT_MS });
 }
 
 /** 그 자리에 실제로 그림이 흐르는지. 크기가 잡히면 트랙이 오고 있다는 뜻입니다. */
@@ -91,7 +139,7 @@ test('먼저 동의한 사람은 미리보기만 보고, 둘 다 동의하면 �
   const developer = await openAs(browser, requiredToken('E2E_TOKEN_DEVELOPER'), '개발자');
 
   try {
-    await client.page.goto(`/sessions/${SESSION_ID}`);
+    await enterSession(client.page);
 
     await expect(client.page.getByText('상대방의 동의를 기다리고 있습니다')).toBeVisible({
       timeout: CONNECT_TIMEOUT_MS,
@@ -103,7 +151,7 @@ test('먼저 동의한 사람은 미리보기만 보고, 둘 다 동의하면 �
       .poll(() => hasMovingVideo(client.page, 0), { timeout: CONNECT_TIMEOUT_MS })
       .toBe(true);
 
-    await developer.page.goto(`/sessions/${SESSION_ID}`);
+    await enterSession(developer.page);
 
     // 기다리던 쪽 화면이 저절로 바뀐다. 되묻기가 아니라 서버 알림으로 안다.
     await expect(client.page.getByText('상대방의 동의를 기다리고 있습니다')).toBeHidden({
@@ -122,8 +170,8 @@ test('마이크와 카메라를 껐다 켜도 통화는 끊기지 않는다', as
   const developer = await openAs(browser, requiredToken('E2E_TOKEN_DEVELOPER'), '개발자');
 
   try {
-    await client.page.goto(`/sessions/${SESSION_ID}`);
-    await developer.page.goto(`/sessions/${SESSION_ID}`);
+    await enterSession(client.page);
+    await enterSession(developer.page);
     await expectTwoWayVideo([client.page, developer.page]);
 
     const mic = client.page.getByRole('button', { name: /마이크/ });
@@ -156,8 +204,8 @@ test('한쪽이 새로고침해도 다시 붙는다', async ({ browser }) => {
   const developer = await openAs(browser, requiredToken('E2E_TOKEN_DEVELOPER'), '개발자');
 
   try {
-    await client.page.goto(`/sessions/${SESSION_ID}`);
-    await developer.page.goto(`/sessions/${SESSION_ID}`);
+    await enterSession(client.page);
+    await enterSession(developer.page);
     await expectTwoWayVideo([client.page, developer.page]);
 
     // 새로고침하면 표도 소켓도 통화도 처음부터 다시 만든다.
@@ -213,8 +261,8 @@ test('한쪽이 끝내면 양쪽 녹음이 각자 올라간다', async ({ browse
   }
 
   try {
-    await client.page.goto(`/sessions/${SESSION_ID}`);
-    await developer.page.goto(`/sessions/${SESSION_ID}`);
+    await enterSession(client.page);
+    await enterSession(developer.page);
     await expectTwoWayVideo([client.page, developer.page]);
 
     // 담을 시간을 조금 준다. 조각 간격이 5초라 그보다 길게 기다린다.

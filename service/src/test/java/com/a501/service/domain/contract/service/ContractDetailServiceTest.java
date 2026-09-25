@@ -13,6 +13,7 @@ import com.a501.service.common.exception.BusinessException;
 import com.a501.service.domain.consulting.service.ConsultingSessionQueryService;
 import com.a501.service.domain.contract.dto.response.ContractResponse;
 import com.a501.service.domain.contract.dto.response.MilestoneResponse;
+import com.a501.service.domain.contract.entity.ConsultingAgreement;
 import com.a501.service.domain.contract.entity.Contract;
 import com.a501.service.domain.contract.entity.DevelopmentContract;
 import com.a501.service.domain.contract.entity.Milestone;
@@ -186,6 +187,33 @@ class ContractDetailServiceTest {
         ContractResponse response = service.getContract(CLIENT_ID, CONTRACT_ID);
 
         assertThat(response.development().totalAmount()).isEqualTo(650000L);
+    }
+
+    @Test
+    void includesTheStoredConsultingDetailInTheConsultingBranch() {
+        Contract contract = BeanUtils.instantiateClass(Contract.class);
+        ReflectionTestUtils.setField(contract, "id", CONTRACT_ID);
+        ReflectionTestUtils.setField(contract, "roomId", ROOM_ID);
+        ReflectionTestUtils.setField(contract, "contractType", "CONSULTING");
+        ReflectionTestUtils.setField(contract, "status", "NEGOTIATING");
+        ConsultingAgreement agreement = ConsultingAgreement.of(
+                CONTRACT_ID,
+                "회원탈퇴 경로를 봅니다",
+                50_000,
+                "탈퇴 데이터 보관 방법을 확인합니다");
+        ReflectionTestUtils.setField(agreement, "id", 7);
+
+        when(contractRepository.findByIdAndDeletedFalse(CONTRACT_ID))
+                .thenReturn(Optional.of(contract));
+        when(consultingAgreementRepository.findByContractIdAndDeletedFalse(CONTRACT_ID))
+                .thenReturn(Optional.of(agreement));
+        when(sessionQueryService.findByConsultingAgreementId(7, CONTRACT_ID))
+                .thenReturn(List.of());
+
+        ContractResponse response = service.getContract(CLIENT_ID, CONTRACT_ID);
+
+        assertThat(response.consulting().detail()).isEqualTo("탈퇴 데이터 보관 방법을 확인합니다");
+        assertThat(response.development()).isNull();
     }
 
     @Test
