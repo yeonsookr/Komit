@@ -23,8 +23,8 @@ INQUIRY_ROOM_ID = 91
 
 
 class ContractDraftDeliveryTest(unittest.TestCase):
-    def test_draft_is_a_contract_in_the_pre_signed_state(self) -> None:
-        """초안은 초안 전용 형식이 아니라 가계약 계약서다."""
+    def test_draft_is_contract_version_one_in_the_signed_branch_state(self) -> None:
+        """초안은 초안 전용 형식이 아니라 계약서 version 1이다."""
         cases = (
             (CONVERTED_CONSULTING_ROOM_ID, "CONSULTING", "consulting", "development"),
             (CONVERTED_DEVELOPMENT_ROOM_ID, "DEVELOPMENT", "development", "consulting"),
@@ -37,7 +37,7 @@ class ContractDraftDeliveryTest(unittest.TestCase):
                 self.assertIsInstance(result, ContractResponse)
                 self.assertEqual(result.roomId, room_id)
                 self.assertEqual(result.contractType, contract_type)
-                self.assertEqual(getattr(result, filled).status, "PRE_SIGNED")
+                self.assertEqual(getattr(result, filled).status, "SIGNED")
                 self.assertIsNone(getattr(result, empty))
 
     def test_draft_is_not_signed_by_anyone(self) -> None:
@@ -141,7 +141,7 @@ class ContractDraftDeliveryTest(unittest.TestCase):
     def test_openapi_documents_the_screen_and_every_case(self) -> None:
         operation = service_app.openapi()["paths"]["/api/rooms/{roomId}/contract-draft"]["post"]
 
-        self.assertIn("초안은 가계약 계약서다", operation["description"])
+        self.assertIn("초안은 계약서 version 1이다", operation["description"])
         self.assertIn("방마다 한 번만 만든다", operation["description"])
         self.assertIn("개발자가 고친 내용은 서버가 들고 있지 않는다", operation["description"])
         self.assertEqual(

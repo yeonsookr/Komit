@@ -186,20 +186,14 @@ def parse_draft(
     raw: str,
     target_type: str,
     known_issue_ids: Iterable[int] = (),
-) -> dict[str, Any] | None:
-    """모델 출력을 계약 유형의 초안 모양으로 검증한다. 진행하지 않은 상담은 None이다."""
+) -> dict[str, Any]:
+    """모델 출력을 계약 유형의 초안 모양으로 검증한다."""
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise InvalidGmsResponseError("GMS 메시지가 JSON이 아닙니다") from exc
-    if not isinstance(data, dict) or set(data) != {"proceed", "draft"}:
+    if not isinstance(data, dict) or set(data) != {"draft"}:
         raise InvalidGmsResponseError("GMS 메시지의 필드가 올바르지 않습니다")
-    if not isinstance(data["proceed"], bool):
-        raise InvalidGmsResponseError("proceed는 true 또는 false입니다")
-    if not data["proceed"]:
-        if data["draft"] is not None:
-            raise InvalidGmsResponseError("진행하지 않은 상담에는 초안이 없습니다")
-        return None
     draft = data["draft"]
     if not isinstance(draft, dict) or set(draft) != DRAFT_FIELDS[target_type]:
         raise InvalidGmsResponseError("초안 필드가 계약 유형과 다릅니다")
@@ -248,8 +242,8 @@ def build_messages(
                 f"{instruction} "
                 "대화에 없는 합의·작업·제외 사유·금액·일정을 지어내지 마세요. "
                 "일정, 기간, 금액, 인계물은 개발자가 직접 입력하므로 초안에 넣지 마세요. "
-                "진행하지 않기로 끝난 상담이면 proceed를 false로 두고 draft를 null로 두세요. "
-                '설명이나 코드 블록 없이 JSON 객체 {"proceed":true,"draft":{...}}만 '
+                "전환된 계약방의 요청이므로 대화가 짧아도 확인 가능한 내용으로 초안을 만드세요. "
+                '설명이나 코드 블록 없이 JSON 객체 {"draft":{...}}만 '
                 "반환하세요."
             ),
         },
@@ -262,7 +256,7 @@ def draft_contract(
     messages: Sequence[dict[str, Any]],
     client: ChatClient,
     issues: Iterable[dict[str, Any]] = (),
-) -> dict[str, Any] | None:
+) -> dict[str, Any]:
     """전환에 성공한 상담방 하나의 메시지로 계약 유형별 초안을 만든다. (`R-MATCH-03`)"""
     if target_type not in TARGET_TYPES:
         raise ValueError("계약 유형은 CONSULTING 또는 DEVELOPMENT입니다")

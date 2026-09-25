@@ -27,6 +27,16 @@ public enum ContractErrorCode implements ErrorCode {
             "계약을 취소했습니다. 환불을 확인하는 중이니 잠시 뒤 다시 눌러 주세요."),
     /** 의뢰인이 계약서에 서명하기 전에는 돈을 맡기지 않는다. (`R-CON-20`) */
     CONTRACT_NOT_SIGNED(HttpStatus.CONFLICT, "CONTRACT_NOT_SIGNED", "계약서에 서명한 뒤에 예치할 수 있습니다."),
+    /** AI가 컨설팅 계약 초안 형식에 맞는 결과를 만들지 못했다. */
+    AI_RESPONSE_INVALID(
+            HttpStatus.BAD_GATEWAY,
+            "AI_RESPONSE_INVALID",
+            "계약 초안을 만들지 못했습니다. 잠시 후 다시 시도해 주세요."),
+    /** AI Worker 연결 실패나 시간 초과로 결과를 받지 못했다. */
+    AI_SERVICE_UNAVAILABLE(
+            HttpStatus.SERVICE_UNAVAILABLE,
+            "AI_SERVICE_UNAVAILABLE",
+            "계약 초안 생성 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요."),
     /** Escrow 서버에 닿지 못했다. 돈이 오갔는지 단정하지 않는다. */
     ESCROW_UNAVAILABLE(
             HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "예치를 처리하지 못했습니다.");
