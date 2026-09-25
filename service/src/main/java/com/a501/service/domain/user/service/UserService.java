@@ -2,6 +2,8 @@ package com.a501.service.domain.user.service;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 
 import com.a501.service.common.exception.BusinessException;
 import com.a501.service.common.exception.CommonErrorCode;
@@ -15,11 +17,13 @@ import com.a501.service.domain.user.dto.UserProfileView;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 import com.a501.service.domain.user.entity.User;
 import com.a501.service.domain.user.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -55,7 +59,8 @@ public class UserService {
 
     /**
      * 카카오 계정으로 로그인하거나, 처음 들어온 사용자면 가입 진행 상태로 저장합니다.
-     * 탈퇴한 사용자는 같은 카카오 계정으로 다시 가입할 수 없습니다. (R-AUTH-05)
+     * 탈퇴한 사용자는 같은 카카오 계정으로 다시 가입할 수 없습니다. 재가입 제한 기간이 지나 식별 정보가 지워진 옛 계정은
+     * 카카오 회원번호가 바뀌어 여기서 찾지 못하므로, 옛 계정과 잇지 않은 새 가입이 됩니다. (R-AUTH-05)
      */
     @Transactional
     public UserLoginResult loginOrRegister(KakaoUserData data) {
@@ -140,6 +145,61 @@ public class UserService {
                 .filter(found -> !found.isWithdrawn())
                 .orElseThrow(() -> new BusinessException(CommonErrorCode.UNAUTHORIZED));
         user.markDevProfile();
+    }
+
+    /**
+     * 탈퇴 표시를 켜고 켠 시각(UTC)을 돌려줍니다. 같은 사용자의 동시 탈퇴 요청은 행 잠금으로 줄을 세우며,
+     * 뒤에 온 요청은 이미 탈퇴한 사용자라 인증 실패가 됩니다. 탈퇴를 막는 조건은 부르는 쪽이 먼저 봅니다. (R-ACC-05)
+     */
+    @Transactional
+    public LocalDateTime withdraw(Integer userId) {
+        User user = userRepository.findByIdForUpdate(userId)
+                .filter(found -> !found.isWithdrawn())
+                .orElseThrow(() -> new BusinessException(CommonErrorCode.UNAUTHORIZED));
+        LocalDateTime now = LocalDateTime.ofInstant(clock.instant(), ZoneOffset.UTC);
+        user.withdraw(now);
+        return user.getDeletedAt();
+    }
+
+    /**
+     * 기준 시각(UTC) 이전에 탈퇴했는데 아직 식별 정보를 지우지 않은 사용자. 식별자 순으로 {@code limit}명까지입니다. (R-ACC-06)
+     */
+    public List<Integer> findAnonymizationTargets(LocalDateTime cutoff, int limit) {
+        return userRepository.findAnonymizationTargets(cutoff, PageRequest.of(0, limit));
+    }
+
+    /**
+     * 이 카카오 계정으로 가입했다가 기준 시각(UTC) 이전에 탈퇴했고 아직 식별 정보가 남은 사용자. 재가입 전에 옛 계정을 정리할 때 씁니다. (R-AUTH-05)
+     */
+    public Optional<Integer> findWithdrawnBefore(Long kakaoId, LocalDateTime cutoff) {
+        return userRepository.findByKakaoId(kakaoId)
+                .filter(user -> user.isDeleted() && !user.isAnonymized())
+                .filter(user -> !user.getDeletedAt().isAfter(cutoff))
+                .map(User::getId);
+    }
+
+    /**
+     * 탈퇴한 사용자의 식별 정보를 지웁니다. 여러 파드가 같은 사용자를 동시에 골라도 행 잠금 뒤 다시 보므로 한 번만 바뀝니다. (R-ACC-06)
+     *
+     * @return 이번에 지웠으면 참. 없거나, 탈퇴하지 않았거나, 이미 지운 사용자면 거짓
+     */
+    @Transactional
+    public boolean anonymize(Integer userId) {
+        return userRepository.findByIdForUpdate(userId)
+                .map(user -> user.anonymize(WITHDRAWN_NAME))
+                .orElse(false);
+    }
+
+    /**
+     * 화면에 표시하는 이름을 바꿉니다. 리뷰·메시지는 이름을 따로 담지 않고 이 값을 읽으므로 함께 바뀝니다.
+     * 탈퇴했거나 없는 사용자는 인증 실패로 봅니다.
+     */
+    @Transactional
+    public void rename(Integer userId, String name) {
+        User user = userRepository.findById(userId)
+                .filter(found -> !found.isWithdrawn())
+                .orElseThrow(() -> new BusinessException(CommonErrorCode.UNAUTHORIZED));
+        user.rename(name);
     }
 
     /**

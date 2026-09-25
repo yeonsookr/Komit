@@ -54,6 +54,20 @@ class MyAccountServiceTest {
     }
 
     @Test
+    @DisplayName("이름을 바꾼 뒤 바뀐 이름이 담긴 계정 칸을 돌려준다")
+    void changesNameThenReturnsAccount() {
+        when(userService.getMyPageUser(12)).thenReturn(new MyPageUserView("새이름", "mimi@kakao.com", null, null));
+        when(userQueryService.findProfileImageUrl(12)).thenReturn(null);
+
+        MyAccountResponse response = myAccountService.changeName(12, "새이름");
+
+        assertThat(response).isEqualTo(new MyAccountResponse("새이름", "mimi@kakao.com", null));
+        InOrder order = inOrder(userService);
+        order.verify(userService).rename(12, "새이름");
+        order.verify(userService).getMyPageUser(12);
+    }
+
+    @Test
     @DisplayName("걸 수 없는 파일이면 FILE_NOT_ATTACHABLE이고 사진을 바꾸지 않는다")
     void unattachableFileIsNotApplied() {
         doThrow(new BusinessException(FileErrorCode.FILE_NOT_ATTACHABLE))

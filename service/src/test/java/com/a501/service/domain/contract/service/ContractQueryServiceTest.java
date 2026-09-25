@@ -1,12 +1,17 @@
 package com.a501.service.domain.contract.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.a501.service.domain.contract.dto.ConsultingPayoutTarget;
+import com.a501.service.domain.contract.dto.ContractProgressView;
 import com.a501.service.domain.contract.entity.ConsultingAgreement;
 import com.a501.service.domain.contract.entity.Contract;
+import com.a501.service.domain.contract.entity.DevelopmentContract;
 import com.a501.service.domain.contract.repository.ConsultingAgreementRepository;
 import com.a501.service.domain.contract.repository.ContractRepository;
 import com.a501.service.domain.contract.repository.DevelopmentContractRepository;
@@ -14,6 +19,7 @@ import com.a501.service.domain.room.dto.RoomParties;
 import com.a501.service.domain.room.service.RoomQueryService;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.BeanUtils;
@@ -117,5 +123,95 @@ class ContractQueryServiceTest {
         when(contractRepository.findAllById(List.of(CONTRACT_ID))).thenReturn(List.of(contract));
 
         assertThat(service.findUnpaidConsultingContracts()).isEmpty();
+    }
+
+    /** R-ACC-05: 협의 중인 계약도 마치지 않은 것이고, 상담 합의·개발 계약이 완료·파기돼야 마친 것이다. */
+    @Test
+    void 협의_중도_진행_중이고_완료와_파기만_마친_것으로_본다() {
+        List<Integer> rooms = List.of(92, 93, 94, 95);
+        when(contractRepository.findByRoomIdInAndDeletedFalse(rooms)).thenReturn(List.of(
+                contract(133, 95, "SIGNED"),
+                contract(131, 93, "NEGOTIATING"),
+                contract(130, 92, "SIGNED"),
+                contract(132, 94, "SIGNED")));
+        List<Integer> ids = List.of(133, 131, 130, 132);
+        Set<String> closed = Set.of("COMPLETED", "TERMINATED");
+        when(agreementRepository.findByContractIdInAndDeletedFalseAndStatusIn(ids, closed))
+                .thenReturn(List.of(agreement(133)));
+        when(developmentContractRepository.findByContractIdInAndDeletedFalseAndStatusIn(ids, closed))
+                .thenReturn(List.of(developmentContract(132)));
+
+        assertThat(service.findProgressByRooms(rooms)).containsExactly(
+                new ContractProgressView(130, 92, true, false),
+                new ContractProgressView(131, 93, false, false),
+                new ContractProgressView(132, 94, true, true),
+                new ContractProgressView(133, 95, true, true));
+    }
+
+    /**
+     * R-CON-21: 취소된 계약은 되돌릴 수 없어 탈퇴를 막지 않는다. 개발 계약은 취소해도 상태가 그대로라 계약 상태로 본다.
+     * R-CON-20: 의뢰인이 서명했으면 개발자 서명 전이라도 예치가 있을 수 있어, 취소됐어도 잔액은 따로 물어야 한다.
+     */
+    @Test
+    void 취소된_계약은_마친_것이고_의뢰인이_서명했으면_예치가_있을_수_있다() {
+        List<Integer> rooms = List.of(96, 97);
+        Contract signedThenCancelled = contract(135, 97, "CANCELLED");
+        ReflectionTestUtils.setField(signedThenCancelled, "clientSignatureId", 71);
+        when(contractRepository.findByRoomIdInAndDeletedFalse(rooms)).thenReturn(List.of(
+                contract(134, 96, "CANCELLED"), signedThenCancelled));
+        List<Integer> ids = List.of(134, 135);
+        Set<String> closed = Set.of("COMPLETED", "TERMINATED");
+        when(agreementRepository.findByContractIdInAndDeletedFalseAndStatusIn(ids, closed)).thenReturn(List.of());
+        when(developmentContractRepository.findByContractIdInAndDeletedFalseAndStatusIn(ids, closed)).thenReturn(List.of());
+
+        assertThat(service.findProgressByRooms(rooms)).containsExactly(
+                new ContractProgressView(134, 96, false, true),
+                new ContractProgressView(135, 97, true, true));
+    }
+
+    /** R-CON-20: 의뢰인만 서명한 협의 중 계약은 아직 진행 중이지만 예치는 있을 수 있다. */
+    @Test
+    void 의뢰인만_서명한_협의_중_계약은_예치가_있을_수_있다() {
+        Contract clientSigned = contract(136, 98, "NEGOTIATING");
+        ReflectionTestUtils.setField(clientSigned, "clientSignatureId", 72);
+        Contract developerSigned = contract(137, 99, "NEGOTIATING");
+        ReflectionTestUtils.setField(developerSigned, "developerSignatureId", 73);
+        List<Integer> rooms = List.of(98, 99);
+        when(contractRepository.findByRoomIdInAndDeletedFalse(rooms)).thenReturn(List.of(clientSigned, developerSigned));
+        List<Integer> ids = List.of(136, 137);
+        Set<String> closed = Set.of("COMPLETED", "TERMINATED");
+        when(agreementRepository.findByContractIdInAndDeletedFalseAndStatusIn(ids, closed)).thenReturn(List.of());
+        when(developmentContractRepository.findByContractIdInAndDeletedFalseAndStatusIn(ids, closed)).thenReturn(List.of());
+
+        assertThat(service.findProgressByRooms(rooms)).containsExactly(
+                new ContractProgressView(136, 98, true, false),
+                new ContractProgressView(137, 99, false, false));
+    }
+
+    @Test
+    void 방이_없으면_계약을_묻지_않는다() {
+        assertThat(service.findProgressByRooms(List.of())).isEmpty();
+
+        verify(contractRepository, never()).findByRoomIdInAndDeletedFalse(any());
+    }
+
+    private static Contract contract(Integer id, Integer roomId, String status) {
+        Contract contract = BeanUtils.instantiateClass(Contract.class);
+        ReflectionTestUtils.setField(contract, "id", id);
+        ReflectionTestUtils.setField(contract, "roomId", roomId);
+        ReflectionTestUtils.setField(contract, "status", status);
+        return contract;
+    }
+
+    private static ConsultingAgreement agreement(Integer contractId) {
+        ConsultingAgreement agreement = BeanUtils.instantiateClass(ConsultingAgreement.class);
+        ReflectionTestUtils.setField(agreement, "contractId", contractId);
+        return agreement;
+    }
+
+    private static DevelopmentContract developmentContract(Integer contractId) {
+        DevelopmentContract developmentContract = BeanUtils.instantiateClass(DevelopmentContract.class);
+        ReflectionTestUtils.setField(developmentContract, "contractId", contractId);
+        return developmentContract;
     }
 }

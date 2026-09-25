@@ -108,6 +108,21 @@ public class ContractDepositService {
     }
 
     /**
+     * 이 계약의 에스크로 잔액. 걸어 둔 돈에서 지급·수수료·환불을 뺀 값이며, 예치를 건 적이 없으면 0이다.
+     * 의뢰인에게는 남은 예치금이고 개발자에게는 아직 받지 못한 소득이다. (R-ACC-05)
+     *
+     * <p>당사자인지는 보지 않는다. 부르는 쪽이 자기 계약만 넘긴다.
+     *
+     * @throws BusinessException {@link ContractErrorCode#ESCROW_UNAVAILABLE} Escrow 서버에 닿지 못했을 때
+     */
+    public BigInteger findRemainingBalance(Integer contractId) {
+        return escrowDepositClient
+                .findByContract(String.valueOf(contractId))
+                .map(EscrowDepositClient.Deposit::balance)
+                .orElse(BigInteger.ZERO);
+    }
+
+    /**
      * 볼 수 있는 계약인지 가린다.
      *
      * @param clientOnly 참이면 의뢰인만 통과한다. 예치는 돈을 내는 쪽만 건다

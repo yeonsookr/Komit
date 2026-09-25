@@ -3,6 +3,7 @@ package com.a501.service.domain.auth.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -22,6 +23,7 @@ import com.a501.service.domain.user.service.UserService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -33,6 +35,8 @@ class AuthServiceTest {
     private UserService userService;
     @Mock
     private RefreshTokenRepository refreshTokenRepository;
+    @Mock
+    private WithdrawnIdentityService withdrawnIdentityService;
 
     private JwtTokenProvider tokenProvider;
     private AuthService authService;
@@ -44,7 +48,8 @@ class AuthServiceTest {
                 "ZGV2LW9ubHkta2FrYW8tdG9rZW4ta2V5LTMyYnl0ZXM=",
                 Duration.ofMinutes(15),
                 Duration.ofDays(14)));
-        authService = new AuthService(kakaoOauthClient, userService, tokenProvider, refreshTokenRepository);
+        authService = new AuthService(
+                kakaoOauthClient, userService, tokenProvider, refreshTokenRepository, withdrawnIdentityService);
     }
 
     @Test
@@ -62,6 +67,22 @@ class AuthServiceTest {
         assertThat(response.isNewUser()).isTrue();
         assertThat(response.user().userId()).isEqualTo(12);
         verify(refreshTokenRepository).issue(12);
+    }
+
+    /** R-AUTH-05: 기간이 지난 옛 탈퇴 계정을 먼저 정리한 뒤에 가입·로그인을 판정해야 새 가입이 옛 계정과 이어지지 않는다. */
+    @Test
+    void releasesExpiredWithdrawnIdentityBeforeLogin() {
+        when(kakaoOauthClient.authorize("code", "https://front/callback"))
+                .thenReturn(authorization());
+        when(userService.loginOrRegister(any()))
+                .thenReturn(UserLoginResult.accepted(new UserSnapshot(13, "김미미", null, false), true));
+        when(refreshTokenRepository.issue(13)).thenReturn("refresh-token");
+
+        authService.loginWithKakao("code", "https://front/callback");
+
+        InOrder order = inOrder(withdrawnIdentityService, userService);
+        order.verify(withdrawnIdentityService).releaseForResignup(authorization().kakaoId());
+        order.verify(userService).loginOrRegister(any());
     }
 
     @Test

@@ -1,13 +1,18 @@
 package com.a501.service.domain.room.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.a501.service.domain.developer.service.DeveloperLookupService;
 import com.a501.service.domain.project.service.ProjectQueryService;
+import com.a501.service.domain.room.dto.MyRoomView;
 import com.a501.service.domain.room.entity.Room;
 import com.a501.service.domain.room.repository.RoomRepository;
+import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -82,5 +87,35 @@ class RoomQueryServiceTest {
         when(developerLookupService.findUserId(DEVELOPER_ID)).thenReturn(Optional.empty());
 
         assertThat(service.findParties(ROOM_ID)).isEmpty();
+    }
+
+    /** 내가 맡긴 프로젝트의 방과 개발자로 들어간 방을 함께, 방마다 내 자리를 붙여 돌려준다. (R-ACC-05) */
+    @Test
+    void 내가_든_방을_두_자리_모두_가려_돌려준다() {
+        when(developerLookupService.findDeveloperId(CLIENT_ID)).thenReturn(DEVELOPER_ID);
+        when(projectQueryService.findProjectIds(CLIENT_ID)).thenReturn(List.of(PROJECT_ID));
+        when(roomRepository.findMine(DEVELOPER_ID, List.of(PROJECT_ID), null, null))
+                .thenReturn(List.of(room(92, PROJECT_ID, 3), room(108, 21, DEVELOPER_ID)));
+
+        assertThat(service.findMine(CLIENT_ID)).containsExactly(
+                new MyRoomView(92, PROJECT_ID, true, false),
+                new MyRoomView(108, 21, false, true));
+    }
+
+    @Test
+    void 맡긴_프로젝트도_개발자_프로필도_없으면_방을_묻지_않는다() {
+        when(developerLookupService.findDeveloperId(CLIENT_ID)).thenReturn(null);
+        when(projectQueryService.findProjectIds(CLIENT_ID)).thenReturn(List.of());
+
+        assertThat(service.findMine(CLIENT_ID)).isEmpty();
+        verify(roomRepository, never()).findMine(any(), any(), any(), any());
+    }
+
+    private static Room room(Integer id, Integer projectId, Integer developerId) {
+        Room room = BeanUtils.instantiateClass(Room.class);
+        ReflectionTestUtils.setField(room, "id", id);
+        ReflectionTestUtils.setField(room, "projectId", projectId);
+        ReflectionTestUtils.setField(room, "developerId", developerId);
+        return room;
     }
 }

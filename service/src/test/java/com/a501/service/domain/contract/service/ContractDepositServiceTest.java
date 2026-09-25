@@ -241,4 +241,16 @@ class ContractDepositServiceTest {
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ContractErrorCode.CONTRACT_NOT_FOUND);
     }
+
+    @Test
+    @DisplayName("R-ACC-05: 에스크로 잔액은 지급·환불을 뺀 값이고, 예치를 건 적이 없으면 0이다")
+    void remainingBalanceIsZeroWithoutDeposit() {
+        when(escrowDepositClient.findByContract(String.valueOf(CONTRACT_ID))).thenReturn(Optional.of(
+                new EscrowDepositClient.Deposit(77L, String.valueOf(CONTRACT_ID), "ACTIVE",
+                        BigInteger.valueOf(650_000), BigInteger.valueOf(300_000))));
+        when(escrowDepositClient.findByContract("121")).thenReturn(Optional.empty());
+
+        assertThat(service.findRemainingBalance(CONTRACT_ID)).isEqualTo(BigInteger.valueOf(300_000));
+        assertThat(service.findRemainingBalance(121)).isEqualTo(BigInteger.ZERO);
+    }
 }

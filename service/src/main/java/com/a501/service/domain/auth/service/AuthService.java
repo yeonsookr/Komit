@@ -32,6 +32,7 @@ public class AuthService {
     private final UserService userService;
     private final JwtTokenProvider jwtTokenProvider;
     private final RefreshTokenRepository refreshTokenRepository;
+    private final WithdrawnIdentityService withdrawnIdentityService;
     private final Clock clock;
 
     @Autowired
@@ -39,8 +40,10 @@ public class AuthService {
             KakaoOauthClient kakaoOauthClient,
             UserService userService,
             JwtTokenProvider jwtTokenProvider,
-            RefreshTokenRepository refreshTokenRepository) {
-        this(kakaoOauthClient, userService, jwtTokenProvider, refreshTokenRepository, Clock.systemUTC());
+            RefreshTokenRepository refreshTokenRepository,
+            WithdrawnIdentityService withdrawnIdentityService) {
+        this(kakaoOauthClient, userService, jwtTokenProvider, refreshTokenRepository, withdrawnIdentityService,
+                Clock.systemUTC());
     }
 
     AuthService(
@@ -48,17 +51,21 @@ public class AuthService {
             UserService userService,
             JwtTokenProvider jwtTokenProvider,
             RefreshTokenRepository refreshTokenRepository,
+            WithdrawnIdentityService withdrawnIdentityService,
             Clock clock) {
         this.kakaoOauthClient = kakaoOauthClient;
         this.userService = userService;
         this.jwtTokenProvider = jwtTokenProvider;
         this.refreshTokenRepository = refreshTokenRepository;
+        this.withdrawnIdentityService = withdrawnIdentityService;
         this.clock = clock;
     }
 
     public KakaoLoginResponse loginWithKakao(String code, String redirectUri) {
         KakaoAuthorization authorization = kakaoOauthClient.authorize(code, redirectUri);
         Instant refreshExpiresAt = clock.instant().plusSeconds(authorization.refreshTokenExpiresInSeconds());
+        // R-AUTH-05: 기간이 지난 옛 탈퇴 계정은 식별 정보를 지워 두어, 아래에서 옛 계정과 잇지 않은 새 가입이 됩니다.
+        withdrawnIdentityService.releaseForResignup(authorization.kakaoId());
         UserLoginResult login = userService.loginOrRegister(new KakaoUserData(
                 authorization.kakaoId(),
                 authorization.nickname(),

@@ -2,6 +2,7 @@ package com.a501.service.domain.room.service;
 
 import com.a501.service.domain.developer.service.DeveloperLookupService;
 import com.a501.service.domain.project.service.ProjectQueryService;
+import com.a501.service.domain.room.dto.MyRoomView;
 import com.a501.service.domain.room.dto.RoomCountView;
 import com.a501.service.domain.room.dto.RoomParties;
 import com.a501.service.domain.room.entity.Room;
@@ -75,6 +76,27 @@ public class RoomQueryService {
             return false;
         }
         return roomRepository.existsByProjectIdAndDeveloperIdAndDeletedFalse(projectId, developerId);
+    }
+
+    /**
+     * 내가 든 방. 내가 맡긴 프로젝트의 방과 개발자로 들어간 방을 함께 돌려주며, 닫힌 방도 듭니다.
+     * 탈퇴 전 확인처럼 두 자리를 모두 훑어야 하는 쪽이 씁니다. (R-ACC-05)
+     *
+     * @param userId 사용자 식별자. 개발자 식별자가 아닙니다
+     */
+    public List<MyRoomView> findMine(Integer userId) {
+        Integer developerId = developerLookupService.findDeveloperId(userId);
+        List<Integer> projectIds = projectQueryService.findProjectIds(userId);
+        if (developerId == null && projectIds.isEmpty()) {
+            return List.of();
+        }
+        return roomRepository.findMine(developerId, projectIds, null, null).stream()
+                .map(room -> new MyRoomView(
+                        room.getId(),
+                        room.getProjectId(),
+                        projectIds.contains(room.getProjectId()),
+                        developerId != null && developerId.equals(room.getDeveloperId())))
+                .toList();
     }
 
     /**
