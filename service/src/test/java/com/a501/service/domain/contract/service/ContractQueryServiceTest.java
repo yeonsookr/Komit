@@ -148,6 +148,46 @@ class ContractQueryServiceTest {
                 new ContractProgressView(133, 95, true, true));
     }
 
+    /**
+     * R-CON-21: 취소된 계약은 되돌릴 수 없어 탈퇴를 막지 않는다. 개발 계약은 취소해도 상태가 그대로라 계약 상태로 본다.
+     * R-CON-20: 의뢰인이 서명했으면 개발자 서명 전이라도 예치가 있을 수 있어, 취소됐어도 잔액은 따로 물어야 한다.
+     */
+    @Test
+    void 취소된_계약은_마친_것이고_의뢰인이_서명했으면_예치가_있을_수_있다() {
+        List<Integer> rooms = List.of(96, 97);
+        Contract signedThenCancelled = contract(135, 97, "CANCELLED");
+        ReflectionTestUtils.setField(signedThenCancelled, "clientSignatureId", 71);
+        when(contractRepository.findByRoomIdInAndDeletedFalse(rooms)).thenReturn(List.of(
+                contract(134, 96, "CANCELLED"), signedThenCancelled));
+        List<Integer> ids = List.of(134, 135);
+        Set<String> closed = Set.of("COMPLETED", "TERMINATED");
+        when(agreementRepository.findByContractIdInAndDeletedFalseAndStatusIn(ids, closed)).thenReturn(List.of());
+        when(developmentContractRepository.findByContractIdInAndDeletedFalseAndStatusIn(ids, closed)).thenReturn(List.of());
+
+        assertThat(service.findProgressByRooms(rooms)).containsExactly(
+                new ContractProgressView(134, 96, false, true),
+                new ContractProgressView(135, 97, true, true));
+    }
+
+    /** R-CON-20: 의뢰인만 서명한 협의 중 계약은 아직 진행 중이지만 예치는 있을 수 있다. */
+    @Test
+    void 의뢰인만_서명한_협의_중_계약은_예치가_있을_수_있다() {
+        Contract clientSigned = contract(136, 98, "NEGOTIATING");
+        ReflectionTestUtils.setField(clientSigned, "clientSignatureId", 72);
+        Contract developerSigned = contract(137, 99, "NEGOTIATING");
+        ReflectionTestUtils.setField(developerSigned, "developerSignatureId", 73);
+        List<Integer> rooms = List.of(98, 99);
+        when(contractRepository.findByRoomIdInAndDeletedFalse(rooms)).thenReturn(List.of(clientSigned, developerSigned));
+        List<Integer> ids = List.of(136, 137);
+        Set<String> closed = Set.of("COMPLETED", "TERMINATED");
+        when(agreementRepository.findByContractIdInAndDeletedFalseAndStatusIn(ids, closed)).thenReturn(List.of());
+        when(developmentContractRepository.findByContractIdInAndDeletedFalseAndStatusIn(ids, closed)).thenReturn(List.of());
+
+        assertThat(service.findProgressByRooms(rooms)).containsExactly(
+                new ContractProgressView(136, 98, true, false),
+                new ContractProgressView(137, 99, false, false));
+    }
+
     @Test
     void 방이_없으면_계약을_묻지_않는다() {
         assertThat(service.findProgressByRooms(List.of())).isEmpty();

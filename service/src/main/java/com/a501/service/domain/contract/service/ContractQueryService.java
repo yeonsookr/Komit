@@ -179,8 +179,10 @@ public class ContractQueryService {
     }
 
     /**
-     * 방들에 달린 계약마다 체결했는지와 마쳤는지. 협의 중이라 아직 체결하지 않은 계약도 듭니다.
-     * 상담 합의나 개발 계약이 완료·파기된 계약만 마친 것으로 봅니다. (R-ACC-05) 계약 식별자 순입니다.
+     * 방들에 달린 계약마다 예치가 있을 수 있는지와 마쳤는지. 협의 중이라 아직 체결하지 않은 계약도 듭니다.
+     * 의뢰인이 서명하면 개발자 서명 전에도 예치할 수 있으므로(R-CON-20) 의뢰인 서명이나 성립을 예치 가능으로 봅니다.
+     * 상담 합의나 개발 계약이 완료·파기됐거나, 의뢰인이 계약을 취소했으면 마친 것으로 봅니다. (R-ACC-05)
+     * 취소는 되돌릴 수 없고 개발 계약의 상태는 바꾸지 않으므로 계약 상태로 따로 봅니다. (R-CON-21) 계약 식별자 순입니다.
      */
     public List<ContractProgressView> findProgressByRooms(Collection<Integer> roomIds) {
         if (roomIds == null || roomIds.isEmpty()) {
@@ -202,7 +204,8 @@ public class ContractQueryService {
         return contracts.stream()
                 .sorted(Comparator.comparing(Contract::getId))
                 .map(contract -> new ContractProgressView(
-                        contract.getId(), contract.getRoomId(), contract.isConcluded(), finished.contains(contract.getId())))
+                        contract.getId(), contract.getRoomId(), contract.isSignedBy(true) || contract.isConcluded(),
+                        finished.contains(contract.getId()) || contract.isCancelled()))
                 .toList();
     }
 

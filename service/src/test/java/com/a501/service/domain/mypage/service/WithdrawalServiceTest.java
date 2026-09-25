@@ -99,6 +99,26 @@ class WithdrawalServiceTest {
     }
 
     @Test
+    @DisplayName("R-CON-20·21: 의뢰인만 서명한 계약의 예치금, 취소 뒤 환불 전 잔액도 막고, 잔액 없는 취소 계약은 막지 않는다")
+    void depositBeforeConclusionAndCancelledContracts() {
+        givenRooms(new MyRoomView(91, 8, true, false), new MyRoomView(104, 8, true, false),
+                new MyRoomView(106, 8, true, false));
+        when(contractQueryService.findProgressByRooms(Set.of(91, 104, 106))).thenReturn(List.of(
+                new ContractProgressView(150, 91, true, false),
+                new ContractProgressView(151, 104, true, true),
+                new ContractProgressView(152, 106, false, true)));
+        when(projectQueryService.findNames(any())).thenReturn(Map.of(8, "수제 비누 가게"));
+        when(contractDepositService.findRemainingBalance(150)).thenReturn(BigInteger.valueOf(650_000));
+        when(contractDepositService.findRemainingBalance(151)).thenReturn(BigInteger.valueOf(650_000));
+
+        assertThat(withdrawalService.check(USER_ID).blockers()).containsExactly(
+                new WithdrawalBlockerResponse(Type.CONTRACT, "수제 비누 가게 · 진행 중인 의뢰", null, 150, 91),
+                new WithdrawalBlockerResponse(Type.DEPOSIT, "예치금 650,000원", 650_000L, 150, 91),
+                new WithdrawalBlockerResponse(Type.DEPOSIT, "예치금 650,000원", 650_000L, 151, 104));
+        verify(contractDepositService, never()).findRemainingBalance(152);
+    }
+
+    @Test
     @DisplayName("든 방이 없으면 탈퇴할 수 있고 계약을 묻지 않는다")
     void noRoomsMeansCanWithdraw() {
         when(roomQueryService.findMine(USER_ID)).thenReturn(List.of());

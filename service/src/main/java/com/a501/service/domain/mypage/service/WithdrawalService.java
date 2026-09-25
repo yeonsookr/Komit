@@ -112,14 +112,14 @@ public class WithdrawalService {
                         CONTRACT_TITLE.formatted(projectName(projectNames, room)), null,
                         contract.contractId(), contract.roomId()));
             }
-            if (contract.concluded()) {
+            if (contract.depositable()) {
                 addMoney(blockers, contract, room);
             }
         }
         return blockers;
     }
 
-    /** 체결된 계약의 잔액. 내 자리에 따라 예치금이나 소득이 되며, 0이면 줄을 만들지 않습니다. */
+    /** 예치가 있을 수 있는 계약(의뢰인 서명 뒤, R-CON-20)의 잔액. 내 자리에 따라 예치금이나 소득이 되며, 0이면 줄을 만들지 않습니다. */
     private void addMoney(List<WithdrawalBlockerResponse> blockers, ContractProgressView contract, MyRoomView room) {
         long balance = remainingBalance(contract.contractId());
         if (balance <= 0) {

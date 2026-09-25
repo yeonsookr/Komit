@@ -5,8 +5,10 @@ package com.a501.service.domain.contract.dto;
  *
  * @param contractId 계약 식별자
  * @param roomId     계약이 달린 방 식별자
- * @param concluded  체결({@code SIGNED})했는지. 체결 전에는 예치가 있을 수 없습니다
- * @param finished   상담 합의나 개발 계약이 완료({@code COMPLETED})·파기({@code TERMINATED})됐는지
+ * @param depositable 예치가 있을 수 있는지. 의뢰인이 서명하면 개발자 서명 전에도 예치할 수 있어(R-CON-20)
+ *                    의뢰인이 서명했거나 계약이 성립했으면 참입니다. 거짓이면 Escrow 에 묻지 않아도 됩니다
+ * @param finished   상담 합의나 개발 계약이 완료({@code COMPLETED})·파기({@code TERMINATED})됐거나,
+ *                   의뢰인이 계약을 취소({@code CANCELLED})했는지 (R-CON-21)
  */
-public record ContractProgressView(Integer contractId, Integer roomId, boolean concluded, boolean finished) {
+public record ContractProgressView(Integer contractId, Integer roomId, boolean depositable, boolean finished) {
 }
