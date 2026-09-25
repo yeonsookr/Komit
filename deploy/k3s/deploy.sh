@@ -49,6 +49,9 @@ AI_IMAGE=${AI_IMAGE:-}
 # 공인 주소를 찾는 이름입니다. (R-CON-19)
 : "${TURN_SHARED_SECRET:?TURN_SHARED_SECRET is required}"
 : "${TURN_PUBLIC_HOST:?TURN_PUBLIC_HOST is required}"
+# 전사를 받아 가는 노트북의 토큰(ai/worker/docs/job-contract.md 11.2). 없으면 service 는 뜨지만
+# 전사 경로가 모두 닫혀 노트북이 401 을 받고 멈춥니다. 조용히 망가지지 않게 여기서 막습니다.
+: "${TRANSCRIBER_TOKEN:?TRANSCRIBER_TOKEN is required}"
 # 파일 저장소 MinIO(base/minio.yaml). 내부 주소는 service Pod가 부르고(minio.komit.svc.cluster.local:9000),
 # 공개 주소는 브라우저가 열 프리사인 URL의 호스트(https://file.komit.site)입니다. 자격은 MinIO 루트 계정으로도 쓰입니다.
 : "${STORAGE_INTERNAL_ENDPOINT:?STORAGE_INTERNAL_ENDPOINT is required}"
@@ -306,6 +309,7 @@ EOF
   config_literal KAKAO_CLIENT_ID "$KAKAO_CLIENT_ID"
   config_literal KAKAO_CLIENT_SECRET "$KAKAO_CLIENT_SECRET"
   config_literal ESCROW_CLIENT_API_KEY "$ESCROW_CLIENT_API_KEY"
+  config_literal TRANSCRIBER_TOKEN "$TRANSCRIBER_TOKEN"
   # 통화 중계 공유 비밀. service 가 자격을 만들고 coturn 이 같은 계산으로 맞춰 봅니다.
   # 두 Secret 으로 나눈 것은 값이 바뀌면 양쪽 Pod 가 함께 다시 떠야 하기 때문입니다.
   printf '  - name: service-turn\n    namespace: komit\n    literals:\n'

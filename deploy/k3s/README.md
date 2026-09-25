@@ -757,6 +757,7 @@ fe 변경      → fe-docker-build-push      ─┤ FE_IMAGE      (dotenv)
 | `AI_API_BASE_URL` | Visible, Protected | `service`가 부를 AI 서비스의 클러스터 안 주소. `service-config`에만 들어갑니다 |
 | `AI_CONNECT_TIMEOUT`, `AI_READ_TIMEOUT` | Visible | **선택.** `service`가 AI 를 기다리는 한도. 넣지 않으면 이미지 기본값(`3s`·`25s`)을 씁니다. 실제로 조정하려면 `deploy.sh`의 `service-config` 생성과 `.gitlab-ci.yml`의 전달 목록에 함께 넣어야 합니다. 값을 정한 이유는 `ai/worker/docs/job-contract.md` 8절에 있습니다 |
 | `GMS_API_KEY` | **Masked**, Protected | AI 서비스가 모델을 부르는 키. `ai-secret`으로 들어갑니다. 없으면 AI Pod가 기동하지 않습니다 |
+| `TRANSCRIBER_TOKEN` | **Masked**, Protected | 전사를 받아 가는 노트북의 토큰(`ai/worker/docs/job-contract.md` 11.2). `service-auth`로 들어갑니다. 노트북의 `ai/worker/.env`에도 같은 값을 넣습니다. `openssl rand -base64 32`로 만듭니다 |
 | `TEST_BACKEND_API_BASE_URL` | Visible, Protected | `komit.site/test` FE가 호출할 mock 주소. `fe-test-config`에만 들어갑니다 |
 | `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI` | Masked | 카카오 로그인. fe 실행 환경(`fe-config`). Redirect URI 는 카카오 콘솔에 등록한 배포 주소(`https://komit.site/api/auth/kakao/callback`)와 글자까지 같아야 합니다 |
 | `ACCOUNT_DATA_ENCRYPTION_KEY` | Masked, Protected | 계좌번호와 `userKey`를 암호화해 보관하는 AES-256 키. 정확히 32바이트인 키의 Base64 값이어야 합니다. `service-auth` Secret으로 주입되며, 없으면 service Pod가 기동 중 죽습니다. **한 번 정한 뒤 바꾸면 이미 저장된 암호문을 읽지 못합니다** |
@@ -844,6 +845,7 @@ chmod +x deploy/k3s/deploy.sh
 | `BACKEND_API_BASE_URL` | 예 | 기본 `fe`가 호출할 실제 BE 주소. GitLab CI/CD 변수와 같은 값을 넣으며 `fe-config`에만 들어갑니다. |
 | `AI_API_BASE_URL` | 예 | `service`가 부를 AI 서비스 주소. `service-config`에만 들어갑니다. |
 | `GMS_API_KEY` | 예 | AI 서비스가 모델을 부르는 키. `ai-secret`으로 들어갑니다. |
+| `TRANSCRIBER_TOKEN` | 예 | 전사를 받아 가는 노트북의 토큰. `service-auth` Secret으로 주입됩니다. 없으면 배포가 시작하지 않습니다. 값이 바뀌면 service Pod가 다시 뜨고, 노트북의 값도 함께 바꿔야 합니다. |
 | `TEST_BACKEND_API_BASE_URL` | 예 | `/test`의 `fe-test`가 호출할 mock 주소. `fe-test-config`에만 들어갑니다. |
 | `ESCROW_API_BASE_URL` | 예 | GitLab CI/CD 값이 `service-config`에 주입됩니다. `http://escrow.komit.svc.cluster.local:8081`로 설정해 실제 Escrow를 사용합니다. |
 | `KAKAO_CLIENT_ID`, `KAKAO_REDIRECT_URI` | 예 | 카카오 로그인 REST API 키와 콜백 주소. fe 의 `/api/auth/kakao` 가 실행 시점에 읽습니다. 없으면 로그인만 500 으로 실패하고 다른 화면은 영향이 없습니다. |
