@@ -30,6 +30,20 @@ export async function getContract(contractId: number): Promise<Contract> {
 }
 
 /**
+ * 전환 전 무료 상담의 전체 대화로 컨설팅 계약서 version 1을 만듭니다.
+ * 이미 만든 초안이 있으면 AI를 다시 부르지 않고 저장된 최신 편집본을 받습니다.
+ */
+export async function generateConsultingContractDraft(roomId: number): Promise<Contract> {
+  const { data } = await authenticatedBackendApi().post<Contract>(
+    BACKEND.CONTRACT_DRAFT(roomId),
+    undefined,
+    // 백엔드 AI 읽기 제한(25초)보다 먼저 끊지 않습니다.
+    { timeout: 30_000 },
+  );
+  return data;
+}
+
+/**
  * 개발 계약서 작성.
  *
  * 개발자가 요청서의 요구사항을 작업으로 나누고 금액·기간·확인 문장을 붙여 보냅니다.

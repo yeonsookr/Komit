@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/layouts";
 import { EmptyState } from "@/components/feedback";
-import { ConsultingContractForm, ContractEditor } from "@/components/domains/contract";
+import { ConsultingContractDraftForm, ContractEditor } from "@/components/domains/contract";
 import { RoomHeader } from "@/components/domains/room";
 import { getContract, getIssues, getMe, getRoom } from "@/lib/api/services";
 import { isReceived } from "@/lib/rooms";
+import { isConsultingDraft } from "@/lib/contract";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
 import type { Contract } from "@/types/contract";
@@ -62,6 +63,11 @@ export default async function ContractNewPage({
 
   const { room, me, contract, issues } = await loadEditor(id);
 
+  // 작성이 끝난 계약으로 새 작성 주소에 다시 들어오면 세션을 하나 더 만들지 않습니다.
+  if (contract !== null && !isConsultingDraft(contract)) {
+    redirect(ROUTES.roomContract(id));
+  }
+
   /** 계약서는 개발자가 씁니다. 의뢰인은 받아서 서명만 합니다. */
   const canWrite = isReceived(room, me);
 
@@ -71,9 +77,10 @@ export default async function ContractNewPage({
 
       {/* 갈래마다 계약의 내용이 달라 폼이 다릅니다. 컨설팅은 세션 하나가 계약의 전부입니다. */}
       {canWrite && room.type === "CONSULTING" ? (
-        <ConsultingContractForm
+        <ConsultingContractDraftForm
           roomId={room.roomId}
           counterpartName={room.counterpartName}
+          initialDraft={isConsultingDraft(contract) ? contract : null}
         />
       ) : canWrite ? (
         <ContractEditor

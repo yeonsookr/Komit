@@ -70,6 +70,7 @@ export const BACKEND = {
   SETTLEMENT_INCOME: "/api/settlements/income",
   SETTLEMENT_DEPOSITS: "/api/settlements/deposits",
   DEVELOPMENT_CONTRACTS: (roomId: number) => `/api/rooms/${roomId}/development-contracts`,
+  CONTRACT_DRAFT: (roomId: number) => `/api/rooms/${roomId}/contract-draft`,
   /**
    * 컨설팅(영역 4). 개발 계약과 달리 한 번 만나는 세션이 계약의 전부라,
    * 계약서는 방에서 만들고 그 뒤는 세션 식별자로 다룹니다.
@@ -163,6 +164,7 @@ export const INTERNAL = {
   CONTRACT_REVIEW: (contractId: number) => `/api/contracts/${contractId}/review`,
   CONTRACT_REPORTS: (contractId: number) => `/api/contracts/${contractId}/reports`,
   DEVELOPMENT_CONTRACTS: (roomId: number) => `/api/rooms/${roomId}/development-contracts`,
+  CONTRACT_DRAFT: (roomId: number) => `/api/rooms/${roomId}/contract-draft`,
   /**
    * 컨설팅(영역 4). 개발 계약과 달리 한 번 만나는 세션이 계약의 전부라,
    * 계약서는 방에서 만들고 그 뒤는 세션 식별자로 다룹니다.

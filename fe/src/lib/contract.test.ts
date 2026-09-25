@@ -6,6 +6,7 @@ import {
   isFullyChecked,
   isCancelled,
   isHandover,
+  isConsultingDraft,
   isSignedByBoth,
   hasSigned,
   lastCounterpartMessage,
@@ -113,6 +114,36 @@ describe("totalAmount", () => {
 
   it("계약서가 없으면 null", () => {
     expect(totalAmount(null)).toBeNull();
+  });
+});
+
+describe("isConsultingDraft", () => {
+  const consulting = {
+    status: "SIGNED",
+    totalAmount: 0,
+    topic: "결제 실패 원인 확인",
+    detail: "재현 조건과 로그를 함께 확인합니다.",
+    sessions: [],
+  } as NonNullable<Contract["consulting"]>;
+
+  it("컨설팅 내용은 있지만 세션이 없으면 AI version 1이다", () => {
+    expect(isConsultingDraft(contract({ contractType: "CONSULTING", consulting }))).toBe(true);
+  });
+
+  it("세션을 정한 컨설팅 계약서는 초안이 아니다", () => {
+    expect(
+      isConsultingDraft(
+        contract({
+          contractType: "CONSULTING",
+          consulting: { ...consulting, sessions: [{} as never] },
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("개발 계약과 계약 없음은 컨설팅 초안이 아니다", () => {
+    expect(isConsultingDraft(contract())).toBe(false);
+    expect(isConsultingDraft(null)).toBe(false);
   });
 });
 

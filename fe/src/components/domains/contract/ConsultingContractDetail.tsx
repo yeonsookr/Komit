@@ -95,6 +95,13 @@ export function ConsultingContractDetail({
               value={consulting.topic}
               className="px-4 py-3.5 sm:px-5"
             />
+            {consulting.detail !== null && (
+              <KeyValueRow
+                label="상담 내용"
+                value={consulting.detail}
+                className="px-4 py-3.5 sm:px-5"
+              />
+            )}
             <KeyValueRow
               label="날짜와 시간"
               value={

@@ -29,6 +29,8 @@ export interface ConsultingContractFormProps {
   counterpartName: string;
   /** 고칠 계약. 없으면 새로 씁니다. */
   contract?: Contract | null;
+  /** AI가 만든 version 1. 초기값으로만 쓰고 제출은 새 계약서 작성 경로로 보냅니다. */
+  draft?: Contract | null;
 }
 
 /**
@@ -48,21 +50,24 @@ export function ConsultingContractForm({
   roomId,
   counterpartName,
   contract = null,
+  draft = null,
 }: Readonly<ConsultingContractFormProps>) {
   const router = useRouter();
   const showToast = useToast();
 
-  const session = contract?.consulting?.sessions[0] ?? null;
+  const initial = contract ?? draft;
+  const session = initial?.consulting?.sessions[0] ?? null;
   const scheduled = session === null ? null : new Date(session.reservation.scheduledAt);
 
-  const [topic, setTopic] = React.useState(contract?.consulting?.topic ?? "");
+  const [topic, setTopic] = React.useState(initial?.consulting?.topic ?? "");
+  const [detail, setDetail] = React.useState(initial?.consulting?.detail ?? "");
   const [date, setDate] = React.useState(toDateValue(scheduled));
-  const [hour, setHour] = React.useState(scheduled === null ? "14" : pad(scheduled.getHours()));
+  const [hour, setHour] = React.useState(scheduled === null ? "" : pad(scheduled.getHours()));
   const [minute, setMinute] = React.useState(
-    scheduled === null ? "00" : pad(scheduled.getMinutes() < 30 ? 0 : 30),
+    scheduled === null ? "" : pad(scheduled.getMinutes() < 30 ? 0 : 30),
   );
   const [durationMinutes, setDurationMinutes] = React.useState(
-    String(session?.durationMinutes ?? 30),
+    session === null ? "" : String(session.durationMinutes),
   );
   const [price, setPrice] = React.useState(
     session === null ? "" : session.price.toLocaleString("ko-KR"),
@@ -72,7 +77,14 @@ export function ConsultingContractForm({
 
   const amending = contract !== null;
   const priceValue = Number(price.replace(/\D/g, ""));
-  const canSend = topic.trim() !== "" && date !== "" && price !== "" && !sending;
+  const canSend =
+    topic.trim() !== "" &&
+    date !== "" &&
+    hour !== "" &&
+    minute !== "" &&
+    durationMinutes !== "" &&
+    price !== "" &&
+    !sending;
 
   const send = async () => {
     if (!canSend) return;
@@ -89,6 +101,7 @@ export function ConsultingContractForm({
       scheduledAt,
       durationMinutes: Number(durationMinutes),
       price: priceValue,
+      detail: detail.trim() === "" ? null : detail.trim(),
       message: message.trim() === "" ? null : message.trim(),
     };
 
@@ -146,6 +159,20 @@ export function ConsultingContractForm({
               />
             </Field>
 
+            <Field
+              layout="horizontal"
+              label="상담 내용"
+              htmlFor="consulting-detail"
+              helper="계약서에 담을 구체적인 상담 내용을 확인하고 고칩니다."
+            >
+              <Textarea
+                id="consulting-detail"
+                value={detail}
+                placeholder="상담에서 다룰 내용을 적어주세요."
+                onChange={(event) => setDetail(event.target.value)}
+              />
+            </Field>
+
             {/* 날짜와 시각은 한 줄에 둡니다. 떨어뜨리면 언제 만나는지가 한눈에 안 들어옵니다. */}
             {/* 라벨은 줄 전체를 가리키지만 htmlFor 는 첫 칸(날짜)을 짚습니다. */}
             <Field layout="horizontal" label="날짜와 시간" htmlFor="consulting-date">
@@ -163,6 +190,9 @@ export function ConsultingContractForm({
                   value={hour}
                   onChange={(event) => setHour(event.target.value)}
                 >
+                  <option value="" disabled>
+                    선택
+                  </option>
                   {HOURS.map((value) => (
                     <option key={value} value={value}>
                       {value}
@@ -176,6 +206,9 @@ export function ConsultingContractForm({
                   value={minute}
                   onChange={(event) => setMinute(event.target.value)}
                 >
+                  <option value="" disabled>
+                    선택
+                  </option>
                   {MINUTES.map((value) => (
                     <option key={value} value={value}>
                       {value}
@@ -194,6 +227,9 @@ export function ConsultingContractForm({
                   value={durationMinutes}
                   onChange={(event) => setDurationMinutes(event.target.value)}
                 >
+                  <option value="" disabled>
+                    선택
+                  </option>
                   {DURATIONS.map((value) => (
                     <option key={value} value={value}>
                       {value}

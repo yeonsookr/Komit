@@ -22,6 +22,15 @@ export function totalAmount(contract: Contract | null): number | null {
   return contract?.development?.totalAmount ?? contract?.consulting?.totalAmount ?? null;
 }
 
+/** AI version 1은 계약 내용만 있고 개발자가 정할 세션·예약은 아직 없습니다. */
+export function isConsultingDraft(contract: Contract | null): boolean {
+  return (
+    contract?.contractType === "CONSULTING" &&
+    contract.consulting !== null &&
+    contract.consulting.sessions.length === 0
+  );
+}
+
 /**
  * 양쪽이 서명했는지. 서명해야 계약이 성립하고 그 뒤에는 고칠 수 없습니다
  * (R-CON-01 · R-CON-02).
