@@ -6,7 +6,6 @@ import com.a501.service.domain.consulting.service.ConsultingScheduleQueryService
 import com.a501.service.domain.developer.service.DeveloperLookupService;
 import com.a501.service.domain.diagnosis.dto.DiagnosisSummary;
 import com.a501.service.domain.diagnosis.service.DiagnosisQueryService;
-import com.a501.service.domain.file.service.FileLookupService;
 import com.a501.service.domain.mypage.dto.response.MyAccountResponse;
 import com.a501.service.domain.mypage.dto.response.MyDeveloperResponse;
 import com.a501.service.domain.mypage.dto.response.MyPageResponse;
@@ -17,8 +16,6 @@ import com.a501.service.domain.project.service.ProjectQueryService;
 import com.a501.service.domain.review.service.ReviewQueryService;
 import com.a501.service.domain.room.service.RoomQueryService;
 import com.a501.service.domain.setting.service.SettingService;
-import com.a501.service.domain.user.dto.MyPageUserView;
-import com.a501.service.domain.user.service.UserService;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -30,8 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class MyPageService {
-    private final UserService userService;
-    private final FileLookupService fileLookupService;
+    private final MyAccountService myAccountService;
     private final AccountQueryService accountQueryService;
     private final ProjectQueryService projectQueryService;
     private final DiagnosisQueryService diagnosisQueryService;
@@ -42,7 +38,7 @@ public class MyPageService {
     private final SettingService settingService;
 
     public MyPageResponse getMyPage(Integer userId) {
-        MyPageUserView user = userService.getMyPageUser(userId);
+        MyAccountResponse account = myAccountService.getAccount(userId);
         List<MyProjectView> projectViews = projectQueryService.findMine(userId);
         List<Integer> projectIds = projectViews.stream().map(MyProjectView::projectId).toList();
         Map<Integer, DiagnosisSummary> diagnoses = diagnosisQueryService.findLatestByProjects(projectIds);
@@ -50,22 +46,13 @@ public class MyPageService {
         Integer developerId = developerLookupService.findDeveloperId(userId);
 
         return new MyPageResponse(
-                account(user),
+                account,
                 accountQueryService.findSettlementAccount(userId),
                 projectViews.stream()
                         .map(project -> project(project, diagnoses.get(project.projectId()), roomCounts))
                         .toList(),
                 developer(developerId),
                 new NotificationSettingResponse(settingService.isNotificationEnabled(userId)));
-    }
-
-    private MyAccountResponse account(MyPageUserView user) {
-        String profileImageUrl = user.kakaoProfileImageUrl();
-        if (user.profileImageFileId() != null) {
-            profileImageUrl = fileLookupService.findReadUrls(List.of(user.profileImageFileId()))
-                    .getOrDefault(user.profileImageFileId(), profileImageUrl);
-        }
-        return new MyAccountResponse(user.name(), user.email(), profileImageUrl);
     }
 
     private static MyProjectResponse project(

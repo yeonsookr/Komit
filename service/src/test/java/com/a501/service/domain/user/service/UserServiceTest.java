@@ -145,6 +145,32 @@ class UserServiceTest {
         assertThat(userService.isActive(99)).isFalse();
     }
 
+    @Test
+    @DisplayName("올린 사진을 프로필 사진으로 걸고 카카오 사진 주소는 그대로 둔다")
+    void changeProfileImageKeepsKakaoUrl() {
+        User user = existingUser(12);
+        ReflectionTestUtils.setField(user, "kakaoProfileImageUrl", "https://k.kakaocdn.net/profile.jpg");
+        when(userRepository.findById(12)).thenReturn(Optional.of(user));
+
+        userService.changeProfileImage(12, 512);
+
+        assertThat(user.getProfileImageFileId()).isEqualTo(512);
+        assertThat(user.getKakaoProfileImageUrl()).isEqualTo("https://k.kakaocdn.net/profile.jpg");
+    }
+
+    @Test
+    @DisplayName("탈퇴한 사용자는 프로필 사진을 바꾸지 못하고 401이다")
+    void withdrawnUserCannotChangeProfileImage() {
+        User withdrawn = existingUser(12);
+        ReflectionTestUtils.setField(withdrawn, "unlinkedAt", NOW_UTC);
+        when(userRepository.findById(12)).thenReturn(Optional.of(withdrawn));
+
+        assertThatThrownBy(() -> userService.changeProfileImage(12, 512))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(CommonErrorCode.UNAUTHORIZED));
+        assertThat(withdrawn.getProfileImageFileId()).isNull();
+    }
+
     private KakaoUserData kakaoUserData() {
         return new KakaoUserData(
                 123L,

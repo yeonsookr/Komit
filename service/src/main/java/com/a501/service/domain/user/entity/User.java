@@ -125,6 +125,11 @@ public class User extends SoftDeleteEntity {
         return hasDevProfile;
     }
 
+    /** 직접 올린 사진을 프로필 사진으로 겁니다. 카카오 사진 주소는 지우지 않고 그대로 둡니다. */
+    public void changeProfileImage(Integer fileId) {
+        this.profileImageFileId = fileId;
+    }
+
     private static LocalDateTime utc(Instant value) {
         return value == null ? null : LocalDateTime.ofInstant(value, ZoneOffset.UTC);
     }
