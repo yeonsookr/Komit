@@ -95,7 +95,7 @@ Copy-Item ai\worker\.env.example ai\worker\.env
 | 컨설팅 출력 | `topic`(1~255자) `detail`(근거 없으면 `null`) |
 | 개발 출력 | `issueIds` `milestones[].title` `milestones[].qaCriteria` `rejectedIssues[].issueId` `.reason` |
 | 확인 문장 | `R-REQ-01` `R-REQ-04` `R-QA-01` `R-QA-05`. 작업마다 하나 이상, 문장마다 1~500자 |
-| 진행 안 함 | `proceed=false` → 초안 `None`. **오류가 아니다** |
+| 짧은 대화 | 전환된 계약방이므로 확인 가능한 내용으로 반드시 초안 생성 |
 | 생성 실패 | 형식·식별자 검증 위반은 `InvalidGmsResponseError`. 빈 계약서를 대신 만들지 않는다 |
 
 일정·기간·금액·인계물·전달 메시지는 개발자 입력 필드다. 모델이 이 필드를 함께 내놓으면

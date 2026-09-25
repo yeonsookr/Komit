@@ -60,7 +60,7 @@ AI 서비스는 Service DB를 읽지도 쓰지도 않는다. 권한과 소유권
 | 경로 | 작업 | 응답 |
 | --- | --- | --- |
 | `POST /qa-suggestions` | 확인 문장 후보 | `{"content": [{"testCase": …} × 3]}` |
-| `POST /contract-draft` | 계약서 초안 | `{"draft": {…}}` · 상담이 안 끝났으면 `{"draft": null}` |
+| `POST /contract-draft` | 계약서 초안 | `{"draft": {…}}` · `draft`가 없거나 `null`이면 `502` |
 | `POST /consulting-summary` | 컨설팅 요약 + 근거 | `discussed`·`decided`·`nextActions`·`changes` 네 배열 |
 | `GET /health` | 기동·생존 확인 | `{"status": "UP"}` |
 

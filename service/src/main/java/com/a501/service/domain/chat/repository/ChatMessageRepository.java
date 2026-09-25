@@ -8,6 +8,9 @@ import org.springframework.data.domain.Limit;
 import org.springframework.data.mongodb.repository.MongoRepository;
 
 public interface ChatMessageRepository extends MongoRepository<ChatMessage, ObjectId> {
+    /** AI 계약 초안에 전달할 이 대화의 전체 메시지. 작성 시각과 식별자 순으로 오래된 것이 먼저 옵니다. */
+    List<ChatMessage> findByChatRefIdOrderBySentAtAscIdAsc(String chatRefId);
+
     /**
      * 이 대화의 최근 메시지. 새것부터 내려오므로 화면은 뒤집어 그립니다.
      *

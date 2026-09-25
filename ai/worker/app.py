@@ -192,7 +192,6 @@ def contract_draft(body: ContractDraftRequest) -> dict:
     draft = draft_contract(
         body.targetType, dump(body.messages), build_client(), dump(body.issues)
     )
-    # 상담이 아직 안 끝났으면 초안이 없다. 오류가 아니므로 200 으로 돌려준다.
     return {"draft": draft}
 
 

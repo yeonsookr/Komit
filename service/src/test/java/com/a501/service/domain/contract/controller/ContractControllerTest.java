@@ -64,7 +64,7 @@ class ContractControllerTest {
                          "roomId":92,
                          "contractType":"CONSULTING",
                          "status":"NEGOTIATING",
-                         "consulting":{"status":"PRE_SIGNED","totalAmount":0,
+                         "consulting":{"status":"SIGNED","totalAmount":0,
                                        "topic":"회원탈퇴 경로와 결제 간헐 실패를 함께 봅니다",
                                        "detail":"회원탈퇴 처리 흐름을 화면 공유로 봅니다.",
                                        "sessions":[]},
@@ -134,7 +134,7 @@ class ContractControllerTest {
                 "CONSULTING",
                 "NEGOTIATING",
                 new ConsultingAgreementResponse(
-                        "PRE_SIGNED",
+                        "SIGNED",
                         0L,
                         "회원탈퇴 경로와 결제 간헐 실패를 함께 봅니다",
                         "회원탈퇴 처리 흐름을 화면 공유로 봅니다.",

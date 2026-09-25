@@ -48,8 +48,8 @@ DEVELOPMENT_DRAFT = {
 }
 
 
-def payload(draft, proceed=True):
-    return json.dumps({"proceed": proceed, "draft": draft}, ensure_ascii=False)
+def payload(draft):
+    return json.dumps({"draft": draft}, ensure_ascii=False)
 
 
 class FakeClient:
@@ -111,8 +111,8 @@ class ContractDraftTest(unittest.TestCase):
     def test_rejects_malformed_output(self):
         bad = [
             "not json",
-            json.dumps({"draft": CONSULTING_DRAFT}),
-            json.dumps({"proceed": "true", "draft": CONSULTING_DRAFT}),
+            json.dumps({"proceed": True, "draft": CONSULTING_DRAFT}),
+            payload(None),
             payload({**CONSULTING_DRAFT, "topic": "  "}),
             payload({**CONSULTING_DRAFT, "topic": "주" * 256}),
             payload({**CONSULTING_DRAFT, "detail": ""}),
@@ -157,13 +157,10 @@ class ContractDraftTest(unittest.TestCase):
             parse_draft(payload(unknown), "DEVELOPMENT", (312, 313))
         self.assertIn("입력에 없는", str(caught.exception))
 
-    def test_unfinished_consultation_makes_no_draft(self):
-        client = FakeClient(payload(None, proceed=False))
-        self.assertIsNone(draft_contract("CONSULTING", MESSAGES, client))
-
-    def test_unfinished_consultation_cannot_carry_a_draft(self):
+    def test_short_conversation_still_requires_a_draft(self):
+        client = FakeClient(payload(None))
         with self.assertRaises(InvalidGmsResponseError):
-            parse_draft(payload(CONSULTING_DRAFT, proceed=False), "CONSULTING")
+            draft_contract("CONSULTING", MESSAGES[:1], client)
 
     def test_rejects_unknown_target_type(self):
         with self.assertRaises(ValueError):

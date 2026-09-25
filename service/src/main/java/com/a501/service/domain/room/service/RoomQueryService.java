@@ -4,6 +4,7 @@ import com.a501.service.domain.developer.service.DeveloperLookupService;
 import com.a501.service.domain.project.service.ProjectQueryService;
 import com.a501.service.domain.room.dto.MyRoomView;
 import com.a501.service.domain.room.dto.RoomCountView;
+import com.a501.service.domain.room.dto.ContractDraftRoomView;
 import com.a501.service.domain.room.dto.RoomParties;
 import com.a501.service.domain.room.entity.Room;
 import com.a501.service.domain.room.repository.RoomRepository;
@@ -109,6 +110,24 @@ public class RoomQueryService {
      */
     public Optional<RoomParties> findParties(Integer roomId) {
         return roomRepository.findByIdAndDeletedFalse(roomId).flatMap(this::toParties);
+    }
+
+    /**
+     * 계약 초안을 만들 새 방과 그 방의 원래 무료 상담을 함께 찾습니다.
+     *
+     * <p>원 상담방이 없으면 {@code inquiryChatRefId}만 비워 돌려줍니다. 호출자가 없는 방과 아직
+     * 갈래가 정해지지 않은 방을 서로 다른 응답으로 처리할 수 있어야 하기 때문입니다.
+     */
+    public Optional<ContractDraftRoomView> findContractDraftRoom(Integer roomId) {
+        return roomRepository.findByIdAndDeletedFalse(roomId).flatMap(room ->
+                toParties(room).map(parties -> new ContractDraftRoomView(
+                        room.getId(),
+                        room.getType(),
+                        roomRepository
+                                .findByConvertedRoomIdAndDeletedFalse(room.getId())
+                                .map(Room::getChatRefId)
+                                .orElse(null),
+                        parties)));
     }
 
     private Optional<RoomParties> toParties(Room room) {

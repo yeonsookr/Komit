@@ -68,4 +68,16 @@ class RoomRepositoryTest {
                 .extracting(Room::getId)
                 .containsExactlyInAnyOrder(mineAsClient.getId(), mineAsDeveloper.getId());
     }
+
+    @Test
+    @DisplayName("새로 열린 방 식별자로 원래 무료 상담방을 찾는다")
+    void findsInquiryByConvertedRoom() {
+        Room converted = roomRepository.saveAndFlush(Room.openFrom(mineAsClient, "CONSULTING"));
+        converted.assignChatRef();
+        mineAsClient.convertTo(converted.getId());
+        roomRepository.flush();
+
+        assertThat(roomRepository.findByConvertedRoomIdAndDeletedFalse(converted.getId()))
+                .contains(mineAsClient);
+    }
 }

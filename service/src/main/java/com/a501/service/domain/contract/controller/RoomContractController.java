@@ -4,6 +4,7 @@ import com.a501.service.common.security.AuthenticatedUser;
 import com.a501.service.domain.contract.dto.request.WriteConsultingContractRequest;
 import com.a501.service.domain.contract.dto.response.ContractResponse;
 import com.a501.service.domain.contract.service.ConsultingContractWriteService;
+import com.a501.service.domain.contract.service.ContractDraftService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -24,6 +25,17 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class RoomContractController {
     private final ConsultingContractWriteService consultingContractWriteService;
+    private final ContractDraftService contractDraftService;
+
+    @Operation(
+            summary = "컨설팅 계약서 초안 생성",
+            description = "전환 전 무료 상담 전체 대화로 계약서 version 1을 만든다. 같은 방에서 다시 호출하면 저장된 계약서를 반환한다.")
+    @PostMapping("/contract-draft")
+    ContractResponse draftContract(
+            @Parameter(description = "컨설팅 방 식별자.", example = "92") @PathVariable Integer roomId,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return contractDraftService.generate(roomId, user.userId());
+    }
 
     @Operation(
             summary = "컨설팅 계약서 작성",

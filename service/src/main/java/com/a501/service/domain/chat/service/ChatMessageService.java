@@ -2,6 +2,7 @@ package com.a501.service.domain.chat.service;
 
 import com.a501.service.common.exception.BusinessException;
 import com.a501.service.domain.chat.ChatErrorCode;
+import com.a501.service.domain.chat.dto.ChatMessageView;
 import com.a501.service.domain.chat.dto.response.ChatMessageListResponse;
 import com.a501.service.domain.chat.dto.response.ChatMessageResponse;
 import com.a501.service.domain.chat.entity.ChatMessage;
@@ -83,6 +84,19 @@ public class ChatMessageService {
         requireParticipant(chatRefId, senderUserId);
         return ChatMessageResponse.from(chatMessageRepository.save(
                 ChatMessage.of(chatRefId, senderUserId, content, Instant.now())));
+    }
+
+    /**
+     * AI 작업에 전달할 한 대화의 전체 메시지를 오래된 순서로 돌려줍니다.
+     *
+     * <p>계약 도메인이 MongoDB 저장소와 엔티티를 직접 알지 않도록 채팅 도메인이 내부 조회 경계를
+     * 제공합니다. 권한과 채팅 참조 키는 이 메서드를 부르는 유스케이스가 먼저 검증합니다.
+     */
+    public List<ChatMessageView> findAllChronological(String chatRefId) {
+        return chatMessageRepository.findByChatRefIdOrderBySentAtAscIdAsc(chatRefId).stream()
+                .map(message -> new ChatMessageView(
+                        message.getSenderUserId(), message.getContent(), message.getSentAt()))
+                .toList();
     }
 
     /**

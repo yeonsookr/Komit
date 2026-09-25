@@ -70,6 +70,20 @@ class ChatMessageRepositoryTest {
     }
 
     @Test
+    @DisplayName("AI용 조회는 전체 메시지를 오래된 순서로 읽는다")
+    void oldestFirstWithoutLimit() {
+        save(CHAT_REF_ID, "첫 번째", 0);
+        save(CHAT_REF_ID, "두 번째", 1);
+        save(CHAT_REF_ID, "세 번째", 2);
+
+        List<ChatMessage> found =
+                chatMessageRepository.findByChatRefIdOrderBySentAtAscIdAsc(CHAT_REF_ID);
+
+        assertThat(found).extracting(ChatMessage::getContent)
+                .containsExactly("첫 번째", "두 번째", "세 번째");
+    }
+
+    @Test
     @DisplayName("방 대화와 세션 대화는 섞이지 않는다")
     void separatesRooms() {
         save(CHAT_REF_ID, "상담방 이야기", 0);

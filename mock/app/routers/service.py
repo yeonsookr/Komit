@@ -3600,6 +3600,14 @@ ROOM_NOT_CONVERTED = (
     "ROOM_NOT_CONVERTED",
     "갈래를 정하기 전에는 계약 초안을 만들 수 없습니다.",
 )
+CONTRACT_DRAFT_RESPONSE_INVALID = (
+    "AI_RESPONSE_INVALID",
+    "계약 초안을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.",
+)
+CONTRACT_DRAFT_SERVICE_UNAVAILABLE = (
+    "AI_SERVICE_UNAVAILABLE",
+    "계약 초안 생성 서비스를 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+)
 CODE_GROUP_NOT_FOUND = ("CODE_GROUP_NOT_FOUND", "코드 분류를 찾을 수 없습니다.")
 
 
@@ -7182,14 +7190,14 @@ DRAFT_CLIENT_CONTRACT_EXAMPLE = _draft_contract(DRAFT_CLIENT_CONTRACT_ID, 106)
 # 무료 상담 계약 초안
 #
 # 방 자원이라 영역 3에 속하지만, 응답이 계약서 한 건이라 계약 예시가 다 만들어진
-# 이 자리에 둔다. 초안 전용 응답을 따로 만들지 않는다 — 초안은 가계약 계약서다.
+# 이 자리에 둔다. 초안 전용 응답을 따로 만들지 않는다 — 초안은 계약서 version 1이다.
 # --------------------------------------------------------------------------- #
 
 def _blank_developer_input(draft: dict) -> dict:
     """AI가 채우지 않는 칸을 비운다.
 
     일정·기간·금액·인계물·전달 메시지는 합의와 검수가 필요해 개발자가 직접 넣는다.
-    가계약 예시를 그대로 쓰면 이 값들이 차 있어 「AI가 금액까지 정했다」로 읽힌다.
+    기존 계약 예시를 그대로 쓰면 이 값들이 차 있어 「AI가 금액까지 정했다」로 읽힌다.
     남기는 것은 AI가 만드는 것뿐이다 — 작업 이름, 확인 문장, 맡기로 한 요구사항, 다룰 항목.
     """
     draft["messages"] = []
@@ -7214,14 +7222,15 @@ DRAFT_CONSULTING_CONTRACT_EXAMPLE = _blank_developer_input(
     copy.deepcopy(CONSULTING_CONTRACT_EXAMPLE)
 )
 DRAFT_CONSULTING_CONTRACT_EXAMPLE["roomId"] = CONVERTED_CONSULTING_ROOM_ID
-DRAFT_CONSULTING_CONTRACT_EXAMPLE["consulting"]["status"] = "PRE_SIGNED"
+DRAFT_CONSULTING_CONTRACT_EXAMPLE["consulting"]["status"] = "SIGNED"
 
-# 가계약 예시(DRAFT_DEV_CONTRACT_EXAMPLE)는 개발자가 써서 보낸 계약서라 금액과 일정이
+# 협의 중 예시(DRAFT_DEV_CONTRACT_EXAMPLE)는 개발자가 써서 보낸 계약서라 금액과 일정이
 # 차 있다. 초안은 그 앞 단계이므로 같은 예시를 쓰지 않고 비운 판을 따로 둔다.
 DRAFT_DEVELOPMENT_CONTRACT_EXAMPLE = _blank_developer_input(
     copy.deepcopy(DRAFT_DEV_CONTRACT_EXAMPLE)
 )
 DRAFT_DEVELOPMENT_CONTRACT_EXAMPLE["roomId"] = CONVERTED_DEVELOPMENT_ROOM_ID
+DRAFT_DEVELOPMENT_CONTRACT_EXAMPLE["development"]["status"] = "SIGNED"
 
 
 @router.post(
@@ -7259,8 +7268,8 @@ DRAFT_DEVELOPMENT_CONTRACT_EXAMPLE["roomId"] = CONVERTED_DEVELOPMENT_ROOM_ID
             "content": {
                 "application/json": {
                     "example": {
-                        "code": AI_RESPONSE_INVALID[0],
-                        "message": AI_RESPONSE_INVALID[1],
+                        "code": CONTRACT_DRAFT_RESPONSE_INVALID[0],
+                        "message": CONTRACT_DRAFT_RESPONSE_INVALID[1],
                     }
                 }
             },
@@ -7271,8 +7280,8 @@ DRAFT_DEVELOPMENT_CONTRACT_EXAMPLE["roomId"] = CONVERTED_DEVELOPMENT_ROOM_ID
             "content": {
                 "application/json": {
                     "example": {
-                        "code": AI_SERVICE_UNAVAILABLE[0],
-                        "message": AI_SERVICE_UNAVAILABLE[1],
+                        "code": CONTRACT_DRAFT_SERVICE_UNAVAILABLE[0],
+                        "message": CONTRACT_DRAFT_SERVICE_UNAVAILABLE[1],
                     }
                 }
             },
@@ -7286,8 +7295,9 @@ DRAFT_DEVELOPMENT_CONTRACT_EXAMPLE["roomId"] = CONVERTED_DEVELOPMENT_ROOM_ID
         "무료 상담에서 나눈 이야기를 계약서 초안으로 정리한다. 의뢰인이 갈래를 정해 새 "
         "방이 열린 뒤, 개발자가 그 방에서 계약서를 쓰려고 들어올 때 부른다. 갈래를 "
         "정하지 않으면 초안도 만들지 않는다.\n\n"
-        "**초안은 가계약 계약서다.** 응답은 계약서 조회와 같은 형식이고 갈래별 `status`가 "
-        "`PRE_SIGNED`다. 초안 전용 응답 형식을 따로 두지 않는다.\n\n"
+        "**초안은 계약서 version 1이다.** 응답은 계약서 조회와 같은 형식이고 갈래별 `status`는 "
+        "`SIGNED`다. 실제 체결 전까지 공통 계약 `status`는 `NEGOTIATING`이다. 초안 전용 "
+        "응답 형식을 따로 두지 않는다.\n\n"
         "**방마다 한 번만 만든다.** 처음 부르면 만들어 두고, 같은 방에서 다시 부르면 그 "
         "계약서를 그대로 준다. 몇 번을 불러도 문장이 달라지지 않는다.\n\n"
         "**개발자가 고친 내용은 서버가 들고 있지 않는다.** 고친 내용은 계약서 작성 화면이 "

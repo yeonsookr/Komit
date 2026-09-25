@@ -22,7 +22,7 @@ SUGGESTIONS = (
     "]}"
 )
 CONSULTING_DRAFT = (
-    '{"proceed": true, "draft": {"topic": "관리자 인증을 함께 봅니다", "detail": null}}'
+    '{"draft": {"topic": "관리자 인증을 함께 봅니다", "detail": null}}'
 )
 SUMMARY = (
     '{"discussed": [{"title": "관리자 화면 접근 오류 논의", "detail": null,'
@@ -96,12 +96,12 @@ class AiServiceTest(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(result["draft"]["topic"], "관리자 인증을 함께 봅니다")
 
-    def test_상담이_안_끝나면_초안_없이_성공한다(self):
-        use(FakeClient('{"proceed": false, "draft": null}'))
-        result = service.contract_draft(
-            service.ContractDraftRequest(targetType="CONSULTING", messages=MESSAGES)
-        )
-        self.assertIsNone(result["draft"])
+    def test_초안이_없으면_계약을_어긴_결과다(self):
+        use(FakeClient('{"draft": null}'))
+        with self.assertRaises(InvalidGmsResponseError):
+            service.contract_draft(
+                service.ContractDraftRequest(targetType="CONSULTING", messages=MESSAGES)
+            )
 
     def test_컨설팅_요약을_돌려준다(self):
         use(FakeClient(SUMMARY))
