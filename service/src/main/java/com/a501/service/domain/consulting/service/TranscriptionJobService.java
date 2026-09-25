@@ -85,10 +85,25 @@ public class TranscriptionJobService {
      *
      * <p>녹음은 이 서버를 지나지 않습니다. 노트북이 읽기 주소로 저장소에서 직접 받습니다.
      *
+     * <p>계약이나 녹음 파일을 찾지 못한 세션은 전사 불가로 표시하고 다음 세션으로 넘어갑니다.
+     * 가장 먼저 끝난 세션부터 내주므로, 그 세션을 그대로 두면 뒤의 세션이 차례를 얻지 못합니다.
+     *
      * @return 할 일. 없으면 비어 있음
      */
+    @Transactional
     public Optional<TranscriptionJobResponse> claim() {
-        return sessionRepository.findNextToTranscribe().map(this::job);
+        Optional<Integer> next;
+        while ((next = sessionRepository.findNextToTranscribe()).isPresent()) {
+            Integer sessionId = next.get();
+            Optional<TranscriptionJobResponse> job = job(sessionId);
+            if (job.isPresent()) {
+                return job;
+            }
+            findForUpdate(sessionId).markTranscriptFailed(LocalDateTime.now(clock));
+            // 다음 조회가 이 세션을 다시 고르지 않게 바로 반영한다.
+            sessionRepository.flush();
+        }
+        return Optional.empty();
     }
 
     /**
@@ -128,12 +143,17 @@ public class TranscriptionJobService {
         }
     }
 
-    private TranscriptionJobResponse job(Integer sessionId) {
+    /** 내줄 할 일. 내줄 수 없으면 사람이 알아채게 남기고 비워 돌려줍니다. */
+    private Optional<TranscriptionJobResponse> job(Integer sessionId) {
         ConsultingSession session = sessionRepository.findByIdAndDeletedFalse(sessionId)
                 .orElseThrow(() -> new IllegalStateException("전사할 세션이 사라졌습니다: " + sessionId));
-        ContractParties parties = contractQueryService
-                .findPartiesByConsultingAgreementId(session.getConsultingAgreementId())
-                .orElseThrow(() -> new IllegalStateException("세션의 계약을 찾지 못했습니다: " + sessionId));
+        Optional<ContractParties> found =
+                contractQueryService.findPartiesByConsultingAgreementId(session.getConsultingAgreementId());
+        if (found.isEmpty()) {
+            log.error("전사 불가로 표시: 세션의 계약을 찾지 못함 sessionId={}", sessionId);
+            return Optional.empty();
+        }
+        ContractParties parties = found.get();
         List<ParticipationRecord> recorded =
                 participationRepository.findAllByConsultingSessionIdAndDeletedFalse(sessionId).stream()
                         .filter(record -> record.getFileId() != null)
@@ -146,12 +166,13 @@ public class TranscriptionJobService {
                         speaker(parties, record.getUserId()),
                         urls.get(Math.toIntExact(record.getFileId()))))
                 .toList();
-        // 붙어 있던 녹음 파일이 저장소에서 사라진 경우다. 한 사람 몫만 넘기면 그 사람의 말만으로
-        // 요약이 만들어지므로 넘기지 않고 드러낸다.
+        // 붙어 있던 녹음 파일을 찾지 못한 경우다. 한 사람 몫만 넘기면 그 사람의 말만으로
+        // 요약이 만들어지므로 넘기지 않는다.
         if (tracks.stream().anyMatch(track -> track.audioUrl() == null)) {
-            throw new IllegalStateException("녹음 파일의 읽기 주소를 만들지 못했습니다: " + sessionId);
+            log.error("전사 불가로 표시: 녹음 파일의 읽기 주소를 만들지 못함 sessionId={}", sessionId);
+            return Optional.empty();
         }
-        return new TranscriptionJobResponse(sessionId, tracks);
+        return Optional.of(new TranscriptionJobResponse(sessionId, tracks));
     }
 
     /** 화자는 녹음을 올린 사람의 계약상 역할입니다. (R-CON-14) */

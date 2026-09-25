@@ -96,10 +96,33 @@ class TranscriptionJobServiceTest {
     }
 
     @Test
-    void 녹음_주소를_만들지_못하면_한_사람_몫만_넘기지_않는다() {
+    void 녹음_주소를_만들지_못하면_전사_불가로_두고_다음으로_넘어간다() {
         givenRecordings(Map.of(612, "https://file.example/dev"));
+        when(sessionRepository.findNextToTranscribe()).thenReturn(Optional.of(SESSION_ID), Optional.empty());
 
-        assertThatThrownBy(service::claim).isInstanceOf(IllegalStateException.class);
+        assertThat(service.claim()).isEmpty();
+        assertThat(session.getTranscriptFailedAt()).isEqualTo(LocalDateTime.ofInstant(NOW, ZoneOffset.UTC));
+        verify(sessionRepository, times(2)).findNextToTranscribe();
+    }
+
+    @Test
+    void 계약을_찾지_못하면_전사_불가로_두고_다음_세션을_내준다() {
+        Integer nextId = 56;
+        ConsultingSession next = BeanUtils.instantiateClass(ConsultingSession.class);
+        ReflectionTestUtils.setField(next, "id", nextId);
+        ReflectionTestUtils.setField(next, "consultingAgreementId", 12);
+        when(sessionRepository.findByIdAndDeletedFalse(nextId)).thenReturn(Optional.of(next));
+        when(contractQueryService.findPartiesByConsultingAgreementId(AGREEMENT_ID)).thenReturn(Optional.empty());
+        when(contractQueryService.findPartiesByConsultingAgreementId(12))
+                .thenReturn(Optional.of(new ContractParties(121, CLIENT_ID, DEVELOPER_ID)));
+        when(participationRepository.findAllByConsultingSessionIdAndDeletedFalse(nextId))
+                .thenReturn(List.of(recording(CLIENT_ID, 711L)));
+        when(fileLookupService.findReadUrls(List.of(711))).thenReturn(Map.of(711, "https://file.example/next"));
+        when(sessionRepository.findNextToTranscribe()).thenReturn(Optional.of(SESSION_ID), Optional.of(nextId));
+
+        assertThat(service.claim().orElseThrow().sessionId()).isEqualTo(nextId);
+        assertThat(session.getTranscriptFailedAt()).isNotNull();
+        assertThat(next.getTranscriptFailedAt()).isNull();
     }
 
     @Test
