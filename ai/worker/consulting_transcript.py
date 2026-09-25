@@ -9,8 +9,10 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 from qa_suggestion import GmsUnavailableError, UnusableInputError
 
@@ -28,6 +30,10 @@ SPLIT_GAP_SECONDS = 0.6
 CONDITION_ON_PREVIOUS_TEXT = False
 
 SPEAKERS = ("CLIENT", "DEVELOPER")
+
+# 전사 중 오류가 이 말을 담고 있으면 오디오가 아니라 장비 탓으로 본다. CTranslate2 는 GPU
+# 오류를 모두 `RuntimeError` 로 던져 종류로는 가를 수 없다.
+GPU_ERROR_WORDS = ("CUDA", "cuBLAS", "cublas", "cuDNN", "cudnn", "out of memory")
 
 # 기준 장비가 GPU 로 정해져 모델을 다시 골랐다 (`README.md` 「GPU 기준으로 다시 고름」).
 #
@@ -139,13 +145,40 @@ def merge(tracks: list[dict]) -> list[dict]:
 
 
 def load_model(name: str, device: str, compute_type: str):
-    """모델을 올린다. 올리지 못하면 전사 실패 갈래로 바꿔 던진다."""
+    """모델을 올리고 한 번 돌려 본다. 어느 쪽이든 실패하면 전사 실패 갈래로 바꿔 던진다.
+
+    **올리기만 해서는 GPU 가 되는지 모른다.** CUDA 라이브러리는 첫 전사 때 읽힌다. 확인하지
+    않으면 라이브러리가 없는 것을 첫 녹음에서야 알게 되고, 그 오류가 오디오 탓으로 분류된다.
+    """
     try:
+        if device == "cuda":
+            _add_cuda_dll_directories()
+        import numpy
         from faster_whisper import WhisperModel
 
-        return WhisperModel(name, device=device, compute_type=compute_type)
+        model = WhisperModel(name, device=device, compute_type=compute_type)
+        segments, _ = model.transcribe(numpy.zeros(16000, dtype=numpy.float32), language="ko")
+        list(segments)
+        return model
     except Exception as error:  # 설치·장비 문제를 한 갈래로 모은다
         raise GmsUnavailableError(str(error)) from error
+
+
+def _add_cuda_dll_directories() -> None:
+    """pip 로 깐 CUDA 라이브러리(`nvidia-cublas-cu12` 등)를 Windows 가 찾게 한다.
+
+    Linux 는 패키지가 스스로 경로를 잡지만 Windows 는 `bin` 폴더를 알려 줘야 한다.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import nvidia
+    except ImportError:
+        return
+    for root in nvidia.__path__:
+        for folder in Path(root).glob("*/bin"):
+            os.add_dll_directory(str(folder))
+            os.environ["PATH"] = f"{folder}{os.pathsep}{os.environ['PATH']}"
 
 
 def transcribe_track(model, track: Track, gap_seconds: float = SPLIT_GAP_SECONDS) -> dict:
@@ -167,6 +200,9 @@ def transcribe_track(model, track: Track, gap_seconds: float = SPLIT_GAP_SECONDS
     except GmsUnavailableError:
         raise
     except Exception as error:
+        # GPU 메모리가 모자라거나 CUDA 라이브러리가 떨어진 것은 장비 문제라 다시 걸면 된다.
+        if any(word in str(error) for word in GPU_ERROR_WORDS):
+            raise GmsUnavailableError(f"{track.path} 를 전사하다 GPU 가 멈췄습니다: {error}") from error
         raise UnusableInputError(f"{track.path} 를 읽지 못했습니다: {error}") from error
 
     limit_ms = round(info.duration * 1000)
@@ -183,6 +219,7 @@ def transcribe_track(model, track: Track, gap_seconds: float = SPLIT_GAP_SECONDS
 def transcribe_session(
     tracks: list[Track],
     *,
+    model=None,
     model_name: str = DEFAULT_MODEL,
     device: str = DEFAULT_DEVICE,
     compute_type: str | None = None,
@@ -192,11 +229,15 @@ def transcribe_session(
 
     **한쪽 트랙이 비어도 정상이다.** 말을 하지 않은 참가자가 있을 수 있고, 그 경우에도
     나머지 한쪽으로 요약을 만든다 (`R-CON-16`).
+
+    `model` 을 주면 그것을 쓴다. 작업을 계속 받아 가는 쪽은 한 번 올린 모델을 되쓴다 —
+    올리는 데만 몇 초가 걸린다.
     """
     if not tracks:
         raise ValueError("전사할 트랙이 없습니다")
 
-    model = load_model(model_name, device, compute_type or _default_compute(device))
+    if model is None:
+        model = load_model(model_name, device, compute_type or _default_compute(device))
     done = [transcribe_track(model, track, gap_seconds) for track in tracks]
     return {
         "utterances": merge(done),

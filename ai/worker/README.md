@@ -148,6 +148,39 @@ Copy-Item ai\worker\.env.example ai\worker\.env
 고정 응답을 쓰므로 키 없이 실행되고 외부 요청을 하지 않는다. 실제 녹음 전사와의 연결,
 세션 종료 시 자동 실행, 결과 저장 위치는 이 모듈 밖이며 BE·`230` 계약에 따라 붙인다.
 
+## 컨설팅 전사 — 노트북에서 받아 가기 (S15P21A201-254)
+
+세션 녹음 두 건을 화자가 붙은 병합 전사로 만든다. 모델을 GPU 노트북에서 돌리므로 **이
+프로그램이 Service 에 할 일을 묻고 받아 간다.** 노트북은 공유기 뒤에 있어 Service 가 먼저
+닿을 수 없다. 나가는 HTTPS 만 쓴다.
+
+| 구분 | 내용 |
+| --- | --- |
+| 받아 오는 것 | 세션 번호, 임대 표, 트랙마다 화자·녹음 읽기 주소·시작 지연 |
+| 녹음 | 읽기 주소로 저장소에서 직접 받는다. 전사가 끝나면 지운다 |
+| 올리는 것 | `transcribe_session()` 결과 그대로. 실패면 `TRANSCRIBER_UNAVAILABLE`(다시 받아 감)·`AUDIO_UNUSABLE`(사람이 봄) |
+| 멈추는 때 | 토큰을 거절당했거나 모델을 올리지 못했을 때. 다시 물어도 같다 |
+
+`ai/worker/.env` 에 두 값을 더 넣는다. **토큰을 커밋하지 않는다.**
+
+```
+SERVICE_API_BASE_URL=https://komit.site/service
+TRANSCRIBER_TOKEN=<Service 에 넣은 값과 같은 것>
+```
+
+`faster-whisper` 는 서비스 이미지에 넣지 않으므로 `scripts/requirements.txt` 로 따로 깐다.
+GPU 로 돌리려면 CUDA 라이브러리도 깐다. 없으면 시작하자마자 멈춘다.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r ai\worker\scripts\requirements.txt
+.\.venv\Scripts\python.exe -m pip install nvidia-cublas-cu12==12.9.2.10 nvidia-cudnn-cu12==9.26.0.51
+cd ai\worker; ..\..\.venv\Scripts\python.exe transcription_worker.py
+.\.venv\Scripts\python.exe -m unittest discover -s ai\worker\tests -p "test_transcription_worker.py"
+```
+
+할 일이 없으면 5초마다 다시 묻고, 모델·Service·저장소에 닿지 못하면 30초 기다린다. 작업을
+끝낼 때마다 stdout 에 한 줄 남긴다.
+
 ## N7: 클로바 자동 전사와 STT 시험 비교
 
 ### 모델과 실행 엔진 선택

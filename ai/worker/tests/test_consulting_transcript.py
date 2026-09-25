@@ -183,6 +183,16 @@ class Failures(unittest.TestCase):
         with self.assertRaises(UnusableInputError):
             transcribe_track(못읽는모델(), Track("CLIENT", "깨진파일.webm"))
 
+    def test_전사하다_GPU_가_멈추면_다시_걸어_볼_갈래로_던진다(self):
+        """오디오는 멀쩡하다. 사람에게 넘기면 다시 받아 가지 않는다."""
+        for message in ("CUDA failed with error out of memory", "Library cublas64_12.dll is not found"):
+            class 멈추는모델:
+                def transcribe(self, *args, **kwargs):
+                    raise RuntimeError(message)
+
+            with self.subTest(message=message), self.assertRaises(GmsUnavailableError):
+                transcribe_track(멈추는모델(), Track("CLIENT", "멀쩡한파일.webm"))
+
 
 if __name__ == "__main__":
     unittest.main()
