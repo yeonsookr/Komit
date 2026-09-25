@@ -26,7 +26,7 @@ public class ConsultingAgreement extends SoftDeleteEntity {
     @Column(name = "contract_id", nullable = false)
     private Integer contractId;
 
-    @Column(name = "topic", nullable = false, length = 100)
+    @Column(name = "topic", nullable = false, length = 255)
     private String topic;
 
     @Column(name = "detail", columnDefinition = "text")
