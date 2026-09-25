@@ -18,7 +18,7 @@
 | 문서 | 담는 것 | 보는 때 |
 | --- | --- | --- |
 | `ai/worker/README.md` | 모듈별 입출력과 실행 명령 | 돌려 볼 때 |
-| `ai/worker/docs/job-contract.md` | Service가 AI를 부르는 방식, 실패 두 갈래, 타임아웃 | 밖에서 부르는 경로를 붙일 때 |
+| `ai/worker/docs/job-contract.md` | Service가 AI를 부르는 방식, 실패 세 갈래, 타임아웃, 노트북이 전사를 받아 가는 방식 | 밖에서 부르는 경로를 붙일 때 |
 | `docs/ai/transcript-evidence-contract.md` | `utteranceIndex` 부여 규칙, 근거 검증 세 조건 | 전사·요약의 근거를 다룰 때 |
 | `docs/ai/summary-change-contract.md` | 요청서 변경 유형(`UPDATE`·`ADD`) | 컨설팅 요약의 `changes`를 다룰 때 |
 | `docs/ai/chat-contract-draft.md` | 상담 채팅 기반 계약 초안 | 계약 초안을 다룰 때 |
