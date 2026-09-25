@@ -17,7 +17,9 @@ import com.a501.service.domain.contract.dto.response.ContractResponse;
 import com.a501.service.domain.contract.dto.response.SignatureResponse;
 import com.a501.service.domain.contract.dto.response.TempMessageResponse;
 import com.a501.service.domain.contract.service.ConsultingContractWriteService;
+import com.a501.service.domain.contract.service.ContractDepositService;
 import com.a501.service.domain.contract.service.ContractDetailService;
+import com.a501.service.domain.contract.service.ContractSignatureService;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -41,6 +43,10 @@ class ContractControllerTest {
     private ContractDetailService contractDetailService;
     @MockitoBean
     private ConsultingContractWriteService consultingContractWriteService;
+    @MockitoBean
+    private ContractSignatureService contractSignatureService;
+    @MockitoBean
+    private ContractDepositService contractDepositService;
 
     @Test
     void returnsTheContractWithOnlyOneBranchFilled() throws Exception {
