@@ -35,6 +35,15 @@ public class ConsultingSession extends SoftDeleteEntity {
     @Column(name = "summary", columnDefinition = "json")
     private String summary;
 
+    /** 두 녹음을 합친 전사 원문. 비어 있으면 아직 전사 전이다. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "transcript", columnDefinition = "json")
+    private String transcript;
+
+    /** 녹음을 전사할 수 없다고 판정한 시각. 차 있으면 다시 전사하지 않는다. */
+    @Column(name = "transcript_failed_at")
+    private LocalDateTime transcriptFailedAt;
+
     @Column(name = "started_at")
     private LocalDateTime startedAt;
 
