@@ -2,7 +2,6 @@ package com.a501.service.domain.contract.client;
 
 import com.a501.service.common.exception.BusinessException;
 import com.a501.service.domain.contract.ContractErrorCode;
-import com.fasterxml.jackson.databind.JsonNode;
 import java.math.BigInteger;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
@@ -17,6 +16,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import tools.jackson.databind.JsonNode;
 
 /**
  * 예치를 Escrow 서버에 맡긴다.
