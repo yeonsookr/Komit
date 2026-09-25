@@ -3,10 +3,19 @@
  */
 import type {
   Contract,
+  ContractMessage,
   DevelopmentAgreement,
   DevelopmentStatus,
   Milestone,
 } from "@/types/contract";
+
+/** 계약서와 함께 상대가 마지막으로 남긴 말. */
+export function lastCounterpartMessage(
+  contract: Contract,
+  received: boolean,
+): ContractMessage | null {
+  return contract.messages.findLast((message) => message.isClient === received) ?? null;
+}
 
 /** 계약 금액. 갈래에 따라 한쪽에만 있습니다. 계약서 전이면 null. */
 export function totalAmount(contract: Contract | null): number | null {

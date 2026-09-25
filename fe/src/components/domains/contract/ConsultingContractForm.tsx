@@ -13,6 +13,7 @@ import type { Contract } from "@/types/contract";
 
 /** ERD `consulting_agreements.topic` 과 같은 길이. 넘기면 서버가 422 를 줍니다. */
 const MAX_TOPIC_LENGTH = 255;
+const MAX_MESSAGE_LENGTH = 300;
 
 /** 세션 길이. 한 번 만나는 자리라 짧게 끊어 고르게 합니다. */
 const DURATIONS = [30, 45, 60, 90];
@@ -228,7 +229,7 @@ export function ConsultingContractForm({
           <Textarea
             aria-label="전달 메시지"
             value={message}
-            maxLength={500}
+            maxLength={MAX_MESSAGE_LENGTH}
             showCount
             placeholder="계약서와 함께 남길 말이 있으면 적어주세요."
             onChange={(event) => setMessage(event.target.value)}

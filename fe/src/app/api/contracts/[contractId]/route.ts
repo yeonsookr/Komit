@@ -8,6 +8,7 @@ const NOT_FOUND = { code: "CONTRACT_NOT_FOUND", message: "계약서를 찾을 �
 
 /** 목 명세가 정한 길이. ERD 의 `consulting_agreements.topic` 과 같습니다. */
 const MAX_TOPIC_LENGTH = 255;
+const MAX_MESSAGE_LENGTH = 300;
 
 /**
  * **보낸 항목만 바꿉니다.** 빠진 항목은 그대로 두라는 뜻이라 `undefined` 로 남기고,
@@ -46,6 +47,7 @@ function parseBody(body: unknown): AmendConsultingContractRequest | null {
   }
   if (input.message !== undefined) {
     if (typeof input.message !== "string") return null;
+    if (input.message.trim().length > MAX_MESSAGE_LENGTH) return null;
     amend.message = input.message.trim() === "" ? null : input.message.trim();
   }
 

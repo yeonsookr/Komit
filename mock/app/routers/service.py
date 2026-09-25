@@ -5274,6 +5274,7 @@ class WriteConsultingContractRequest(BaseModel):
     )
     message: str | None = Field(
         default=None,
+        max_length=300,
         description="계약서와 함께 상대에게 남길 전달 메시지.",
         examples=["세션 전에 확인하고 싶은 게 있으면 적어주세요."],
     )
@@ -5310,6 +5311,7 @@ class AmendConsultingContractRequest(BaseModel):
     )
     message: str | None = Field(
         default=None,
+        max_length=300,
         description="수정 제안과 함께 남길 전달 메시지.",
         examples=["시간을 45분으로 늘리고 싶습니다."],
     )

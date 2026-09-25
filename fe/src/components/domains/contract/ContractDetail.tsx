@@ -6,6 +6,7 @@ import {
   billableMilestones,
   hasSigned,
   isSignedByBoth,
+  lastCounterpartMessage,
   totalWorkDays,
 } from "@/lib/contract";
 import { formatDateTimeLabel, formatDayWithWeekday } from "@/lib/format";
@@ -95,6 +96,7 @@ export function ContractDetail({
   const days = totalWorkDays(development.milestones);
   const mine = hasSigned(contract, myUserId);
   const amount = development.totalAmount.toLocaleString("ko-KR");
+  const note = lastCounterpartMessage(contract, received);
 
   return (
     <section className="mt-8">
@@ -200,11 +202,18 @@ export function ContractDetail({
         </Card>
       </div>
 
-      {contract.detail && (
+      {note && (
         <div className="mt-10">
-          <CardHeader title="전달 메시지" />
+          <CardHeader
+            title={`${received ? counterpartName : `${counterpartName} 개발자`}가 남긴 말`}
+            action={
+              <span className="text-[13px] text-fg-subtle">
+                계약서와 함께 왔습니다 · {formatDateTimeLabel(note.createdAt)}
+              </span>
+            }
+          />
           <Card variant="surface" className="mt-3">
-            <p className="text-sm leading-6 text-fg-muted">{contract.detail}</p>
+            <p className="text-sm leading-6 text-fg-muted">{note.content}</p>
           </Card>
         </div>
       )}

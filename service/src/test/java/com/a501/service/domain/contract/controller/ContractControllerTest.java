@@ -3,9 +3,12 @@ package com.a501.service.domain.contract.controller;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -28,6 +31,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -98,6 +102,18 @@ class ContractControllerTest {
                 .andExpect(status().isUnauthorized());
 
         verify(contractDetailService, never()).getContract(anyInt(), anyInt());
+    }
+
+    @Test
+    void rejectsAmendMessageLongerThanDatabaseColumn() throws Exception {
+        mockMvc.perform(patch("/api/contracts/{contractId}", CONTRACT_ID)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"message\":\"%s\"}".formatted("가".repeat(301))))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors[0].field").value("message"));
+
+        verifyNoInteractions(consultingContractWriteService);
     }
 
     /** R-CON-21: 취소는 본문 없이 부르고 취소된 계약을 200 으로 돌려준다. */
