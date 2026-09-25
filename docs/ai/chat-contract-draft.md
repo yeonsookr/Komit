@@ -71,7 +71,7 @@ AI는 채팅 저장소를 직접 조회하지 않는다. 채팅 담당 영역이
 | --- | --- |
 | `contracts` | `room_id` · `contract_type` · `status = NEGOTIATING` |
 | `consulting_agreements` 또는 `development_contracts` | 갈래별 최신 내용. AI ver1부터 `status = SIGNED` |
-| AI ver1 불변 스냅샷 | 생성 당시 계약 응답 전체. 학습·감사용이며 일반 계약 조회에는 노출하지 않음 |
+| `ai_contract_draft_snapshots` | 계약당 한 행. `contract_id`와 생성 당시 응답 전체 `content_snapshot` JSON. 학습·감사용이며 일반 계약 조회에는 노출하지 않음 |
 
 - 방 하나에 계약은 하나다. 같은 방에서 다시 부르면 **모델을 다시 돌리지 않고 저장된 계약서를
   돌려준다.**
@@ -80,6 +80,8 @@ AI는 채팅 저장소를 직접 조회하지 않는다. 채팅 담당 영역이
 - AI ver1부터 갈래별 상태는 `SIGNED`지만 실제 체결을 뜻하지 않는다. 실제 서명 전까지 공통
   `contracts.status`는 `NEGOTIATING`이고, 서명 두 개가 모두 찍혀야 `SIGNED`가 된다 (`R-CON-01`).
 - `PRE_SIGNED`는 사용하지 않는다.
+- `ai_contract_draft_snapshots.contract_id`는 UNIQUE다. 이미 저장된 원본을 수정·삭제하는 API는
+  만들지 않고, 일반 계약 조회 응답에도 `content_snapshot`을 포함하지 않는다.
 
 ## 4. 컨설팅 계약 초안
 
