@@ -96,7 +96,6 @@ export default async function RoomSummaryPage({
         <SessionSummaryView
           sessionId={session.sessionId}
           summary={summary}
-          counterpartName={room.counterpartName}
           // 요청서는 의뢰인의 것입니다. 개발자는 요약을 읽기만 합니다.
           canApply={!isReceived(room, me)}
         />
@@ -123,7 +122,7 @@ function emptyBody(session: Session): string {
     return "계약서에 세션 일시가 확정되면 그 세션을 마친 뒤 요약이 생깁니다.";
   }
   if (sessionPhase(session) === "ENDED") {
-    return "녹음을 글로 옮겨 정리하고 개발자가 검토하는 중입니다. 잠시 후 새로고침해 주세요.";
+    return "녹음을 글로 옮겨 정리하는 중입니다. 잠시 후 새로고침해 주세요.";
   }
   return `${formatSessionSchedule(session.reservation.scheduledAt)}에 시작합니다. 세션을 마치면 논의한 것과 결정된 것이 여기에 정리됩니다.`;
 }

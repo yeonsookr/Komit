@@ -321,11 +321,22 @@ export function SessionStage({
   }, [call]);
 
   /*
-    담기 시작하는 것은 **세션이 시작된 뒤**입니다. 카메라가 켜졌다고 담지 않습니다 —
-    기다리는 동안의 미리보기까지 들어가면 안 됩니다. 입장 자체가 동의라 따로 묻지
-    않습니다 (`R-CON-17`). 파일은 세션을 마친 뒤에 올립니다.
+    담기 시작하는 것은 **세션이 시작되고 통화가 처음 붙은 뒤**입니다. 카메라가 켜졌다고
+    담지 않습니다 — 기다리는 동안의 미리보기까지 들어가면 안 됩니다. 입장 자체가 동의라
+    따로 묻지 않습니다 (`R-CON-17`). 파일은 세션을 마친 뒤에 올립니다.
+
+    통화가 붙는 순간을 기다리는 것은 **두 녹음의 시작을 맞추기 위해서**입니다. 입장은 양쪽이
+    서로 다른 때 알지만 연결은 양쪽에서 함께 붙습니다. 전사는 두 녹음을 같은 시각에 시작한
+    것으로 보고 합칩니다.
+
+    한 번 붙으면 끊겼다 다시 붙어도 그대로 담습니다. 멈췄다 다시 시작하면 조각이 갈립니다.
   */
-  const recorder = useSessionRecorder(call.localStream, joined);
+  const [callStarted, setCallStarted] = React.useState(false);
+  React.useEffect(() => {
+    if (joined && call.status === "CONNECTED") setCallStarted(true);
+  }, [joined, call.status]);
+
+  const recorder = useSessionRecorder(call.localStream, callStarted);
 
   /* 대화는 통화와 다른 연결로 엽니다. 한 연결에 둘을 얹으면 한쪽이 끊길 때 같이 끊깁니다. */
   const chat = useChatChannel({ chatRefId, initialMessages });

@@ -39,6 +39,8 @@ app:
     # AI 가 가려낸 502·503 구분이 이쪽에 닿지 못합니다.
     connect-timeout: ${AI_CONNECT_TIMEOUT:3s}
     read-timeout: ${AI_READ_TIMEOUT:25s}
+    # 요약만 따로 둔다. AI 가 추론 모델(gpt-5-mini)을 120초까지 기다리므로 그보다 길어야 한다.
+    summary-read-timeout: ${AI_SUMMARY_READ_TIMEOUT:150s}
   escrow:
     base-url: ${ESCROW_API_BASE_URL}
     client-api-key: ${ESCROW_CLIENT_API_KEY}

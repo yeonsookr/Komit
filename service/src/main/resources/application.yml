@@ -8,6 +8,13 @@ spring:
       # 상태코드 시드(data.sql)만 실행합니다. 스키마는 JPA가 맡습니다.
       mode: always
       encoding: UTF-8
+  task:
+    execution:
+      shutdown:
+        # 내려갈 때 뒤에서 돌던 세션 요약을 끝내고 내려간다. 요약은 다시 만드는 장치가 없어
+        # 끊기면 비어 남는다. AI 쪽 요약 한도(app.ai.summary-read-timeout 150s)만큼 기다린다.
+        await-termination: true
+        await-termination-period: 150s
   jpa:
     open-in-view: false
     # 시드를 JPA 스키마 생성 뒤에 실행합니다.
@@ -66,6 +73,9 @@ app:
     # 한 계약의 지급을 한 서버만 하게 잡는 잠금의 수명. Escrow 호출 세 번(목록·상세·지급)의
     # 읽기 한도 합보다 길어야, 잡은 서버가 일하는 도중에 다른 서버가 끼어들지 않습니다.
     payout-lock-ttl: 3m
+  transcriber:
+    # 전사를 받아 가는 노트북의 토큰. 비워 두면 전사 경로가 모두 401 로 닫힙니다.
+    token: ${TRANSCRIBER_TOKEN:}
   realtime:
     # R-RT-01: 티켓을 받아 WebSocket 을 여는 사이에만 쓰며 한 번 쓰면 바로 지웁니다.
     ticket-ttl: 30s

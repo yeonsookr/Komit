@@ -35,6 +35,15 @@ public class ConsultingSession extends SoftDeleteEntity {
     @Column(name = "summary", columnDefinition = "json")
     private String summary;
 
+    /** 두 녹음을 합친 전사 원문. 비어 있으면 아직 전사 전이다. */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "transcript", columnDefinition = "json")
+    private String transcript;
+
+    /** 녹음을 전사할 수 없다고 판정한 시각. 차 있으면 다시 전사하지 않는다. */
+    @Column(name = "transcript_failed_at")
+    private LocalDateTime transcriptFailedAt;
+
     @Column(name = "started_at")
     private LocalDateTime startedAt;
 
@@ -67,6 +76,48 @@ public class ConsultingSession extends SoftDeleteEntity {
 
     public boolean isEnded() {
         return endedAt != null;
+    }
+
+    /**
+     * 전사를 남깁니다.
+     *
+     * <p>이미 전사가 있거나 전사할 수 없다고 판정된 세션이면 그대로 둡니다. 같은 결과가 다시
+     * 와도 처음 것이 남습니다.
+     *
+     * @return 이번에 남겼으면 참
+     */
+    public boolean recordTranscript(String transcript) {
+        if (!awaitingTranscript()) {
+            return false;
+        }
+        this.transcript = Objects.requireNonNull(transcript, "transcript");
+        return true;
+    }
+
+    /** 녹음을 전사할 수 없다고 판정합니다. 이 세션은 다시 전사하지 않습니다. */
+    public boolean markTranscriptFailed(LocalDateTime failedAt) {
+        if (!awaitingTranscript()) {
+            return false;
+        }
+        this.transcriptFailedAt = Objects.requireNonNull(failedAt, "failedAt");
+        return true;
+    }
+
+    /**
+     * 요약을 남깁니다. 이미 있으면 그대로 둡니다.
+     *
+     * @return 이번에 남겼으면 참
+     */
+    public boolean recordSummary(String summary) {
+        if (this.summary != null) {
+            return false;
+        }
+        this.summary = Objects.requireNonNull(summary, "summary");
+        return true;
+    }
+
+    private boolean awaitingTranscript() {
+        return transcript == null && transcriptFailedAt == null;
     }
 
     /**

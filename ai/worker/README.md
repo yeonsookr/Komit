@@ -44,7 +44,8 @@ Service 가 부르는 HTTP 경계다. 아래 모듈들을 경로 뒤에 붙여 �
 저장되지 않는다. 실제 `issueId` 조회·소유권 확인과 저장은 Service 담당 범위다.
 
 GMS 안내의 OpenAI Chat Completions 경로를 사용한다. 초기 시험 모델은 비용이 낮은
-`gpt-4.1-nano`다. `ai/worker/.env.example`을 `ai/worker/.env`로 복사하고 본인의
+`gpt-4.1-nano`다. **컨설팅 요약만 `gpt-5-mini`를 쓴다** — nano 는 없는 요구사항 번호를 지어내 요약이 절반쯤
+실패했다. 고른 근거는 `consulting_summary.py` 의 `SUMMARY_MODEL` 주석에 있다. `ai/worker/.env.example`을 `ai/worker/.env`로 복사하고 본인의
 `GMS_API_KEY`를 입력한다. `.env`는 Git에서 제외된다. 키를 채팅·코드·로그에 남기지 않는다.
 `GMS_API_BASE_URL`, `GMS_MODEL`은 같은 파일이나 환경변수로 바꿀 수 있으며 환경변수가
 우선한다.
@@ -122,7 +123,7 @@ Copy-Item ai\worker\.env.example ai\worker\.env
 
 | 구분 | 내용 |
 | --- | --- |
-| 입력 | 발화마다 `utteranceIndex` `speaker`(`CLIENT`·`DEVELOPER`) `rawText` `normalizedText` + 기존 요구사항 `issueId` `title` |
+| 입력 | 발화마다 `utteranceIndex` `speaker`(`CLIENT`·`DEVELOPER`) `rawText` + 기존 요구사항 `issueId` `title` |
 | 출력 | `discussed` `decided` `nextActions` `changes` 네 배열. 항목마다 `title` `detail` `evidenceUtteranceIndexes` `reviewRequired` |
 | 변경 후보 | `changes`는 위 네 개에 더해 `kind`(`UPDATE`·`ADD`)와 `issueId`를 갖는다. `UPDATE`는 입력으로 받은 요구사항 안에서만 고른다 |
 | 근거 검증 | 목록이 비지 않고, 모두 `0 <= index < 발화 수`의 정수이며, 한 항목 안에서 중복되지 않아야 한다 |
@@ -147,6 +148,40 @@ Copy-Item ai\worker\.env.example ai\worker\.env
 입력 JSON은 `utterances`와, 개발 요구사항이 있으면 `requirements`를 가진다. 단위 테스트는
 고정 응답을 쓰므로 키 없이 실행되고 외부 요청을 하지 않는다. 실제 녹음 전사와의 연결,
 세션 종료 시 자동 실행, 결과 저장 위치는 이 모듈 밖이며 BE·`230` 계약에 따라 붙인다.
+
+## 컨설팅 전사 — 노트북에서 받아 가기 (S15P21A201-254)
+
+세션 녹음 두 건을 화자가 붙은 병합 전사로 만든다. 모델을 GPU 노트북에서 돌리므로 **이
+프로그램이 Service 에 할 일을 묻고 받아 간다.** 노트북은 공유기 뒤에 있어 Service 가 먼저
+닿을 수 없다. 나가는 HTTPS 만 쓴다.
+
+| 구분 | 내용 |
+| --- | --- |
+| 받아 오는 것 | 세션 번호, 트랙마다 화자·녹음 읽기 주소 |
+| 녹음 | 읽기 주소로 저장소에서 직접 받는다. 전사가 끝나면 지운다 |
+| 올리는 것 | `transcribe_session()` 결과 그대로. 실패면 `TRANSCRIBER_UNAVAILABLE`(다시 받아 감)·`AUDIO_UNUSABLE`(사람이 봄) |
+| 멈추는 때 | 토큰을 거절당했거나 모델을 올리지 못했을 때. 다시 물어도 같다 |
+| 시각 | 두 녹음은 통화가 처음 붙은 순간에 함께 켜지므로 같은 시각에 시작한 것으로 보고 합친다 |
+
+`ai/worker/.env` 에 두 값을 더 넣는다. **토큰을 커밋하지 않는다.**
+
+```
+SERVICE_API_BASE_URL=https://komit.site/service
+TRANSCRIBER_TOKEN=<Service 에 넣은 값과 같은 것>
+```
+
+`faster-whisper` 는 서비스 이미지에 넣지 않으므로 `scripts/requirements.txt` 로 따로 깐다.
+GPU 로 돌리려면 CUDA 라이브러리도 깐다. 없으면 시작하자마자 멈춘다.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r ai\worker\scripts\requirements.txt
+.\.venv\Scripts\python.exe -m pip install nvidia-cublas-cu12==12.9.2.10 nvidia-cudnn-cu12==9.26.0.51
+cd ai\worker; ..\..\.venv\Scripts\python.exe transcription_worker.py
+.\.venv\Scripts\python.exe -m unittest discover -s ai\worker\tests -p "test_transcription_worker.py"
+```
+
+할 일이 없으면 5초마다 다시 묻고, 모델·Service·저장소에 닿지 못하면 30초 기다린다. 작업을
+끝낼 때마다 stdout 에 한 줄 남긴다.
 
 ## N7: 클로바 자동 전사와 STT 시험 비교
 
@@ -176,6 +211,9 @@ Copy-Item ai\worker\.env.example ai\worker\.env
 확보하지 못한 배포 환경에서도 처리 가능한지 확인하는 최소 운영 기준선이다. GPU 서버 도입이
 확정되면 같은 평가셋과 설정을 사용해 `CUDA` 조건을 별도로 측정한다. 따라서 이번 결과를 GPU
 성능이나 최종 배포 사양으로 해석하지 않는다.
+
+> **뒤에 바뀌었다.** 기준 장비가 GPU로 정해져 `254`에서 다시 골랐다. 아래 「GPU 기준으로 다시
+> 고름」을 함께 본다. 이 절의 `CPU·INT8` 비교는 그때 `small`을 고른 근거로 그대로 남긴다.
 
 ### 실행 방법
 
@@ -236,6 +274,40 @@ CER는 두 전사에서 공백·구두점 등
 클로바 자동 전사는 사람이 검수한 정답이 아니므로 이 결과는 절대 정확도나 합격 기준이 아니다.
 현재 모델 크기를 정하기 위한 상대 비교 근거이며, 향후 사람 검수 정답지와 개발 용어 평가셋으로
 재검증한다.
+
+### GPU 기준으로 다시 고름 (S15P21A201-254)
+
+기준 장비가 GPU로 정해져 `small`을 고른 근거가 사라졌다. 위 표는 `CPU·INT8` 조건에서
+`medium`이 2.5배 느리다는 이유로 떨어뜨린 것이다.
+
+같은 데스크탑(RTX 4070 Laptop)에서 `CUDA·float16`으로 다시 쟀다. 입력은 클로바더빙으로
+만든 대사 46개를 화자별 두 트랙(합계 390초)으로 조립하고 앱과 같은 24kbps Opus로 담은 것이다.
+**대본이 곧 정답**이라 무엇을 틀렸는지 글자 단위로 볼 수 있다.
+
+| 모델 | 실시간 배수 | 90분 두 트랙 | 조각 |
+| --- | ---: | ---: | ---: |
+| `small` | 43.2배 | 4.2분 | 81 |
+| **`large-v3-turbo`** | 21.3배 | 8.5분 | 70 |
+
+**`large-v3-turbo`로 바꾼다.** 절반으로 느려지지만 전사는 비동기라 그 손해가 값을 갖지 않는다.
+
+| 대본 | `small` | `large-v3-turbo` |
+| --- | --- | --- |
+| 데이터베이스 주소하고 에이피아이 키를 | 에이터베이터 주소가 안 잡혀있어요 / A P I T를 | 데이터베이스 주소하고 API키를 |
+| 파일 업로드가 삼십 메가 | 파이 업로드가 30m | 파일 업로드가 30메가 |
+| 다른 하나는 배포 환경에서는 주소가 달라지는데 | 그래서 오백인 안 포기해서는 주소가 달라지는데 | 대본 그대로 |
+| 깃 기록에 / 그 키가 / 로컬 | 길 기록에 / 그 기가 / 로콜 | 깃기록에 / 그 키가 / 로컬 |
+
+**둘 다 문장을 하나씩 놓쳤다.** `small`은 「지우는 걸로는 부족해요」를, `large-v3-turbo`는
+「포트도 팔공팔공으로 박혀 있고요」를 통째로 빠뜨렸다. 모델을 키운다고 누락이 사라지지 않는다.
+
+**둘 다 못 고친 것이 있다.** 「원래 범위 **안**이에요」가 양쪽 모두 「원래 범위 **아니**에요」로
+나왔다. 의미가 뒤집히는 오류이고 비용 범위를 다투는 자리다. **전사가 원문을 보장하지 못하므로
+요약은 사람이 확인해야 한다.** 「깃허브」(기터브·키터브)와 「키 폐기」(키팩)도 양쪽 다 틀렸다.
+
+숫자는 양쪽 다 알아서 바꾼다 — 「오백」→`500`, 「사십만 원」→`40만원`.
+
+이 비교는 합성 음성이라 사람 목소리보다 깨끗하다. 정확도는 실제 상담에서 이보다 나쁠 수 있다.
 
 ### 현재 범위와 후속 작업
 

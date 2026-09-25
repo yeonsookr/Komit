@@ -43,7 +43,6 @@ UTTERANCES = [
         "utteranceIndex": 0,
         "speaker": "CLIENT",
         "rawText": "관리자 화면 접근 오류를 확인했어요.",
-        "normalizedText": "관리자 화면 접근 오류를 확인했어요.",
     }
 ]
 
@@ -52,7 +51,7 @@ class FakeClient:
     def __init__(self, raw):
         self.raw = raw
 
-    def complete(self, messages, max_tokens=None):
+    def complete(self, messages, max_tokens=None, model=None, timeout=None):
         return self.raw
 
 
@@ -60,7 +59,7 @@ class FailingClient:
     def __init__(self, error):
         self.error = error
 
-    def complete(self, messages, max_tokens=None):
+    def complete(self, messages, max_tokens=None, model=None, timeout=None):
         raise self.error
 
 
@@ -147,7 +146,7 @@ class AiServiceTest(unittest.IsolatedAsyncioTestCase):
 
         with self.assertRaises(ValidationError):
             service.ConsultingSummaryRequest(
-                utterances=[{"utteranceIdx": 0, "speaker": "CLIENT", "normalizedText": "x"}]
+                utterances=[{"utteranceIdx": 0, "speaker": "CLIENT", "rawText": "x"}]
             )
 
     def test_시각은_있으면_받고_없어도_된다(self):

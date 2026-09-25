@@ -12,6 +12,8 @@ import com.auth0.jwt.algorithms.Algorithm;
 public final class SecuritySliceTestSupport {
     public static final String USER_JWT_SECRET = "user-jwt-secret-for-tests-at-least-32-bytes";
     public static final String KAKAO_TOKEN_ENCRYPTION_KEY = "ZGV2LW9ubHkta2FrYW8tdG9rZW4ta2V5LTMyYnl0ZXM=";
+    /** 전사를 받아 가는 노트북의 토큰. 사용자 JWT 가 아니다. */
+    public static final String TRANSCRIBER_TOKEN = "transcriber-token-for-tests";
 
     private SecuritySliceTestSupport() {
     }

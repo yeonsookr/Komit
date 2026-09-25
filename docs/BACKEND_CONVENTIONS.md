@@ -772,10 +772,11 @@ spring:
 
 - `app.logging.slow-call-threshold` (기본 `1s`): 이 시간을 넘긴 컨트롤러·서비스 호출을 WARN으로 남기는 기준입니다. `common/logging/LoggingProperties`가 바인딩하며 0 이하면 기동에 실패합니다. `@SlowCallThreshold`가 붙은 호출은 그 값이 이 값을 대신합니다.
 - `common/logging/SlowCallThreshold`: 그 호출만 다른 기준을 둡니다. 컨트롤러·서비스의 메서드나 클래스에 `@SlowCallThreshold("30s")`처럼 붙이며, 메서드에 붙은 것이 클래스보다 앞섭니다. 설계상 오래 걸리는 호출 때문에 공용 값을 올리면 다른 API의 경고가 둔해지므로, 그 호출에만 붙입니다.
-AI 서비스 호출 설정은 셋입니다.
+AI 서비스 호출 설정은 넷입니다.
 
 - `app.ai.base-url`: 클러스터 안에서만 부르는 주소입니다. 운영은 `AI_API_BASE_URL`로 주입합니다.
 - `app.ai.connect-timeout` (기본 `3s`), `app.ai.read-timeout` (기본 `25s`): 읽기 한도는 **AI가 모델을 기다리는 상한보다 길어야 합니다.** 먼저 끊으면 AI가 가려낸 `502`·`503` 구분이 이쪽에 닿지 못하고 전부 연결 실패로 묶입니다. 근거는 `ai/worker/docs/job-contract.md` 8절입니다.
+- `app.ai.summary-read-timeout` (기본 `150s`): 컨설팅 요약만 따로 둡니다. 요약은 추론 모델을 써서 AI가 GMS를 `120`초까지 기다리므로 위 읽기 한도로는 정상 응답도 끊깁니다.
 
 - `src/main/resources/logback-spring.xml`: 로그 한 줄의 형식(18.1). 앱 이름은 `spring.application.name`, 인스턴스는 `HOSTNAME`(k3s 파드 이름, 없으면 `local`), 배포 버전은 `APP_VERSION`(없으면 `dev`) 환경변수로 채웁니다. 배포 파이프라인이 `APP_VERSION`을 넣어야 로그로 버전을 구분할 수 있습니다.
 

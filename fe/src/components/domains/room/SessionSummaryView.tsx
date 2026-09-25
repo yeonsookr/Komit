@@ -21,10 +21,14 @@ const KIND_LABEL = {
 export interface SessionSummaryViewProps {
   sessionId: number;
   summary: SessionSummary;
-  /** 요약을 검토한 사람. 머리글의 출처 문장에 씁니다. */
-  counterpartName: string;
   /** 의뢰인만 요청서를 고칩니다. 개발자에게는 고르는 자리를 주지 않습니다. */
   canApply: boolean;
+}
+
+/** 변경 후보 칸의 안내. 후보가 없을 때 「모두 반영했다」고 적으면 반영한 것이 있는 줄 안다. */
+function changesNote(total: number, pending: number): string | undefined {
+  if (total === 0) return undefined;
+  return pending === 0 ? "모두 요청서에 반영했습니다" : "고른 것만 요청서에 들어갑니다";
 }
 
 /**
@@ -43,7 +47,6 @@ export interface SessionSummaryViewProps {
 export function SessionSummaryView({
   sessionId,
   summary: initial,
-  counterpartName,
   canApply,
 }: Readonly<SessionSummaryViewProps>) {
   const router = useRouter();
@@ -106,7 +109,7 @@ export function SessionSummaryView({
     <div className="mt-8">
       <h2 className="text-lg font-bold text-fg">컨설팅 요약</h2>
       <p className="mt-1 text-[13px] text-fg-subtle">
-        녹음 내용을 글로 옮겨 정리하고 {counterpartName} 개발자가 검토했습니다 ·{" "}
+        녹음 내용을 글로 옮겨 정리했습니다 ·{" "}
         {formatShortDateTime(summary.updatedAt)}
       </p>
 
@@ -133,11 +136,7 @@ export function SessionSummaryView({
       <Block
         title="요청서 변경 후보"
         count={summary.changes.length}
-        note={
-          pending.length === 0
-            ? "모두 요청서에 반영했습니다"
-            : "고른 것만 요청서에 들어갑니다"
-        }
+        note={changesNote(summary.changes.length, pending.length)}
       >
         <div className="flex flex-col gap-2.5">
           {summary.changes.map((change) => (

@@ -3,7 +3,8 @@
 ## 1. 목적과 적용 범위
 
 Service(Spring)가 AI 서비스(Python)를 부르는 방법을 정한다. 확인 문장 후보 생성, 계약서
-초안 생성, 컨설팅 전사, 요약이 모두 이 계약을 따른다.
+초안 생성, 요약이 이 계약을 따른다. **컨설팅 전사만 방향이 반대다** — GPU 노트북이 Service 에서
+할 일을 받아 간다 (11절).
 
 이 문서는 호출 경로와 실패 처리만 다룬다. 각 작업이 무엇을 만드는지는 별도 계약 문서에 있다.
 
@@ -13,10 +14,12 @@ Service(Spring)가 AI 서비스(Python)를 부르는 방법을 정한다. 확인
 | 계약서 초안 | 무료 상담 채팅에서 계약서 폼 초기값 | `docs/ai/chat-contract-draft.md` |
 | 컨설팅 요약 | 논의·결정·다음 행동·변경점 네 배열 | `docs/ai/summary-change-contract.md` |
 | 근거 발화 | 요약 항목이 가리키는 발화 순번 | `docs/ai/transcript-evidence-contract.md` |
+| 컨설팅 전사 | 녹음 두 건을 화자가 붙은 발화 목록으로 | 이 문서 11절 |
 
 ## 2. 부르는 방식
 
-HTTP다. Service가 AI 서비스에 REST로 요청하고 응답을 받는다. 큐를 두지 않는다.
+HTTP다. Service가 AI 서비스에 REST로 요청하고 응답을 받는다. 큐를 두지 않는다. 전사만
+반대로 노트북이 Service 를 부른다 (11절).
 
 **부르는 쪽은 Service 하나다.** 브라우저도 FE Route Handler도 AI 서비스를 직접 부르지 않는다.
 이유는 셋이다.
@@ -32,7 +35,8 @@ FE에 있던 `aiApi()`와 `AI_API_BASE_URL` 빌드 인자는 AI 붙는 방식이
 ## 3. 주소와 인증
 
 k3s 안에서만 부르는 ClusterIP다. 외부에 노출하지 않는다. Service → AI 는 같은 클러스터이므로
-별도 인증을 두지 않고 네트워크로만 막는다.
+별도 인증을 두지 않고 네트워크로만 막는다. 전사 경로는 노트북이 밖에서 부르므로 인터넷에 열리고
+토큰으로 막는다 (11.2).
 
 `AI_API_BASE_URL` 은 `k3s-deploy` 의 필수 CI 변수이고 `service-config` 로만 들어간다. 부르는 쪽이
 Service 이기 때문이다. 자세한 것은 `deploy/k3s/README.md` 의 변수 표에 있다.
@@ -64,7 +68,7 @@ AI 서비스는 Service DB를 읽지도 쓰지도 않는다. 권한과 소유권
 | `POST /consulting-summary` | 컨설팅 요약 + 근거 | `discussed`·`decided`·`nextActions`·`changes` 네 배열 |
 | `GET /health` | 기동·생존 확인 | `{"status": "UP"}` |
 
-전사 경로는 아직 없다. 그 작업은 컨설팅 세션 녹음 쪽으로 옮겨졌다.
+전사는 AI 서비스에 경로가 없다. 노트북이 Service 에서 받아 간다 (11절).
 
 `/health`는 모델을 부르지 않는다. 여기서 GMS를 부르면 상류가 잠깐 흔들릴 때 Pod가 통째로
 재시작되어 처리 중인 다른 요청까지 끊긴다. 상류 상태는 실패 응답으로만 알린다.
@@ -99,14 +103,19 @@ Content-Type: application/json
 
 ## 6. 실패를 어떻게 돌려주나
 
-**AI 자신의 실패는 두 갈래다.** `ai/worker` 가 그 둘만 던진다. 여기에 「받은 요청이 계약과 다르다」가
-더해져 Service 가 가르는 갈래는 셋이 된다.
+**AI 자신의 실패는 세 갈래다.** `ai/worker` 가 그 셋만 던진다. 갈리는 기준은 **다시 시도하면
+되는가**다. 여기에 「받은 요청이 계약과 다르다」가 더해져 Service 가 가르는 갈래는 넷이 된다.
 
 | AI 내부 | 뜻 | AI 서비스 응답 | Service 응답 |
 | --- | --- | --- | --- |
-| `GmsUnavailableError` | 모델에 접속하지 못함. 키가 없거나 호출이 실패함 | `503` | `503 AI_SERVICE_UNAVAILABLE` |
-| `InvalidGmsResponseError` | 접속은 됐으나 계약에 맞는 결과를 만들지 못함 | `502` | `502 AI_RESPONSE_INVALID` |
+| `GmsUnavailableError` | 상류에 닿지 못함. 키가 없거나 호출이 실패함. 전사에서는 모델을 올리지 못했거나 전사 중 GPU 가 멈춤 | `503` | `503 AI_SERVICE_UNAVAILABLE` |
+| `InvalidGmsResponseError` | 닿기는 했으나 계약에 맞는 결과를 만들지 못함 | `502` | `502 AI_RESPONSE_INVALID` |
+| `UnusableInputError` | 받은 입력을 쓸 수 없음. 오디오가 깨졌거나 디코딩되지 않음 | 전사에서만 난다. 상태 코드가 아니라 실패 보고 `AUDIO_UNUSABLE` (11.3) | 사용자 응답이 없다. 세션에 전사 불가를 기록한다 |
 | (요청 검증) | 받은 요청이 계약과 다름 | `422` `400` `404` `405` `AI_REQUEST_INVALID` | `500 INTERNAL_ERROR`. AI 고장이 아니므로 사용자에게 재시도를 권하지 않고, Service 가 거부 사유를 `ERROR` 로 남긴다 |
+
+**전사는 이 표의 상태 코드를 쓰지 않는다.** 노트북이 Service 를 부르는 방향이라 실패를 응답이
+아니라 실패 보고로 올린다 (11.3). 첫째는 `TRANSCRIBER_UNAVAILABLE`(다시 받아 감), 셋째는
+`AUDIO_UNUSABLE`(사람이 봄)이다.
 
 **실패 본문**
 
@@ -151,7 +160,8 @@ Service는 재시도하지 않는다. AI 서비스 안에서 GMS 호출만 재�
 | --- | --- |
 | FE → Service | Service 기존 설정을 따른다 |
 | **Service → AI** | 연결 `3`초 / 읽기 `25`초. `app.ai.connect-timeout`·`app.ai.read-timeout`, 환경변수 `AI_CONNECT_TIMEOUT`·`AI_READ_TIMEOUT`. **실측 전 잠정값이다.** 읽기는 아래 AI → GMS 상한보다 길게 잡는다 — 먼저 끊으면 AI 가 가려낸 `502`·`503` 구분이 Service 에 닿지 못하고 전부 연결 실패로 뭉개진다 |
-| AI → GMS | `20`초 (`ai/worker/qa_suggestion.py` 현재 값) |
+| AI → GMS | `20`초 (`ai/worker/qa_suggestion.py` `DEFAULT_TIMEOUT_SECONDS`). **요약만 `120`초** (`consulting_summary.py` `SUMMARY_TIMEOUT_SECONDS`) — 추론 모델(`gpt-5-mini`)을 써서 대화 62줄에 최대 55초가 걸렸다 |
+| **Service → AI 요약** | 읽기 `150`초. `app.ai.summary-read-timeout`, 환경변수 `AI_SUMMARY_READ_TIMEOUT`. 위 요약 한도보다 길게 잡는다. 요약은 전사가 남은 뒤 뒤에서 돌아 기다리는 사용자 요청이 없다 |
 
 **Service → AI 값을 코드에 박지 않는다.** 실측 전까지는 설정값으로 두고 기본값만 잡는다.
 
@@ -164,11 +174,124 @@ Service 쪽은 이 읽기 한도 안에서 끝난 호출을 느린 호출 경고
 녹음 전사는 CPU로 돌리면 녹음 길이의 몇 배가 걸린다. `R-CON-18` 로 녹음은 90분에서 멈추므로
 입력의 최악값은 닫혀 있지만, 그 길이를 요청·응답 안에 담을 수 있는지는 재 봐야 안다.
 
-**미정 — 전사 실측 후.** 실측 전까지 동기·비동기를 코드에 박지 않는다. 확인 문장과 계약 초안은
-짧은 작업이므로 이 결정과 무관하게 동기로 붙인다.
+**전사는 비동기로 정했다.** 90분 두 트랙이 GPU 로 8.5분 걸려 요청 하나에 담을 수 없다. 방식은
+11절이다. 확인 문장·계약 초안·요약은 짧은 작업이라 동기로 붙인다.
 
 ## 10. 이 문서가 정하지 않는 것
 
-- 작업 상태 저장과 조회 — 비동기가 필요해지면 그때 정한다
 - AI 서비스 배포 방법 — 배포 작업에서 정한다
 - 각 작업의 입력·출력 형식 — 1절 표의 계약 문서가 정한다
+
+## 11. 전사 — 노트북이 받아 간다
+
+### 11.1 왜 반대 방향인가
+
+모델은 GPU 노트북에서 돈다. 노트북은 공유기 뒤의 사설 주소라 인터넷에서 먼저 연결할 수
+없고, 사내·시연장 망은 들어오는 연결을 막는다. 그래서 노트북이 나가는 HTTPS 로 Service 에
+묻는다. 노트북은 포트를 열지 않는다.
+
+노트북은 **한 대**다. 두 대가 같은 세션을 집는 경우를 막는 장치(임대)를 두지 않는다.
+
+### 11.2 주소와 인증
+
+| 항목 | 값 |
+| --- | --- |
+| 주소 | `https://komit.site/service` + 아래 경로. 인터넷에 열려 있다 |
+| 인증 | `Authorization: Bearer <TRANSCRIBER_TOKEN>`. 사용자 JWT 가 아니다 |
+| 토큰이 없거나 다름 | `401 UNAUTHORIZED` |
+
+- 토큰은 k3s 시크릿으로 Service 에 들어가고, 노트북은 `ai/worker/.env` 에 둔다. 커밋하지 않는다.
+- Service 는 받은 토큰을 고정 시간 비교로 대조한다.
+- 이 경로들은 사용자 인증과 섞이지 않는다. 사용자 토큰으로는 통하지 않고, 전사 토큰으로는 다른
+  API 가 통하지 않는다.
+- 목 서버(`/mock/service`)에 올리지 않는다. 부르는 쪽이 FE 가 아니라 노트북뿐이다.
+
+### 11.3 경로 셋
+
+**받아 가기** — `POST /api/transcription-jobs/claim`, 본문 없음
+
+`200` 이면 할 일 하나, `204` 면 할 일 없음.
+
+```json
+{
+  "sessionId": 55,
+  "tracks": [
+    { "speaker": "CLIENT", "audioUrl": "https://file.komit.site/…" },
+    { "speaker": "DEVELOPER", "audioUrl": "https://file.komit.site/…" }
+  ]
+}
+```
+
+내주는 세션은 아래를 모두 만족하는 것 중 **가장 먼저 끝난 것**이다.
+
+- 끝난 세션이다
+- 참가 기록 두 건 모두 녹음이 붙어 있다
+- `transcript` 와 `transcript_failed_at` 이 비어 있다
+
+이 중 계약을 찾지 못하거나 녹음 파일의 읽기 주소를 만들지 못한 세션은 Service 가 `transcript_failed_at`
+에 기록하고 다음 세션을 내준다. 그대로 두면 같은 세션이 계속 맨 앞에 서 뒤의 세션이 차례를 얻지
+못한다.
+
+`audioUrl` 은 읽기 주소다 (`R-FILE-03`). 노트북은 받자마자 내려받으므로 주소 수명과 전사
+시간은 무관하다. 녹음은 Service 를 지나지 않는다.
+
+**결과** — `POST /api/transcription-jobs/{sessionId}/result`
+
+```json
+{
+  "utterances": [
+    { "utteranceIndex": 0, "speaker": "CLIENT", "startMs": 5680, "endMs": 6540,
+      "rawText": "안녕하세요." }
+  ]
+}
+```
+
+**실패** — `POST /api/transcription-jobs/{sessionId}/failure`
+
+```json
+{ "code": "AUDIO_UNUSABLE", "message": "CLIENT.webm 를 읽지 못했습니다: …" }
+```
+
+| `code` | Service 가 하는 일 |
+| --- | --- |
+| `TRANSCRIBER_UNAVAILABLE` | 아무것도 바꾸지 않는다. 다음 받아 가기에서 같은 세션이 다시 나간다 |
+| `AUDIO_UNUSABLE` | `transcript_failed_at` 에 기록한다. 다시 내주지 않는다. 사람이 본다 |
+
+`AUDIO_UNUSABLE` 은 녹음이 깨져 디코딩되지 않을 때와 **녹음 파일이 저장소에 없을 때**(읽기 주소가
+`404`)다. 없는 파일을 다시 받아 가게 두면 같은 세션이 계속 나가 뒤의 세션이 차례를 얻지 못한다.
+주소가 만료된 `403` 은 다시 받아 가면 새 주소가 나오므로 `TRANSCRIBER_UNAVAILABLE` 이다.
+
+`message` 는 Service 로그에만 남기고 사용자에게 보여 주지 않는다.
+
+결과와 실패의 응답은 같다.
+
+| 응답 | 뜻 |
+| --- | --- |
+| `204` | 반영함. **이미 전사가 있거나 실패로 표시된 세션이면 바꾸지 않고 그대로 `204`** |
+| `404 SESSION_NOT_FOUND` | 없는 세션 |
+| `422 INVALID_REQUEST` | 본문이 형식과 다름 |
+
+이미 끝난 세션에 또 온 결과를 오류로 돌리지 않는다. 노트북이 한 대라 거의 생기지 않고,
+거절해도 노트북이 할 수 있는 일이 없다.
+
+### 11.4 상태는 컬럼 둘로 읽는다
+
+작업 표를 따로 두지 않는다. `consulting_sessions` 의 두 컬럼으로 가른다.
+
+| `transcript` | `transcript_failed_at` | 상태 |
+| --- | --- | --- |
+| 비어 있음 | 비어 있음 | 전사 전. 녹음이 다 붙었으면 받아 갈 대상 |
+| 차 있음 | — | 전사 끝남 |
+| 비어 있음 | 차 있음 | 전사 불가. 사람이 봄 |
+
+노트북이 전사 도중 꺼지면 `transcript` 가 비어 있으므로, 다시 켰을 때 같은 세션을 받아 간다.
+
+### 11.5 전사 뒤
+
+결과를 커밋한 뒤 Service 가 `POST /consulting-summary` (5절)를 불러 `summary` 에 넣는다.
+요약이 실패해도 `transcript` 는 남는다.
+
+### 11.6 시각
+
+두 녹음은 통화가 처음 붙은 순간에 함께 켜진다 (`SessionStage.tsx`). 전사는 두 녹음이 같은
+시각에 시작한 것으로 보고 합치며, 시작 지연 값을 주고받지 않는다.

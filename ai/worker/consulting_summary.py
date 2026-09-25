@@ -19,10 +19,26 @@ from qa_suggestion import (
     InvalidGmsResponseError,
 )
 
-# 출력 길이가 발화 수에 비례해 확인 문장(실측 209~222)과 다르다. 발화 세 건짜리 사례는
-# 151~165 토큰이었으나 90분 세션은 아직 재지 못했다 — 오디오 fixture 가 없다.
-# 지금은 넉넉히 두고 실제 전사가 나오면 다시 잰다. 작업별 한도를 두는 이유다.
-MAX_OUTPUT_TOKENS = 2048
+# 요약만 모델을 따로 쓴다. 대화 62줄(TTS 대본)을 모델마다 돌려 골랐다 (2026-09-26).
+#
+#   gpt-4.1-nano  요구사항이 없다고 지시해도 없는 issueId 로 UPDATE 를 지어내 절반이 실패
+#   gpt-4.1-mini  통과는 하지만 변경 후보를 한 번도 만들지 않음
+#   gpt-4.1       JSON 을 코드 블록으로 감싸 3번 중 1번 실패
+#   gpt-5         10개 후보, 모두 통과. 77~96초
+#   gpt-5-mini    5~8개 후보, 3번 모두 통과. 33~55초  ← 채택
+#
+# 세션이 끝난 뒤 한 번 부르고 결과를 뒤에서 기다리므로 속도보다 결과를 본다.
+SUMMARY_MODEL = "gpt-5-mini"
+
+# 추론 모델이라 추론 토큰도 한도에 든다. 62줄에서 4,027~6,208, 그 대본을 25번 이어 붙인
+# 1,550줄(82분)에서 3,909~4,784 를 썼다. 출력 크기는 대화 길이와 크게 상관없다.
+# 되풀이한 대본이라 실제 90분보다 작게 나왔을 수 있어 세 배쯤 여유를 둔다.
+MAX_OUTPUT_TOKENS = 16384
+
+# 62줄에서 33~55초, 1,550줄에서 33~45초였다. 입력보다 출력이 시간을 정한다.
+# Service 쪽 읽기 한도는 이보다 길어야 한다 — 먼저 끊으면 여기서 가린 실패 갈래가 그쪽에
+# 닿지 못한다 (`job-contract.md` 8절).
+SUMMARY_TIMEOUT_SECONDS = 120
 
 SECTIONS = ("discussed", "decided", "nextActions", "changes")
 ITEM_FIELDS = {"title", "detail", "evidenceUtteranceIndexes", "reviewRequired"}
@@ -70,7 +86,7 @@ def build_messages(
     lines = []
     for row in utterances:
         lines.append(
-            f"{row['utteranceIndex']} [{row['speaker']}] {row['normalizedText']}"
+            f"{row['utteranceIndex']} [{row['speaker']}] {row['rawText']}"
         )
     if requirements:
         rows = [f"  {row['issueId']}  {row['title']}" for row in requirements]
@@ -154,7 +170,9 @@ def summarize(
     if not isinstance(utterances, list) or not utterances:
         raise ValueError("전사 발화가 비어 있습니다")
     messages = build_messages(utterances, requirements)
-    raw = client.complete(messages, max_tokens=MAX_OUTPUT_TOKENS)
+    raw = client.complete(
+        messages, max_tokens=MAX_OUTPUT_TOKENS, model=SUMMARY_MODEL, timeout=SUMMARY_TIMEOUT_SECONDS
+    )
     return validate(parse_summary(raw, requirements), len(utterances))
 
 

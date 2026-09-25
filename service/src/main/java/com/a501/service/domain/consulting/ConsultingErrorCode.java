@@ -31,7 +31,10 @@ public enum ConsultingErrorCode implements ErrorCode {
             HttpStatus.BAD_REQUEST, "SESSION_NOT_ENDED", "아직 끝나지 않은 세션입니다."),
     /** 참가자당 한 건이다. 같은 파일을 다시 보내는 것은 성공으로 다루고 여기 오지 않는다. */
     RECORDING_ALREADY_UPLOADED(
-            HttpStatus.CONFLICT, "RECORDING_ALREADY_UPLOADED", "이미 녹음을 올렸습니다.");
+            HttpStatus.CONFLICT, "RECORDING_ALREADY_UPLOADED", "이미 녹음을 올렸습니다."),
+    /** 세션은 끝났지만 전사나 요약이 아직 끝나지 않았다. 화면은 이것을 「만드는 중」으로 읽는다. */
+    SUMMARY_NOT_READY(
+            HttpStatus.CONFLICT, "SUMMARY_NOT_READY", "요약을 아직 만드는 중입니다.");
 
     private final HttpStatus status;
     private final String code;

@@ -9,6 +9,7 @@ import java.lang.annotation.Target;
 
 import com.a501.service.config.AuthProperties;
 import com.a501.service.config.SecurityConfig;
+import com.a501.service.config.TranscriberProperties;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.security.autoconfigure.SecurityAutoConfiguration;
@@ -38,10 +39,11 @@ import org.springframework.test.context.TestPropertySource;
 })
 @Import({SecurityConfig.class, JwtTokenProvider.class, SecurityErrorWriter.class,
         SignupSecurityTestConfig.class})
-@EnableConfigurationProperties(AuthProperties.class)
+@EnableConfigurationProperties({AuthProperties.class, TranscriberProperties.class})
 @TestPropertySource(properties = {
         "app.auth.user-jwt-secret=" + SecuritySliceTestSupport.USER_JWT_SECRET,
-        "app.auth.kakao-token-encryption-key=" + SecuritySliceTestSupport.KAKAO_TOKEN_ENCRYPTION_KEY
+        "app.auth.kakao-token-encryption-key=" + SecuritySliceTestSupport.KAKAO_TOKEN_ENCRYPTION_KEY,
+        "app.transcriber.token=" + SecuritySliceTestSupport.TRANSCRIBER_TOKEN
 })
 public @interface WebMvcSecurityTest {
     /** 테스트할 컨트롤러. {@code @WebMvcTest(controllers = ...)}와 같습니다. */

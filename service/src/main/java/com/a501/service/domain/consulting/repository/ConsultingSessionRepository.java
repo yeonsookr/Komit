@@ -8,7 +8,8 @@ import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 
-public interface ConsultingSessionRepository extends JpaRepository<ConsultingSession, Integer> {
+public interface ConsultingSessionRepository
+        extends JpaRepository<ConsultingSession, Integer>, ConsultingSessionRepositoryCustom {
     Optional<ConsultingSession> findByIdAndDeletedFalse(Integer id);
 
     /**

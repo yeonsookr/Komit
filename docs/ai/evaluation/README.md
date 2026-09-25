@@ -55,7 +55,7 @@ SetFit 비교에는 실제 상담 문장에 목표 라벨을 사람이 검수한
 | 작업 | 기계 판정·기록 지표 | 사람 검토 |
 | --- | --- | --- |
 | 확인 문장 | `qaFormatPassRate`: `R-REQ-04`의 3건·1~500자·`testCase` 형식 통과 비율. `qaDuplicateRate`: 동일 출력 안 중복 문장 비율 | `qaExecutableRate`: 의뢰인이 직접 실행할 수 있는 문장 비율. `qaDecidableRate`: 통과·실패를 판정할 수 있는 문장 비율 |
-| 전사 | `sttCerRaw`, `sttWerRaw`, `sttCerNormalized`, `sttWerNormalized`: 원문·정규화문을 각각 같은 기준의 정답과 비교. `sttTermErrorCount`, `sttNumberErrorCount`, `sttAmountErrorCount`: 개발 용어·숫자·금액 오류 건수 | 애매한 발화와 정규화가 의미를 바꿨는지 확인 |
+| 전사 | `sttCerRaw`, `sttWerRaw`: 원문을 정답과 비교. `sttTermErrorCount`, `sttNumberErrorCount`, `sttAmountErrorCount`: 개발 용어·숫자·금액 오류 건수 | 애매한 발화 확인 |
 | 요약 | `summarySchemaPassRate`: 네 배열과 항목 형식 통과 비율. `summaryChangeKindAccuracy`: 승인 라벨에 대한 `UPDATE`·`ADD` 정확도. `summaryEvidenceIndexValidRate`: 내부 순번 실존·중복·범위 검증 통과 비율. `summaryReviewFlagAccuracy`: 검토 필요 표시의 승인 라벨 일치 비율 | `summaryOmissionCount`: 누락된 결정. `summaryFabricatedDecisionCount`: 발화에 없는 결정. 근거 발화가 실제 의미를 뒷받침하는지도 확인 |
 
 확인 문장 후보는 저장 전 결과이며, 후보를 보여주는 것만으로 요청서에 반영되지

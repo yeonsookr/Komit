@@ -54,6 +54,8 @@ public class QaSuggestionClient {
             @Value("${app.ai.connect-timeout}") Duration connectTimeout,
             @Value("${app.ai.read-timeout}") Duration readTimeout) {
         HttpClient httpClient = HttpClient.newBuilder()
+                // 기본값인 HTTP/2 는 h2c 업그레이드를 붙이는데 AI 서버(uvicorn)가 받지 않는다.
+                .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(connectTimeout)
                 .followRedirects(HttpClient.Redirect.NEVER)
                 .build();
