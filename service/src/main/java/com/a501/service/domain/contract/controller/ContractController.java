@@ -119,7 +119,7 @@ public class ContractController {
                     - 403 FORBIDDEN: 이 계약의 의뢰인이 아닐 때
                     - 404 CONTRACT_NOT_FOUND: 없는 계약이거나 요청자가 그 계약의 당사자가 아닐 때
                     - 409 ALREADY_DEPOSITED: 이미 예치했을 때
-                    - 409 CONTRACT_NOT_SIGNED: 양쪽이 모두 서명하기 전일 때. 계약이 성립하지 않았다 (R-CON-01)
+                    - 409 CONTRACT_NOT_SIGNED: 의뢰인이 아직 서명하지 않았을 때. 개발자 서명은 기다리지 않는다 (R-CON-20)
                     - 422 INVALID_REQUEST: paymentMethodId 나 idempotencyKey 가 없을 때""")
     @ResponseStatus(HttpStatus.CREATED)
     @PostMapping("/{contractId}/deposit")

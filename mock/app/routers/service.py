@@ -6752,7 +6752,7 @@ class WriteReviewRequest(BaseModel):
 MILESTONE_NOT_FOUND = ("MILESTONE_NOT_FOUND", "작업을 찾을 수 없습니다.")
 DEPOSIT_REQUIRED = ("DEPOSIT_REQUIRED", "예치가 끝나야 착수할 수 있습니다.")
 ALREADY_DEPOSITED = ("ALREADY_DEPOSITED", "이미 예치가 끝났습니다.")
-CONTRACT_NOT_SIGNED = ("CONTRACT_NOT_SIGNED", "양쪽이 모두 서명한 뒤에 예치할 수 있습니다.")
+CONTRACT_NOT_SIGNED = ("CONTRACT_NOT_SIGNED", "계약서에 서명한 뒤에 예치할 수 있습니다.")
 QA_NOT_ALL_CHECKED = (
     "QA_NOT_ALL_CHECKED",
     "확인 문장을 모두 체크해야 통과시킬 수 있습니다.",
@@ -7508,7 +7508,7 @@ def write_development_contract(
                             },
                         },
                         "CONTRACT_NOT_SIGNED": {
-                            "summary": "양측 서명 전",
+                            "summary": "의뢰인 서명 전",
                             "value": {
                                 "code": CONTRACT_NOT_SIGNED[0],
                                 "message": CONTRACT_NOT_SIGNED[1],
@@ -7543,8 +7543,9 @@ def write_development_contract(
         "- **403 / FORBIDDEN**: 이 계약의 의뢰인이 아닐 때. 예치는 의뢰인만 한다\n"
         "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때\n"
         "- **409 / ALREADY_DEPOSITED**: `contractId`가 409일 때\n"
-        "- **409 / CONTRACT_NOT_SIGNED**: 양쪽이 모두 서명하기 전일 때. 계약이 성립하지 않았으므로 "
-        "돈을 맡기지 않는다(R-CON-01). 목에서는 아직 아무도 서명하지 않은 계약서 "
+        "- **409 / CONTRACT_NOT_SIGNED**: 의뢰인이 아직 서명하지 않았을 때. 의뢰인은 자기가 서명한 "
+        "계약서에만 돈을 맡긴다. 개발자 서명은 기다리지 않으며, 대금은 양쪽이 모두 서명한 뒤에만 "
+        "개발자에게 나간다(R-CON-20). 목에서는 아직 아무도 서명하지 않은 계약서 "
         f"`contractId`={DRAFT_CLIENT_CONTRACT_ID}이 이 응답을 준다\n"
         "- **422 / INVALID_REQUEST**: `paymentMethodId`나 `idempotencyKey`가 없을 때\n"
         "- **500 / INTERNAL_ERROR**: 예치를 걸지 못했을 때"

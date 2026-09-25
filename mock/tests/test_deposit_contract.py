@@ -21,8 +21,8 @@ class DepositContractTest(unittest.TestCase):
     def test_signed_contract_is_deposited(self) -> None:
         self.assertIsInstance(deposit_contract(DEV_CONTRACT_ID, self.REQUEST), EscrowDepositResponse)
 
-    def test_unsigned_contract_is_rejected_with_409(self) -> None:
-        # R-CON-01: 양쪽이 서명하기 전에는 계약이 성립하지 않아 돈을 맡기지 않는다.
+    def test_contract_the_client_has_not_signed_is_rejected_with_409(self) -> None:
+        # R-CON-20: 의뢰인은 자기가 서명한 계약서에만 돈을 맡긴다. 132 는 아무도 서명하지 않은 계약서다.
         response = deposit_contract(DRAFT_CLIENT_CONTRACT_ID, self.REQUEST)
 
         self.assertIsInstance(response, JSONResponse)

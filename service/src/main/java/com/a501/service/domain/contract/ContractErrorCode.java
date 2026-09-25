@@ -13,8 +13,8 @@ public enum ContractErrorCode implements ErrorCode {
     ALREADY_SIGNED_BY_ME(HttpStatus.CONFLICT, "ALREADY_SIGNED_BY_ME", "이미 서명하셨습니다."),
     /** 한 계약에 예치는 한 번이다. 멱등키는 같은 요청의 재시도를 가릴 뿐이다. */
     ALREADY_DEPOSITED(HttpStatus.CONFLICT, "ALREADY_DEPOSITED", "이미 예치했습니다."),
-    /** 양쪽이 모두 서명하기 전에는 계약이 성립하지 않아 돈을 맡기지 않는다. (`R-CON-01`) */
-    CONTRACT_NOT_SIGNED(HttpStatus.CONFLICT, "CONTRACT_NOT_SIGNED", "양쪽이 모두 서명한 뒤에 예치할 수 있습니다."),
+    /** 의뢰인이 계약서에 서명하기 전에는 돈을 맡기지 않는다. (`R-CON-20`) */
+    CONTRACT_NOT_SIGNED(HttpStatus.CONFLICT, "CONTRACT_NOT_SIGNED", "계약서에 서명한 뒤에 예치할 수 있습니다."),
     /** Escrow 서버에 닿지 못했다. 돈이 오갔는지 단정하지 않는다. */
     ESCROW_UNAVAILABLE(
             HttpStatus.INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", "예치를 처리하지 못했습니다.");

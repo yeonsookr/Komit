@@ -289,7 +289,7 @@ class ConsultingPayoutServiceTest {
     }
 
     @Test
-    @DisplayName("예치된 금액이 계약 금액과 다르면 지급하지 않는다. 서명 전 예치 뒤 금액을 고친 계약이다")
+    @DisplayName("예치된 금액이 계약 금액과 다르면 지급하지 않고 사람이 확인하게 둔다")
     void stopsWhenDepositDiffersFromContractAmount() {
         when(escrow.findByContract("120")).thenReturn(Optional.of(
                 new EscrowLedger(ESCROW_ID, "ACTIVE", false, BigInteger.valueOf(40_000), List.of())));
