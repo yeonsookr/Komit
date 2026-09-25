@@ -3,10 +3,12 @@ package com.a501.service.config;
 import com.a501.service.common.security.JwtAuthenticationFilter;
 import com.a501.service.common.security.SecurityErrorWriter;
 import com.a501.service.common.security.SignupAccessFilter;
+import com.a501.service.common.security.TranscriberTokenFilter;
 import com.a501.service.domain.user.service.UserService;
 import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -15,6 +17,32 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 @Configuration(proxyBeanMethods = false)
 public class SecurityConfig {
+    /**
+     * 전사 경로만 보는 체인. 사용자 체인보다 먼저 봅니다.
+     *
+     * <p>노트북이 전사 토큰으로 부르는 경로라 사용자 JWT 와 섞지 않습니다. 사용자 토큰으로는 이
+     * 경로가 열리지 않고, 전사 토큰으로는 다른 경로가 열리지 않습니다. (`job-contract.md` 11.2)
+     */
+    @Bean
+    @Order(1)
+    SecurityFilterChain transcriberFilterChain(
+            HttpSecurity http,
+            TranscriberProperties transcriberProperties,
+            SecurityErrorWriter errorWriter) throws Exception {
+        http
+                .securityMatcher(TranscriberTokenFilter.PATH_PREFIX + "**")
+                .csrf(csrf -> csrf.disable())
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint((request, response, exception) -> errorWriter.unauthorized(response))
+                        .accessDeniedHandler((request, response, exception) -> errorWriter.forbidden(response)))
+                .authorizeHttpRequests(authorize -> authorize.anyRequest().authenticated())
+                .addFilterBefore(
+                        new TranscriberTokenFilter(transcriberProperties, errorWriter),
+                        UsernamePasswordAuthenticationFilter.class);
+        return http.build();
+    }
+
     @Bean
     SecurityFilterChain securityFilterChain(
             HttpSecurity http,

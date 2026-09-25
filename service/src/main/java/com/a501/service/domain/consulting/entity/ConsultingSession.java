@@ -79,6 +79,35 @@ public class ConsultingSession extends SoftDeleteEntity {
     }
 
     /**
+     * 전사를 남깁니다.
+     *
+     * <p>이미 전사가 있거나 전사할 수 없다고 판정된 세션이면 그대로 둡니다. 같은 결과가 다시
+     * 와도 처음 것이 남습니다.
+     *
+     * @return 이번에 남겼으면 참
+     */
+    public boolean recordTranscript(String transcript) {
+        if (!awaitingTranscript()) {
+            return false;
+        }
+        this.transcript = Objects.requireNonNull(transcript, "transcript");
+        return true;
+    }
+
+    /** 녹음을 전사할 수 없다고 판정합니다. 이 세션은 다시 전사하지 않습니다. */
+    public boolean markTranscriptFailed(LocalDateTime failedAt) {
+        if (!awaitingTranscript()) {
+            return false;
+        }
+        this.transcriptFailedAt = Objects.requireNonNull(failedAt, "failedAt");
+        return true;
+    }
+
+    private boolean awaitingTranscript() {
+        return transcript == null && transcriptFailedAt == null;
+    }
+
+    /**
      * 계약서에 적힌 세션 하나.
      *
      * <p>{@code chatRefId} 는 아직 비어 있습니다. 식별자가 있어야 지을 수 있는 값이라 저장한 뒤

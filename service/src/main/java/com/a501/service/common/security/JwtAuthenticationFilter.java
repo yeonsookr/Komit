@@ -23,6 +23,15 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     private final JwtTokenProvider tokenProvider;
     private final SecurityErrorWriter errorWriter;
 
+    /**
+     * 전사 경로는 보지 않습니다. 그 경로의 {@code Bearer} 는 JWT 가 아니라 전사 토큰이라, 여기서
+     * 검증하면 전부 401 이 됩니다. 이 필터는 서블릿 필터로도 올라가 보안 체인 밖에서도 돕니다.
+     */
+    @Override
+    protected boolean shouldNotFilter(HttpServletRequest request) {
+        return TranscriberTokenFilter.isTranscriberPath(request);
+    }
+
     @Override
     protected void doFilterInternal(
             HttpServletRequest request,

@@ -19,6 +19,9 @@ public class OpenApiConfig {
     /** 컨트롤러가 인용하는 보안 스킴 이름. {@code Authorization: Bearer <accessToken>} */
     public static final String BEARER_AUTH = "bearerAuth";
 
+    /** 전사 경로가 인용하는 보안 스킴 이름. 사용자 토큰이 아니라 노트북의 전사 토큰 */
+    public static final String TRANSCRIBER_AUTH = "transcriberToken";
+
     /**
      * 문서 제목과 Bearer 인증 스킴을 등록합니다.
      *
@@ -35,6 +38,10 @@ public class OpenApiConfig {
                         .type(SecurityScheme.Type.HTTP)
                         .scheme("bearer")
                         .bearerFormat("JWT")
-                        .description("로그인 응답의 accessToken. 만료 시간은 R-AUTH-01을 따른다.")));
+                        .description("로그인 응답의 accessToken. 만료 시간은 R-AUTH-01을 따른다."))
+                        .addSecuritySchemes(TRANSCRIBER_AUTH, new SecurityScheme()
+                                .type(SecurityScheme.Type.HTTP)
+                                .scheme("bearer")
+                                .description("전사를 받아 가는 노트북의 토큰. 사용자 JWT 가 아니다.")));
     }
 }
