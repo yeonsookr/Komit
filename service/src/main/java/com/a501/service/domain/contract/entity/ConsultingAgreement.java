@@ -29,6 +29,9 @@ public class ConsultingAgreement extends SoftDeleteEntity {
     @Column(name = "topic", nullable = false, length = 100)
     private String topic;
 
+    @Column(name = "detail", columnDefinition = "text")
+    private String detail;
+
     @Column(name = "status", nullable = false, length = 50)
     private String status;
 
@@ -46,9 +49,15 @@ public class ConsultingAgreement extends SoftDeleteEntity {
      * {@code contracts.status} 로만 봅니다.
      */
     public static ConsultingAgreement of(Integer contractId, String topic, int totalAmount) {
+        return of(contractId, topic, totalAmount, null);
+    }
+
+    public static ConsultingAgreement of(
+            Integer contractId, String topic, int totalAmount, String detail) {
         ConsultingAgreement agreement = new ConsultingAgreement();
         agreement.contractId = Objects.requireNonNull(contractId, "contractId");
         agreement.topic = Objects.requireNonNull(topic, "topic");
+        agreement.detail = detail;
         agreement.totalAmount = totalAmount;
         agreement.status = "SIGNED";
         agreement.statusGroup = "CONSULTING_AGREEMENT_STATUS";
@@ -56,8 +65,9 @@ public class ConsultingAgreement extends SoftDeleteEntity {
     }
 
     /** 협의 중에 다시 보낸 계약서로 내용을 바꿉니다. */
-    public void rewrite(String topic, int totalAmount) {
+    public void rewrite(String topic, int totalAmount, String detail) {
         this.topic = Objects.requireNonNull(topic, "topic");
         this.totalAmount = totalAmount;
+        this.detail = detail;
     }
 }
