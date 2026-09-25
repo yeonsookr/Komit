@@ -79,7 +79,7 @@ class ContractSignatureServiceTest {
         ReflectionTestUtils.setField(contract, "id", CONTRACT_ID);
         ReflectionTestUtils.setField(contract, "templateId", TEMPLATE_ID);
 
-        when(contractRepository.findByIdAndDeletedFalse(CONTRACT_ID))
+        when(contractRepository.findWithLockByIdAndDeletedFalse(CONTRACT_ID))
                 .thenReturn(Optional.of(contract));
         when(roomQueryService.findParties(ROOM_ID))
                 .thenReturn(Optional.of(new RoomParties(CLIENT_ID, DEVELOPER_USER_ID)));
@@ -94,6 +94,18 @@ class ContractSignatureServiceTest {
         ContractTemplate template = org.mockito.Mockito.mock(ContractTemplate.class);
         when(template.getBody()).thenReturn("제1조 …");
         when(templateRepository.findById(TEMPLATE_ID)).thenReturn(Optional.of(template));
+    }
+
+    @Test
+    @DisplayName("의뢰인이 취소한 계약에는 개발자가 뒤늦게 서명해도 받지 않는다 (R-CON-21)")
+    void rejectsSignatureOnCancelledContract() {
+        contract.cancel();
+
+        assertThatThrownBy(() -> service.sign(CONTRACT_ID, DEVELOPER_USER_ID, new SignContractRequest(FILE_ID)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ContractErrorCode.CONTRACT_CANCELLED);
+        assertThat(contract.getDeveloperSignatureId()).isNull();
+        assertThat(contract.isConcluded()).isFalse();
     }
 
     @Test
@@ -180,7 +192,7 @@ class ContractSignatureServiceTest {
     @Test
     @DisplayName("없는 계약은 404 다")
     void rejectsMissingContract() {
-        when(contractRepository.findByIdAndDeletedFalse(404)).thenReturn(Optional.empty());
+        when(contractRepository.findWithLockByIdAndDeletedFalse(404)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.sign(404, CLIENT_ID, new SignContractRequest(FILE_ID)))
                 .isInstanceOf(BusinessException.class)

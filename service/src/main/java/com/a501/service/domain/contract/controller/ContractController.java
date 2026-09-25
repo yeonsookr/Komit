@@ -7,6 +7,7 @@ import com.a501.service.domain.contract.dto.request.SignContractRequest;
 import com.a501.service.domain.contract.dto.response.ContractResponse;
 import com.a501.service.domain.contract.dto.response.DepositResponse;
 import com.a501.service.domain.contract.service.ConsultingContractWriteService;
+import com.a501.service.domain.contract.service.ContractCancellationService;
 import com.a501.service.domain.contract.service.ContractDepositService;
 import com.a501.service.domain.contract.service.ContractDetailService;
 import com.a501.service.domain.contract.service.ContractSignatureService;
@@ -34,6 +35,7 @@ public class ContractController {
     private final ConsultingContractWriteService consultingContractWriteService;
     private final ContractSignatureService contractSignatureService;
     private final ContractDepositService contractDepositService;
+    private final ContractCancellationService contractCancellationService;
 
     @Operation(
             summary = "계약서 조회",
@@ -65,6 +67,7 @@ public class ContractController {
                     - 401 UNAUTHORIZED: 로그인하지 않았을 때
                     - 404 CONTRACT_NOT_FOUND: 없는 계약이거나 요청자가 그 계약의 당사자가 아닐 때
                     - 409 CONTRACT_ALREADY_SIGNED: 이미 서명한 계약서일 때
+                    - 409 CONTRACT_CANCELLED: 의뢰인이 취소한 계약일 때 (R-CON-21)
                     - 422 INVALID_REQUEST: scheduledAt 이 지난 시각이거나 price 가 음수일 때""")
     @PatchMapping("/{contractId}")
     ContractResponse amendContract(
@@ -91,6 +94,7 @@ public class ContractController {
                     - 401 UNAUTHORIZED: 로그인하지 않았을 때
                     - 404 CONTRACT_NOT_FOUND: 없는 계약이거나 요청자가 그 계약의 당사자가 아닐 때
                     - 409 ALREADY_SIGNED_BY_ME: 이미 내가 서명했을 때
+                    - 409 CONTRACT_CANCELLED: 의뢰인이 취소한 계약일 때. 개발자가 뒤늦게 서명해도 받지 않는다 (R-CON-21)
                     - 422 INVALID_REQUEST: signatureImageFileId 가 없을 때""")
     @ResponseStatus(HttpStatus.CREATED)
     @PostMapping("/{contractId}/signatures")
@@ -99,6 +103,28 @@ public class ContractController {
             @PathVariable Integer contractId,
             @Valid @RequestBody SignContractRequest request) {
         return contractSignatureService.sign(contractId, user.userId(), request);
+    }
+
+    @Operation(
+            summary = "계약 취소",
+            description =
+                    """
+                    개발자가 서명하기 전에 의뢰인이 계약을 취소한다. 예치금이 있으면 전액을 예치할 때                     쓴 회원가입 발급 계좌로 돌려준다. (R-CON-21, R-PAY-04)
+
+                    **취소는 되돌릴 수 없다.** 취소된 계약에는 서명·수정·예치를 받지 않고, 그 계약의                     세션에 들어갈 수 없으며, 대금도 개발자에게 나가지 않는다.
+
+                    **같은 요청을 다시 보내도 된다.** 이미 취소된 계약이면 그대로 돌려주고, 환불이 끝나지                     않았으면 같은 멱등키로 잇는다. 돈은 두 번 나가지 않는다.
+
+                    - 200: 취소했을 때. 예치금이 있었으면 환불까지 끝났다
+                    - 401 UNAUTHORIZED: 로그인하지 않았을 때
+                    - 403 FORBIDDEN: 이 계약의 의뢰인이 아닐 때
+                    - 404 CONTRACT_NOT_FOUND: 없는 계약이거나 요청자가 그 계약의 당사자가 아닐 때
+                    - 409 CONTRACT_CONCLUDED: 양쪽이 서명해 이미 성립한 계약일 때
+                    - 503 REFUND_PENDING: 계약은 취소됐지만 환불 결과를 아직 확인하지 못했을 때. 다시 보낸다""")
+    @PostMapping("/{contractId}/cancellation")
+    ContractResponse cancelContract(
+            @AuthenticationPrincipal AuthenticatedUser user, @PathVariable Integer contractId) {
+        return contractCancellationService.cancel(contractId, user.userId());
     }
 
     @Operation(
@@ -119,6 +145,8 @@ public class ContractController {
                     - 403 FORBIDDEN: 이 계약의 의뢰인이 아닐 때
                     - 404 CONTRACT_NOT_FOUND: 없는 계약이거나 요청자가 그 계약의 당사자가 아닐 때
                     - 409 ALREADY_DEPOSITED: 이미 예치했을 때
+                    - 409 CONTRACT_CANCELLED: 의뢰인이 취소한 계약일 때 (R-CON-21)
+                    - 409 CONTRACT_NOT_SIGNED: 의뢰인이 아직 서명하지 않았을 때. 개발자 서명은 기다리지 않는다 (R-CON-20)
                     - 422 INVALID_REQUEST: paymentMethodId 나 idempotencyKey 가 없을 때""")
     @ResponseStatus(HttpStatus.CREATED)
     @PostMapping("/{contractId}/deposit")

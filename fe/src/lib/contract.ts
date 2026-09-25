@@ -33,6 +33,23 @@ export function isCompleted(contract: Contract): boolean {
   return status === "COMPLETED" || status === "AFTER_SERVICE";
 }
 
+/** 의뢰인이 취소한 계약인지. 취소된 계약은 서명·예치·세션을 받지 않습니다 (R-CON-21). */
+export function isCancelled(contract: Contract): boolean {
+  return contract.status === "CANCELLED";
+}
+
+/**
+ * 의뢰인이 지금 이 계약을 취소할 수 있는지 (R-CON-21).
+ *
+ * 개발자가 서명하기 전에만 됩니다. 양쪽이 서명해 성립한 뒤에는 취소가 아니라 다른 절차를
+ * 밟습니다. 이미 취소된 계약에는 버튼을 다시 보이지 않습니다.
+ *
+ * @param received 내가 이 방에 개발자로 들어갔는지. 개발자는 취소하지 않습니다
+ */
+export function canCancel(contract: Contract, received: boolean): boolean {
+  return !received && !isCancelled(contract) && contract.developerSignature?.isSigned !== true;
+}
+
 /** 내가 이미 서명했는지. 서명은 사용자마다 한 번입니다. */
 export function hasSigned(contract: Contract, myUserId: number): boolean {
   return [contract.clientSignature, contract.developerSignature].some(

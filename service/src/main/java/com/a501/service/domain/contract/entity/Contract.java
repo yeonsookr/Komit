@@ -19,6 +19,7 @@ import lombok.NoArgsConstructor;
 public class Contract extends SoftDeleteEntity {
     private static final String NEGOTIATING = "NEGOTIATING";
     private static final String SIGNED = "SIGNED";
+    private static final String CANCELLED = "CANCELLED";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -102,6 +103,24 @@ public class Contract extends SoftDeleteEntity {
     /** 양쪽이 모두 서명해 계약이 성립했는지. */
     public boolean isConcluded() {
         return SIGNED.equals(status);
+    }
+
+    /** 의뢰인이 취소한 계약인지. 취소된 계약에는 서명·수정·예치·세션 입장을 받지 않습니다. (`R-CON-21`) */
+    public boolean isCancelled() {
+        return CANCELLED.equals(status);
+    }
+
+    /**
+     * 계약을 취소합니다. 이미 취소됐으면 그대로입니다.
+     *
+     * <p><b>성립한 계약은 취소하지 않습니다.</b> 양쪽이 서명한 뒤에는 이 규칙으로 되돌리지 않습니다. 부르는 쪽이
+     * 먼저 {@link #isConcluded()} 로 가립니다. (`R-CON-21`)
+     */
+    public void cancel() {
+        if (isConcluded()) {
+            throw new IllegalStateException("성립한 계약은 취소하지 않습니다.");
+        }
+        this.status = CANCELLED;
     }
 
     public enum ContractType {

@@ -77,6 +77,8 @@ class ContractDepositServiceTest {
     void setUp() {
         contract = Contract.of(ROOM_ID, Contract.ContractType.CONSULTING);
         ReflectionTestUtils.setField(contract, "id", CONTRACT_ID);
+        // 예치는 의뢰인이 서명한 계약에만 건다. 서명 전 경우는 따로 본다.
+        contract.sign(true, 1, null);
 
         ConsultingAgreement agreement =
                 ConsultingAgreement.of(CONTRACT_ID, "회원탈퇴 경로를 봅니다", 50_000);
@@ -126,6 +128,48 @@ class ContractDepositServiceTest {
         assertThatThrownBy(() -> service.deposit(CONTRACT_ID, DEVELOPER_USER_ID, REQUEST))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", CommonErrorCode.FORBIDDEN);
+        verify(escrowDepositClient, never())
+                .create(any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("의뢰인이 서명하기 전에는 걸지 않는다. 개발자만 서명했어도 마찬가지다 (R-CON-20)")
+    void rejectsBeforeClientSigns() {
+        Contract draft = Contract.of(ROOM_ID, Contract.ContractType.CONSULTING);
+        ReflectionTestUtils.setField(draft, "id", CONTRACT_ID);
+        when(contractRepository.findByIdAndDeletedFalse(CONTRACT_ID)).thenReturn(Optional.of(draft));
+
+        assertThatThrownBy(() -> service.deposit(CONTRACT_ID, CLIENT_ID, REQUEST))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ContractErrorCode.CONTRACT_NOT_SIGNED);
+
+        draft.sign(false, 2, null);
+        assertThatThrownBy(() -> service.deposit(CONTRACT_ID, CLIENT_ID, REQUEST))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ContractErrorCode.CONTRACT_NOT_SIGNED);
+        verify(escrowDepositClient, never())
+                .create(any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("의뢰인이 서명했으면 개발자 서명을 기다리지 않고 건다. 서명과 결제가 한 버튼이다 (R-CON-20)")
+    void depositsOnceClientSigned() {
+        Contract draft = Contract.of(ROOM_ID, Contract.ContractType.CONSULTING);
+        ReflectionTestUtils.setField(draft, "id", CONTRACT_ID);
+        draft.sign(true, 1, null);
+        when(contractRepository.findByIdAndDeletedFalse(CONTRACT_ID)).thenReturn(Optional.of(draft));
+
+        assertThat(service.deposit(CONTRACT_ID, CLIENT_ID, REQUEST).status()).isEqualTo("DEPOSITED");
+    }
+
+    @Test
+    @DisplayName("취소된 계약에는 걸지 않는다 (R-CON-21)")
+    void rejectsCancelledContract() {
+        contract.cancel();
+
+        assertThatThrownBy(() -> service.deposit(CONTRACT_ID, CLIENT_ID, REQUEST))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ContractErrorCode.CONTRACT_CANCELLED);
         verify(escrowDepositClient, never())
                 .create(any(), any(), any(), any(), any(), any(), any(), any());
     }

@@ -1,5 +1,6 @@
 package com.a501.service.domain.consulting.service;
 
+import com.a501.service.domain.consulting.dto.SessionSchedule;
 import com.a501.service.domain.consulting.dto.response.ConsultingSessionResponse;
 import com.a501.service.domain.consulting.entity.ConsultingSession;
 import com.a501.service.domain.consulting.entity.Reservation;
@@ -51,6 +52,36 @@ public class ConsultingSessionQueryService {
                         session ->
                                 ConsultingSessionResponse.of(
                                         session, contractId, reservations.get(session.getId())))
+                .toList();
+    }
+
+    /**
+     * 컨설팅 합의에 달린 세션의 예약과 진행. 정산이 이의 제기 기간과 세션 예외를 가릴 때 씁니다.
+     *
+     * <p>예약이 없는 세션도 빼지 않고 {@code scheduledAt} 을 비워 돌려줍니다. 언제 끝날지 모르는 세션을
+     * 조용히 빼면 나머지 세션만 보고 지급해 버릴 수 있기 때문입니다.
+     *
+     * @param consultingAgreementId 컨설팅 합의 id
+     * @return 세션 순서대로. 세션이 없으면 빈 목록
+     */
+    public List<SessionSchedule> findSchedules(Integer consultingAgreementId) {
+        List<ConsultingSession> sessions =
+                sessionRepository.findAllByConsultingAgreementIdAndDeletedFalseOrderByIdAsc(
+                        consultingAgreementId);
+        if (sessions.isEmpty()) {
+            return List.of();
+        }
+        Map<Integer, Reservation> reservations = reservationsOf(sessions);
+        return sessions.stream()
+                .map(session -> {
+                    Reservation reservation = reservations.get(session.getId());
+                    return new SessionSchedule(
+                            session.getId(),
+                            reservation == null ? null : reservation.getScheduledAt(),
+                            session.getDurationMinutes(),
+                            session.getStartedAt(),
+                            session.getEndedAt());
+                })
                 .toList();
     }
 

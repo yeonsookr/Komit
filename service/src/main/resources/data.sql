@@ -140,6 +140,8 @@ VALUES
     ('NEGOTIATING', 'CONTRACT_STATUS', '협의중', 1, FALSE, NULL),
     ('AGREED', 'CONTRACT_STATUS', '합의됨', 2, FALSE, NULL),
     ('SIGNED', 'CONTRACT_STATUS', '체결됨', 3, FALSE, NULL),
+    -- R-CON-21: 개발자가 서명하기 전에 의뢰인이 취소했다. 되돌리지 않는다.
+    ('CANCELLED', 'CONTRACT_STATUS', '취소됨', 4, FALSE, NULL),
 
     ('UNRESOLVED', 'ISSUE_STATUS', '미해결', 1, FALSE, NULL),
     ('RESOLVED', 'ISSUE_STATUS', '해결', 2, FALSE, NULL),

@@ -5203,10 +5203,11 @@ class ContractResponse(BaseModel):
         ),
         examples=["CONSULTING"],
     )
-    status: Literal["NEGOTIATING", "AGREED", "SIGNED"] = Field(
+    status: Literal["NEGOTIATING", "AGREED", "SIGNED", "CANCELLED"] = Field(
         description=(
             "계약 진행. NEGOTIATING은 협의중, AGREED는 합의됨, SIGNED는 양쪽이 서명해 "
-            "체결된 것이다."
+            "체결된 것이다. CANCELLED는 개발자가 서명하기 전에 의뢰인이 취소한 것이다 "
+            "(R-CON-21)."
         ),
         examples=["NEGOTIATING"],
     )
@@ -5431,6 +5432,16 @@ CONTRACT_ALREADY_SIGNED = (
     "이미 체결된 계약서는 고칠 수 없습니다.",
 )
 ALREADY_SIGNED_BY_ME = ("ALREADY_SIGNED_BY_ME", "이미 서명하셨습니다.")
+CONTRACT_CANCELLED = ("CONTRACT_CANCELLED", "취소된 계약입니다.")
+CONTRACT_CONCLUDED = (
+    "CONTRACT_CONCLUDED",
+    "양쪽이 서명해 성립한 계약은 취소할 수 없습니다.",
+)
+REFUND_PENDING = (
+    "REFUND_PENDING",
+    "계약을 취소했습니다. 환불을 확인하는 중이니 잠시 뒤 다시 눌러 주세요.",
+)
+SESSION_CANCELLED = ("SESSION_CANCELLED", "취소된 계약이라 세션을 열 수 없습니다.")
 SESSION_NOT_OPEN = (
     "SESSION_NOT_OPEN",
     "아직 입장할 수 없습니다. 시작 10분 전부터 들어갈 수 있습니다.",
@@ -5457,7 +5468,13 @@ NOT_UPLOADED_DELIVERABLE_ID = 409
 REVIEWED_CONTRACT_ID = 409
 NOT_COMPLETED_CONTRACT_ID = 400
 SIGNED_CONTRACT_ID = 409
+# 개발자가 서명하기 전에 의뢰인이 취소한 계약. 서명·수정·예치가 모두 409 다. (R-CON-21)
+CANCELLED_CONTRACT_ID = 133
+# 취소는 됐지만 예치금 환불 결과를 아직 모르는 계약. 같은 요청을 다시 보내면 환불을 잇는다.
+REFUND_PENDING_CONTRACT_ID = 503
 NOT_FOUND_SESSION_ID = 404
+# 취소된 계약에 잡혀 있던 세션. 입장을 받지 않는다. (R-CON-21)
+CANCELLED_SESSION_ID = 133
 NOT_OPEN_SESSION_ID = 409
 PENDING_CONSENT_SESSION_ID = 203
 # 아직 아무도 동의하지 않은 세션. 입장 안내 화면을 재현한다. (R-CON-17)
@@ -5750,6 +5767,8 @@ def get_contract(
         return ContractResponse(**DRAFT_CLIENT_CONTRACT_EXAMPLE)
     if contractId == BEFORE_START_CONTRACT_ID:
         return ContractResponse(**BEFORE_START_CONTRACT_EXAMPLE)
+    if contractId == CANCELLED_CONTRACT_ID:
+        return ContractResponse(**CANCELLED_CONTRACT_EXAMPLE)
     return ContractResponse(**CONSULTING_CONTRACT_EXAMPLE)
 
 
@@ -5763,12 +5782,24 @@ def get_contract(
         },
         409: {
             "model": ErrorResponse,
-            "description": "이미 체결되어 고칠 수 없음",
+            "description": "이미 체결되어 고칠 수 없음 · 취소된 계약",
             "content": {
                 "application/json": {
-                    "example": {
-                        "code": "CONTRACT_ALREADY_SIGNED",
-                        "message": "이미 체결된 계약서는 고칠 수 없습니다.",
+                    "examples": {
+                        "CONTRACT_ALREADY_SIGNED": {
+                            "summary": "이미 서명함",
+                            "value": {
+                                "code": CONTRACT_ALREADY_SIGNED[0],
+                                "message": CONTRACT_ALREADY_SIGNED[1],
+                            },
+                        },
+                        "CONTRACT_CANCELLED": {
+                            "summary": "취소된 계약",
+                            "value": {
+                                "code": CONTRACT_CANCELLED[0],
+                                "message": CONTRACT_CANCELLED[1],
+                            },
+                        },
                     }
                 }
             },
@@ -5786,6 +5817,8 @@ def get_contract(
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때\n"
         "- **409 / CONTRACT_ALREADY_SIGNED**: `contractId`가 409일 때\n"
+        "- **409 / CONTRACT_CANCELLED**: 의뢰인이 취소한 계약일 때 (R-CON-21). 목에서는 "
+        f"`contractId`={CANCELLED_CONTRACT_ID}이다\n"
         "- **422 / INVALID_REQUEST**: `scheduledAt`이 지난 시각이거나 `price`가 음수일 때\n"
         "- **500 / INTERNAL_ERROR**: 고치지 못했을 때"
     ),
@@ -5795,7 +5828,8 @@ def amend_contract(
         int,
         Path(
             description=(
-                "계약 식별자. 404는 없음, 409는 이미 체결됨 재현용 예약값이다."
+                "계약 식별자. 404는 없음, 409는 이미 체결됨 재현용 예약값이다. "
+                f"{CANCELLED_CONTRACT_ID}은 취소된 계약이다."
             ),
             examples=[CONTRACT_ID],
         ),
@@ -5806,6 +5840,8 @@ def amend_contract(
         return _error_response(404, CONTRACT_NOT_FOUND)
     if contractId == SIGNED_CONTRACT_ID:
         return _error_response(409, CONTRACT_ALREADY_SIGNED)
+    if contractId == CANCELLED_CONTRACT_ID:
+        return _error_response(409, CONTRACT_CANCELLED)
     return ContractResponse(**CONSULTING_CONTRACT_EXAMPLE)
 
 
@@ -5835,12 +5871,24 @@ def amend_contract(
         },
         409: {
             "model": ErrorResponse,
-            "description": "이미 서명함",
+            "description": "이미 서명함 · 취소된 계약",
             "content": {
                 "application/json": {
-                    "example": {
-                        "code": "ALREADY_SIGNED_BY_ME",
-                        "message": "이미 서명하셨습니다.",
+                    "examples": {
+                        "ALREADY_SIGNED_BY_ME": {
+                            "summary": "이미 서명함",
+                            "value": {
+                                "code": ALREADY_SIGNED_BY_ME[0],
+                                "message": ALREADY_SIGNED_BY_ME[1],
+                            },
+                        },
+                        "CONTRACT_CANCELLED": {
+                            "summary": "취소된 계약",
+                            "value": {
+                                "code": CONTRACT_CANCELLED[0],
+                                "message": CONTRACT_CANCELLED[1],
+                            },
+                        },
                     }
                 }
             },
@@ -5862,6 +5910,9 @@ def amend_contract(
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때\n"
         "- **409 / ALREADY_SIGNED_BY_ME**: `contractId`가 409일 때. 이미 내가 서명했다\n"
+        "- **409 / CONTRACT_CANCELLED**: 의뢰인이 취소한 계약일 때. 개발자가 뒤늦게 서명하려 "
+        "해도 받지 않는다 (R-CON-21). 목에서는 "
+        f"`contractId`={CANCELLED_CONTRACT_ID}이다\n"
         "- **422 / INVALID_REQUEST**: `signatureImageFileId`가 없을 때\n"
         "- **500 / INTERNAL_ERROR**: 서명하지 못했을 때"
     ),
@@ -5871,7 +5922,8 @@ def sign_contract(
         int,
         Path(
             description=(
-                "계약 식별자. 404는 없음, 409는 이미 서명함 재현용 예약값이다."
+                "계약 식별자. 404는 없음, 409는 이미 서명함 재현용 예약값이다. "
+                f"{CANCELLED_CONTRACT_ID}은 취소된 계약이다."
             ),
             examples=[CONTRACT_ID],
         ),
@@ -5882,6 +5934,8 @@ def sign_contract(
         return _error_response(404, CONTRACT_NOT_FOUND)
     if contractId == SIGNED_CONTRACT_ID:
         return _error_response(409, ALREADY_SIGNED_BY_ME)
+    if contractId == CANCELLED_CONTRACT_ID:
+        return _error_response(409, CONTRACT_CANCELLED)
     return ContractResponse(
         **{
             **CONSULTING_CONTRACT_EXAMPLE,
@@ -5895,6 +5949,94 @@ def sign_contract(
             },
         }
     )
+
+
+# 의뢰인이 서명하고 결제한 뒤, 개발자가 서명하기 전에 취소한 계약. (R-CON-21)
+CANCELLED_CONTRACT_EXAMPLE = {
+    **CONSULTING_CONTRACT_EXAMPLE,
+    "contractId": CANCELLED_CONTRACT_ID,
+    "status": "CANCELLED",
+    "clientSignature": {
+        "userId": 12,
+        "isSigned": True,
+        "signedAt": "2026-08-22T16:10:00+09:00",
+        "signatureImageFileId": 41,
+    },
+}
+
+
+@router.post(
+    "/contracts/{contractId}/cancellation",
+    response_model=ContractResponse,
+    tags=[AREA4_TAG],
+    responses={
+        200: {"content": {"application/json": {"example": CANCELLED_CONTRACT_EXAMPLE}}},
+        409: {
+            "model": ErrorResponse,
+            "description": "이미 성립한 계약",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": CONTRACT_CONCLUDED[0],
+                        "message": CONTRACT_CONCLUDED[1],
+                    }
+                }
+            },
+        },
+        503: {
+            "model": ErrorResponse,
+            "description": "취소는 됐고 환불 결과를 아직 모름",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": REFUND_PENDING[0],
+                        "message": REFUND_PENDING[1],
+                    }
+                }
+            },
+        },
+        **CONTRACT_ERRORS,
+    },
+    summary="계약 취소",
+    description=(
+        "**화면 — `4_의뢰인_계약서상세` › 계약 취소**\n\n"
+        "개발자가 서명하기 전에 의뢰인이 계약을 취소한다. 예치금이 있으면 전액을 예치할 때 "
+        "쓴 회원가입 발급 계좌로 돌려준다 (R-CON-21, R-PAY-04).\n\n"
+        "취소된 계약은 되살릴 수 없다. 개발자가 뒤늦게 서명하려 해도, 누가 계약서를 고치거나 "
+        "예치하려 해도 409 `CONTRACT_CANCELLED`다. 그 계약에 잡혀 있던 세션에는 들어갈 수 "
+        "없고, 대금도 개발자에게 나가지 않는다.\n\n"
+        "**같은 요청을 다시 보내도 된다.** 이미 취소된 계약이면 그대로 200을 주고, 환불이 "
+        "끝나지 않았으면 이어서 진행한다. 돈은 두 번 나가지 않는다.\n\n"
+        "- **200**: 취소했을 때. 예치금이 있었으면 환불까지 끝났다. `status`가 `CANCELLED`다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **403 / FORBIDDEN**: 이 계약의 의뢰인이 아닐 때. 취소는 의뢰인만 한다\n"
+        "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때. 없거나 남의 계약이다\n"
+        "- **409 / CONTRACT_CONCLUDED**: `contractId`가 409일 때. 양쪽이 서명해 이미 "
+        "성립한 계약이다\n"
+        "- **503 / REFUND_PENDING**: `contractId`가 503일 때. 계약은 취소됐지만 환불 결과를 "
+        "아직 확인하지 못했다. 잠시 뒤 같은 요청을 다시 보낸다\n"
+        "- **500 / INTERNAL_ERROR**: 취소하지 못했을 때"
+    ),
+)
+def cancel_contract(
+    contractId: Annotated[
+        int,
+        Path(
+            description=(
+                "계약 식별자. 404는 없음, 409는 이미 성립, 503은 환불 확인 중 재현용 "
+                "예약값이다."
+            ),
+            examples=[CONTRACT_ID],
+        ),
+    ],
+) -> ContractResponse | JSONResponse:
+    if contractId == NOT_FOUND_CONTRACT_ID:
+        return _error_response(404, CONTRACT_NOT_FOUND)
+    if contractId == SIGNED_CONTRACT_ID:
+        return _error_response(409, CONTRACT_CONCLUDED)
+    if contractId == REFUND_PENDING_CONTRACT_ID:
+        return _error_response(503, REFUND_PENDING)
+    return ContractResponse(**{**CANCELLED_CONTRACT_EXAMPLE, "contractId": contractId})
 
 
 @router.post(
@@ -6104,14 +6246,24 @@ def get_session_ice_servers(
         },
         409: {
             "model": ErrorResponse,
-            "description": "아직 입장할 수 없음",
+            "description": "아직 입장할 수 없음 · 취소된 계약",
             "content": {
                 "application/json": {
-                    "example": {
-                        "code": "SESSION_NOT_OPEN",
-                        "message": (
-                            "아직 입장할 수 없습니다. 시작 10분 전부터 들어갈 수 있습니다."
-                        ),
+                    "examples": {
+                        "SESSION_NOT_OPEN": {
+                            "summary": "입장 시각 전이거나 끝난 세션",
+                            "value": {
+                                "code": SESSION_NOT_OPEN[0],
+                                "message": SESSION_NOT_OPEN[1],
+                            },
+                        },
+                        "SESSION_CANCELLED": {
+                            "summary": "취소된 계약의 세션",
+                            "value": {
+                                "code": SESSION_CANCELLED[0],
+                                "message": SESSION_CANCELLED[1],
+                            },
+                        },
                     }
                 }
             },
@@ -6135,6 +6287,8 @@ def get_session_ice_servers(
         "- **404 / SESSION_NOT_FOUND**: `sessionId`가 404일 때\n"
         "- **409 / SESSION_NOT_OPEN**: `sessionId`가 409일 때. 아직 이른 시각이거나 이미 "
         "끝난 세션이다\n"
+        "- **409 / SESSION_CANCELLED**: 의뢰인이 취소한 계약의 세션일 때. 동의도 기록하지 "
+        f"않는다 (R-CON-21). 목에서는 `sessionId`={CANCELLED_SESSION_ID}이다\n"
         "- **500 / INTERNAL_ERROR**: 들어가지 못했을 때"
     ),
 )
@@ -6144,7 +6298,7 @@ def join_consulting_session(
         Path(
             description=(
                 "컨설팅 세션 식별자. 404는 없음, 409는 입장 불가, 203은 상대 동의 "
-                "대기 재현용 예약값이다."
+                f"대기 재현용 예약값이다. {CANCELLED_SESSION_ID}은 취소된 계약의 세션이다."
             ),
             examples=[SESSION_ID],
         ),
@@ -6154,6 +6308,8 @@ def join_consulting_session(
         return _error_response(404, SESSION_NOT_FOUND)
     if sessionId == NOT_OPEN_SESSION_ID:
         return _error_response(409, SESSION_NOT_OPEN)
+    if sessionId == CANCELLED_SESSION_ID:
+        return _error_response(409, SESSION_CANCELLED)
     if sessionId == PENDING_CONSENT_SESSION_ID:
         return JSONResponse(status_code=202, content=SESSION_EXAMPLE)
     return ConsultingSessionResponse(
@@ -6753,6 +6909,7 @@ class WriteReviewRequest(BaseModel):
 MILESTONE_NOT_FOUND = ("MILESTONE_NOT_FOUND", "작업을 찾을 수 없습니다.")
 DEPOSIT_REQUIRED = ("DEPOSIT_REQUIRED", "예치가 끝나야 착수할 수 있습니다.")
 ALREADY_DEPOSITED = ("ALREADY_DEPOSITED", "이미 예치가 끝났습니다.")
+CONTRACT_NOT_SIGNED = ("CONTRACT_NOT_SIGNED", "계약서에 서명한 뒤에 예치할 수 있습니다.")
 QA_NOT_ALL_CHECKED = (
     "QA_NOT_ALL_CHECKED",
     "확인 문장을 모두 체크해야 통과시킬 수 있습니다.",
@@ -7494,7 +7651,7 @@ def write_development_contract(
         201: {"content": {"application/json": {"example": DEPOSIT_EXAMPLE}}},
         409: {
             "model": ErrorResponse,
-            "description": "이미 예치됨",
+            "description": "이미 예치됨 · 서명 전",
             "content": {
                 "application/json": {
                     "examples": {
@@ -7503,6 +7660,20 @@ def write_development_contract(
                             "value": {
                                 "code": ALREADY_DEPOSITED[0],
                                 "message": ALREADY_DEPOSITED[1],
+                            },
+                        },
+                        "CONTRACT_NOT_SIGNED": {
+                            "summary": "의뢰인 서명 전",
+                            "value": {
+                                "code": CONTRACT_NOT_SIGNED[0],
+                                "message": CONTRACT_NOT_SIGNED[1],
+                            },
+                        },
+                        "CONTRACT_CANCELLED": {
+                            "summary": "취소된 계약",
+                            "value": {
+                                "code": CONTRACT_CANCELLED[0],
+                                "message": CONTRACT_CANCELLED[1],
                             },
                         },
                     }
@@ -7534,6 +7705,12 @@ def write_development_contract(
         "- **403 / FORBIDDEN**: 이 계약의 의뢰인이 아닐 때. 예치는 의뢰인만 한다\n"
         "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때\n"
         "- **409 / ALREADY_DEPOSITED**: `contractId`가 409일 때\n"
+        "- **409 / CONTRACT_NOT_SIGNED**: 의뢰인이 아직 서명하지 않았을 때. 의뢰인은 자기가 서명한 "
+        "계약서에만 돈을 맡긴다. 개발자 서명은 기다리지 않으며, 대금은 양쪽이 모두 서명한 뒤에만 "
+        "개발자에게 나간다(R-CON-20). 목에서는 아직 아무도 서명하지 않은 계약서 "
+        f"`contractId`={DRAFT_CLIENT_CONTRACT_ID}이 이 응답을 준다\n"
+        "- **409 / CONTRACT_CANCELLED**: 의뢰인이 취소한 계약일 때 (R-CON-21). 목에서는 "
+        f"`contractId`={CANCELLED_CONTRACT_ID}이다\n"
         "- **422 / INVALID_REQUEST**: `paymentMethodId`나 `idempotencyKey`가 없을 때\n"
         "- **500 / INTERNAL_ERROR**: 예치를 걸지 못했을 때"
     ),
@@ -7542,7 +7719,10 @@ def deposit_contract(
     contractId: Annotated[
         int,
         Path(
-            description="계약 식별자. 404는 없음, 409는 이미 예치됨 재현용 예약값이다.",
+            description=(
+                "계약 식별자. 404는 없음, 409는 이미 예치됨 재현용 예약값이다. "
+                f"{DRAFT_CLIENT_CONTRACT_ID}은 서명 전 계약서다."
+            ),
             examples=[DEV_CONTRACT_ID],
         ),
     ],
@@ -7552,6 +7732,10 @@ def deposit_contract(
         return _error_response(404, CONTRACT_NOT_FOUND)
     if contractId == DEPOSITED_CONTRACT_ID:
         return _error_response(409, ALREADY_DEPOSITED)
+    if contractId == DRAFT_CLIENT_CONTRACT_ID:
+        return _error_response(409, CONTRACT_NOT_SIGNED)
+    if contractId == CANCELLED_CONTRACT_ID:
+        return _error_response(409, CONTRACT_CANCELLED)
     return EscrowDepositResponse(**DEPOSIT_EXAMPLE)
 
 
@@ -12544,6 +12728,13 @@ REALTIME_ENTRY_NOT_OPEN = (
                                 "message": REALTIME_ENTRY_NOT_OPEN[1],
                             },
                         },
+                        "sessionCancelled": {
+                            "summary": "취소된 계약의 세션",
+                            "value": {
+                                "code": SESSION_CANCELLED[0],
+                                "message": SESSION_CANCELLED[1],
+                            },
+                        },
                     }
                 }
             },
@@ -12581,6 +12772,8 @@ REALTIME_ENTRY_NOT_OPEN = (
         "`channelId`가 `410`이면 재현한다\n"
         "- **409 / ENTRY_NOT_OPEN**: 입장 가능 시각 전이거나 예약을 확인할 수 없을 때. "
         "CONSULTING_SESSION의 `channelId`가 `411`이면 재현한다\n"
+        "- **409 / SESSION_CANCELLED**: 의뢰인이 취소한 계약의 세션일 때 (R-CON-21). "
+        f"CONSULTING_SESSION의 `channelId`가 `{CANCELLED_SESSION_ID}`이면 재현한다\n"
         "- **422 / INVALID_REQUEST**: 채널이 허용된 값이 아니거나 channelId가 비었거나 "
         "50자를 초과했을 때"
     ),
@@ -12599,6 +12792,8 @@ def issue_realtime_ticket(
             return _error_response(409, REALTIME_CONSENT_REQUIRED)
         if payload.channelId == "411":
             return _error_response(409, REALTIME_ENTRY_NOT_OPEN)
+        if payload.channelId == str(CANCELLED_SESSION_ID):
+            return _error_response(409, SESSION_CANCELLED)
     return RealtimeTicketResponse(ticket="mock-realtime-ticket-once")
 
 # 개발자가 상담 요청을 수락·거절하는 기능은 만들지 않기로 했다.

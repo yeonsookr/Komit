@@ -140,6 +140,10 @@ public class ConsultingContractWriteService {
                 .findParties(contract.getRoomId())
                 .filter(found -> found.includes(userId))
                 .orElseThrow(() -> new BusinessException(ContractErrorCode.CONTRACT_NOT_FOUND));
+        // R-CON-21: 서명 전에 취소된 계약서도 고치지 않는다. 되살리는 길이 되면 안 된다.
+        if (contract.isCancelled()) {
+            throw new BusinessException(ContractErrorCode.CONTRACT_CANCELLED);
+        }
         if (contract.isSigned()) {
             throw new BusinessException(ContractErrorCode.CONTRACT_ALREADY_SIGNED);
         }

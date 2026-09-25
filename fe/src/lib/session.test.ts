@@ -111,6 +111,10 @@ describe("배너를 띄울 세션", () => {
     expect(confirmedSession(proposed)).toBeNull();
   });
 
+  it("취소된 계약의 세션은 들어갈 곳으로 보이지 않는다 (R-CON-21)", () => {
+    expect(confirmedSession(contract({ status: "CANCELLED" }))).toBeNull();
+  });
+
   it("계약서가 없거나 개발 계약이면 세션이 없다", () => {
     expect(confirmedSession(null)).toBeNull();
     expect(confirmedSession(contract({ contractType: "DEVELOPMENT", consulting: null }))).toBeNull();

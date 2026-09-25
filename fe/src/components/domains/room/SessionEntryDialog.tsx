@@ -8,6 +8,7 @@ import { Modal, ModalFooter, ModalHeader, useToast } from "@/components/feedback
 import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
 import { ROUTES } from "@/lib/routes";
+import { ApiError } from "@/types/api";
 
 /**
  * 동의를 받는 항목. 둘 다 켜야 들어갈 수 있습니다.
@@ -62,12 +63,16 @@ export function SessionEntryDialog({
     try {
       await clientApi.post(INTERNAL.SESSION_PARTICIPATIONS(sessionId));
       router.push(ROUTES.session(sessionId));
-    } catch {
+    } catch (error) {
       setEntering(false);
       showToast({
         tone: "danger",
         title: "세션에 들어가지 못했습니다",
-        description: "잠시 후 다시 시도해 주세요. 이미 끝난 세션일 수 있습니다.",
+        // 취소된 계약(R-CON-21)이나 입장 시각 전처럼 서버가 이유를 알려 주면 그대로 보여줍니다.
+        description:
+          error instanceof ApiError
+            ? error.message
+            : "잠시 후 다시 시도해 주세요. 이미 끝난 세션일 수 있습니다.",
       });
     }
   };

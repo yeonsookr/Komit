@@ -1,5 +1,6 @@
 package com.a501.service.domain.contract.service;
 
+import com.a501.service.domain.contract.dto.ConsultingPayoutTarget;
 import com.a501.service.domain.contract.dto.ContractParties;
 import com.a501.service.domain.contract.entity.ConsultingAgreement;
 import com.a501.service.domain.contract.entity.Contract;
@@ -63,6 +64,22 @@ public class ContractQueryService {
     }
 
     /**
+     * 컨설팅 합의가 달린 계약이 의뢰인에게 취소됐는지. 합의나 계약이 없으면 거짓입니다.
+     *
+     * <p>취소된 계약의 세션에는 들어가지 못하게 세션 쪽이 묻습니다. (`R-CON-21`)
+     *
+     * @param consultingAgreementId 컨설팅 합의 id
+     */
+    public boolean isCancelledByConsultingAgreementId(Integer consultingAgreementId) {
+        return agreementRepository
+                .findByIdAndDeletedFalse(consultingAgreementId)
+                .map(ConsultingAgreement::getContractId)
+                .flatMap(contractRepository::findByIdAndDeletedFalse)
+                .map(Contract::isCancelled)
+                .orElse(false);
+    }
+
+    /**
      * 이 방에 달린 계약. 아직 계약서를 쓰지 않았으면 비어 있습니다.
      *
      * @param roomId 방 id
@@ -122,6 +139,39 @@ public class ContractQueryService {
                 .filter(contract -> completed.contains(contract.getId()))
                 .forEach(contract -> result.merge(contract.getRoomId(), 1L, Long::sum));
         return result;
+    }
+
+    /**
+     * 양측이 서명했고 아직 대금을 지급하지 않은 컨설팅 계약.
+     *
+     * <p>지급을 마쳤거나 파기된 합의는 빠집니다. 예치가 걸렸는지, 이의 제기 기간이 지났는지는 보지
+     * 않습니다 — 예치는 Escrow 가, 기간은 세션이 압니다. 묻는 쪽이 가립니다.
+     *
+     * <p>방의 당사자를 찾지 못한 계약은 빠집니다. 대금을 받을 사람을 모르면 지급할 수 없습니다.
+     */
+    public List<ConsultingPayoutTarget> findUnpaidConsultingContracts() {
+        List<ConsultingAgreement> agreements = agreementRepository.findByStatusNotInAndDeletedFalse(
+                List.of(ConsultingAgreement.COMPLETED, ConsultingAgreement.TERMINATED));
+        if (agreements.isEmpty()) {
+            return List.of();
+        }
+        Map<Integer, Contract> contracts = contractRepository
+                .findAllById(agreements.stream().map(ConsultingAgreement::getContractId).toList())
+                .stream()
+                .filter(contract -> !contract.isDeleted() && contract.isConcluded())
+                .collect(Collectors.toMap(Contract::getId, contract -> contract));
+
+        return agreements.stream()
+                .filter(agreement -> contracts.containsKey(agreement.getContractId()))
+                .flatMap(agreement -> toParties(contracts.get(agreement.getContractId()))
+                        .map(parties -> new ConsultingPayoutTarget(
+                                parties.contractId(),
+                                agreement.getId(),
+                                agreement.getTotalAmount(),
+                                parties.clientId(),
+                                parties.developerId()))
+                        .stream())
+                .toList();
     }
 
     private Optional<ContractParties> toParties(Contract contract) {

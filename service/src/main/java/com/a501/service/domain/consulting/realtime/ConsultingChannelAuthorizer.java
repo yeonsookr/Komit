@@ -11,6 +11,7 @@ import com.a501.service.domain.consulting.entity.Reservation;
 import com.a501.service.domain.consulting.repository.ConsultingSessionRepository;
 import com.a501.service.domain.consulting.repository.ParticipationRecordRepository;
 import com.a501.service.domain.consulting.repository.ReservationRepository;
+import com.a501.service.domain.contract.service.ContractQueryService;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -30,24 +31,29 @@ public class ConsultingChannelAuthorizer implements RealtimeChannelAuthorizer {
     private final ConsultingSessionRepository sessionRepository;
     private final ParticipationRecordRepository participationRepository;
     private final ReservationRepository reservationRepository;
+    private final ContractQueryService contractQueryService;
     private final Clock clock;
 
     @Autowired
     public ConsultingChannelAuthorizer(
             ConsultingSessionRepository sessionRepository,
             ParticipationRecordRepository participationRepository,
-            ReservationRepository reservationRepository) {
-        this(sessionRepository, participationRepository, reservationRepository, Clock.systemUTC());
+            ReservationRepository reservationRepository,
+            ContractQueryService contractQueryService) {
+        this(sessionRepository, participationRepository, reservationRepository, contractQueryService,
+                Clock.systemUTC());
     }
 
     ConsultingChannelAuthorizer(
             ConsultingSessionRepository sessionRepository,
             ParticipationRecordRepository participationRepository,
             ReservationRepository reservationRepository,
+            ContractQueryService contractQueryService,
             Clock clock) {
         this.sessionRepository = sessionRepository;
         this.participationRepository = participationRepository;
         this.reservationRepository = reservationRepository;
+        this.contractQueryService = contractQueryService;
         this.clock = clock;
     }
 
@@ -75,6 +81,11 @@ public class ConsultingChannelAuthorizer implements RealtimeChannelAuthorizer {
                 records.stream().anyMatch(record -> Objects.equals(record.getUserId(), userId));
         if (!isParticipant) {
             throw new BusinessException(ConsultingErrorCode.SESSION_NOT_FOUND);
+        }
+
+        // R-CON-21: 취소된 계약의 세션에는 통화 채널을 열지 않는다. 입장 API 와 같은 판정이다.
+        if (contractQueryService.isCancelledByConsultingAgreementId(session.getConsultingAgreementId())) {
+            throw new BusinessException(ConsultingErrorCode.SESSION_CANCELLED);
         }
 
         if (session.getEndedAt() != null) {

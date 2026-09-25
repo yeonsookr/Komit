@@ -18,6 +18,12 @@ import org.hibernate.annotations.ColumnDefault;
 @Table(name = "consulting_agreements")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ConsultingAgreement extends SoftDeleteEntity {
+    /** 지급까지 끝난 합의. {@code CONSULTING_AGREEMENT_STATUS} 코드값입니다. */
+    public static final String COMPLETED = "COMPLETED";
+
+    /** 파기된 합의. 지급 대상이 아닙니다. */
+    public static final String TERMINATED = "TERMINATED";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", nullable = false)
@@ -62,6 +68,25 @@ public class ConsultingAgreement extends SoftDeleteEntity {
         agreement.status = "SIGNED";
         agreement.statusGroup = "CONSULTING_AGREEMENT_STATUS";
         return agreement;
+    }
+
+    /** 대금이 개발자에게 지급되었는지. 지급이 끝나면 다시 지급 대상으로 고르지 않습니다. */
+    public boolean isCompleted() {
+        return COMPLETED.equals(status);
+    }
+
+    /**
+     * 대금 지급이 끝났음을 적습니다. 같은 호출이 다시 와도 상태는 그대로입니다.
+     *
+     * <p>지급 기록의 원본은 Escrow 에 있습니다. 여기 남기는 것은 「더 볼 필요가 없다」는 표시뿐입니다. (`R-PAY-05`)
+     */
+    public void complete() {
+        this.status = COMPLETED;
+    }
+
+    /** 계약이 취소되어 합의를 파기로 적습니다. 파기된 합의는 지급 대상으로 고르지 않습니다. (`R-CON-21`) */
+    public void terminate() {
+        this.status = TERMINATED;
     }
 
     /** 협의 중에 다시 보낸 계약서로 내용을 바꿉니다. */
