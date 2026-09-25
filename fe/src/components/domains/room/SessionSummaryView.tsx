@@ -25,6 +25,12 @@ export interface SessionSummaryViewProps {
   canApply: boolean;
 }
 
+/** 변경 후보 칸의 안내. 후보가 없을 때 「모두 반영했다」고 적으면 반영한 것이 있는 줄 안다. */
+function changesNote(total: number, pending: number): string | undefined {
+  if (total === 0) return undefined;
+  return pending === 0 ? "모두 요청서에 반영했습니다" : "고른 것만 요청서에 들어갑니다";
+}
+
 /**
  * SessionSummaryView — 컨설팅 세션 요약 (`4_의뢰인_요약`).
  *
@@ -38,12 +44,6 @@ export interface SessionSummaryViewProps {
  * 반영은 고른 것만 들어갑니다. 요약을 읽는 것과 요청서를 고치는 것은 다른 일이라,
  * 세션에서 정해졌다고 저절로 요청서가 바뀌지는 않습니다.
  */
-/** 변경 후보 칸의 안내. 후보가 없을 때 「모두 반영했다」고 적으면 반영한 것이 있는 줄 안다. */
-function changesNote(total: number, pending: number): string | undefined {
-  if (total === 0) return undefined;
-  return pending === 0 ? "모두 요청서에 반영했습니다" : "고른 것만 요청서에 들어갑니다";
-}
-
 export function SessionSummaryView({
   sessionId,
   summary: initial,

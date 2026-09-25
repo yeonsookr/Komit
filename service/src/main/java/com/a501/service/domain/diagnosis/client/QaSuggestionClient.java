@@ -54,8 +54,7 @@ public class QaSuggestionClient {
             @Value("${app.ai.connect-timeout}") Duration connectTimeout,
             @Value("${app.ai.read-timeout}") Duration readTimeout) {
         HttpClient httpClient = HttpClient.newBuilder()
-                // 기본값인 HTTP/2 는 http 주소에 업그레이드 요청(h2c)을 붙이는데 AI 서버(uvicorn)가
-                // 지원하지 않는다. 컨설팅 요약에서 큰 본문이 422 로 거절된 것을 보고 맞춘다.
+                // 기본값인 HTTP/2 는 h2c 업그레이드를 붙이는데 AI 서버(uvicorn)가 받지 않는다.
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(connectTimeout)
                 .followRedirects(HttpClient.Redirect.NEVER)

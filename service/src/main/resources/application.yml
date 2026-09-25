@@ -74,8 +74,7 @@ app:
     # 읽기 한도 합보다 길어야, 잡은 서버가 일하는 도중에 다른 서버가 끼어들지 않습니다.
     payout-lock-ttl: 3m
   transcriber:
-    # 전사를 받아 가는 노트북의 토큰 (ai/worker/docs/job-contract.md 11.2). 비워 두면 전사
-    # 경로가 모두 401 로 닫힙니다 — 노트북 없는 로컬·CI 도 기동은 되어야 하므로 막지 않습니다.
+    # 전사를 받아 가는 노트북의 토큰. 비워 두면 전사 경로가 모두 401 로 닫힙니다.
     token: ${TRANSCRIBER_TOKEN:}
   realtime:
     # R-RT-01: 티켓을 받아 WebSocket 을 여는 사이에만 쓰며 한 번 쓰면 바로 지웁니다.

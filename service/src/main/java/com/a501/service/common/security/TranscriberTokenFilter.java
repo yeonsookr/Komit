@@ -51,7 +51,6 @@ public class TranscriberTokenFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    /** 이 요청이 전사 경로인지. */
     public static boolean isTranscriberPath(HttpServletRequest request) {
         return request.getRequestURI().startsWith(request.getContextPath() + PATH_PREFIX);
     }
