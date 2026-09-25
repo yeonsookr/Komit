@@ -21,6 +21,7 @@ import java.util.Objects;
 import java.util.Optional;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
@@ -41,6 +42,7 @@ public class TranscriptionJobService {
     private final ContractQueryService contractQueryService;
     private final FileLookupService fileLookupService;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher events;
     private final Clock clock;
 
     @Autowired
@@ -49,13 +51,15 @@ public class TranscriptionJobService {
             ParticipationRecordRepository participationRepository,
             ContractQueryService contractQueryService,
             FileLookupService fileLookupService,
-            ObjectMapper objectMapper) {
+            ObjectMapper objectMapper,
+            ApplicationEventPublisher events) {
         this(
                 sessionRepository,
                 participationRepository,
                 contractQueryService,
                 fileLookupService,
                 objectMapper,
+                events,
                 Clock.systemUTC());
     }
 
@@ -65,12 +69,14 @@ public class TranscriptionJobService {
             ContractQueryService contractQueryService,
             FileLookupService fileLookupService,
             ObjectMapper objectMapper,
+            ApplicationEventPublisher events,
             Clock clock) {
         this.sessionRepository = sessionRepository;
         this.participationRepository = participationRepository;
         this.contractQueryService = contractQueryService;
         this.fileLookupService = fileLookupService;
         this.objectMapper = objectMapper;
+        this.events = events;
         this.clock = clock;
     }
 
@@ -92,11 +98,16 @@ public class TranscriptionJobService {
      * 거절받아도 할 수 있는 일이 없습니다. 두 인스턴스가 같은 세션을 동시에 받아도 행을 잠가
      * 한 줄로 세웁니다.
      *
+     * <p>새로 남겼을 때만 요약을 만들게 알립니다. 알림은 커밋 뒤에 받으므로 노트북은 요약을
+     * 기다리지 않습니다.
+     *
      * @throws BusinessException {@link ConsultingErrorCode#SESSION_NOT_FOUND} — 없는 세션
      */
     @Transactional
     public void recordResult(Integer sessionId, TranscriptResultRequest request) {
-        findForUpdate(sessionId).recordTranscript(objectMapper.writeValueAsString(request));
+        if (findForUpdate(sessionId).recordTranscript(objectMapper.writeValueAsString(request))) {
+            events.publishEvent(new TranscriptRecorded(sessionId));
+        }
     }
 
     /**

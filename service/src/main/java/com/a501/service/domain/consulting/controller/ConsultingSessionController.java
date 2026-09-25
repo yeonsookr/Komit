@@ -6,7 +6,9 @@ import com.a501.service.domain.consulting.dto.request.CreateSessionRecordingRequ
 import com.a501.service.domain.consulting.dto.response.ConsultingSessionResponse;
 import com.a501.service.domain.consulting.dto.response.SessionParticipationResponse;
 import com.a501.service.domain.consulting.dto.response.SessionRecordingResponse;
+import com.a501.service.domain.consulting.dto.response.SessionSummaryResponse;
 import com.a501.service.domain.consulting.service.ConsultingSessionService;
+import com.a501.service.domain.consulting.service.SessionSummaryQueryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -29,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class ConsultingSessionController {
     private final ConsultingSessionService sessionService;
+    private final SessionSummaryQueryService summaryQueryService;
 
     @Operation(
             summary = "세션 조회",
@@ -44,6 +47,25 @@ public class ConsultingSessionController {
     ConsultingSessionResponse getSession(
             @AuthenticationPrincipal AuthenticatedUser user, @PathVariable Integer sessionId) {
         return sessionService.getSession(user.userId(), sessionId);
+    }
+
+    @Operation(
+            summary = "세션 요약 조회",
+            description =
+                    """
+                    세션이 끝난 뒤 만들어진 요약을 내려준다. 녹음을 글로 옮겨 정리한 결과다.
+
+                    `changes`는 요청서에 반영할 수 있는 후보다. `discussed`는 반영 대상이 아니다.
+
+                    - 200: 요약이 만들어졌을 때
+                    - 401 UNAUTHORIZED: 로그인하지 않았을 때
+                    - 404 SESSION_NOT_FOUND: 없는 세션이거나 요청자가 그 세션의 당사자가 아닐 때
+                    - 409 SUMMARY_NOT_READY: 세션은 끝났지만 요약이 아직 준비되지 않았을 때
+                    - 500 INTERNAL_ERROR: 요약을 읽지 못했을 때""")
+    @GetMapping("/{sessionId}/summary")
+    SessionSummaryResponse getSummary(
+            @AuthenticationPrincipal AuthenticatedUser user, @PathVariable Integer sessionId) {
+        return summaryQueryService.getSummary(user.userId(), sessionId);
     }
 
     @Operation(

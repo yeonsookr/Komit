@@ -43,6 +43,8 @@ app:
     base-url: ${AI_API_BASE_URL:http://localhost:8000}
     connect-timeout: ${AI_CONNECT_TIMEOUT:3s}
     read-timeout: ${AI_READ_TIMEOUT:25s}
+    # 요약만 따로 둔다. AI 가 추론 모델(gpt-5-mini)을 120초까지 기다리므로 그보다 길어야 한다.
+    summary-read-timeout: ${AI_SUMMARY_READ_TIMEOUT:150s}
   escrow:
     base-url: ${ESCROW_API_BASE_URL:http://localhost:8081}
     client-api-key: ${ESCROW_CLIENT_API_KEY:komit-backend-client-api-key-dev-only}

@@ -3,6 +3,9 @@ package com.a501.service.domain.consulting.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.a501.service.common.exception.BusinessException;
@@ -28,6 +31,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.BeanUtils;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.test.util.ReflectionTestUtils;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
@@ -48,6 +52,7 @@ class TranscriptionJobServiceTest {
     private final ContractQueryService contractQueryService = mock(ContractQueryService.class);
     private final FileLookupService fileLookupService = mock(FileLookupService.class);
     private final ObjectMapper objectMapper = JsonMapper.builder().build();
+    private final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
 
     private final TranscriptionJobService service = new TranscriptionJobService(
             sessionRepository,
@@ -55,6 +60,7 @@ class TranscriptionJobServiceTest {
             contractQueryService,
             fileLookupService,
             objectMapper,
+            events,
             Clock.fixed(NOW, ZoneOffset.UTC));
 
     private ConsultingSession session;
@@ -104,6 +110,29 @@ class TranscriptionJobServiceTest {
                 .isEqualTo(objectMapper.readTree(
                         "{\"utterances\":[{\"utteranceIndex\":0,\"speaker\":\"CLIENT\",\"startMs\":5680,"
                                 + "\"endMs\":6540,\"rawText\":\"안녕하세요.\"}]}"));
+    }
+
+    @Test
+    void 전사를_새로_남기면_요약을_만들게_알린다() {
+        service.recordResult(SESSION_ID, RESULT);
+
+        verify(events).publishEvent(new TranscriptRecorded(SESSION_ID));
+    }
+
+    @Test
+    void 이미_전사가_있으면_요약을_다시_만들지_않는다() {
+        service.recordResult(SESSION_ID, RESULT);
+        service.recordResult(SESSION_ID, RESULT);
+
+        verify(events, times(1)).publishEvent(new TranscriptRecorded(SESSION_ID));
+    }
+
+    @Test
+    void 전사_불가_세션에_온_결과로는_요약을_만들지_않는다() {
+        service.recordFailure(SESSION_ID, failure(TranscriptFailureRequest.Code.AUDIO_UNUSABLE));
+        service.recordResult(SESSION_ID, RESULT);
+
+        verify(events, never()).publishEvent(new TranscriptRecorded(SESSION_ID));
     }
 
     @Test

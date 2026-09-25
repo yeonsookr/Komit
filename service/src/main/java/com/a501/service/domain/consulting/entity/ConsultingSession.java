@@ -103,6 +103,19 @@ public class ConsultingSession extends SoftDeleteEntity {
         return true;
     }
 
+    /**
+     * 요약을 남깁니다. 이미 있으면 그대로 둡니다.
+     *
+     * @return 이번에 남겼으면 참
+     */
+    public boolean recordSummary(String summary) {
+        if (this.summary != null) {
+            return false;
+        }
+        this.summary = Objects.requireNonNull(summary, "summary");
+        return true;
+    }
+
     private boolean awaitingTranscript() {
         return transcript == null && transcriptFailedAt == null;
     }
