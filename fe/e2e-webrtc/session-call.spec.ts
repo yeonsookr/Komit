@@ -26,6 +26,14 @@ const TRACE = process.env.E2E_TRACE === '1';
 /** 상대가 붙기까지 기다려 주는 시간. 로컬이라 넉넉하면 충분합니다. */
 const CONNECT_TIMEOUT_MS = 20_000;
 
+/**
+ * 두 녹음의 시작·멈춤이 벌어져도 되는 한도.
+ *
+ * 대화에서 말이 넘어가는 간격이 0.3~0.5초라 그보다 작아야 순서가 지켜진다. 로컬은 망 지연이
+ * 없어 실제보다 훨씬 작게 나온다. 이 한도는 로컬 값이 아니라 실제 망에서 지켜야 할 값이다.
+ */
+const RECORDING_GAP_LIMIT_MS = 500;
+
 function requiredToken(name: string): string {
   const value = process.env[name];
   if (!value) {
@@ -81,12 +89,51 @@ async function forceRelay(context: BrowserContext): Promise<void> {
   });
 }
 
+/**
+ * 녹음을 언제 켜고 껐는지 적어 둡니다.
+ *
+ * **전사는 두 녹음이 같은 시각에 시작했다고 보고 합칩니다.** 시작이 어긋나면 늦게 켠 쪽의
+ * 말이 그만큼 앞당겨져 대답이 질문보다 앞에 놓입니다. 두 context 는 한 브라우저 안에 있어
+ * `Date.now()` 가 같은 시계를 봅니다.
+ */
+async function watchRecorder(context: BrowserContext): Promise<void> {
+  await context.addInitScript(() => {
+    const times: { start?: number; stop?: number } = {};
+    (window as unknown as { __recorder: typeof times }).__recorder = times;
+    const { start, stop } = MediaRecorder.prototype;
+    MediaRecorder.prototype.start = function (...args) {
+      times.start ??= Date.now();
+      return start.apply(this, args);
+    };
+    MediaRecorder.prototype.stop = function () {
+      times.stop ??= Date.now();
+      return stop.apply(this);
+    };
+  });
+}
+
+async function recorderTimes(page: Page): Promise<{ start?: number; stop?: number }> {
+  return page.evaluate(
+    () => (window as unknown as { __recorder: { start?: number; stop?: number } }).__recorder,
+  );
+}
+
+/** 두 녹음이 거의 같이 켜졌는지. 넘으면 전사에서 말 순서가 뒤집힌다. */
+async function expectRecordingStartedTogether(a: Page, b: Page): Promise<void> {
+  await expect.poll(async () => (await recorderTimes(a)).start).toBeDefined();
+  await expect.poll(async () => (await recorderTimes(b)).start).toBeDefined();
+  const gap = Math.abs((await recorderTimes(a)).start! - (await recorderTimes(b)).start!);
+  console.log(`녹음 시작 차이 ${gap}ms`);
+  expect(gap).toBeLessThan(RECORDING_GAP_LIMIT_MS);
+}
+
 /** 그 사람 몫의 브라우저 하나. 쿠키가 섞이지 않게 context 를 따로 씁니다. */
 async function openAs(browser: Browser, token: string, who: string) {
   const context: BrowserContext = await browser.newContext({
     permissions: ['camera', 'microphone'],
   });
   await forceRelay(context);
+  await watchRecorder(context);
   // 카카오를 거치지 않고 로그인한 상태로 만듭니다. 이 쿠키는 Next 서버가 읽습니다.
   await context.addCookies([{ name: ACCESS_TOKEN_COOKIE, value: token, url: BASE_URL }]);
 
@@ -151,6 +198,9 @@ test('먼저 동의한 사람은 미리보기만 보고, 둘 다 동의하면 �
       .poll(() => hasMovingVideo(client.page, 0), { timeout: CONNECT_TIMEOUT_MS })
       .toBe(true);
 
+    // 미리보기는 담지 않는다. 상대가 동의하기 전의 혼잣말이 들어간다.
+    expect((await recorderTimes(client.page)).start).toBeUndefined();
+
     await enterSession(developer.page);
 
     // 기다리던 쪽 화면이 저절로 바뀐다. 되묻기가 아니라 서버 알림으로 안다.
@@ -159,6 +209,9 @@ test('먼저 동의한 사람은 미리보기만 보고, 둘 다 동의하면 �
     });
 
     await expectTwoWayVideo([client.page, developer.page]);
+
+    // 먼저 온 쪽은 알림을 받고 한 번 더 물어야 들어가는데, 녹음은 그 차이와 상관없이 같이 켠다.
+    await expectRecordingStartedTogether(client.page, developer.page);
   } finally {
     await client.context.close();
     await developer.context.close();
@@ -282,6 +335,14 @@ test('한쪽이 끝내면 양쪽 녹음이 각자 올라간다', async ({ browse
 
     // 파일은 우리 서버를 지나지 않고 저장소로 곧장 갔다.
     expect(direct).toHaveLength(2);
+
+    // 두 녹음이 거의 같이 멈췄다. 끝내지 않은 쪽은 서버 알림으로 멈춘다.
+    await expectRecordingStartedTogether(client.page, developer.page);
+    const stopGap = Math.abs(
+      (await recorderTimes(client.page)).stop! - (await recorderTimes(developer.page)).stop!,
+    );
+    console.log(`녹음 멈춤 차이 ${stopGap}ms`);
+    expect(stopGap).toBeLessThan(RECORDING_GAP_LIMIT_MS);
   } finally {
     await client.context.close();
     await developer.context.close();
