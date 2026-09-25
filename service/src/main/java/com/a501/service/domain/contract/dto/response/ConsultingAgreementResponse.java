@@ -14,6 +14,7 @@ import java.util.List;
  * @param status 컨설팅 진행 코드값
  * @param totalAmount 이 계약으로 오가는 전체 금액
  * @param topic 이 세션에서 다룰 것
+ * @param detail 합의한 상담 내용의 상세 설명
  * @param sessions 이 계약에 속한 세션
  */
 @Schema(description = "컨설팅 계약에만 있는 내용. 개발 계약이면 이 자리가 null 이다.")
@@ -23,6 +24,10 @@ public record ConsultingAgreementResponse(
                 Long totalAmount,
         @Schema(description = "이 세션에서 다룰 것.", example = "회원탈퇴 경로와 결제 간헐 실패를 함께 봅니다")
                 String topic,
+        @Schema(
+                        description = "합의한 상담 내용의 상세 설명. 적지 않았으면 null 이다.",
+                        example = "회원탈퇴 처리 흐름과 결제 실패 재현 방법을 화면 공유로 봅니다.")
+                String detail,
         @Schema(description = "이 계약에 속한 세션.") List<ConsultingSessionResponse> sessions) {
 
     /**
@@ -38,6 +43,7 @@ public record ConsultingAgreementResponse(
                 entity.getStatus(),
                 entity.getTotalAmount() == null ? null : entity.getTotalAmount().longValue(),
                 entity.getTopic(),
+                entity.getDetail(),
                 sessions);
     }
 }
