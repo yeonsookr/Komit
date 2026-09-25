@@ -9119,7 +9119,13 @@ class WithdrawalBlockerResponse(BaseModel):
         examples=["CONTRACT"],
     )
     title: str = Field(
-        description="화면에 보여줄 줄.",
+        description=(
+            "화면에 보여줄 줄. 갈래마다 모양이 정해져 있다.\n\n"
+            "- CONTRACT: `{프로젝트 이름} · 진행 중인 의뢰`\n"
+            "- DEPOSIT: `예치금 {금액}원` — 내가 의뢰인인 계약의 에스크로 잔액\n"
+            "- INCOME: `못 받은 소득 {금액}원` — 내가 개발자인 계약의 에스크로 잔액\n\n"
+            "금액은 세 자리마다 쉼표를 찍는다."
+        ),
         examples=["수제 비누 가게 · 진행 중인 의뢰"],
     )
     amount: int | None = Field(
@@ -9175,7 +9181,9 @@ class WithdrawalCheckResponse(BaseModel):
     blockers: list[WithdrawalBlockerResponse] = Field(
         description=(
             "정리해야 할 것. 계약·예치금·소득을 훑어 그때그때 만드는 목록이라 저장되지 "
-            "않는다. 없으면 빈 배열이고 이때 `canWithdraw`가 참이다."
+            "않는다. 없으면 빈 배열이고 이때 `canWithdraw`가 참이다.\n\n"
+            "계약 식별자 순으로 늘어놓고, 한 계약 안에서는 CONTRACT, DEPOSIT, INCOME "
+            "순이다. 잔액이 0인 계약은 DEPOSIT·INCOME 줄을 만들지 않는다."
         ),
     )
 
