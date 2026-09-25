@@ -8,6 +8,7 @@ import {
   isHandover,
   isSignedByBoth,
   hasSigned,
+  lastCounterpartMessage,
   nearestAutoPassAt,
   periodDays,
   remainingAmount,
@@ -51,7 +52,6 @@ function contract(override: Partial<Contract> = {}): Contract {
     status: "NEGOTIATING",
     consulting: null,
     development: null,
-    detail: null,
     clientSignature: null,
     developerSignature: null,
     messages: [],
@@ -60,6 +60,45 @@ function contract(override: Partial<Contract> = {}): Contract {
     ...override,
   };
 }
+
+describe("lastCounterpartMessage", () => {
+  const messages = [
+    {
+      messageId: 1,
+      content: "개발자 첫 메시지",
+      isClient: false,
+      createdAt: "2026-08-23T10:00:00+09:00",
+    },
+    {
+      messageId: 2,
+      content: "의뢰인 답장",
+      isClient: true,
+      createdAt: "2026-08-23T10:10:00+09:00",
+    },
+    {
+      messageId: 3,
+      content: "개발자 마지막 메시지",
+      isClient: false,
+      createdAt: "2026-08-23T10:20:00+09:00",
+    },
+  ];
+
+  it("의뢰인은 개발자가 마지막으로 남긴 말을 읽는다", () => {
+    expect(lastCounterpartMessage(contract({ messages }), false)?.content).toBe(
+      "개발자 마지막 메시지",
+    );
+  });
+
+  it("개발자는 의뢰인이 마지막으로 남긴 말을 읽는다", () => {
+    expect(lastCounterpartMessage(contract({ messages }), true)?.content).toBe(
+      "의뢰인 답장",
+    );
+  });
+
+  it("상대가 남긴 말이 없으면 null이다", () => {
+    expect(lastCounterpartMessage(contract({ messages: [] }), false)).toBeNull();
+  });
+});
 
 describe("totalAmount", () => {
   it("개발 계약은 development 에서 읽는다", () => {

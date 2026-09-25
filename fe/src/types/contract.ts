@@ -178,6 +178,8 @@ export interface ConsultingAgreement {
    * 아니라 한 번 만나 여러 갈래를 함께 보는 자리라 요청서의 어느 줄에 매이지 않습니다.
    */
   topic: string;
+  /** 양쪽이 합의하고 서명할 구체적인 상담 내용. 적지 않았으면 null. */
+  detail: string | null;
   sessions: ConsultingSession[];
 }
 
@@ -210,8 +212,6 @@ export interface Contract {
   status: ContractStatus;
   consulting: ConsultingAgreement | null;
   development: DevelopmentAgreement | null;
-  /** 계약서의 상세 설명. 적지 않았으면 null. */
-  detail: string | null;
   clientSignature: ContractSignature | null;
   developerSignature: ContractSignature | null;
   /** 계약 전에 주고받은 전달 메시지. */

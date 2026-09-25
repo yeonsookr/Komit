@@ -3,6 +3,7 @@ package com.a501.service.domain.contract.controller;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -17,6 +18,7 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -52,5 +54,25 @@ class RoomContractControllerTest {
                 .andExpect(status().isUnauthorized());
 
         verify(contractDraftService, never()).generate(anyInt(), anyInt());
+    }
+
+    @Test
+    void rejectsConsultingMessageLongerThanDatabaseColumn() throws Exception {
+        String body = """
+                {"topic":"회원탈퇴 흐름 확인",
+                 "scheduledAt":"2026-12-29T14:00:00+09:00",
+                 "durationMinutes":30,
+                 "price":50000,
+                 "message":"%s"}
+                """.formatted("가".repeat(301));
+
+        mockMvc.perform(post("/api/rooms/{roomId}/consulting-contracts", ROOM_ID)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors[0].field").value("message"));
+
+        verifyNoInteractions(consultingContractWriteService);
     }
 }

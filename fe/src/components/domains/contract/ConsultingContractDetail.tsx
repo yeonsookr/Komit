@@ -2,7 +2,13 @@ import Link from "next/link";
 import { buttonClass } from "@/components/buttons/buttonStyles";
 import { Card, CardHeader, KeyValueRow, Money } from "@/components/common";
 import { Callout } from "@/components/feedback";
-import { canCancel, hasSigned, isCancelled, isSignedByBoth } from "@/lib/contract";
+import {
+  canCancel,
+  hasSigned,
+  isCancelled,
+  isSignedByBoth,
+  lastCounterpartMessage,
+} from "@/lib/contract";
 import { formatDateTimeLabel, formatSessionSchedule } from "@/lib/format";
 import { ROUTES } from "@/lib/routes";
 import type { Contract } from "@/types/contract";
@@ -58,14 +64,7 @@ export function ConsultingContractDetail({
   const session = consulting.sessions[0] ?? null;
   const amount = consulting.totalAmount.toLocaleString("ko-KR");
 
-  /**
-   * 상대가 계약서와 함께 남긴 말. 계약 조건이 아니라 덧붙인 설명입니다.
-   *
-   * `received` 는 내가 개발자인지이고 `isClient` 는 그 말을 의뢰인이 썼는지입니다.
-   * 두 값이 같을 때가 곧 **상대가 쓴 말**입니다 — 내가 개발자면 의뢰인이 쓴 것,
-   * 내가 의뢰인이면 개발자가 쓴 것입니다.
-   */
-  const note = contract.messages.findLast((message) => message.isClient === received);
+  const note = lastCounterpartMessage(contract, received);
 
   return (
     <section className="mt-8">

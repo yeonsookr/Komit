@@ -8,6 +8,7 @@ const NOT_FOUND = { code: "ROOM_NOT_FOUND", message: "방을 찾을 수 없습�
 
 /** 목 명세가 정한 길이. ERD 의 `consulting_agreements.topic` 과 같습니다. */
 const MAX_TOPIC_LENGTH = 255;
+const MAX_MESSAGE_LENGTH = 300;
 
 function parseBody(body: unknown): WriteConsultingContractRequest | null {
   if (typeof body !== "object" || body === null) return null;
@@ -25,6 +26,9 @@ function parseBody(body: unknown): WriteConsultingContractRequest | null {
     return null;
   }
   if (!Number.isInteger(input.price) || (input.price as number) < 0) return null;
+  if (typeof input.message === "string" && input.message.trim().length > MAX_MESSAGE_LENGTH) {
+    return null;
+  }
 
   return {
     topic,

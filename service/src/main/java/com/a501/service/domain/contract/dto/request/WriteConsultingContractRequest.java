@@ -22,4 +22,5 @@ public record WriteConsultingContractRequest(
         @Schema(description = "세션 금액. 원 단위 정수다.", example = "50000") @NotNull @PositiveOrZero
                 Integer price,
         @Schema(description = "상세 설명. 적지 않아도 된다.") String detail,
-        @Schema(description = "계약서와 함께 상대에게 남길 전달 메시지.") String message) {}
+        @Schema(description = "계약서와 함께 상대에게 남길 전달 메시지.") @Size(max = 300)
+                String message) {}
