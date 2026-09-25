@@ -38,7 +38,7 @@ class UserControllerTest {
     @Test
     @DisplayName("유효한 토큰이면 토큰의 사용자로 내 정보를 조회한다")
     void validTokenReturnsMe() throws Exception {
-        when(userQueryService.getMe(12)).thenReturn(new MeResponse(12, "김미미", null, false, null, 3));
+        when(userQueryService.getMe(12)).thenReturn(new MeResponse(12, "김미미", null, null, false, null, 3));
 
         mockMvc.perform(get("/api/users/me")
                         .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(12)))
@@ -47,6 +47,7 @@ class UserControllerTest {
                 .andExpect(jsonPath("$.userId").value(12))
                 .andExpect(jsonPath("$.name").value("김미미"))
                 .andExpect(jsonPath("$.profileImageFileId").value((Object) null))
+                .andExpect(jsonPath("$.profileImageUrl").value((Object) null))
                 .andExpect(jsonPath("$.hasDevProfile").value(false))
                 .andExpect(jsonPath("$.developerId").value((Object) null))
                 .andExpect(jsonPath("$.unreadNotificationCount").value(3));

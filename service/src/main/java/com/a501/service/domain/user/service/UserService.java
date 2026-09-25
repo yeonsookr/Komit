@@ -143,6 +143,18 @@ public class UserService {
     }
 
     /**
+     * 올려 둔 사진을 프로필 사진으로 겁니다. 파일이 이 사용자가 올린 완료 상태의 파일인지는 호출하는 쪽이 먼저 확인합니다.
+     * 탈퇴했거나 없는 사용자는 인증 실패로 봅니다.
+     */
+    @Transactional
+    public void changeProfileImage(Integer userId, Integer fileId) {
+        User user = userRepository.findById(userId)
+                .filter(found -> !found.isWithdrawn())
+                .orElseThrow(() -> new BusinessException(CommonErrorCode.UNAUTHORIZED));
+        user.changeProfileImage(fileId);
+    }
+
+    /**
      * 사용자 식별자별로 가린 표시 이름을 돌려줍니다. 리뷰 작성자처럼 남에게 보이는 이름에 씁니다.
      * 첫 글자와 끝 글자만 남기고 가운데를 {@code O}로 바꾸며, 두 글자면 끝 글자를 바꿉니다. 탈퇴한 사용자는 {@code 탈퇴한 사용자}입니다. (R-ACC-07)
      */
