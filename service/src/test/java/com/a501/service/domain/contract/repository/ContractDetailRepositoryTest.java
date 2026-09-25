@@ -161,6 +161,35 @@ class ContractDetailRepositoryTest {
                 .containsExactly(first, second);
     }
 
+    @Test
+    @DisplayName("R-ACC-05: 완료·파기된 합의와 개발 계약만 골라내고, 진행 중이거나 삭제된 행은 빠진다")
+    void findsFinishedByStatuses() {
+        consultingAgreementRepository.deleteAll();
+        developmentContractRepository.deleteAll();
+        ConsultingAgreement completed = consultingAgreement(130, false);
+        set(completed, "status", "COMPLETED");
+        ConsultingAgreement terminated = consultingAgreement(131, false);
+        set(terminated, "status", "TERMINATED");
+        ConsultingAgreement deletedCompleted = consultingAgreement(132, true);
+        set(deletedCompleted, "status", "COMPLETED");
+        consultingAgreementRepository.saveAllAndFlush(
+                List.of(completed, terminated, deletedCompleted, consultingAgreement(133, false)));
+        DevelopmentContract devCompleted = developmentContract(134, false);
+        set(devCompleted, "status", "COMPLETED");
+        DevelopmentContract devInProgress = developmentContract(135, false);
+        set(devInProgress, "status", "IN_PROGRESS");
+        developmentContractRepository.saveAllAndFlush(List.of(devCompleted, devInProgress));
+        List<Integer> contractIds = List.of(130, 131, 132, 133, 134, 135);
+        List<String> closed = List.of("COMPLETED", "TERMINATED");
+
+        assertThat(consultingAgreementRepository.findByContractIdInAndDeletedFalseAndStatusIn(contractIds, closed))
+                .extracting(ConsultingAgreement::getContractId)
+                .containsExactlyInAnyOrder(130, 131);
+        assertThat(developmentContractRepository.findByContractIdInAndDeletedFalseAndStatusIn(contractIds, closed))
+                .extracting(DevelopmentContract::getContractId)
+                .containsExactly(134);
+    }
+
     private ConsultingAgreement consultingAgreement(Integer contractId, boolean deleted) {
         ConsultingAgreement entity = BeanUtils.instantiateClass(ConsultingAgreement.class);
         set(entity, "contractId", contractId);

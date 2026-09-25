@@ -171,6 +171,116 @@ class UserServiceTest {
         assertThat(withdrawn.getProfileImageFileId()).isNull();
     }
 
+    @Test
+    @DisplayName("이름을 바꾸면 표시 이름만 바뀌고, 다음 카카오 로그인이 닉네임으로 되돌리지 않는다")
+    void renameSurvivesNextKakaoLogin() {
+        User user = existingUser(12);
+        when(userRepository.findById(12)).thenReturn(Optional.of(user));
+        when(stringCrypto.encrypt("kakao-refresh")).thenReturn("protected");
+        when(userRepository.findByKakaoId(123L)).thenReturn(Optional.of(user));
+
+        userService.rename(12, "새이름");
+        userService.loginOrRegister(kakaoUserData());
+
+        assertThat(user.getName()).isEqualTo("새이름");
+    }
+
+    @Test
+    @DisplayName("탈퇴한 사용자는 이름을 바꾸지 못하고 401이다")
+    void withdrawnUserCannotRename() {
+        User withdrawn = existingUser(12);
+        ReflectionTestUtils.setField(withdrawn, "unlinkedAt", NOW_UTC);
+        when(userRepository.findById(12)).thenReturn(Optional.of(withdrawn));
+
+        assertThatThrownBy(() -> userService.rename(12, "새이름"))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(CommonErrorCode.UNAUTHORIZED));
+        assertThat(withdrawn.getName()).isEqualTo("김미미");
+    }
+
+    @Test
+    @DisplayName("탈퇴하면 행을 지우지 않고 삭제 표시와 시각만 남기며, 그 뒤로는 탈퇴한 사용자다")
+    void withdrawMarksDeletedWithoutRemovingRow() {
+        User user = existingUser(12);
+        when(userRepository.findByIdForUpdate(12)).thenReturn(Optional.of(user));
+
+        LocalDateTime deletedAt = userService.withdraw(12);
+
+        assertThat(deletedAt).isEqualTo(NOW_UTC);
+        assertThat(user.isDeleted()).isTrue();
+        assertThat(user.getRecordStatus()).isEqualTo("DELETED");
+        assertThat(user.isWithdrawn()).isTrue();
+        verify(userRepository, never()).delete(any());
+    }
+
+    @Test
+    @DisplayName("이미 탈퇴한 사용자가 다시 탈퇴하면 401이고 삭제 시각은 처음 값 그대로다")
+    void withdrawingTwiceIsUnauthorized() {
+        User withdrawn = existingUser(12);
+        LocalDateTime first = NOW_UTC.minusDays(1);
+        ReflectionTestUtils.setField(withdrawn, "deletedAt", first);
+        when(userRepository.findByIdForUpdate(12)).thenReturn(Optional.of(withdrawn));
+
+        assertThatThrownBy(() -> userService.withdraw(12))
+                .isInstanceOfSatisfying(BusinessException.class,
+                        exception -> assertThat(exception.getErrorCode()).isEqualTo(CommonErrorCode.UNAUTHORIZED));
+        assertThat(withdrawn.getDeletedAt()).isEqualTo(first);
+    }
+
+    @Test
+    @DisplayName("R-ACC-06: 탈퇴 계정의 식별 정보를 지우고 카카오 회원번호를 음수로 바꿔 새 가입 자리를 비운다")
+    void anonymizeClearsIdentityAndFreesKakaoId() {
+        User user = existingUser(12);
+        ReflectionTestUtils.setField(user, "email", "mimi@kakao.com");
+        ReflectionTestUtils.setField(user, "kakaoProfileImageUrl", "https://k.kakaocdn.net/profile.jpg");
+        ReflectionTestUtils.setField(user, "profileImageFileId", 512);
+        user.withdraw(NOW_UTC.minusDays(31));
+        when(userRepository.findByIdForUpdate(12)).thenReturn(Optional.of(user));
+
+        assertThat(userService.anonymize(12)).isTrue();
+
+        assertThat(user.getKakaoId()).isEqualTo(-12L);
+        assertThat(user.isAnonymized()).isTrue();
+        assertThat(user.getName()).isEqualTo("탈퇴한 사용자");
+        assertThat(user.getEmail()).isNull();
+        assertThat(user.getKakaoProfileImageUrl()).isNull();
+        assertThat(user.getProfileImageFileId()).isNull();
+        assertThat(user.getKakaoConnectedAt()).isNull();
+        assertThat(ReflectionTestUtils.getField(user, "kakaoRefreshToken")).isNull();
+        assertThat(user.isDeleted()).isTrue();
+    }
+
+    @Test
+    @DisplayName("이미 지웠거나 탈퇴하지 않은 계정은 다시 바꾸지 않는다")
+    void anonymizeIsIdempotentAndOnlyForWithdrawn() {
+        User active = existingUser(12);
+        when(userRepository.findByIdForUpdate(12)).thenReturn(Optional.of(active));
+        assertThat(userService.anonymize(12)).isFalse();
+        assertThat(active.getKakaoId()).isEqualTo(123L);
+
+        User withdrawn = existingUser(13);
+        withdrawn.withdraw(NOW_UTC.minusDays(31));
+        when(userRepository.findByIdForUpdate(13)).thenReturn(Optional.of(withdrawn));
+        assertThat(userService.anonymize(13)).isTrue();
+        assertThat(userService.anonymize(13)).isFalse();
+        assertThat(withdrawn.getKakaoId()).isEqualTo(-13L);
+    }
+
+    @Test
+    @DisplayName("R-AUTH-05: 기준 시각에 딱 맞춰 탈퇴한 계정은 찾고, 그보다 늦게 탈퇴한 계정은 찾지 않는다")
+    void findWithdrawnBeforeUsesCutoffInclusive() {
+        LocalDateTime cutoff = NOW_UTC.minusDays(30);
+        User onTheLine = existingUser(12);
+        onTheLine.withdraw(cutoff);
+        when(userRepository.findByKakaoId(123L)).thenReturn(Optional.of(onTheLine));
+        assertThat(userService.findWithdrawnBefore(123L, cutoff)).contains(12);
+
+        User recent = existingUser(12);
+        recent.withdraw(cutoff.plusSeconds(1));
+        when(userRepository.findByKakaoId(123L)).thenReturn(Optional.of(recent));
+        assertThat(userService.findWithdrawnBefore(123L, cutoff)).isEmpty();
+    }
+
     private KakaoUserData kakaoUserData() {
         return new KakaoUserData(
                 123L,

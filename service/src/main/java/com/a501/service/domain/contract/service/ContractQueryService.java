@@ -1,6 +1,7 @@
 package com.a501.service.domain.contract.service;
 
 import com.a501.service.domain.contract.dto.ContractParties;
+import com.a501.service.domain.contract.dto.ContractProgressView;
 import com.a501.service.domain.contract.entity.ConsultingAgreement;
 import com.a501.service.domain.contract.entity.Contract;
 import com.a501.service.domain.contract.entity.DevelopmentContract;
@@ -10,6 +11,7 @@ import com.a501.service.domain.contract.repository.DevelopmentContractRepository
 import com.a501.service.domain.room.dto.RoomParties;
 import com.a501.service.domain.room.service.RoomQueryService;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -37,6 +39,8 @@ public class ContractQueryService {
      * 개발 계약({@code DEVELOPMENT_CONTRACT_STATUS})이 각자 {@code COMPLETED}를 가집니다.
      */
     static final String COMPLETED = "COMPLETED";
+    /** 파기된 계약의 상태 코드값. 컨설팅 합의와 개발 계약이 각자 가집니다. */
+    static final String TERMINATED = "TERMINATED";
 
     private final ConsultingAgreementRepository agreementRepository;
     private final ContractRepository contractRepository;
@@ -122,6 +126,34 @@ public class ContractQueryService {
                 .filter(contract -> completed.contains(contract.getId()))
                 .forEach(contract -> result.merge(contract.getRoomId(), 1L, Long::sum));
         return result;
+    }
+
+    /**
+     * 방들에 달린 계약마다 체결했는지와 마쳤는지. 협의 중이라 아직 체결하지 않은 계약도 듭니다.
+     * 상담 합의나 개발 계약이 완료·파기된 계약만 마친 것으로 봅니다. (R-ACC-05) 계약 식별자 순입니다.
+     */
+    public List<ContractProgressView> findProgressByRooms(Collection<Integer> roomIds) {
+        if (roomIds == null || roomIds.isEmpty()) {
+            return List.of();
+        }
+        List<Contract> contracts = contractRepository.findByRoomIdInAndDeletedFalse(roomIds);
+        if (contracts.isEmpty()) {
+            return List.of();
+        }
+        List<Integer> contractIds = contracts.stream().map(Contract::getId).toList();
+        Set<String> closed = Set.of(COMPLETED, TERMINATED);
+        Set<Integer> finished = new HashSet<>();
+        agreementRepository.findByContractIdInAndDeletedFalseAndStatusIn(contractIds, closed).stream()
+                .map(ConsultingAgreement::getContractId)
+                .forEach(finished::add);
+        developmentContractRepository.findByContractIdInAndDeletedFalseAndStatusIn(contractIds, closed).stream()
+                .map(DevelopmentContract::getContractId)
+                .forEach(finished::add);
+        return contracts.stream()
+                .sorted(Comparator.comparing(Contract::getId))
+                .map(contract -> new ContractProgressView(
+                        contract.getId(), contract.getRoomId(), contract.isConcluded(), finished.contains(contract.getId())))
+                .toList();
     }
 
     private Optional<ContractParties> toParties(Contract contract) {

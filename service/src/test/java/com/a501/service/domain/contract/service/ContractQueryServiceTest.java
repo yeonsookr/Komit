@@ -1,17 +1,24 @@
 package com.a501.service.domain.contract.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.a501.service.domain.contract.entity.ConsultingAgreement;
+import com.a501.service.domain.contract.dto.ContractProgressView;
 import com.a501.service.domain.contract.entity.Contract;
+import com.a501.service.domain.contract.entity.DevelopmentContract;
 import com.a501.service.domain.contract.repository.ConsultingAgreementRepository;
 import com.a501.service.domain.contract.repository.ContractRepository;
 import com.a501.service.domain.contract.repository.DevelopmentContractRepository;
 import com.a501.service.domain.room.dto.RoomParties;
 import com.a501.service.domain.room.service.RoomQueryService;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.BeanUtils;
@@ -86,5 +93,55 @@ class ContractQueryServiceTest {
         when(roomQueryService.findParties(ROOM_ID)).thenReturn(Optional.empty());
 
         assertThat(service.findPartiesByConsultingAgreementId(AGREEMENT_ID)).isEmpty();
+    }
+
+    /** R-ACC-05: 협의 중인 계약도 마치지 않은 것이고, 상담 합의·개발 계약이 완료·파기돼야 마친 것이다. */
+    @Test
+    void 협의_중도_진행_중이고_완료와_파기만_마친_것으로_본다() {
+        List<Integer> rooms = List.of(92, 93, 94, 95);
+        when(contractRepository.findByRoomIdInAndDeletedFalse(rooms)).thenReturn(List.of(
+                contract(133, 95, "SIGNED"),
+                contract(131, 93, "NEGOTIATING"),
+                contract(130, 92, "SIGNED"),
+                contract(132, 94, "SIGNED")));
+        List<Integer> ids = List.of(133, 131, 130, 132);
+        Set<String> closed = Set.of("COMPLETED", "TERMINATED");
+        when(agreementRepository.findByContractIdInAndDeletedFalseAndStatusIn(ids, closed))
+                .thenReturn(List.of(agreement(133)));
+        when(developmentContractRepository.findByContractIdInAndDeletedFalseAndStatusIn(ids, closed))
+                .thenReturn(List.of(developmentContract(132)));
+
+        assertThat(service.findProgressByRooms(rooms)).containsExactly(
+                new ContractProgressView(130, 92, true, false),
+                new ContractProgressView(131, 93, false, false),
+                new ContractProgressView(132, 94, true, true),
+                new ContractProgressView(133, 95, true, true));
+    }
+
+    @Test
+    void 방이_없으면_계약을_묻지_않는다() {
+        assertThat(service.findProgressByRooms(List.of())).isEmpty();
+
+        verify(contractRepository, never()).findByRoomIdInAndDeletedFalse(any());
+    }
+
+    private static Contract contract(Integer id, Integer roomId, String status) {
+        Contract contract = BeanUtils.instantiateClass(Contract.class);
+        ReflectionTestUtils.setField(contract, "id", id);
+        ReflectionTestUtils.setField(contract, "roomId", roomId);
+        ReflectionTestUtils.setField(contract, "status", status);
+        return contract;
+    }
+
+    private static ConsultingAgreement agreement(Integer contractId) {
+        ConsultingAgreement agreement = BeanUtils.instantiateClass(ConsultingAgreement.class);
+        ReflectionTestUtils.setField(agreement, "contractId", contractId);
+        return agreement;
+    }
+
+    private static DevelopmentContract developmentContract(Integer contractId) {
+        DevelopmentContract developmentContract = BeanUtils.instantiateClass(DevelopmentContract.class);
+        ReflectionTestUtils.setField(developmentContract, "contractId", contractId);
+        return developmentContract;
     }
 }

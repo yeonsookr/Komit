@@ -78,4 +78,13 @@ public class MemberAccountProvision extends AuditedEntity {
     public void fail() {
         if (!isComplete()) this.status = FAILED;
     }
+
+    /**
+     * 탈퇴한 회원의 금융망 사용자 키와 계좌번호를 지웁니다. 발급 상태와 멱등 키는 남겨 같은 요청이 다시 발급되지 않게 합니다. (R-ACC-06)
+     * Escrow 서버가 따로 보관하는 사본은 그 서버의 일이라 여기서 지우지 않습니다. (BACKEND_CONVENTIONS 5.1)
+     */
+    public void anonymize() {
+        this.userKeyEncrypted = null;
+        this.accountNoEncrypted = null;
+    }
 }

@@ -30,6 +30,19 @@ public class MyAccountService {
     }
 
     /**
+     * 내 표시 이름을 바꿉니다. 대상 계정은 토큰의 주인이며 요청에 담지 않습니다.
+     *
+     * <p>목 명세가 적은 403(바꾸려는 계정이 {@code sub}와 다를 때)은 명세 스스로 「나오지 않는다」고 밝힌 대로 실서버에서도 나오지 않습니다.
+     *
+     * @throws com.a501.service.common.exception.BusinessException {@code UNAUTHORIZED} 탈퇴했거나 없는 사용자일 때
+     */
+    @Transactional
+    public MyAccountResponse changeName(Integer userId, String name) {
+        userService.rename(userId, name);
+        return getAccount(userId);
+    }
+
+    /**
      * 올려 둔 사진을 내 프로필 사진으로 겁니다. 대상 계정은 토큰의 주인이며 요청에 담지 않습니다.
      *
      * <p>목 명세의 403({@code sub}가 올린 파일이 아니거나 남의 계정에 걸려 할 때)은 실서버에서 나오지 않습니다.

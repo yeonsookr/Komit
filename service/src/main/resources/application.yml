@@ -40,6 +40,10 @@ app:
     max-file-bytes: 31457280
     upload-url-ttl: 5m
     read-url-ttl: 15m
+  withdrawal:
+    # R-ACC-06: 보관 기간이 지난 탈퇴 회원의 식별 정보를 지우는 작업. 매일 새벽 4시(한국 시각)에 돕니다.
+    # 모든 파드에서 돌아도 한 사람은 한 번만 지워집니다. 재가입 판정은 로그인 때 따로 하므로 이 주기와 상관없습니다.
+    anonymize-cron: "0 0 4 * * *"
   logging:
     # 이 시간을 넘긴 컨트롤러·서비스 호출은 WARN으로 남깁니다. (common/logging/LoggingAspect)
     # @SlowCallThreshold 가 붙은 호출은 그 값을 쓰므로 여기에 걸리지 않습니다.

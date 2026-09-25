@@ -125,6 +125,50 @@ public class User extends SoftDeleteEntity {
         return hasDevProfile;
     }
 
+    /**
+     * 탈퇴합니다. 행을 지우지 않고 삭제 표시만 켭니다. 거래 상대의 화면에도 남는 기록이 이 행을 가리키기 때문입니다.
+     * 표시가 켜지면 {@link #isWithdrawn()}이 참이 되어 로그인과 재가입이 막힙니다. (R-ACC-06, R-AUTH-05)
+     */
+    public void withdraw(LocalDateTime now) {
+        markDeleted(now);
+    }
+
+    /**
+     * 탈퇴한 계정에서 사람을 알아볼 수 있는 값과 카카오 연결 정보를 지웁니다. 행과 삭제 표시는 남겨 거래 기록이 계속 가리키게 합니다. (R-ACC-06)
+     *
+     * <p>{@code kakao_id}는 비울 수 없는 유일 컬럼이라 {@code -id}로 바꿉니다. 카카오 회원번호는 양수라 어떤 계정과도 겹치지 않고,
+     * 원래 번호로 되돌릴 수 없으며, 같은 카카오 계정이 새로 가입할 자리가 비워집니다. (R-AUTH-05) 이름도 비울 수 없어 화면이 쓰는 문구로 바꿉니다.
+     *
+     * @param withdrawnName 탈퇴한 사람의 이름 자리에 들어갈 문구
+     * @return 이번에 지웠으면 참, 이미 지운 계정이라 바꾼 것이 없으면 거짓
+     */
+    public boolean anonymize(String withdrawnName) {
+        if (!isDeleted() || isAnonymized()) {
+            return false;
+        }
+        this.kakaoId = (long) -id;
+        this.name = withdrawnName;
+        this.email = null;
+        this.emailVerified = false;
+        this.emailValid = null;
+        this.kakaoProfileImageUrl = null;
+        this.profileImageFileId = null;
+        this.kakaoConnectedAt = null;
+        this.kakaoRefreshToken = null;
+        this.kakaoRefreshTokenExpiresAt = null;
+        return true;
+    }
+
+    /** 식별 정보를 이미 지운 계정인지. 지우면 {@code kakao_id}가 음수가 됩니다. */
+    public boolean isAnonymized() {
+        return kakaoId != null && kakaoId < 0;
+    }
+
+    /** 화면에 표시하는 이름을 바꿉니다. 카카오 닉네임과는 따로 가며, 다음 카카오 로그인이 되돌리지 않습니다. */
+    public void rename(String name) {
+        this.name = name;
+    }
+
     /** 직접 올린 사진을 프로필 사진으로 겁니다. 카카오 사진 주소는 지우지 않고 그대로 둡니다. */
     public void changeProfileImage(Integer fileId) {
         this.profileImageFileId = fileId;

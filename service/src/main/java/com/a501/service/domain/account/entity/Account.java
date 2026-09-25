@@ -51,4 +51,13 @@ public class Account extends SoftDeleteEntity {
         this.bankCodeId = bankCodeId;
         this.accountNoEncrypted = accountNoEncrypted;
     }
+
+    /**
+     * 탈퇴한 사람의 명의와 계좌번호를 지웁니다. 명의는 비울 수 없어 문구로 바꾸고, 가린 번호는 화면 표시용이라 남깁니다. (R-ACC-06, R-LEG-02)
+     * 행은 남겨 입출금 기록이 계속 가리키게 합니다.
+     */
+    public void anonymize(String withdrawnName) {
+        this.accountHolder = withdrawnName;
+        this.accountNoEncrypted = null;
+    }
 }
