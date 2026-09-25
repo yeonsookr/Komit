@@ -54,10 +54,11 @@ class ContractDraftClientTest {
     @Test
     @DisplayName("컨설팅 초안을 받고 준비된 입력을 그대로 보낸다")
     void generatesConsultingDraft() {
-        ContractDraftClient.ConsultingDraft draft = client().generateConsulting(input());
+        ContractDraftClient.GeneratedConsultingDraft draft = client().generateConsulting(input());
 
         assertThat(draft.topic()).isEqualTo("인증 오류를 함께 확인합니다");
         assertThat(draft.detail()).isEqualTo("접근 경로와 재현 절차를 확인합니다.");
+        assertThat(draft.contentSnapshot()).contains("\"draft\"").contains("\"topic\"");
         assertThat(received)
                 .contains("\"targetType\":\"CONSULTING\"")
                 .contains("\"authorRole\":\"CLIENT\"")

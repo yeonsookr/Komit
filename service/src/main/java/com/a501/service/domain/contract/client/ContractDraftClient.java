@@ -45,7 +45,7 @@ public class ContractDraftClient {
         this.client = builder.clone().baseUrl(baseUrl).requestFactory(requestFactory).build();
     }
 
-    public ConsultingDraft generateConsulting(ContractDraftInput input) {
+    public GeneratedConsultingDraft generateConsulting(ContractDraftInput input) {
         if (!CONSULTING.equals(input.targetType())) {
             log.error("contract-draft 호출 실패: 컨설팅 호출에 다른 계약 유형을 보냄 type={}", input.targetType());
             throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
@@ -68,7 +68,8 @@ public class ContractDraftClient {
             log.warn("contract-draft 응답을 읽지 못함: cause={}", rootCause(exception));
             throw new BusinessException(ContractErrorCode.AI_RESPONSE_INVALID);
         }
-        return read(body);
+        ConsultingDraft draft = read(body);
+        return new GeneratedConsultingDraft(draft.topic(), draft.detail(), body.toString());
     }
 
     private ConsultingDraft read(JsonNode body) {
@@ -142,6 +143,9 @@ public class ContractDraftClient {
     }
 
     public record ConsultingDraft(String topic, String detail) {}
+
+    /** 검증된 컨설팅 필드와 생성 당시 AI 응답 전체. */
+    public record GeneratedConsultingDraft(String topic, String detail, String contentSnapshot) {}
 
     record Failure(String code, String message) {}
 }

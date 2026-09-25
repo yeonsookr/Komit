@@ -16,9 +16,11 @@ import com.a501.service.domain.consulting.repository.ReservationRepository;
 import com.a501.service.domain.contract.ContractErrorCode;
 import com.a501.service.domain.contract.dto.request.AmendConsultingContractRequest;
 import com.a501.service.domain.contract.dto.request.WriteConsultingContractRequest;
+import com.a501.service.domain.contract.entity.AiContractDraftSnapshot;
 import com.a501.service.domain.contract.entity.ConsultingAgreement;
 import com.a501.service.domain.contract.entity.Contract;
 import com.a501.service.domain.contract.entity.TempMessage;
+import com.a501.service.domain.contract.repository.AiContractDraftSnapshotRepository;
 import com.a501.service.domain.contract.repository.ConsultingAgreementRepository;
 import com.a501.service.domain.contract.repository.ContractRepository;
 import com.a501.service.domain.contract.repository.TempMessageRepository;
@@ -65,6 +67,8 @@ class ConsultingContractWriteServiceTest {
     @Mock
     private ConsultingAgreementRepository consultingAgreementRepository;
     @Mock
+    private AiContractDraftSnapshotRepository snapshotRepository;
+    @Mock
     private ConsultingSessionRepository consultingSessionRepository;
     @Mock
     private ReservationRepository reservationRepository;
@@ -86,6 +90,7 @@ class ConsultingContractWriteServiceTest {
         service = new ConsultingContractWriteService(
                 contractRepository,
                 consultingAgreementRepository,
+                snapshotRepository,
                 consultingSessionRepository,
                 reservationRepository,
                 tempMessageRepository,
@@ -138,6 +143,28 @@ class ConsultingContractWriteServiceTest {
                 ArgumentCaptor.forClass(ConsultingAgreement.class);
         verify(consultingAgreementRepository).save(agreementCaptor.capture());
         assertThat(agreementCaptor.getValue().getDetail()).isEqualTo("탈퇴 데이터 보관 방법을 확인합니다");
+        verify(consultingSessionRepository).save(any(ConsultingSession.class));
+        verify(reservationRepository).save(any(Reservation.class));
+    }
+
+    @Test
+    @DisplayName("AI 초안이 있으면 같은 계약과 합의를 고치고 세션과 예약만 만든다")
+    void completesSavedDraft() {
+        when(contractRepository.findByRoomIdAndDeletedFalse(ROOM_ID)).thenReturn(Optional.of(contract));
+        when(snapshotRepository.findByContractId(CONTRACT_ID))
+                .thenReturn(Optional.of(AiContractDraftSnapshot.of(CONTRACT_ID, "{\"draft\":{}}")));
+
+        service.write(
+                ROOM_ID,
+                DEVELOPER_USER_ID,
+                new WriteConsultingContractRequest(
+                        "확정 주제", FUTURE, 40, 80_000, "확정 상세", null));
+
+        verify(contractRepository, never()).save(any());
+        verify(consultingAgreementRepository, never()).save(any());
+        assertThat(agreement.getTopic()).isEqualTo("확정 주제");
+        assertThat(agreement.getTotalAmount()).isEqualTo(80_000);
+        assertThat(agreement.getDetail()).isEqualTo("확정 상세");
         verify(consultingSessionRepository).save(any(ConsultingSession.class));
         verify(reservationRepository).save(any(Reservation.class));
     }

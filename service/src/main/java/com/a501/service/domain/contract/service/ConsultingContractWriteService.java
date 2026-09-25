@@ -14,6 +14,7 @@ import com.a501.service.domain.contract.entity.ConsultingAgreement;
 import com.a501.service.domain.contract.entity.Contract;
 import com.a501.service.domain.contract.entity.TempMessage;
 import com.a501.service.domain.contract.repository.ConsultingAgreementRepository;
+import com.a501.service.domain.contract.repository.AiContractDraftSnapshotRepository;
 import com.a501.service.domain.contract.repository.ContractRepository;
 import com.a501.service.domain.contract.repository.TempMessageRepository;
 import com.a501.service.domain.room.RoomErrorCode;
@@ -41,6 +42,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ConsultingContractWriteService {
     private final ContractRepository contractRepository;
     private final ConsultingAgreementRepository consultingAgreementRepository;
+    private final AiContractDraftSnapshotRepository snapshotRepository;
     private final ConsultingSessionRepository consultingSessionRepository;
     private final ReservationRepository reservationRepository;
     private final TempMessageRepository tempMessageRepository;
@@ -52,6 +54,7 @@ public class ConsultingContractWriteService {
     public ConsultingContractWriteService(
             ContractRepository contractRepository,
             ConsultingAgreementRepository consultingAgreementRepository,
+            AiContractDraftSnapshotRepository snapshotRepository,
             ConsultingSessionRepository consultingSessionRepository,
             ReservationRepository reservationRepository,
             TempMessageRepository tempMessageRepository,
@@ -60,6 +63,7 @@ public class ConsultingContractWriteService {
         this(
                 contractRepository,
                 consultingAgreementRepository,
+                snapshotRepository,
                 consultingSessionRepository,
                 reservationRepository,
                 tempMessageRepository,
@@ -72,6 +76,7 @@ public class ConsultingContractWriteService {
     ConsultingContractWriteService(
             ContractRepository contractRepository,
             ConsultingAgreementRepository consultingAgreementRepository,
+            AiContractDraftSnapshotRepository snapshotRepository,
             ConsultingSessionRepository consultingSessionRepository,
             ReservationRepository reservationRepository,
             TempMessageRepository tempMessageRepository,
@@ -80,6 +85,7 @@ public class ConsultingContractWriteService {
             Clock clock) {
         this.contractRepository = contractRepository;
         this.consultingAgreementRepository = consultingAgreementRepository;
+        this.snapshotRepository = snapshotRepository;
         this.consultingSessionRepository = consultingSessionRepository;
         this.reservationRepository = reservationRepository;
         this.tempMessageRepository = tempMessageRepository;
@@ -101,11 +107,22 @@ public class ConsultingContractWriteService {
         requireDeveloperOf(roomId, userId);
         requireFuture(request.scheduledAt());
 
-        Contract contract =
-                contractRepository.save(Contract.of(roomId, Contract.ContractType.CONSULTING));
-        ConsultingAgreement agreement = consultingAgreementRepository.save(
-                ConsultingAgreement.of(
-                        contract.getId(), request.topic(), request.price(), request.detail()));
+        Contract contract = contractRepository
+                .findByRoomIdAndDeletedFalse(roomId)
+                .filter(found -> snapshotRepository.findByContractId(found.getId()).isPresent())
+                .orElse(null);
+        ConsultingAgreement agreement;
+        if (contract == null) {
+            contract = contractRepository.save(
+                    Contract.of(roomId, Contract.ContractType.CONSULTING));
+            agreement = consultingAgreementRepository.save(ConsultingAgreement.of(
+                    contract.getId(), request.topic(), request.price(), request.detail()));
+        } else {
+            agreement = consultingAgreementRepository
+                    .findByContractIdAndDeletedFalse(contract.getId())
+                    .orElseThrow(() -> new BusinessException(CommonErrorCode.INTERNAL_ERROR));
+            agreement.rewrite(request.topic(), request.price(), request.detail());
+        }
 
         ConsultingSession session = consultingSessionRepository.save(ConsultingSession.of(
                 agreement.getId(), request.price(), request.durationMinutes()));
