@@ -121,6 +121,26 @@ public class EscrowPayoutClient {
         return post("releaseEscrow", request.idempotencyKey(), body).path(STATUS).asString();
     }
 
+    /**
+     * 남은 예치금 전액을 예치할 때 쓴 계좌로 돌려 달라고 부탁한다. (`R-PAY-04`)
+     *
+     * <p>Escrow 는 부분 환불을 받지 않고, 돌려받는 계좌가 예치 출금 계좌와 다르면 거절한다. 같은 멱등키로 다시
+     * 부르면 새로 보내지 않고 멈춘 지점부터 잇는다.
+     *
+     * @return 이번 환불 거래의 상태. {@code COMPLETED} 가 아니면 아직 끝나지 않은 것이다
+     * @throws BusinessException {@link #release(PayoutRequest)} 와 같은 갈래
+     */
+    public String refund(RefundRequest request) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put(ESCROW_ID, request.escrowId());
+        body.put("amount", request.amount());
+        body.put("refundBankCode", request.refundBankCode());
+        body.put("refundAccountNo", request.refundAccountNo());
+        body.put("refundHolderName", request.refundHolderName());
+        body.put("referenceId", request.referenceId());
+        return post("refundEscrow", request.idempotencyKey(), body).path(STATUS).asString();
+    }
+
     private static EscrowLedger toLedger(long escrowId, JsonNode detail) {
         List<LedgerEntry> entries = new ArrayList<>();
         for (JsonNode item : detail.path("transactions")) {
@@ -134,6 +154,7 @@ public class EscrowPayoutClient {
                 detail.path(STATUS).asString(),
                 detail.path("isHeld").asBoolean(),
                 detail.path("depositedAmount").bigIntegerValue(),
+                detail.path("balance").bigIntegerValue(),
                 List.copyOf(entries));
     }
 
@@ -231,12 +252,38 @@ public class EscrowPayoutClient {
     }
 
     /**
-     * Escrow 가 가진 에스크로 한 건. 상태·동결 여부·예치 금액·거래 목록만 옮긴다.
+     * 환불 요청 본문. 같은 환불을 다시 부를 때 모든 값이 처음과 같아야 한다.
+     *
+     * @param amount 남은 예치금 전액
+     * @param refundHolderName 금융망에 등록된 예금주명. Escrow 가 대조한다
+     */
+    public record RefundRequest(
+            long escrowId,
+            String referenceId,
+            BigInteger amount,
+            String refundBankCode,
+            String refundAccountNo,
+            String refundHolderName,
+            String idempotencyKey) {
+        @Override
+        public String toString() {
+            return "RefundRequest[escrowId=" + escrowId + ", referenceId=" + referenceId + "]";
+        }
+    }
+
+    /**
+     * Escrow 가 가진 에스크로 한 건. 상태·동결 여부·금액·거래 목록만 옮긴다.
      *
      * @param depositedAmount 예치가 확정된 금액. 지급 요청 금액과 같아야 한다
+     * @param balance 아직 나가지 않은 금액. 환불은 이 금액 전액이다
      */
     public record EscrowLedger(
-            long escrowId, String status, boolean held, BigInteger depositedAmount, List<LedgerEntry> transactions) {}
+            long escrowId,
+            String status,
+            boolean held,
+            BigInteger depositedAmount,
+            BigInteger balance,
+            List<LedgerEntry> transactions) {}
 
     /**
      * 에스크로 거래 한 건.

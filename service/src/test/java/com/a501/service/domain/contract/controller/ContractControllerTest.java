@@ -5,6 +5,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -17,6 +18,7 @@ import com.a501.service.domain.contract.dto.response.ContractResponse;
 import com.a501.service.domain.contract.dto.response.SignatureResponse;
 import com.a501.service.domain.contract.dto.response.TempMessageResponse;
 import com.a501.service.domain.contract.service.ConsultingContractWriteService;
+import com.a501.service.domain.contract.service.ContractCancellationService;
 import com.a501.service.domain.contract.service.ContractDepositService;
 import com.a501.service.domain.contract.service.ContractDetailService;
 import com.a501.service.domain.contract.service.ContractSignatureService;
@@ -47,6 +49,8 @@ class ContractControllerTest {
     private ContractSignatureService contractSignatureService;
     @MockitoBean
     private ContractDepositService contractDepositService;
+    @MockitoBean
+    private ContractCancellationService contractCancellationService;
 
     @Test
     void returnsTheContractWithOnlyOneBranchFilled() throws Exception {
@@ -93,6 +97,32 @@ class ContractControllerTest {
                 .andExpect(status().isUnauthorized());
 
         verify(contractDetailService, never()).getContract(anyInt(), anyInt());
+    }
+
+    /** R-CON-21: 취소는 본문 없이 부르고 취소된 계약을 200 으로 돌려준다. */
+    @Test
+    void cancelsTheContractAndReturnsIt() throws Exception {
+        when(contractCancellationService.cancel(CONTRACT_ID, USER_ID)).thenReturn(consultingContract());
+
+        mockMvc.perform(post("/api/contracts/{contractId}/cancellation", CONTRACT_ID)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID)))
+                .andExpect(status().isOk());
+
+        verify(contractCancellationService).cancel(CONTRACT_ID, USER_ID);
+    }
+
+    @Test
+    void reportsPendingRefundAs503() throws Exception {
+        when(contractCancellationService.cancel(CONTRACT_ID, USER_ID))
+                .thenThrow(new BusinessException(ContractErrorCode.REFUND_PENDING));
+
+        mockMvc.perform(post("/api/contracts/{contractId}/cancellation", CONTRACT_ID)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID)))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(content().json("""
+                        {"code":"REFUND_PENDING",
+                         "message":"계약을 취소했습니다. 환불을 확인하는 중이니 잠시 뒤 다시 눌러 주세요."}
+                        """, true));
     }
 
     private ContractResponse consultingContract() {

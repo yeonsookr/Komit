@@ -64,6 +64,22 @@ public class ContractQueryService {
     }
 
     /**
+     * 컨설팅 합의가 달린 계약이 의뢰인에게 취소됐는지. 합의나 계약이 없으면 거짓입니다.
+     *
+     * <p>취소된 계약의 세션에는 들어가지 못하게 세션 쪽이 묻습니다. (`R-CON-21`)
+     *
+     * @param consultingAgreementId 컨설팅 합의 id
+     */
+    public boolean isCancelledByConsultingAgreementId(Integer consultingAgreementId) {
+        return agreementRepository
+                .findByIdAndDeletedFalse(consultingAgreementId)
+                .map(ConsultingAgreement::getContractId)
+                .flatMap(contractRepository::findByIdAndDeletedFalse)
+                .map(Contract::isCancelled)
+                .orElse(false);
+    }
+
+    /**
      * 이 방에 달린 계약. 아직 계약서를 쓰지 않았으면 비어 있습니다.
      *
      * @param roomId 방 id

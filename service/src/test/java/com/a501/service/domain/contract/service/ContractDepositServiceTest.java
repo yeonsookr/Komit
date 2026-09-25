@@ -163,6 +163,18 @@ class ContractDepositServiceTest {
     }
 
     @Test
+    @DisplayName("취소된 계약에는 걸지 않는다 (R-CON-21)")
+    void rejectsCancelledContract() {
+        contract.cancel();
+
+        assertThatThrownBy(() -> service.deposit(CONTRACT_ID, CLIENT_ID, REQUEST))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ContractErrorCode.CONTRACT_CANCELLED);
+        verify(escrowDepositClient, never())
+                .create(any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
     @DisplayName("같은 계약에 두 번 걸지 않는다")
     void rejectsSecondDeposit() {
         when(escrowDepositClient.findByContract("120"))

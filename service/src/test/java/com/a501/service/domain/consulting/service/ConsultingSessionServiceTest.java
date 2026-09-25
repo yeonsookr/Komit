@@ -167,6 +167,18 @@ class ConsultingSessionServiceTest {
                 .hasFieldOrPropertyWithValue("errorCode", ConsultingErrorCode.SESSION_NOT_FOUND);
     }
 
+    /** R-CON-21: 취소된 계약의 세션은 열지 않고 동의도 남기지 않는다. */
+    @Test
+    void 취소된_계약의_세션에는_들어가지_못한다() {
+        givenParticipants();
+        when(contractQueryService.isCancelledByConsultingAgreementId(AGREEMENT_ID)).thenReturn(true);
+
+        assertThatThrownBy(() -> service.join(CLIENT_ID, SESSION_ID))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ConsultingErrorCode.SESSION_CANCELLED);
+        verify(participationRepository, never()).save(any());
+    }
+
     @Test
     void 먼저_동의한_사람은_상대를_기다린다() {
         givenParticipants(CLIENT_ID);

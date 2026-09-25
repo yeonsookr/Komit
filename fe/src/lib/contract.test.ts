@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  canCancel,
   checkedCount,
   confirmedAmount,
   isFullyChecked,
+  isCancelled,
   isHandover,
   isSignedByBoth,
   hasSigned,
@@ -170,5 +172,28 @@ describe("nearestAutoPassAt", () => {
 
   it("확인 요청을 받은 작업이 없으면 null", () => {
     expect(nearestAutoPassAt([milestone()])).toBeNull();
+  });
+});
+
+describe("canCancel", () => {
+  const signedBy = (userId: number) => ({ userId, isSigned: true, signedAt: null, signatureImageFileId: 1 });
+
+  it("개발자가 서명하기 전이면 의뢰인이 취소할 수 있다 (R-CON-21)", () => {
+    expect(canCancel(contract(), false)).toBe(true);
+    expect(canCancel(contract({ clientSignature: signedBy(12) }), false)).toBe(true);
+  });
+
+  it("개발자가 서명했으면 취소할 수 없다", () => {
+    expect(canCancel(contract({ developerSignature: signedBy(9) }), false)).toBe(false);
+  });
+
+  it("개발자에게는 취소 버튼이 없다", () => {
+    expect(canCancel(contract(), true)).toBe(false);
+  });
+
+  it("이미 취소된 계약에는 다시 보이지 않는다", () => {
+    const cancelled = contract({ status: "CANCELLED" });
+    expect(isCancelled(cancelled)).toBe(true);
+    expect(canCancel(cancelled, false)).toBe(false);
   });
 });

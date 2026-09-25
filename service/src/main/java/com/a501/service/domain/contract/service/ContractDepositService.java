@@ -51,6 +51,7 @@ public class ContractDepositService {
      *
      * @throws BusinessException {@link ContractErrorCode#CONTRACT_NOT_FOUND} 없거나 내 계약이 아닐 때,
      *                           {@link CommonErrorCode#FORBIDDEN} 의뢰인이 아닐 때,
+     *                           {@link ContractErrorCode#CONTRACT_CANCELLED} 취소된 계약일 때,
      *                           {@link ContractErrorCode#CONTRACT_NOT_SIGNED} 의뢰인이 서명하기 전일 때,
      *                           {@link ContractErrorCode#ALREADY_DEPOSITED} 이미 걸었을 때
      */
@@ -58,6 +59,9 @@ public class ContractDepositService {
     public DepositResponse deposit(Integer contractId, Integer userId, DepositRequest request) {
         Contract contract = readableContract(contractId, userId, true);
 
+        if (contract.isCancelled()) {
+            throw new BusinessException(ContractErrorCode.CONTRACT_CANCELLED);
+        }
         // R-CON-20: 의뢰인은 자기가 서명한 계약서에만 돈을 맡긴다. 서명하면 계약서를 고칠 수 없으므로(R-CON-02)
         // 예치 금액이 계약 금액과 어긋나지 않는다. 개발자 서명은 기다리지 않는다 — 의뢰인은 서명과 결제를 한 번에
         // 한다. 계약이 성립하기 전이므로 지급은 양쪽 서명 뒤에만 나간다(R-CON-01).

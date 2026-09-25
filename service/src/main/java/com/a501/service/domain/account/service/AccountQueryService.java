@@ -68,6 +68,25 @@ public class AccountQueryService {
     }
 
     /**
+     * 예치금을 돌려받을 계좌. 회원가입 때 발급한 계좌입니다. (`R-PAY-04`)
+     *
+     * <p>등록 계좌(`R-PAY-14`)가 아닙니다. 예치는 발급 계좌에서 빠지고(`R-PAY-09`), Escrow 는 환불 계좌가 예치
+     * 출금 계좌와 같아야 보냅니다. 예금주명은 지급과 같은 방식으로 금융망 사용자 ID 에서 뗍니다.
+     *
+     * <p>발급이 끝나지 않았으면 비어 있습니다. 발급 전에는 예치할 수도 없었으므로 돌려줄 돈도 없습니다.
+     *
+     * @param userId 돈을 돌려받을 의뢰인
+     */
+    public Optional<PayoutAccount> findRefundAccount(Integer userId) {
+        return provisionRepository.findByUserId(userId)
+                .filter(MemberAccountProvision::isComplete)
+                .map(provision -> new PayoutAccount(
+                        provision.getBankCode(),
+                        crypto.decrypt(provision.getAccountNoEncrypted()),
+                        holderNameOf(provision.getEscrowUserId())));
+    }
+
+    /**
      * 금융망 사용자 ID 에서 예금주명을 뗍니다. {@code komit-5@komit.local} → {@code komit-5}
      *
      * <p>명세는 예금주명을 10자로 적지만 실제 금융망은 자르지 않습니다. 길이 상한은 Escrow 의

@@ -101,7 +101,7 @@ class EscrowPayoutClientTest {
         respond("inquireEscrowList", 200, success(
                 "{\"totalCount\":1,\"list\":[{\"escrowId\":301,\"contractId\":\"120\",\"status\":\"ACTIVE\",\"balance\":50000,\"isHeld\":false}]}"));
         respond("inquireEscrow", 200, success("""
-                {"escrowId":301,"contractId":"120","status":"ACTIVE","isHeld":true,"depositedAmount":50000,"transactions":[
+                {"escrowId":301,"contractId":"120","status":"ACTIVE","isHeld":true,"depositedAmount":50000,"balance":50000,"transactions":[
                   {"transactionId":1,"transactionType":"DEPOSIT","amount":50000,"status":"COMPLETED","referenceId":"INITIAL"},
                   {"transactionId":2,"transactionType":"RELEASE","amount":49500,"status":"UNKNOWN","referenceId":"SETTLEMENT:CONSULTING-120"}]}"""));
 
@@ -111,11 +111,33 @@ class EscrowPayoutClientTest {
         assertThat(ledger.status()).isEqualTo("ACTIVE");
         assertThat(ledger.held()).isTrue();
         assertThat(ledger.depositedAmount()).isEqualTo(BigInteger.valueOf(50_000));
+        assertThat(ledger.balance()).isEqualTo(BigInteger.valueOf(50_000));
         assertThat(ledger.transactions()).containsExactly(
                 new LedgerEntry("DEPOSIT", "COMPLETED", "INITIAL"),
                 new LedgerEntry("RELEASE", "UNKNOWN", "SETTLEMENT:CONSULTING-120"));
         assertThat(json.readTree(received.get("inquireEscrow")).path("escrowId").asLong()).isEqualTo(301);
         assertThat(json.readTree(received.get("inquireEscrowList")).path("Header").has("idempotencyKey")).isFalse();
+    }
+
+    @Test
+    @DisplayName("환불 요청에 잔액 전액과 발급 계좌, 금융망 예금주명, 고정 멱등키를 싣는다")
+    void sendsRefundContract() {
+        respond("refundEscrow", 200, success("{\"transactionId\":1002,\"refundedAmount\":50000,\"balance\":0,\"status\":\"COMPLETED\"}"));
+
+        String status = client().refund(new EscrowPayoutClient.RefundRequest(
+                301, "SETTLEMENT:CANCEL-120", BigInteger.valueOf(50_000), "001", "0011234567890123",
+                "komit-7", "escrow:refund:cancel-contract-120"));
+
+        assertThat(status).isEqualTo("COMPLETED");
+        JsonNode sent = json.readTree(received.get("refundEscrow"));
+        assertThat(sent.path("escrowId").asLong()).isEqualTo(301);
+        assertThat(sent.path("amount").asLong()).isEqualTo(50_000);
+        assertThat(sent.path("refundBankCode").asString()).isEqualTo("001");
+        assertThat(sent.path("refundAccountNo").asString()).isEqualTo("0011234567890123");
+        assertThat(sent.path("refundHolderName").asString()).isEqualTo("komit-7");
+        assertThat(sent.path("referenceId").asString()).isEqualTo("SETTLEMENT:CANCEL-120");
+        assertThat(sent.path("Header").path("apiName").asString()).isEqualTo("refundEscrow");
+        assertThat(sent.path("Header").path("idempotencyKey").asString()).isEqualTo("escrow:refund:cancel-contract-120");
     }
 
     @Test

@@ -75,6 +75,11 @@ public class ConsultingAgreement extends SoftDeleteEntity {
         this.status = COMPLETED;
     }
 
+    /** 계약이 취소되어 합의를 파기로 적습니다. 파기된 합의는 지급 대상으로 고르지 않습니다. (`R-CON-21`) */
+    public void terminate() {
+        this.status = TERMINATED;
+    }
+
     /** 협의 중에 다시 보낸 계약서로 내용을 바꿉니다. */
     public void rewrite(String topic, int totalAmount) {
         this.topic = Objects.requireNonNull(topic, "topic");

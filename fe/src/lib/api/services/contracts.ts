@@ -64,6 +64,22 @@ export async function signContract(
 }
 
 /**
+ * 계약 취소.
+ *
+ * 개발자가 서명하기 전에 의뢰인이 계약을 취소합니다. 예치금이 있으면 전액을 예치할 때 쓴
+ * 회원가입 발급 계좌로 돌려받습니다 (R-CON-21, R-PAY-04). 취소는 되돌릴 수 없습니다.
+ *
+ * 같은 요청을 다시 보내도 됩니다. 이미 취소된 계약이면 그대로 돌아오고, 환불이 끝나지
+ * 않았으면(503 `REFUND_PENDING`) 백엔드가 같은 멱등키로 이어갑니다.
+ */
+export async function cancelContract(contractId: number): Promise<Contract> {
+  const { data } = await authenticatedBackendApi().post<Contract>(
+    BACKEND.CONTRACT_CANCELLATION(contractId),
+  );
+  return data;
+}
+
+/**
  * 계약 금액 예치.
  *
  * 계약 금액 전액을 한 번에 맡깁니다. 돈의 원장은 Escrow 서버가 가지고 여기서는
