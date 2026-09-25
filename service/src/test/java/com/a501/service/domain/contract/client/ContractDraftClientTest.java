@@ -27,6 +27,7 @@ class ContractDraftClientTest {
     private volatile int status;
     private volatile String body;
     private volatile String received;
+    private volatile String upgrade;
 
     @BeforeEach
     void startServer() throws IOException {
@@ -34,8 +35,10 @@ class ContractDraftClientTest {
         body = """
                 {"draft":{"topic":"인증 오류를 함께 확인합니다","detail":"접근 경로와 재현 절차를 확인합니다."}}""";
         received = null;
+        upgrade = null;
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/contract-draft", exchange -> {
+            upgrade = exchange.getRequestHeaders().getFirst("Upgrade");
             received = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             byte[] payload = body.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().add("Content-Type", "application/json");
@@ -63,6 +66,14 @@ class ContractDraftClientTest {
                 .contains("\"targetType\":\"CONSULTING\"")
                 .contains("\"authorRole\":\"CLIENT\"")
                 .contains("\"content\":\"관리자 화면에 들어갈 수 없습니다.\"");
+    }
+
+    @Test
+    @DisplayName("HTTP/1.1 로 보낸다. AI 서버는 h2c 업그레이드를 받으면 본문을 읽지 못한다")
+    void sendsWithoutH2cUpgrade() {
+        client().generateConsulting(input());
+
+        assertThat(upgrade).isNull();
     }
 
     @Test
