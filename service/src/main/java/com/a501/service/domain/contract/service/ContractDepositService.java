@@ -51,11 +51,18 @@ public class ContractDepositService {
      *
      * @throws BusinessException {@link ContractErrorCode#CONTRACT_NOT_FOUND} 없거나 내 계약이 아닐 때,
      *                           {@link CommonErrorCode#FORBIDDEN} 의뢰인이 아닐 때,
+     *                           {@link ContractErrorCode#CONTRACT_NOT_SIGNED} 양쪽 서명 전일 때,
      *                           {@link ContractErrorCode#ALREADY_DEPOSITED} 이미 걸었을 때
      */
     @Transactional
     public DepositResponse deposit(Integer contractId, Integer userId, DepositRequest request) {
         Contract contract = readableContract(contractId, userId, true);
+
+        // R-CON-01: 성립하지 않은 계약에 돈을 맡기면 지급도 환불도 할 길이 없다. 서명 전에 걸어 두고 금액을 고치면
+        // 예치 금액과 계약 금액이 어긋난다.
+        if (!contract.isConcluded()) {
+            throw new BusinessException(ContractErrorCode.CONTRACT_NOT_SIGNED);
+        }
 
         // 같은 계약에 두 번 걸지 않는다. 멱등키는 같은 요청의 재시도를 가릴 뿐이다.
         if (escrowDepositClient.findByContract(String.valueOf(contractId)).isPresent()) {

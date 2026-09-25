@@ -1,5 +1,6 @@
 package com.a501.service.domain.contract.service;
 
+import com.a501.service.domain.contract.dto.ConsultingPayoutTarget;
 import com.a501.service.domain.contract.dto.ContractParties;
 import com.a501.service.domain.contract.entity.ConsultingAgreement;
 import com.a501.service.domain.contract.entity.Contract;
@@ -122,6 +123,39 @@ public class ContractQueryService {
                 .filter(contract -> completed.contains(contract.getId()))
                 .forEach(contract -> result.merge(contract.getRoomId(), 1L, Long::sum));
         return result;
+    }
+
+    /**
+     * 양측이 서명했고 아직 대금을 지급하지 않은 컨설팅 계약.
+     *
+     * <p>지급을 마쳤거나 파기된 합의는 빠집니다. 예치가 걸렸는지, 이의 제기 기간이 지났는지는 보지
+     * 않습니다 — 예치는 Escrow 가, 기간은 세션이 압니다. 묻는 쪽이 가립니다.
+     *
+     * <p>방의 당사자를 찾지 못한 계약은 빠집니다. 대금을 받을 사람을 모르면 지급할 수 없습니다.
+     */
+    public List<ConsultingPayoutTarget> findUnpaidConsultingContracts() {
+        List<ConsultingAgreement> agreements = agreementRepository.findByStatusNotInAndDeletedFalse(
+                List.of(ConsultingAgreement.COMPLETED, ConsultingAgreement.TERMINATED));
+        if (agreements.isEmpty()) {
+            return List.of();
+        }
+        Map<Integer, Contract> contracts = contractRepository
+                .findAllById(agreements.stream().map(ConsultingAgreement::getContractId).toList())
+                .stream()
+                .filter(contract -> !contract.isDeleted() && contract.isConcluded())
+                .collect(Collectors.toMap(Contract::getId, contract -> contract));
+
+        return agreements.stream()
+                .filter(agreement -> contracts.containsKey(agreement.getContractId()))
+                .flatMap(agreement -> toParties(contracts.get(agreement.getContractId()))
+                        .map(parties -> new ConsultingPayoutTarget(
+                                parties.contractId(),
+                                agreement.getId(),
+                                agreement.getTotalAmount(),
+                                parties.clientId(),
+                                parties.developerId()))
+                        .stream())
+                .toList();
     }
 
     private Optional<ContractParties> toParties(Contract contract) {

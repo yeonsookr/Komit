@@ -46,6 +46,10 @@ app:
   escrow:
     base-url: ${ESCROW_API_BASE_URL:http://localhost:8081}
     client-api-key: ${ESCROW_CLIENT_API_KEY:komit-backend-client-api-key-dev-only}
+    # 지급 클라이언트만 씁니다. Escrow 는 지급 한 번에 금융망 예금주 조회·송금·수수료 이체를
+    # 차례로 끝내고 답하므로 공용 읽기 한도(5초)보다 길게 둡니다.
+    connect-timeout: ${ESCROW_CONNECT_TIMEOUT:3s}
+    read-timeout: ${ESCROW_READ_TIMEOUT:30s}
   turn:
     # `deploy/local/docker-compose.yml` 의 coturn 을 가리킵니다. 그것이 STUN 도 겸하므로
     # 로컬에서도 외부 STUN 을 쓰지 않습니다.

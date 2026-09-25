@@ -77,6 +77,9 @@ class ContractDepositServiceTest {
     void setUp() {
         contract = Contract.of(ROOM_ID, Contract.ContractType.CONSULTING);
         ReflectionTestUtils.setField(contract, "id", CONTRACT_ID);
+        // 예치는 양쪽 서명이 끝난 계약에만 건다. 서명 전 경우는 따로 본다.
+        contract.sign(true, 1, null);
+        contract.sign(false, 2, "계약 문구");
 
         ConsultingAgreement agreement =
                 ConsultingAgreement.of(CONTRACT_ID, "회원탈퇴 경로를 봅니다", 50_000);
@@ -126,6 +129,26 @@ class ContractDepositServiceTest {
         assertThatThrownBy(() -> service.deposit(CONTRACT_ID, DEVELOPER_USER_ID, REQUEST))
                 .isInstanceOf(BusinessException.class)
                 .hasFieldOrPropertyWithValue("errorCode", CommonErrorCode.FORBIDDEN);
+        verify(escrowDepositClient, never())
+                .create(any(), any(), any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("양쪽이 서명하기 전에는 걸지 않는다 (R-CON-01)")
+    void rejectsBeforeBothSign() {
+        Contract unsigned = Contract.of(ROOM_ID, Contract.ContractType.CONSULTING);
+        ReflectionTestUtils.setField(unsigned, "id", CONTRACT_ID);
+        when(contractRepository.findByIdAndDeletedFalse(CONTRACT_ID)).thenReturn(Optional.of(unsigned));
+
+        assertThatThrownBy(() -> service.deposit(CONTRACT_ID, CLIENT_ID, REQUEST))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ContractErrorCode.CONTRACT_NOT_SIGNED);
+
+        // 한쪽만 서명해도 아직 성립하지 않았다.
+        unsigned.sign(true, 1, null);
+        assertThatThrownBy(() -> service.deposit(CONTRACT_ID, CLIENT_ID, REQUEST))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ContractErrorCode.CONTRACT_NOT_SIGNED);
         verify(escrowDepositClient, never())
                 .create(any(), any(), any(), any(), any(), any(), any(), any());
     }

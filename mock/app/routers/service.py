@@ -6752,6 +6752,7 @@ class WriteReviewRequest(BaseModel):
 MILESTONE_NOT_FOUND = ("MILESTONE_NOT_FOUND", "작업을 찾을 수 없습니다.")
 DEPOSIT_REQUIRED = ("DEPOSIT_REQUIRED", "예치가 끝나야 착수할 수 있습니다.")
 ALREADY_DEPOSITED = ("ALREADY_DEPOSITED", "이미 예치가 끝났습니다.")
+CONTRACT_NOT_SIGNED = ("CONTRACT_NOT_SIGNED", "양쪽이 모두 서명한 뒤에 예치할 수 있습니다.")
 QA_NOT_ALL_CHECKED = (
     "QA_NOT_ALL_CHECKED",
     "확인 문장을 모두 체크해야 통과시킬 수 있습니다.",
@@ -7495,7 +7496,7 @@ def write_development_contract(
         201: {"content": {"application/json": {"example": DEPOSIT_EXAMPLE}}},
         409: {
             "model": ErrorResponse,
-            "description": "이미 예치됨",
+            "description": "이미 예치됨 · 서명 전",
             "content": {
                 "application/json": {
                     "examples": {
@@ -7504,6 +7505,13 @@ def write_development_contract(
                             "value": {
                                 "code": ALREADY_DEPOSITED[0],
                                 "message": ALREADY_DEPOSITED[1],
+                            },
+                        },
+                        "CONTRACT_NOT_SIGNED": {
+                            "summary": "양측 서명 전",
+                            "value": {
+                                "code": CONTRACT_NOT_SIGNED[0],
+                                "message": CONTRACT_NOT_SIGNED[1],
                             },
                         },
                     }
@@ -7535,6 +7543,9 @@ def write_development_contract(
         "- **403 / FORBIDDEN**: 이 계약의 의뢰인이 아닐 때. 예치는 의뢰인만 한다\n"
         "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때\n"
         "- **409 / ALREADY_DEPOSITED**: `contractId`가 409일 때\n"
+        "- **409 / CONTRACT_NOT_SIGNED**: 양쪽이 모두 서명하기 전일 때. 계약이 성립하지 않았으므로 "
+        "돈을 맡기지 않는다(R-CON-01). 목에서는 아직 아무도 서명하지 않은 계약서 "
+        f"`contractId`={DRAFT_CLIENT_CONTRACT_ID}이 이 응답을 준다\n"
         "- **422 / INVALID_REQUEST**: `paymentMethodId`나 `idempotencyKey`가 없을 때\n"
         "- **500 / INTERNAL_ERROR**: 예치를 걸지 못했을 때"
     ),
@@ -7543,7 +7554,10 @@ def deposit_contract(
     contractId: Annotated[
         int,
         Path(
-            description="계약 식별자. 404는 없음, 409는 이미 예치됨 재현용 예약값이다.",
+            description=(
+                "계약 식별자. 404는 없음, 409는 이미 예치됨 재현용 예약값이다. "
+                f"{DRAFT_CLIENT_CONTRACT_ID}은 서명 전 계약서다."
+            ),
             examples=[DEV_CONTRACT_ID],
         ),
     ],
@@ -7553,6 +7567,8 @@ def deposit_contract(
         return _error_response(404, CONTRACT_NOT_FOUND)
     if contractId == DEPOSITED_CONTRACT_ID:
         return _error_response(409, ALREADY_DEPOSITED)
+    if contractId == DRAFT_CLIENT_CONTRACT_ID:
+        return _error_response(409, CONTRACT_NOT_SIGNED)
     return EscrowDepositResponse(**DEPOSIT_EXAMPLE)
 
 

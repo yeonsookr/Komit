@@ -13,6 +13,9 @@ public interface ConsultingAgreementRepository extends JpaRepository<ConsultingA
 
     List<ConsultingAgreement> findByContractIdInAndDeletedFalse(Collection<Integer> contractIds);
 
+    /** 상태가 주어진 값들이 아닌 컨설팅 합의. 지급이 남은 합의를 고를 때 완료·파기를 빼고 부릅니다. */
+    List<ConsultingAgreement> findByStatusNotInAndDeletedFalse(Collection<String> statuses);
+
     /** 계약들 중 상태가 주어진 값인 컨설팅 합의. 마친 계약을 셀 때 {@code COMPLETED}로 부릅니다. */
     List<ConsultingAgreement> findByContractIdInAndDeletedFalseAndStatus(Collection<Integer> contractIds, String status);
 }
