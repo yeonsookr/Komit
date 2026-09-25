@@ -104,7 +104,7 @@ Content-Type: application/json
 
 | AI 내부 | 뜻 | AI 서비스 응답 | Service 응답 |
 | --- | --- | --- | --- |
-| `GmsUnavailableError` | 상류에 닿지 못함. 키가 없거나 호출이 실패함. 전사에서는 모델을 올리지 못함 | `503` | `503 AI_SERVICE_UNAVAILABLE` |
+| `GmsUnavailableError` | 상류에 닿지 못함. 키가 없거나 호출이 실패함. 전사에서는 모델을 올리지 못했거나 전사 중 GPU 가 멈춤 | `503` | `503 AI_SERVICE_UNAVAILABLE` |
 | `InvalidGmsResponseError` | 닿기는 했으나 계약에 맞는 결과를 만들지 못함 | `502` | `502 AI_RESPONSE_INVALID` |
 | `UnusableInputError` | 받은 입력을 쓸 수 없음. 오디오가 깨졌거나 디코딩되지 않음 | **미정** | **미정** |
 | (요청 검증) | 받은 요청이 계약과 다름 | `422` `400` `404` `405` `AI_REQUEST_INVALID` | `500 INTERNAL_ERROR`. AI 고장이 아니므로 사용자에게 재시도를 권하지 않고, Service 가 거부 사유를 `ERROR` 로 남긴다 |

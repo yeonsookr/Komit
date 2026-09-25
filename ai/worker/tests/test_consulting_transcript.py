@@ -7,7 +7,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from consulting_transcript import (  # noqa: E402
     Track,
-    clamp_offset,
     load_model,
     merge,
     split_by_gap,
@@ -32,8 +31,8 @@ class FakeSegment:
         self.text = text if text is not None else "".join(w.word for w in self.words or [])
 
 
-def track(speaker, pieces, offset_ms=0):
-    return {"speaker": speaker, "offsetMs": offset_ms, "pieces": pieces}
+def track(speaker, pieces):
+    return {"speaker": speaker, "pieces": pieces}
 
 
 def piece(start, end, text):
@@ -70,42 +69,13 @@ class SplitByGap(unittest.TestCase):
         self.assertEqual(split_by_gap([FakeSegment(None, text="   ")]), [])
 
 
-class ClampOffset(unittest.TestCase):
-    def test_범위_안이면_그대로_쓴다(self):
-        self.assertEqual(clamp_offset(4500, 190_000), (4500, None))
-
-    def test_음수는_영으로_보고_알린다(self):
-        value, warning = clamp_offset(-1, 190_000)
-
-        self.assertEqual(value, 0)
-        self.assertIsNotNone(warning)
-
-    def test_녹음_길이를_넘으면_영으로_보고_알린다(self):
-        value, warning = clamp_offset(200_000, 190_000)
-
-        self.assertEqual(value, 0)
-        self.assertIsNotNone(warning)
-
-
 class Merge(unittest.TestCase):
-    # 개발자 쪽 녹음이 4.5초 늦게 시작한 상황이다. 의뢰인이 10.0 초에 묻고 개발자가 11.0 초에
-    # 답했는데, 늦게 시작한 트랙 안에서는 그 답이 6.5 초에 있다. 아래 두 시험이 짝이다.
-    QUESTION = piece(10.0, 11.0, "로컬에선 되고요?")
-    ANSWER = piece(6.5, 8.0, "네 로컬은 멀쩡해요")
-
-    def test_시작_지연을_더해_순서를_바로잡는다(self):
-        merged = merge([track("CLIENT", [self.QUESTION]),
-                        track("DEVELOPER", [self.ANSWER], offset_ms=4500)])
+    def test_두_트랙을_시각순으로_세운다(self):
+        merged = merge([track("CLIENT", [piece(10.0, 11.0, "로컬에선 되고요?")]),
+                        track("DEVELOPER", [piece(11.3, 12.5, "네 로컬은 멀쩡해요")])])
 
         self.assertEqual([row["speaker"] for row in merged], ["CLIENT", "DEVELOPER"])
-        self.assertEqual(merged[1]["startMs"], 11_000)
-
-    def test_보정하지_않으면_대답이_질문보다_앞에_놓인다(self):
-        """이 시험이 보정을 지우는 회귀를 잡는다."""
-        merged = merge([track("CLIENT", [self.QUESTION]),
-                        track("DEVELOPER", [self.ANSWER])])
-
-        self.assertEqual([row["speaker"] for row in merged], ["DEVELOPER", "CLIENT"])
+        self.assertEqual(merged[1]["startMs"], 11_300)
 
     def test_끼어든_말이_상대_말_사이에_들어간다(self):
         client = track("CLIENT", [piece(3.0, 3.5, "아 네네")])
@@ -147,12 +117,6 @@ class Merge(unittest.TestCase):
                         track("DEVELOPER", [])])
 
         self.assertEqual(len(merged), 1)
-
-    def test_요약이_읽는_필드를_채운다(self):
-        """표기 정리는 아직 하지 않으므로 두 필드가 같다."""
-        merged = merge([track("CLIENT", [piece(0.0, 1.0, "에이피아이 키요")])])
-
-        self.assertEqual(merged[0]["normalizedText"], merged[0]["rawText"])
 
 
 class Failures(unittest.TestCase):

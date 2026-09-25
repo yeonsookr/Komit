@@ -14,7 +14,6 @@ from transcription_worker import (  # noqa: E402
     UNUSABLE,
     InvalidJobError,
     Job,
-    LeaseLostError,
     ServiceClient,
     ServiceUnreachableError,
     TokenRejectedError,
@@ -24,24 +23,21 @@ from transcription_worker import (  # noqa: E402
 
 JOB = Job(
     session_id=55,
-    lease_id="lease-1",
     tracks=[
-        {"speaker": "CLIENT", "audioUrl": "https://file.example/a", "offsetMs": 0},
-        {"speaker": "DEVELOPER", "audioUrl": "https://file.example/b", "offsetMs": 4310},
+        {"speaker": "CLIENT", "audioUrl": "https://file.example/a"},
+        {"speaker": "DEVELOPER", "audioUrl": "https://file.example/b"},
     ],
 )
 
-RESULT = {"utterances": [{"utteranceIndex": 0, "speaker": "CLIENT"}], "warnings": []}
+RESULT = {"utterances": [{"utteranceIndex": 0, "speaker": "CLIENT"}]}
 
 
 class FakeClient:
     """Service 를 부르지 않는다. 무엇을 불렀는지만 적어 둔다."""
 
-    def __init__(self, job=JOB, download_error=None, result_error=None, failure_error=None):
+    def __init__(self, job=JOB, download_error=None):
         self.job = job
         self.download_error = download_error
-        self.result_error = result_error
-        self.failure_error = failure_error
         self.downloaded = []
         self.results = []
         self.failures = []
@@ -56,13 +52,9 @@ class FakeClient:
         self.downloaded.append((url, destination))
 
     def submit_result(self, job, result):
-        if self.result_error:
-            raise self.result_error
         self.results.append((job, result))
 
     def report_failure(self, job, code, message):
-        if self.failure_error:
-            raise self.failure_error
         self.failures.append((job, code, message))
 
 
@@ -83,7 +75,7 @@ class RunOnce(unittest.TestCase):
 
         self.assertEqual(run_once(client, transcribe), "done")
         self.assertEqual([url for url, _ in client.downloaded], ["https://file.example/a", "https://file.example/b"])
-        self.assertEqual([(t.speaker, t.offset_ms) for t in seen], [("CLIENT", 0), ("DEVELOPER", 4310)])
+        self.assertEqual([t.speaker for t in seen], ["CLIENT", "DEVELOPER"])
         self.assertEqual(client.results, [(JOB, RESULT)])
 
     def test_전사가_끝나면_받은_녹음을_남기지_않는다(self):
@@ -118,34 +110,21 @@ class RunOnce(unittest.TestCase):
         self.assertEqual(run_once(client, transcribe), "unusable")
         self.assertEqual(client.failures[0][1], UNUSABLE)
 
-    def test_전사하는_사이_임대가_끝나면_결과를_버린다(self):
-        client = FakeClient(result_error=LeaseLostError("/result"))
-
-        self.assertEqual(run_once(client, lambda tracks: RESULT), "lost")
-
-    def test_실패를_알리는_사이_임대가_끝나도_멈추지_않는다(self):
-        client = FakeClient(failure_error=LeaseLostError("/failure"))
-
-        def transcribe(tracks):
-            raise UnusableInputError("디코딩되지 않습니다")
-
-        self.assertEqual(run_once(client, transcribe), "lost")
-
 
 def claim_body(**track):
-    row = {"speaker": "CLIENT", "audioUrl": "https://file.example/a", "offsetMs": 0, **track}
-    return {"sessionId": 55, "leaseId": "lease-1", "tracks": [row]}
+    row = {"speaker": "CLIENT", "audioUrl": "https://file.example/a", **track}
+    return {"sessionId": 55, "tracks": [row]}
 
 
 class ParseJob(unittest.TestCase):
     def test_계약대로_오면_작업으로_읽는다(self):
         job = parse_job(claim_body())
 
-        self.assertEqual((job.session_id, job.lease_id, job.tracks[0]["speaker"]), (55, "lease-1", "CLIENT"))
+        self.assertEqual((job.session_id, job.tracks[0]["speaker"]), (55, "CLIENT"))
 
     def test_필드가_빠지면_작업으로_읽지_않는다(self):
         with self.assertRaises(InvalidJobError):
-            parse_job({"sessionId": 55, "tracks": []})
+            parse_job({"tracks": []})
 
     def test_모르는_화자는_받지_않는다(self):
         # 화자 이름으로 파일을 만든다. 경로가 섞이면 임시 폴더 밖에 쓴다.
@@ -211,14 +190,14 @@ class Client(unittest.TestCase):
             self.assertIsNone(self.client.claim())
 
     def test_받아_갈_때_토큰을_싣는다(self):
-        body = json.dumps({"sessionId": 55, "leaseId": "lease-1", "tracks": []}).encode()
+        body = json.dumps({"sessionId": 55, "tracks": []}).encode()
         with mock.patch("urllib.request.urlopen", return_value=FakeResponse(200, body)) as urlopen:
             job = self.client.claim()
 
         request = urlopen.call_args.args[0]
         self.assertEqual(request.full_url, "https://komit.example/service/api/transcription-jobs/claim")
         self.assertEqual(request.get_header("Authorization"), "Bearer secret-token")
-        self.assertEqual(job, Job(session_id=55, lease_id="lease-1", tracks=[]))
+        self.assertEqual(job, Job(session_id=55, tracks=[]))
 
     def test_녹음을_받을_때는_토큰을_싣지_않는다(self):
         destination = mock.Mock()
@@ -229,23 +208,18 @@ class Client(unittest.TestCase):
         self.assertEqual(urlopen.call_args.args[0], "https://file.example/a?X-Amz-Signature=x")
         destination.write_bytes.assert_called_once_with(b"audio")
 
-    def test_결과에_임대_표를_싣는다(self):
+    def test_결과를_그_세션_경로로_올린다(self):
         with mock.patch("urllib.request.urlopen", return_value=FakeResponse(204)) as urlopen:
             self.client.submit_result(JOB, RESULT)
 
         request = urlopen.call_args.args[0]
         self.assertEqual(request.full_url, "https://komit.example/service/api/transcription-jobs/55/result")
-        self.assertEqual(json.loads(request.data)["leaseId"], "lease-1")
+        self.assertEqual(json.loads(request.data), RESULT)
 
     def test_토큰을_거절하면_멈추게_한다(self):
         with mock.patch("urllib.request.urlopen", side_effect=http_error(401)):
             with self.assertRaises(TokenRejectedError):
                 self.client.claim()
-
-    def test_409_는_임대가_끝난_것으로_본다(self):
-        with mock.patch("urllib.request.urlopen", side_effect=http_error(409)):
-            with self.assertRaises(LeaseLostError):
-                self.client.submit_result(JOB, RESULT)
 
     def test_서버가_고장나면_닿지_못한_것으로_본다(self):
         with mock.patch("urllib.request.urlopen", side_effect=http_error(503)):

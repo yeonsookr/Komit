@@ -37,7 +37,6 @@ from consulting_transcript import (
 )
 from qa_suggestion import GmsUnavailableError, UnusableInputError, read_local_env
 
-# 할 일이 없을 때 다시 묻는 간격. 90분 세션 전사가 GPU 로 8.5분이라 이 간격은 묻힌다.
 POLL_SECONDS = 5
 
 # 모델을 못 올렸거나 Service·저장소에 닿지 못했을 때 기다리는 간격. 같은 고장으로 5초마다
@@ -55,15 +54,11 @@ LOCAL_HOSTS = ("localhost", "127.0.0.1")
 
 
 class ServiceUnreachableError(Exception):
-    """Service 나 저장소에 닿지 못했다. 작업은 임대가 끝나면 Service 가 되돌린다."""
+    """Service 나 저장소에 닿지 못했다. 결과가 없으니 Service 는 이 세션을 다시 내준다."""
 
 
 class TokenRejectedError(Exception):
     """Service 가 토큰을 받지 않았다. 다시 물어도 같으므로 멈춘다."""
-
-
-class LeaseLostError(Exception):
-    """임대가 끝나 다른 쪽이 이 작업을 가져갔다. 결과는 버린다."""
 
 
 class InvalidJobError(Exception):
@@ -81,7 +76,6 @@ def check_url(url: str) -> str:
 @dataclass(frozen=True)
 class Job:
     session_id: int
-    lease_id: str
     tracks: list[dict]
 
 
@@ -101,15 +95,12 @@ class ServiceClient:
         return parse_job(body)
 
     def submit_result(self, job: Job, result: dict) -> None:
-        self._post(
-            f"/api/transcription-jobs/{job.session_id}/result",
-            {"leaseId": job.lease_id, **result},
-        )
+        self._post(f"/api/transcription-jobs/{job.session_id}/result", result)
 
     def report_failure(self, job: Job, code: str, message: str) -> None:
         self._post(
             f"/api/transcription-jobs/{job.session_id}/failure",
-            {"leaseId": job.lease_id, "code": code, "message": message},
+            {"code": code, "message": message},
         )
 
     def download(self, url: str, destination: Path) -> None:
@@ -139,8 +130,6 @@ class ServiceClient:
         except urllib.error.HTTPError as error:
             if error.code in (401, 403):
                 raise TokenRejectedError(f"{path}: {error.code}") from error
-            if error.code == 409:
-                raise LeaseLostError(path) from error
             raise ServiceUnreachableError(f"{path}: {error.code}") from error
         except (urllib.error.URLError, TimeoutError) as error:
             raise ServiceUnreachableError(f"{path} 에 닿지 못했습니다: {error}") from error
@@ -149,30 +138,28 @@ class ServiceClient:
 def parse_job(body) -> Job:
     """받은 작업을 계약대로 읽는다. 어긋나면 `InvalidJobError` 다."""
     try:
-        session_id, lease_id, rows = body["sessionId"], body["leaseId"], body["tracks"]
-        if not isinstance(session_id, int) or not isinstance(lease_id, str) or not isinstance(rows, list):
-            raise TypeError("sessionId·leaseId·tracks 의 형식이 다릅니다")
+        session_id, rows = body["sessionId"], body["tracks"]
+        if not isinstance(session_id, int) or not isinstance(rows, list):
+            raise TypeError("sessionId·tracks 의 형식이 다릅니다")
         tracks = []
         for row in rows:
             # 화자 이름으로 파일을 만든다. 경로가 섞이면 임시 폴더 밖에 쓴다.
             if row["speaker"] not in SPEAKERS:
                 raise ValueError(f"모르는 화자입니다: {row['speaker']!r}")
-            if not isinstance(row["offsetMs"], int):
-                raise TypeError("offsetMs 가 정수가 아닙니다")
             check_url(row["audioUrl"])
             tracks.append(row)
         if len({row["speaker"] for row in tracks}) != len(tracks):
             raise ValueError("같은 화자의 녹음이 두 번 왔습니다")
     except (KeyError, TypeError, ValueError) as error:
         raise InvalidJobError(f"받은 작업이 계약과 다릅니다: {error!r}") from error
-    return Job(session_id=session_id, lease_id=lease_id, tracks=tracks)
+    return Job(session_id=session_id, tracks=tracks)
 
 
 def run_once(client, transcribe, workdir: Path | None = None) -> str:
     """작업 하나를 받아 끝까지 처리하고 무엇이 일어났는지 돌려준다.
 
     `idle` 할 일이 없었다 · `done` 결과를 올렸다 · `unusable` 사람이 봐야 한다고 알렸다 ·
-    `retry` 다시 받아 가도록 알렸다 · `lost` 전사하는 사이 임대가 끝났다
+    `retry` 다시 받아 가도록 알렸다
     """
     job = client.claim()
     if job is None:
@@ -185,26 +172,17 @@ def run_once(client, transcribe, workdir: Path | None = None) -> str:
             for row in job.tracks:
                 path = Path(folder) / f"{row['speaker']}.webm"
                 client.download(row["audioUrl"], path)
-                tracks.append(Track(speaker=row["speaker"], path=str(path), offset_ms=row["offsetMs"]))
+                tracks.append(Track(speaker=row["speaker"], path=str(path)))
             result = transcribe(tracks)
         except (GmsUnavailableError, ServiceUnreachableError) as error:
-            return _report(client, job, RETRYABLE, error, "retry")
+            client.report_failure(job, RETRYABLE, str(error))
+            return "retry"
         except UnusableInputError as error:
-            return _report(client, job, UNUSABLE, error, "unusable")
+            client.report_failure(job, UNUSABLE, str(error))
+            return "unusable"
 
-    try:
-        client.submit_result(job, result)
-    except LeaseLostError:
-        return "lost"
+    client.submit_result(job, result)
     return "done"
-
-
-def _report(client, job: Job, code: str, error: Exception, outcome: str) -> str:
-    try:
-        client.report_failure(job, code, str(error))
-    except LeaseLostError:
-        return "lost"
-    return outcome
 
 
 def main() -> None:
@@ -221,7 +199,7 @@ def main() -> None:
         started = time.monotonic()
         try:
             outcome = run_once(client, transcribe)
-        except (ServiceUnreachableError, InvalidJobError, LeaseLostError) as error:
+        except (ServiceUnreachableError, InvalidJobError) as error:
             print(f"{type(error).__name__}: {error}", file=sys.stderr)
             time.sleep(BACKOFF_SECONDS)
             continue

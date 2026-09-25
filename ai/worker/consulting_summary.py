@@ -70,7 +70,7 @@ def build_messages(
     lines = []
     for row in utterances:
         lines.append(
-            f"{row['utteranceIndex']} [{row['speaker']}] {row['normalizedText']}"
+            f"{row['utteranceIndex']} [{row['speaker']}] {row['rawText']}"
         )
     if requirements:
         rows = [f"  {row['issueId']}  {row['title']}" for row in requirements]

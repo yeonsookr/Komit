@@ -85,7 +85,6 @@ class Utterance(Body):
     utteranceIndex: int
     speaker: str
     rawText: str
-    normalizedText: str
     startMs: int | None = None
     endMs: int | None = None
 

@@ -40,8 +40,7 @@
         "audio": null
       },
       "expected": {
-        "rawText": "결제 에이피아이에서 오백 오류가 나요.",
-        "normalizedText": "결제 API에서 500 오류가 나요.",
+        "rawText": "결제 API에서 500 오류가 나요.",
         "reviewNote": "실제 오디오가 없어 CER/WER 점수에는 사용하지 않는다."
       }
     },
@@ -59,14 +58,11 @@
       "input": {
         "utterances": [
           { "utteranceIndex": 0, "speaker": "CLIENT",
-          "rawText": "관리자 화면 접근 오류를 확인했어요.",
-          "normalizedText": "관리자 화면 접근 오류를 확인했어요." },
+          "rawText": "관리자 화면 접근 오류를 확인했어요." },
           { "utteranceIndex": 1, "speaker": "DEVELOPER",
-          "rawText": "로그인하지 않으면 관리자 화면을 막는 것으로 정하죠.",
-          "normalizedText": "로그인하지 않으면 관리자 화면을 막는 것으로 정하죠." },
+          "rawText": "로그인하지 않으면 관리자 화면을 막는 것으로 정하죠." },
           { "utteranceIndex": 2, "speaker": "DEVELOPER",
-          "rawText": "제가 재현 절차를 정리해서 보내겠습니다.",
-          "normalizedText": "제가 재현 절차를 정리해서 보내겠습니다." }
+          "rawText": "제가 재현 절차를 정리해서 보내겠습니다." }
         ]
       },
       "expected": {

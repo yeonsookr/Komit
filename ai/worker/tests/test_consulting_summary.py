@@ -21,13 +21,11 @@ UTTERANCES = [
         "utteranceIndex": 0,
         "speaker": "CLIENT",
         "rawText": "관리자 화면 접근 오류를 확인했어요.",
-        "normalizedText": "관리자 화면 접근 오류를 확인했어요.",
     },
     {
         "utteranceIndex": 1,
         "speaker": "DEVELOPER",
         "rawText": "로그인하지 않으면 관리자 화면을 막는 것으로 정하죠.",
-        "normalizedText": "로그인하지 않으면 관리자 화면을 막는 것으로 정하죠.",
     },
 ]
 

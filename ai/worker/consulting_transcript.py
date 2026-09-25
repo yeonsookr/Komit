@@ -2,8 +2,7 @@
 
 참가자마다 자기 마이크만 담으므로(`R-CON-14`) **파일이 곧 화자다.** 화자 분리를 하지 않는다.
 
-여기서 나온 배열을 `consulting_summary.summarize` 가 그대로 먹는다. 요약은 `normalizedText`
-만 읽는다.
+여기서 나온 배열을 `consulting_summary.summarize` 가 그대로 먹는다.
 """
 
 from __future__ import annotations
@@ -47,21 +46,19 @@ DEFAULT_DEVICE = "cuda"
 
 # 전사는 GMS 를 부르지 않지만 실패 갈래는 `ai/AGENTS.md` 5 를 그대로 따른다.
 #
-#   모델을 올리지 못함  -> GmsUnavailableError  (상류에 닿지 못함. 다시 걸면 될 수 있다)
-#   오디오를 읽지 못함  -> UnusableInputError   (다시 걸어도 소용없다. 사람이 봐야 한다)
+#   모델을 올리지 못함·GPU 가 멈춤  -> GmsUnavailableError  (장비 문제. 다시 걸면 될 수 있다)
+#   오디오를 읽지 못함              -> UnusableInputError   (다시 걸어도 소용없다. 사람이 봐야 한다)
 
 
 @dataclass(frozen=True)
 class Track:
     """전사할 트랙 하나.
 
-    `offset_ms` 는 세션이 시작된 순간부터 이 녹음이 시작되기까지의 지연이다. 브라우저마다
-    녹음을 켜는 시점이 달라(실측 4~5초) 이 값 없이 섞으면 대답이 질문보다 앞에 놓인다.
+    두 녹음은 통화가 처음 붙은 순간에 함께 켜지므로 같은 시각에 시작한 것으로 본다.
     """
 
     speaker: str
     path: str
-    offset_ms: int = 0
 
 
 def split_by_gap(segments, gap_seconds: float = SPLIT_GAP_SECONDS) -> list[dict]:
@@ -97,17 +94,6 @@ def _piece(words) -> dict:
     }
 
 
-def clamp_offset(offset_ms: int, limit_ms: int) -> tuple[int, str | None]:
-    """브라우저가 보고한 시작 지연을 그대로 믿지 않는다.
-
-    음수이거나 녹음 길이를 넘는 값은 0 으로 본다. 그 사실을 경고로 남겨야 나중에 요약이
-    이상할 때 순서가 어긋났을 가능성을 짚을 수 있다.
-    """
-    if 0 <= offset_ms <= limit_ms:
-        return offset_ms, None
-    return 0, f"시작 지연 {offset_ms}ms 가 범위를 벗어나 0 으로 보았습니다"
-
-
 def merge(tracks: list[dict]) -> list[dict]:
     """트랙별 조각을 같은 시간축에 올려 시간순 한 줄로 세운다.
 
@@ -120,8 +106,8 @@ def merge(tracks: list[dict]) -> list[dict]:
     rows = [
         {
             "speaker": track["speaker"],
-            "startMs": round(piece["start"] * 1000) + track["offsetMs"],
-            "endMs": round(piece["end"] * 1000) + track["offsetMs"],
+            "startMs": round(piece["start"] * 1000),
+            "endMs": round(piece["end"] * 1000),
             "text": piece["text"],
         }
         for track in tracks
@@ -135,10 +121,6 @@ def merge(tracks: list[dict]) -> list[dict]:
             "startMs": row["startMs"],
             "endMs": row["endMs"],
             "rawText": row["text"],
-            # 표기 정리는 아직 하지 않는다. 요약이 이 필드를 읽으므로 비워 둘 수는 없다.
-            # 숫자는 모델이 알아서 바꾸고(「오백」→500) 영어 고유명사만 남는데, 그 사전은
-            # 요약이 실제로 용어를 놓치는 것을 본 뒤에 만든다.
-            "normalizedText": row["text"],
         }
         for index, row in enumerate(rows)
     ]
@@ -188,7 +170,7 @@ def transcribe_track(model, track: Track, gap_seconds: float = SPLIT_GAP_SECONDS
     모델에 들어간다. 다만 VAD 만으로 환각이 막히지는 않는다 — 그건 위 상수가 맡는다.
     """
     try:
-        segments, info = model.transcribe(
+        segments, _ = model.transcribe(
             track.path,
             language="ko",
             beam_size=5,
@@ -205,15 +187,7 @@ def transcribe_track(model, track: Track, gap_seconds: float = SPLIT_GAP_SECONDS
             raise GmsUnavailableError(f"{track.path} 를 전사하다 GPU 가 멈췄습니다: {error}") from error
         raise UnusableInputError(f"{track.path} 를 읽지 못했습니다: {error}") from error
 
-    limit_ms = round(info.duration * 1000)
-    offset_ms, warning = clamp_offset(track.offset_ms, limit_ms)
-    return {
-        "speaker": track.speaker,
-        "offsetMs": offset_ms,
-        "durationMs": limit_ms,
-        "pieces": pieces,
-        "warning": None if warning is None else f"{track.speaker}: {warning}",
-    }
+    return {"speaker": track.speaker, "pieces": pieces}
 
 
 def transcribe_session(
@@ -239,10 +213,7 @@ def transcribe_session(
     if model is None:
         model = load_model(model_name, device, compute_type or _default_compute(device))
     done = [transcribe_track(model, track, gap_seconds) for track in tracks]
-    return {
-        "utterances": merge(done),
-        "warnings": [row["warning"] for row in done if row["warning"]],
-    }
+    return {"utterances": merge(done)}
 
 
 def _default_compute(device: str) -> str:

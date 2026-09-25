@@ -122,7 +122,7 @@ Copy-Item ai\worker\.env.example ai\worker\.env
 
 | 구분 | 내용 |
 | --- | --- |
-| 입력 | 발화마다 `utteranceIndex` `speaker`(`CLIENT`·`DEVELOPER`) `rawText` `normalizedText` + 기존 요구사항 `issueId` `title` |
+| 입력 | 발화마다 `utteranceIndex` `speaker`(`CLIENT`·`DEVELOPER`) `rawText` + 기존 요구사항 `issueId` `title` |
 | 출력 | `discussed` `decided` `nextActions` `changes` 네 배열. 항목마다 `title` `detail` `evidenceUtteranceIndexes` `reviewRequired` |
 | 변경 후보 | `changes`는 위 네 개에 더해 `kind`(`UPDATE`·`ADD`)와 `issueId`를 갖는다. `UPDATE`는 입력으로 받은 요구사항 안에서만 고른다 |
 | 근거 검증 | 목록이 비지 않고, 모두 `0 <= index < 발화 수`의 정수이며, 한 항목 안에서 중복되지 않아야 한다 |
@@ -156,10 +156,11 @@ Copy-Item ai\worker\.env.example ai\worker\.env
 
 | 구분 | 내용 |
 | --- | --- |
-| 받아 오는 것 | 세션 번호, 임대 표, 트랙마다 화자·녹음 읽기 주소·시작 지연 |
+| 받아 오는 것 | 세션 번호, 트랙마다 화자·녹음 읽기 주소 |
 | 녹음 | 읽기 주소로 저장소에서 직접 받는다. 전사가 끝나면 지운다 |
 | 올리는 것 | `transcribe_session()` 결과 그대로. 실패면 `TRANSCRIBER_UNAVAILABLE`(다시 받아 감)·`AUDIO_UNUSABLE`(사람이 봄) |
 | 멈추는 때 | 토큰을 거절당했거나 모델을 올리지 못했을 때. 다시 물어도 같다 |
+| 시각 | 두 녹음은 통화가 처음 붙은 순간에 함께 켜지므로 같은 시각에 시작한 것으로 보고 합친다 |
 
 `ai/worker/.env` 에 두 값을 더 넣는다. **토큰을 커밋하지 않는다.**
 
@@ -303,8 +304,7 @@ CER는 두 전사에서 공백·구두점 등
 나왔다. 의미가 뒤집히는 오류이고 비용 범위를 다투는 자리다. **전사가 원문을 보장하지 못하므로
 요약은 사람이 확인해야 한다.** 「깃허브」(기터브·키터브)와 「키 폐기」(키팩)도 양쪽 다 틀렸다.
 
-숫자는 양쪽 다 알아서 바꾼다 — 「오백」→`500`, 「사십만 원」→`40만원`. 표기를 정리하는 일에서
-숫자는 뺄 수 있고 영어 고유명사만 남는다.
+숫자는 양쪽 다 알아서 바꾼다 — 「오백」→`500`, 「사십만 원」→`40만원`.
 
 이 비교는 합성 음성이라 사람 목소리보다 깨끗하다. 정확도는 실제 상담에서 이보다 나쁠 수 있다.
 
