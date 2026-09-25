@@ -44,7 +44,8 @@ Service 가 부르는 HTTP 경계다. 아래 모듈들을 경로 뒤에 붙여 �
 저장되지 않는다. 실제 `issueId` 조회·소유권 확인과 저장은 Service 담당 범위다.
 
 GMS 안내의 OpenAI Chat Completions 경로를 사용한다. 초기 시험 모델은 비용이 낮은
-`gpt-4.1-nano`다. `ai/worker/.env.example`을 `ai/worker/.env`로 복사하고 본인의
+`gpt-4.1-nano`다. **컨설팅 요약만 `gpt-5-mini`를 쓴다** — nano 는 없는 요구사항 번호를 지어내 요약이 절반쯤
+실패했다. 고른 근거는 `consulting_summary.py` 의 `SUMMARY_MODEL` 주석에 있다. `ai/worker/.env.example`을 `ai/worker/.env`로 복사하고 본인의
 `GMS_API_KEY`를 입력한다. `.env`는 Git에서 제외된다. 키를 채팅·코드·로그에 남기지 않는다.
 `GMS_API_BASE_URL`, `GMS_MODEL`은 같은 파일이나 환경변수로 바꿀 수 있으며 환경변수가
 우선한다.

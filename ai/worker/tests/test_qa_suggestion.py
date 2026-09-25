@@ -112,6 +112,28 @@ class QaSuggestionTest(unittest.TestCase):
                 client.complete([{"role": "user", "content": "test"}], max_tokens=16)
         self.assertIn("잘렸습니다", str(caught.exception))
 
+    def test_출력_한도는_모든_모델이_받는_이름으로_싣는다(self):
+        """gpt-5 계열은 `max_tokens` 를 400 으로 거절한다."""
+        client = GmsChatClient({"GMS_API_KEY": "test-key", "GMS_MODEL": "gpt-4.1-nano"})
+        body = {"choices": [{"finish_reason": "stop", "message": {"content": "{}"}}]}
+        with patch("qa_suggestion.urlopen", return_value=FakeResponse(body)) as urlopen:
+            client.complete([{"role": "user", "content": "test"}], max_tokens=16)
+
+        sent = json.loads(urlopen.call_args.args[0].data)
+        self.assertEqual(sent["max_completion_tokens"], 16)
+        self.assertNotIn("max_tokens", sent)
+        self.assertEqual(sent["model"], "gpt-4.1-nano")
+        self.assertEqual(urlopen.call_args.kwargs["timeout"], 20)
+
+    def test_작업이_준_모델과_한도를_쓴다(self):
+        client = GmsChatClient({"GMS_API_KEY": "test-key", "GMS_MODEL": "gpt-4.1-nano"})
+        body = {"choices": [{"finish_reason": "stop", "message": {"content": "{}"}}]}
+        with patch("qa_suggestion.urlopen", return_value=FakeResponse(body)) as urlopen:
+            client.complete([{"role": "user", "content": "test"}], max_tokens=16, model="gpt-5-mini", timeout=120)
+
+        self.assertEqual(json.loads(urlopen.call_args.args[0].data)["model"], "gpt-5-mini")
+        self.assertEqual(urlopen.call_args.kwargs["timeout"], 120)
+
 
 if __name__ == "__main__":
     unittest.main()

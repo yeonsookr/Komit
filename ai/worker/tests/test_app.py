@@ -51,7 +51,7 @@ class FakeClient:
     def __init__(self, raw):
         self.raw = raw
 
-    def complete(self, messages, max_tokens=None):
+    def complete(self, messages, max_tokens=None, model=None, timeout=None):
         return self.raw
 
 
@@ -59,7 +59,7 @@ class FailingClient:
     def __init__(self, error):
         self.error = error
 
-    def complete(self, messages, max_tokens=None):
+    def complete(self, messages, max_tokens=None, model=None, timeout=None):
         raise self.error
 
 

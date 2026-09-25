@@ -160,7 +160,8 @@ Service는 재시도하지 않는다. AI 서비스 안에서 GMS 호출만 재�
 | --- | --- |
 | FE → Service | Service 기존 설정을 따른다 |
 | **Service → AI** | 연결 `3`초 / 읽기 `25`초. `app.ai.connect-timeout`·`app.ai.read-timeout`, 환경변수 `AI_CONNECT_TIMEOUT`·`AI_READ_TIMEOUT`. **실측 전 잠정값이다.** 읽기는 아래 AI → GMS 상한보다 길게 잡는다 — 먼저 끊으면 AI 가 가려낸 `502`·`503` 구분이 Service 에 닿지 못하고 전부 연결 실패로 뭉개진다 |
-| AI → GMS | `20`초 (`ai/worker/qa_suggestion.py` 현재 값) |
+| AI → GMS | `20`초 (`ai/worker/qa_suggestion.py` `DEFAULT_TIMEOUT_SECONDS`). **요약만 `120`초** (`consulting_summary.py` `SUMMARY_TIMEOUT_SECONDS`) — 추론 모델(`gpt-5-mini`)을 써서 대화 62줄에 최대 55초가 걸렸다 |
+| **Service → AI 요약** | 읽기 `150`초. `app.ai.summary-read-timeout`, 환경변수 `AI_SUMMARY_READ_TIMEOUT`. 위 요약 한도보다 길게 잡는다. 요약은 전사가 남은 뒤 뒤에서 돌아 기다리는 사용자 요청이 없다 |
 
 **Service → AI 값을 코드에 박지 않는다.** 실측 전까지는 설정값으로 두고 기본값만 잡는다.
 

@@ -7,6 +7,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from consulting_summary import (  # noqa: E402
     MAX_OUTPUT_TOKENS,
+    SUMMARY_MODEL,
+    SUMMARY_TIMEOUT_SECONDS,
     InvalidGmsResponseError,
     build_messages,
     parse_summary,
@@ -51,9 +53,13 @@ class FakeClient:
     def __init__(self, raw):
         self.raw = raw
         self.max_tokens = None
+        self.model = None
+        self.timeout = None
 
-    def complete(self, messages, max_tokens=None):
+    def complete(self, messages, max_tokens=None, model=None, timeout=None):
         self.max_tokens = max_tokens
+        self.model = model
+        self.timeout = timeout
         return self.raw
 
 
@@ -127,6 +133,12 @@ class ConsultingSummaryTest(unittest.TestCase):
         client = FakeClient(summary())
         summarize(UTTERANCES, client)
         self.assertEqual(client.max_tokens, MAX_OUTPUT_TOKENS)
+
+    def test_요약은_따로_고른_모델과_한도로_부른다(self):
+        """확인 문장·계약 초안과 다른 모델을 쓴다. 추론 모델이라 오래 걸려 한도도 길다."""
+        client = FakeClient(summary())
+        summarize(UTTERANCES, client)
+        self.assertEqual((client.model, client.timeout), (SUMMARY_MODEL, SUMMARY_TIMEOUT_SECONDS))
 
     def test_요약은_근거_검증까지_거쳐_돌아온다(self):
         raw = summary(
