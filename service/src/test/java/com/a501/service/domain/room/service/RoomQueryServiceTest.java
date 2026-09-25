@@ -9,7 +9,9 @@ import static org.mockito.Mockito.when;
 
 import com.a501.service.domain.developer.service.DeveloperLookupService;
 import com.a501.service.domain.project.service.ProjectQueryService;
+import com.a501.service.domain.room.dto.ContractDraftRoomView;
 import com.a501.service.domain.room.dto.MyRoomView;
+import com.a501.service.domain.room.dto.RoomParties;
 import com.a501.service.domain.room.entity.Room;
 import com.a501.service.domain.room.repository.RoomRepository;
 import java.util.List;
@@ -25,17 +27,20 @@ class RoomQueryServiceTest {
     private static final Integer CLIENT_ID = 7;
     private static final Integer DEVELOPER_ID = 9;
     private static final Integer DEVELOPER_USER_ID = 41;
+    private static final Integer INQUIRY_ROOM_ID = 91;
+    private static final String INQUIRY_CHAT_REF_ID = "room-91-chat";
 
     private final RoomRepository roomRepository = mock(RoomRepository.class);
     private final ProjectQueryService projectQueryService = mock(ProjectQueryService.class);
     private final DeveloperLookupService developerLookupService = mock(DeveloperLookupService.class);
+    private Room room;
 
     private final RoomQueryService service =
             new RoomQueryService(roomRepository, projectQueryService, developerLookupService);
 
     @BeforeEach
     void setUp() {
-        Room room = BeanUtils.instantiateClass(Room.class);
+        room = BeanUtils.instantiateClass(Room.class);
         ReflectionTestUtils.setField(room, "id", ROOM_ID);
         ReflectionTestUtils.setField(room, "projectId", PROJECT_ID);
         ReflectionTestUtils.setField(room, "developerId", DEVELOPER_ID);
@@ -87,6 +92,34 @@ class RoomQueryServiceTest {
         when(developerLookupService.findUserId(DEVELOPER_ID)).thenReturn(Optional.empty());
 
         assertThat(service.findParties(ROOM_ID)).isEmpty();
+    }
+
+    @Test
+    void 계약_초안용_새_방과_원래_상담방을_함께_돌려준다() {
+        Room inquiry = room(INQUIRY_ROOM_ID, PROJECT_ID, DEVELOPER_ID);
+        ReflectionTestUtils.setField(inquiry, "chatRefId", INQUIRY_CHAT_REF_ID);
+        ReflectionTestUtils.setField(room, "type", "CONSULTING");
+        when(roomRepository.findByConvertedRoomIdAndDeletedFalse(ROOM_ID))
+                .thenReturn(Optional.of(inquiry));
+
+        ContractDraftRoomView found = service.findContractDraftRoom(ROOM_ID).orElseThrow();
+
+        assertThat(found.roomId()).isEqualTo(ROOM_ID);
+        assertThat(found.targetType()).isEqualTo("CONSULTING");
+        assertThat(found.inquiryChatRefId()).isEqualTo(INQUIRY_CHAT_REF_ID);
+        assertThat(found.parties()).isEqualTo(new RoomParties(CLIENT_ID, DEVELOPER_USER_ID));
+    }
+
+    @Test
+    void 전환_출처가_없으면_초안용_조회에서_채팅_참조만_비운다() {
+        ReflectionTestUtils.setField(room, "type", "INQUIRY");
+        when(roomRepository.findByConvertedRoomIdAndDeletedFalse(ROOM_ID))
+                .thenReturn(Optional.empty());
+
+        ContractDraftRoomView found = service.findContractDraftRoom(ROOM_ID).orElseThrow();
+
+        assertThat(found.inquiryChatRefId()).isNull();
+        assertThat(found.targetType()).isEqualTo("INQUIRY");
     }
 
     /** 내가 맡긴 프로젝트의 방과 개발자로 들어간 방을 함께, 방마다 내 자리를 붙여 돌려준다. (R-ACC-05) */

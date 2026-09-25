@@ -12,6 +12,9 @@ import org.springframework.data.repository.query.Param;
 public interface RoomRepository extends JpaRepository<Room, Integer> {
     Optional<Room> findByIdAndDeletedFalse(Integer id);
 
+    /** 갈래를 정해 열린 방에서, 그 방을 만든 원래 무료 상담방을 찾습니다. */
+    Optional<Room> findByConvertedRoomIdAndDeletedFalse(Integer convertedRoomId);
+
     @Query("""
             select room.projectId as projectId, count(room.id) as roomCount
             from Room room

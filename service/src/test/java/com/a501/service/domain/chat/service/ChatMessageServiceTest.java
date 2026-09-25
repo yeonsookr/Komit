@@ -206,6 +206,20 @@ class ChatMessageServiceTest {
                 .doesNotThrowAnyException();
     }
 
+    @Test
+    @DisplayName("AI용 전체 메시지는 저장소의 오래된 순서를 유지한다")
+    void readsAllChronologicalForAi() {
+        when(chatMessageRepository.findByChatRefIdOrderBySentAtAscIdAsc(ROOM_CHAT))
+                .thenReturn(List.of(message("첫 번째", 0), message("두 번째", 1)));
+
+        var found = chatMessageService.findAllChronological(ROOM_CHAT);
+
+        assertThat(found).extracting(item -> item.content())
+                .containsExactly("첫 번째", "두 번째");
+        assertThat(found).extracting(item -> item.senderUserId())
+                .containsOnly(CLIENT_ID);
+    }
+
     private void givenRecent(ChatMessage... messages) {
         when(chatMessageRepository.findByChatRefIdOrderBySentAtDescIdDesc(eq(ROOM_CHAT), any()))
                 .thenReturn(new ArrayList<>(List.of(messages)));
