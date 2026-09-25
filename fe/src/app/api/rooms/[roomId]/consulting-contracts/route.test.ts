@@ -19,6 +19,7 @@ const request = (message: string) =>
       scheduledAt: "2026-12-29T14:00:00+09:00",
       durationMinutes: 30,
       price: 50_000,
+      detail: "재현 조건과 로그를 함께 확인합니다.",
       message,
     }),
   });
@@ -34,7 +35,10 @@ describe("POST /api/rooms/[roomId]/consulting-contracts", () => {
     expect(response.status).toBe(201);
     expect(writeConsultingContract).toHaveBeenCalledWith(
       92,
-      expect.objectContaining({ message: "가".repeat(300) }),
+      expect.objectContaining({
+        detail: "재현 조건과 로그를 함께 확인합니다.",
+        message: "가".repeat(300),
+      }),
     );
   });
 

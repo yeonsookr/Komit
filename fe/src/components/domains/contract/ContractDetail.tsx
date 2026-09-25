@@ -6,6 +6,7 @@ import {
   billableMilestones,
   hasSigned,
   isSignedByBoth,
+  isConsultingDraft,
   lastCounterpartMessage,
   totalWorkDays,
 } from "@/lib/contract";
@@ -67,6 +68,26 @@ export function ContractDetail({
               className={buttonClass()}
             >
               계약서 작성하기
+            </Link>
+          ) : undefined
+        }
+      />
+    );
+  }
+
+  if (isConsultingDraft(contract)) {
+    return (
+      <EmptyState
+        title="계약서 초안을 작성하고 있습니다"
+        description={
+          received
+            ? "AI가 정리한 상담 내용을 확인하고 일정과 금액을 채워주세요."
+            : "개발자가 상담 내용을 확인하고 일정과 금액을 정하고 있습니다."
+        }
+        action={
+          received ? (
+            <Link href={ROUTES.roomContractNew(roomId)} className={buttonClass()}>
+              계약서 작성 계속하기
             </Link>
           ) : undefined
         }
