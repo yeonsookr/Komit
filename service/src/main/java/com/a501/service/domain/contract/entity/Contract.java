@@ -18,6 +18,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Contract extends SoftDeleteEntity {
     private static final String NEGOTIATING = "NEGOTIATING";
+    private static final String SIGNED = "SIGNED";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -70,6 +71,37 @@ public class Contract extends SoftDeleteEntity {
     /** 한쪽이라도 서명했는지. 서명 뒤에는 고칠 수 없습니다. (`R-CON-02`) */
     public boolean isSigned() {
         return clientSignatureId != null || developerSignatureId != null;
+    }
+
+    /** 이 사람이 이미 서명했는지. 같은 사람이 두 번 서명할 수는 없습니다. */
+    public boolean isSignedBy(boolean client) {
+        return client ? clientSignatureId != null : developerSignatureId != null;
+    }
+
+    /**
+     * 한쪽의 서명을 붙입니다.
+     *
+     * <p><b>양쪽이 모두 서명해야 계약이 성립합니다.</b> 한쪽만 서명한 동안에는 협의중으로 남습니다.
+     * (`R-CON-01`)
+     *
+     * @param contractText 양쪽이 서명을 마친 그 시점의 계약 문구. 아직 한쪽만 서명했으면 비워 둔다
+     */
+    public void sign(boolean client, Integer signatureId, String contractText) {
+        if (client) {
+            this.clientSignatureId = Objects.requireNonNull(signatureId, "signatureId");
+        } else {
+            this.developerSignatureId = Objects.requireNonNull(signatureId, "signatureId");
+        }
+        if (clientSignatureId != null && developerSignatureId != null) {
+            this.status = SIGNED;
+            // 그때 합의한 글을 그대로 굳힌다. 나중에 양식이 바뀌어도 이 계약은 이 글이다.
+            this.contractText = contractText;
+        }
+    }
+
+    /** 양쪽이 모두 서명해 계약이 성립했는지. */
+    public boolean isConcluded() {
+        return SIGNED.equals(status);
     }
 
     public enum ContractType {

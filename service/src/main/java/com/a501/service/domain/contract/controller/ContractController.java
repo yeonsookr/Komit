@@ -2,19 +2,24 @@ package com.a501.service.domain.contract.controller;
 
 import com.a501.service.common.security.AuthenticatedUser;
 import com.a501.service.domain.contract.dto.request.AmendConsultingContractRequest;
+import com.a501.service.domain.contract.dto.request.SignContractRequest;
 import com.a501.service.domain.contract.dto.response.ContractResponse;
 import com.a501.service.domain.contract.service.ConsultingContractWriteService;
 import com.a501.service.domain.contract.service.ContractDetailService;
+import com.a501.service.domain.contract.service.ContractSignatureService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 @Tag(name = "계약", description = "계약서 조회")
@@ -24,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ContractController {
     private final ContractDetailService contractDetailService;
     private final ConsultingContractWriteService consultingContractWriteService;
+    private final ContractSignatureService contractSignatureService;
 
     @Operation(
             summary = "계약서 조회",
@@ -62,5 +68,32 @@ public class ContractController {
             @PathVariable Integer contractId,
             @Valid @RequestBody AmendConsultingContractRequest request) {
         return consultingContractWriteService.amend(contractId, user.userId(), request);
+    }
+
+    @Operation(
+            summary = "계약서 서명",
+            description =
+                    """
+                    서명판에 그린 서명을 올린다. 그림은 먼저 파일로 올려 받은 식별자를 보낸다. \
+                    서명판은 컨설팅과 개발이 같은 것을 쓴다.
+
+                    **양쪽이 모두 서명해야 계약이 성립한다.** 한쪽만 서명한 동안에는 협의중으로 \
+                    남는다. 양쪽이 마치면 그 시점의 계약 문구를 contractText 에 그대로 굳힌다 — \
+                    나중에 양식이 바뀌어도 이 계약은 그때 합의한 글이다.
+
+                    서명한 뒤에는 계약서를 고칠 수 없다.
+
+                    - 201: 서명했을 때. 상대가 아직이면 계약은 협의중으로 남는다
+                    - 401 UNAUTHORIZED: 로그인하지 않았을 때
+                    - 404 CONTRACT_NOT_FOUND: 없는 계약이거나 요청자가 그 계약의 당사자가 아닐 때
+                    - 409 ALREADY_SIGNED_BY_ME: 이미 내가 서명했을 때
+                    - 422 INVALID_REQUEST: signatureImageFileId 가 없을 때""")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PostMapping("/{contractId}/signatures")
+    ContractResponse signContract(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable Integer contractId,
+            @Valid @RequestBody SignContractRequest request) {
+        return contractSignatureService.sign(contractId, user.userId(), request);
     }
 }
