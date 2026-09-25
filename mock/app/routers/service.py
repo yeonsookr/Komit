@@ -5176,6 +5176,11 @@ class ConsultingAgreementResponse(BaseModel):
         ),
         examples=["회원탈퇴 경로와 결제 간헐 실패를 함께 봅니다"],
     )
+    detail: str | None = Field(
+        default=None,
+        description="합의한 상담 내용의 상세 설명. 적지 않았으면 null이다.",
+        examples=["회원탈퇴 처리 흐름과 결제 실패 재현 방법을 화면 공유로 봅니다."],
+    )
     sessions: list[ConsultingSessionResponse] = Field(
         description="이 계약에 속한 세션.",
     )
@@ -5212,10 +5217,6 @@ class ContractResponse(BaseModel):
     development: "DevelopmentAgreementResponse | None" = Field(
         default=None,
         description="개발 계약일 때의 내용. 컨설팅 계약이면 null이다.",
-    )
-    detail: str | None = Field(
-        description="계약서의 상세 설명. 적지 않았으면 null이다.",
-        examples=["회원탈퇴 처리 흐름과 결제 실패 재현 방법을 화면 공유로 봅니다."],
     )
     clientSignature: SignatureResponse | None = Field(
         description="의뢰인 서명. 아직 없으면 null이다.",
@@ -5530,10 +5531,10 @@ CONSULTING_CONTRACT_EXAMPLE = {
         "status": "SIGNED",
         "totalAmount": 50000,
         "topic": "회원탈퇴 경로와 결제 간헐 실패를 함께 봅니다",
+        "detail": "회원탈퇴 처리 흐름과 결제 실패 재현 방법을 화면 공유로 봅니다.",
         "sessions": [SESSION_EXAMPLE],
     },
     "development": None,
-    "detail": "회원탈퇴 처리 흐름과 결제 실패 재현 방법을 화면 공유로 봅니다.",
     "clientSignature": None,
     "developerSignature": None,
     "messages": [
@@ -5695,10 +5696,10 @@ def write_consulting_contract(
             "consulting": {
                 **CONSULTING_CONTRACT_EXAMPLE["consulting"],
                 "topic": request.topic,
+                "detail": request.detail,
                 "totalAmount": request.price,
                 "sessions": [session],
             },
-            "detail": request.detail,
         }
     )
 
@@ -6948,7 +6949,6 @@ DEV_CONTRACT_EXAMPLE = {
         "milestones": MILESTONES,
         "deliverables": DELIVERABLES,
     },
-    "detail": None,
     "clientSignature": {
         "userId": 12,
         "isSigned": True,
@@ -7035,7 +7035,6 @@ def _blank_developer_input(draft: dict) -> dict:
     가계약 예시를 그대로 쓰면 이 값들이 차 있어 「AI가 금액까지 정했다」로 읽힌다.
     남기는 것은 AI가 만드는 것뿐이다 — 작업 이름, 확인 문장, 맡기로 한 요구사항, 다룰 항목.
     """
-    draft["detail"] = None
     draft["messages"] = []
     development = draft.get("development")
     if development is not None:

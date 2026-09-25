@@ -95,6 +95,9 @@ AI는 채팅 저장소를 직접 조회하지 않는다. 채팅 담당 영역이
 AI는 채팅에 등장한 일정·시간·금액을 자동 확정하지 않는다. 이 값은 개발자가 계약서를
 작성하면서 직접 입력한다.
 
+저장·조회할 때 `detail`은 계약 공통 필드가 아니라 컨설팅 합의의 내용이므로
+`ContractResponse.consulting.detail`에 둔다. 개발 계약 응답에는 이 필드가 없다.
+
 ## 5. 개발 계약 초안
 
 기존 `WriteDevelopmentContractRequest`를 유지한다.

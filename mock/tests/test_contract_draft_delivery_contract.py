@@ -12,8 +12,10 @@ from app.routers.service import (
     DRAFT_DEVELOPMENT_CONTRACT_EXAMPLE,
     ROOMS,
     ContractResponse,
+    WriteConsultingContractRequest,
     draft_contract,
     get_contract,
+    write_consulting_contract,
 )
 
 # 갈래를 정하기 전의 무료 상담방. 초안을 만들 수 없다.
@@ -55,7 +57,10 @@ class ContractDraftDeliveryTest(unittest.TestCase):
         self.assertNotEqual(result.consulting.topic, "")
         self.assertEqual(result.consulting.totalAmount, 0)
         self.assertEqual(result.consulting.sessions, [])
-        self.assertIsNone(result.detail)
+        self.assertEqual(
+            result.consulting.detail,
+            "회원탈퇴 처리 흐름과 결제 실패 재현 방법을 화면 공유로 봅니다.",
+        )
         self.assertEqual(result.messages, [])
         self.assertIsNone(result.contractText)
 
@@ -77,7 +82,6 @@ class ContractDraftDeliveryTest(unittest.TestCase):
         self.assertEqual(development.freeRepairDays, 0)
         self.assertEqual(development.totalAmount, 0)
         self.assertEqual(development.deliverables, [])
-        self.assertIsNone(result.detail)
         self.assertEqual(result.messages, [])
 
     def test_sent_contract_keeps_the_amounts_the_developer_filled(self) -> None:
@@ -87,6 +91,23 @@ class ContractDraftDeliveryTest(unittest.TestCase):
         self.assertIsInstance(sent, ContractResponse)
         self.assertNotEqual(sent.development.totalAmount, 0)
         self.assertIsNotNone(sent.development.startDate)
+
+    def test_written_consulting_detail_stays_in_the_consulting_branch(self) -> None:
+        result = write_consulting_contract(
+            CONVERTED_CONSULTING_ROOM_ID,
+            WriteConsultingContractRequest(
+                topic="회원탈퇴 경로를 봅니다",
+                scheduledAt="2026-08-29T14:00:00+09:00",
+                durationMinutes=30,
+                price=50000,
+                detail="탈퇴 데이터 보관 방법을 확인합니다",
+                message=None,
+            ),
+        )
+
+        self.assertIsInstance(result, ContractResponse)
+        self.assertEqual(result.consulting.detail, "탈퇴 데이터 보관 방법을 확인합니다")
+        self.assertNotIn("detail", result.model_dump().keys())
 
     def test_same_room_always_gets_the_same_draft(self) -> None:
         """방마다 한 번만 만들어 둔다. 다시 불러도 문장이 달라지지 않는다."""

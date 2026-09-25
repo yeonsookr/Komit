@@ -104,7 +104,8 @@ public class ConsultingContractWriteService {
         Contract contract =
                 contractRepository.save(Contract.of(roomId, Contract.ContractType.CONSULTING));
         ConsultingAgreement agreement = consultingAgreementRepository.save(
-                ConsultingAgreement.of(contract.getId(), request.topic(), request.price()));
+                ConsultingAgreement.of(
+                        contract.getId(), request.topic(), request.price(), request.detail()));
 
         ConsultingSession session = consultingSessionRepository.save(ConsultingSession.of(
                 agreement.getId(), request.price(), request.durationMinutes()));
@@ -155,7 +156,9 @@ public class ConsultingContractWriteService {
 
         int price = request.price() == null ? session.getPrice() : request.price();
         agreement.rewrite(
-                request.topic() == null ? agreement.getTopic() : request.topic(), price);
+                request.topic() == null ? agreement.getTopic() : request.topic(),
+                price,
+                request.detail() == null ? agreement.getDetail() : request.detail());
         session.rewrite(
                 price,
                 request.durationMinutes() == null
