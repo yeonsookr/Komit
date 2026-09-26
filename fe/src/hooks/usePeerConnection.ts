@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { requestScreen, stopStream } from "@/lib/screenShare";
 import type {
   RtcDescriptionPayload,
   RtcIceCandidatePayload,
@@ -9,8 +10,12 @@ import type {
   RtcSignalType,
 } from "@/types/realtime";
 
-const MEDIA: MediaStreamConstraints = {
+/** 통화는 마이크만으로 엽니다. 영상은 공유한 화면이 기본이고 카메라는 켤 때만 씁니다. */
+const MIC: MediaStreamConstraints = {
   audio: { echoCancellation: true, noiseSuppression: true },
+};
+
+const CAMERA: MediaStreamConstraints = {
   video: { width: { ideal: 1280 }, height: { ideal: 720 } },
 };
 
@@ -69,7 +74,7 @@ export type CallStatus =
   | "ENDED";
 
 export interface UsePeerConnectionOptions {
-  /** 거짓이면 카메라도 켜지 않습니다. 양쪽이 동의하기 전에는 켜면 안 됩니다. (R-CON-17) */
+  /** 거짓이면 마이크도 켜지 않습니다. 양쪽이 동의하기 전에는 켜면 안 됩니다. (R-CON-17) */
   enabled: boolean;
   /** 동시에 제안했을 때 자기 제안을 버리고 상대 제안을 받을 쪽인지. */
   polite: boolean;
@@ -81,6 +86,12 @@ export interface UsePeerConnectionOptions {
    * 미리 만들어 둘 수 없습니다 (`R-CON-19`).
    */
   loadIceServers: () => Promise<RTCIceServer[]>;
+  /**
+   * 방에서 입장하며 연 화면 고르기. 고르는 대로 영상 자리에 올립니다.
+   *
+   * 고르기를 기다리지 않고 통화를 엽니다. 기다리면 그만큼 연결과 녹음 시작이 밀립니다.
+   */
+  initialScreen?: () => Promise<MediaStream | null> | null;
 }
 
 export interface PeerConnection {
@@ -89,11 +100,17 @@ export interface PeerConnection {
   remoteStream: MediaStream | null;
   /** 공유 중인 화면. 공유하지 않을 때는 `null` 입니다. */
   screenStream: MediaStream | null;
+  /** 켠 카메라. 영상 자리는 하나라 화면과 카메라 중 하나만 보냅니다. */
+  cameraStream: MediaStream | null;
+  /** 영상 자리가 생겼는지. 그 전에는 화면도 카메라도 올릴 곳이 없습니다. */
+  videoReady: boolean;
   micOn: boolean;
   cameraOn: boolean;
   toggleMic: () => void;
-  toggleCamera: () => void;
-  toggleScreenShare: () => Promise<void>;
+  toggleCamera: () => Promise<void>;
+  /** 화면을 고릅니다. 공유 중이면 고른 화면으로 바꿉니다. */
+  shareScreen: () => Promise<void>;
+  stopScreenShare: () => Promise<void>;
   accept: (type: RtcSignalType, payload: unknown) => void;
   /** 상대 연결이 끊겼습니다. 돌아올 시간을 주고 그때까지 안 오면 접습니다. */
   peerAway: () => void;
@@ -115,18 +132,19 @@ export function usePeerConnection({
   polite,
   send,
   loadIceServers,
+  initialScreen,
 }: UsePeerConnectionOptions): PeerConnection {
   const [status, setStatus] = React.useState<CallStatus>("IDLE");
   const [localStream, setLocalStream] = React.useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = React.useState<MediaStream | null>(null);
   const [micOn, setMicOn] = React.useState(true);
-  const [cameraOn, setCameraOn] = React.useState(true);
   const [screenStream, setScreenStream] = React.useState<MediaStream | null>(null);
+  const [cameraStream, setCameraStream] = React.useState<MediaStream | null>(null);
+  const [videoReady, setVideoReady] = React.useState(false);
 
   const peerRef = React.useRef<RTCPeerConnection | null>(null);
   const localRef = React.useRef<MediaStream | null>(null);
   const micOnRef = React.useRef(true);
-  const cameraOnRef = React.useRef(true);
   const activeNegotiationId = React.useRef<RtcNegotiationId | null>(null);
   const retiredNegotiationIds = React.useRef(new Set<RtcNegotiationId>());
   const acknowledgedReadyIds = React.useRef(new Set<RtcNegotiationId>());
@@ -141,7 +159,7 @@ export function usePeerConnection({
   const peerIsAway = React.useRef(false);
   const videoSender = React.useRef<RTCRtpSender | null>(null);
   const screenRef = React.useRef<MediaStream | null>(null);
-  const cameraTrack = React.useRef<MediaStreamTrack | null>(null);
+  const cameraRef = React.useRef<MediaStream | null>(null);
 
   const sendRef = React.useRef(send);
   React.useEffect(() => {
@@ -157,6 +175,23 @@ export function usePeerConnection({
   React.useEffect(() => {
     loadIceServersRef.current = loadIceServers;
   }, [loadIceServers]);
+
+  const initialScreenRef = React.useRef(initialScreen);
+  React.useEffect(() => {
+    initialScreenRef.current = initialScreen;
+  }, [initialScreen]);
+
+  const releaseScreen = React.useCallback(() => {
+    stopStream(screenRef.current);
+    screenRef.current = null;
+    setScreenStream(null);
+  }, []);
+
+  const releaseCamera = React.useCallback(() => {
+    stopStream(cameraRef.current);
+    cameraRef.current = null;
+    setCameraStream(null);
+  }, []);
 
   const replaceNegotiation = React.useCallback((nextId: RtcNegotiationId) => {
     const previousId = activeNegotiationId.current;
@@ -232,11 +267,10 @@ export function usePeerConnection({
 
   const teardown = React.useCallback(() => {
     stopWaitingForPeer();
-    screenRef.current?.getTracks().forEach((track) => track.stop());
-    screenRef.current = null;
-    cameraTrack.current = null;
+    releaseScreen();
+    releaseCamera();
     videoSender.current = null;
-    setScreenStream(null);
+    setVideoReady(false);
     localRef.current?.getTracks().forEach((track) => track.stop());
     localRef.current = null;
     peerRef.current?.close();
@@ -251,7 +285,42 @@ export function usePeerConnection({
     signalingQueue.current = Promise.resolve();
     setLocalStream(null);
     setRemoteStream(null);
-  }, [stopWaitingForPeer]);
+  }, [releaseCamera, releaseScreen, stopWaitingForPeer]);
+
+  const stopScreenShare = React.useCallback(async () => {
+    if (!screenRef.current) return;
+    releaseScreen();
+    await videoSender.current?.replaceTrack(null);
+  }, [releaseScreen]);
+
+  /**
+   * 고른 화면을 영상 자리에 올립니다. 이미 공유 중이면 새 화면으로 바꾼 뒤 옛 화면을 끊습니다.
+   *
+   * 보내는 자리의 트랙만 갈아 끼우므로 다시 협상하지 않습니다.
+   */
+  const showScreen = React.useCallback(
+    async (display: MediaStream) => {
+      const sender = videoSender.current;
+      const track = display.getVideoTracks()[0];
+      if (!sender || !track || track.readyState !== "live") {
+        stopStream(display);
+        return;
+      }
+
+      const previous = screenRef.current;
+      releaseCamera();
+      screenRef.current = display;
+      await sender.replaceTrack(track);
+      setScreenStream(display);
+      if (previous !== display) stopStream(previous);
+
+      // 브라우저가 띄우는 「공유 중지」로 끝낼 수도 있습니다. 그 길도 같은 자리로 모읍니다.
+      track.addEventListener("ended", () => {
+        if (screenRef.current === display) void stopScreenShare();
+      });
+    },
+    [releaseCamera, stopScreenShare],
+  );
 
   /*
     상대 연결이 끊겼다는 서버 알림. **나갔다는 뜻은 아닙니다** — 회선이 잠깐 튀어도 옵니다.
@@ -287,7 +356,7 @@ export function usePeerConnection({
     const start = async () => {
       let stream: MediaStream;
       try {
-        stream = await navigator.mediaDevices.getUserMedia(MEDIA);
+        stream = await navigator.mediaDevices.getUserMedia(MIC);
       } catch {
         if (alive) setStatus("PERMISSION_DENIED");
         return;
@@ -299,7 +368,6 @@ export function usePeerConnection({
       }
 
       stream.getAudioTracks().forEach((track) => (track.enabled = micOnRef.current));
-      stream.getVideoTracks().forEach((track) => (track.enabled = cameraOnRef.current));
       localRef.current = stream;
       setLocalStream(stream);
 
@@ -320,10 +388,24 @@ export function usePeerConnection({
       const initialId = createRtcNegotiationId();
       replaceNegotiation(initialId);
 
-      stream.getTracks().forEach((track) => {
-        const sender = peer.addTrack(track, stream);
-        // 화면 공유는 이 자리의 트랙만 갈아 끼웁니다. 그래야 다시 협상하지 않습니다.
-        if (track.kind === "video") videoSender.current = sender;
+      stream.getAudioTracks().forEach((track) => peer.addTrack(track, stream));
+      /*
+        영상 자리는 트랙 없이 먼저 만듭니다. 화면이든 카메라든 이 자리의 트랙만 갈아 끼우므로
+        다시 협상하지 않습니다. 소리와 같은 스트림으로 묶어야 상대가 한 스트림으로 받습니다.
+      */
+      videoSender.current = peer.addTransceiver("video", {
+        direction: "sendrecv",
+        streams: [stream],
+      }).sender;
+      setVideoReady(true);
+
+      void initialScreenRef.current?.()?.then((screen) => {
+        if (!screen) return;
+        if (!alive || peerRef.current !== peer) {
+          stopStream(screen);
+          return;
+        }
+        void showScreen(screen);
       });
 
       peer.ontrack = (event) => {
@@ -370,7 +452,7 @@ export function usePeerConnection({
       teardown();
       setStatus("ENDED");
     };
-  }, [enabled, replaceNegotiation, requestNegotiation, teardown]);
+  }, [enabled, replaceNegotiation, requestNegotiation, showScreen, teardown]);
 
   const acceptPeerReady = React.useCallback(
     async (peer: RTCPeerConnection, id: RtcNegotiationId) => {
@@ -538,67 +620,41 @@ export function usePeerConnection({
     setMicOn(next);
   }, []);
 
-  const toggleCamera = React.useCallback(() => {
-    const next = !cameraOnRef.current;
-    cameraOnRef.current = next;
-    localRef.current?.getVideoTracks().forEach((track) => (track.enabled = next));
-    setCameraOn(next);
-  }, []);
-
-  const stopScreenShare = React.useCallback(async () => {
-    const display = screenRef.current;
-    if (!display) return;
-
-    screenRef.current = null;
-    display.getTracks().forEach((track) => track.stop());
-    setScreenStream(null);
-
-    const camera = cameraTrack.current;
-    cameraTrack.current = null;
-    if (videoSender.current && camera) {
-      // 공유하는 동안 카메라 버튼을 눌렀을 수 있습니다. 돌아올 때 그 상태로 맞춥니다.
-      camera.enabled = cameraOnRef.current;
-      await videoSender.current.replaceTrack(camera);
-    }
-  }, []);
-
-  /**
-   * 화면 공유를 켜고 끕니다.
-   *
-   * 보내는 자리의 트랙만 갈아 끼우므로 다시 협상하지 않습니다. 상대는 SDP 를 한 번도
-   * 주고받지 않고 화면을 받습니다.
-   */
-  const toggleScreenShare = React.useCallback(async () => {
-    if (screenRef.current) {
-      await stopScreenShare();
+  /** 카메라를 켜고 끕니다. 켜면 공유 중인 화면 대신 카메라를 보냅니다. */
+  const toggleCamera = React.useCallback(async () => {
+    if (cameraRef.current) {
+      releaseCamera();
+      await videoSender.current?.replaceTrack(null);
       return;
     }
     const sender = videoSender.current;
     if (!sender) return;
 
-    let display: MediaStream;
+    let camera: MediaStream;
     try {
-      // 소리는 받지 않습니다. 녹음은 참가자마다 자기 마이크만 담습니다. (R-CON-14)
-      display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      camera = await navigator.mediaDevices.getUserMedia(CAMERA);
     } catch {
-      // 고르는 창에서 취소한 것입니다. 알릴 일이 아닙니다.
+      // 카메라를 막았거나 없는 것입니다. 화면 공유와 대화는 그대로 씁니다.
+      return;
+    }
+    const track = camera.getVideoTracks()[0];
+    // 권한을 묻는 사이 통화가 끝났으면 붙일 곳이 없습니다. 카메라를 켠 채 두지 않습니다.
+    if (!track || videoSender.current !== sender) {
+      stopStream(camera);
       return;
     }
 
-    const track = display.getVideoTracks()[0];
-    if (!track) {
-      display.getTracks().forEach((stopping) => stopping.stop());
-      return;
-    }
-
-    screenRef.current = display;
-    cameraTrack.current = sender.track;
+    releaseScreen();
+    cameraRef.current = camera;
     await sender.replaceTrack(track);
-    setScreenStream(display);
+    setCameraStream(camera);
+  }, [releaseCamera, releaseScreen]);
 
-    // 브라우저가 띄우는 「공유 중지」로 끝낼 수도 있습니다. 그 길도 같은 자리로 모읍니다.
-    track.addEventListener("ended", () => void stopScreenShare());
-  }, [stopScreenShare]);
+  const shareScreen = React.useCallback(async () => {
+    if (!videoSender.current) return;
+    const display = await requestScreen();
+    if (display) await showScreen(display);
+  }, [showScreen]);
 
   const hangUp = React.useCallback(() => {
     const id = activeNegotiationId.current;
@@ -612,11 +668,14 @@ export function usePeerConnection({
     localStream,
     remoteStream,
     screenStream,
+    cameraStream,
+    videoReady,
     micOn,
-    cameraOn,
+    cameraOn: cameraStream !== null,
     toggleMic,
     toggleCamera,
-    toggleScreenShare,
+    shareScreen,
+    stopScreenShare,
     accept,
     peerAway,
     peerPresent,

@@ -17,5 +17,5 @@ public record AmendConsultingContractRequest(
         @Schema(description = "바꿀 세션 일시.") OffsetDateTime scheduledAt,
         @Schema(description = "바꿀 세션 시간(분).") @PositiveOrZero Integer durationMinutes,
         @Schema(description = "바꿀 세션 금액.") @PositiveOrZero Integer price,
-        @Schema(description = "바꿀 상세 설명.") String detail,
+        @Schema(description = "바꿀 상세 설명. 보내지 않으면 그대로 두고, 빈 문자열이면 지운다.") String detail,
         @Schema(description = "계약서와 함께 남길 전달 메시지.") @Size(max = 300) String message) {}

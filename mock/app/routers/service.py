@@ -5306,7 +5306,7 @@ class AmendConsultingContractRequest(BaseModel):
     )
     detail: str | None = Field(
         default=None,
-        description="바꿀 상세 설명.",
+        description="바꿀 상세 설명. 보내지 않으면 그대로 두고, 빈 문자열이면 지운다.",
         examples=[None],
     )
     message: str | None = Field(

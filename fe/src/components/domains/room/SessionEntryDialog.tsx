@@ -6,6 +6,7 @@ import { Button } from "@/components/buttons";
 import { Checkbox } from "@/components/common";
 import { Modal, ModalFooter, ModalHeader, useToast } from "@/components/feedback";
 import { clientApi } from "@/lib/api/client";
+import { dropHeldScreen, holdScreen, requestScreen } from "@/lib/screenShare";
 import { INTERNAL } from "@/lib/api/endpoints";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
@@ -60,10 +61,16 @@ export function SessionEntryDialog({
 
   const enter = async () => {
     setEntering(true);
+    /*
+      보낼 화면을 고르는 창은 누른 이 순간에만 뜹니다. 그래서 입장 요청보다 먼저 엽니다.
+      고르기를 기다리지 않고 세션 화면으로 넘어가며, 고른 화면은 그쪽 통화가 받아 씁니다.
+    */
+    holdScreen(sessionId, requestScreen());
     try {
       await clientApi.post(INTERNAL.SESSION_PARTICIPATIONS(sessionId));
       router.push(ROUTES.session(sessionId));
     } catch (error) {
+      dropHeldScreen();
       setEntering(false);
       showToast({
         tone: "danger",
