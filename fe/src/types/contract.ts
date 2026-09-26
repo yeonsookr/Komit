@@ -266,6 +266,30 @@ export interface WriteDevelopmentContractRequest {
   message?: string | null;
 }
 
+/** 계약 편집 중인 작업의 현재 문구로 확인 문장 후보를 요청합니다. */
+export interface ContractQaSuggestionRequest {
+  /** 기존 작업의 요구사항 식별자. 아직 저장하지 않은 새 작업이면 null 입니다. */
+  issueId: number | null;
+  /** 현재 편집기에 적힌 작업 이름. 1~200자. */
+  title: string;
+  /** 현재 편집기에 적힌 작업 설명. 적지 않았으면 null 입니다. */
+  detail: string | null;
+}
+
+/** 아직 저장하지 않은 확인 문장 후보 하나. */
+export interface QaSuggestion {
+  testCase: string;
+}
+
+/** 확인 문장 후보는 한 페이지에 정확히 세 건 옵니다. (R-CON-22) */
+export interface QaSuggestionList {
+  content: QaSuggestion[];
+  page: number;
+  size: number;
+  totalElements: number;
+  totalPages: number;
+}
+
 /** 계약서 서명 요청. 서명판에 그린 그림을 먼저 올려 식별자를 받습니다. */
 export interface SignContractRequest {
   signatureImageFileId: number;

@@ -5,9 +5,11 @@ import { BACKEND } from "../endpoints";
 import type {
   AmendConsultingContractRequest,
   Contract,
+  ContractQaSuggestionRequest,
   DepositRequest,
   EscrowDeposit,
   PaymentMethod,
+  QaSuggestionList,
   SignContractRequest,
   WriteConsultingContractRequest,
   WriteDevelopmentContractRequest,
@@ -56,6 +58,22 @@ export async function writeDevelopmentContract(
   const { data } = await authenticatedBackendApi().post<Contract>(
     BACKEND.DEVELOPMENT_CONTRACTS(roomId),
     body,
+  );
+  return data;
+}
+
+/**
+ * 계약 편집 중인 작업에 맞는 확인 문장 후보 세 건을 만듭니다.
+ * 후보만 반환하며 작업이나 계약서를 저장하지 않습니다. (R-CON-22)
+ */
+export async function suggestContractQaCriteria(
+  roomId: number,
+  body: ContractQaSuggestionRequest,
+): Promise<QaSuggestionList> {
+  const { data } = await authenticatedBackendApi().post<QaSuggestionList>(
+    BACKEND.CONTRACT_QA_SUGGESTIONS(roomId),
+    body,
+    { timeout: 30_000 },
   );
   return data;
 }
