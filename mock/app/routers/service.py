@@ -1677,8 +1677,8 @@ class QaSuggestionResponse(BaseModel):
         min_length=1,
         max_length=500,
         description=(
-            "직접 실행해 통과 여부를 판단할 문장. 후보 반환만으로 요청서에 저장되지 않는다. "
-            "(R-REQ-04)"
+            "직접 실행해 통과 여부를 판단할 문장. 후보 반환만으로 요청서나 계약서에 "
+            "저장되지 않는다. (R-REQ-04, R-CON-22)"
         ),
         examples=["로그인하지 않고 관리자 주소로 들어가면 로그인 화면이 나타난다."],
     )
@@ -1690,12 +1690,37 @@ class QaSuggestionListResponse(BaseModel):
     content: list[QaSuggestionResponse] = Field(
         min_length=3,
         max_length=3,
-        description="저장 전 확인 문장 후보 세 건. (R-REQ-04)",
+        description="저장 전 확인 문장 후보 세 건. (R-REQ-04, R-CON-22)",
     )
     page: int = Field(description="현재 페이지 번호. 후보는 한 페이지만 반환한다.", examples=[1])
     size: int = Field(description="한 페이지의 후보 개수.", examples=[3])
     totalElements: int = Field(description="전체 후보 개수.", examples=[3])
     totalPages: int = Field(description="전체 페이지 수.", examples=[1])
+
+
+class ContractQaSuggestionRequest(BaseModel):
+    """계약 편집 중인 작업의 확인 문장 후보 생성 요청."""
+
+    issueId: int | None = Field(
+        default=None,
+        description=(
+            "기존 요구사항에 붙은 작업이면 그 식별자. 아직 저장하지 않은 새 작업이면 null이다."
+        ),
+        examples=[312],
+    )
+    title: str = Field(
+        min_length=1,
+        max_length=200,
+        description="현재 계약 편집기에 적힌 작업 이름.",
+        examples=["관리자 API에 인증 추가"],
+    )
+    detail: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=1000,
+        description="현재 계약 편집기에 적힌 작업 설명. 적지 않았으면 null이다.",
+        examples=["로그인하지 않은 요청은 로그인 화면으로 이동시킨다."],
+    )
 
 
 class WriteRequirementRequest(BaseModel):
@@ -7767,6 +7792,123 @@ def write_development_contract(
             },
         }
     )
+
+
+@router.post(
+    "/rooms/{roomId}/contract-qa-suggestions",
+    response_model=QaSuggestionListResponse,
+    tags=[AREA5_TAG],
+    responses={
+        200: {
+            "content": {"application/json": {"example": QA_SUGGESTION_LIST_EXAMPLE}}
+        },
+        403: {
+            "model": ErrorResponse,
+            "description": "이 방의 개발자가 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
+        404: {
+            "model": ErrorResponse,
+            "description": "방 없음",
+            "content": {"application/json": {"example": ROOM_NOT_FOUND_EXAMPLE}},
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "개발방이 아님 · 한쪽이라도 이미 서명함",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "NOT_DEVELOPMENT_ROOM": {
+                            "summary": "개발방이 아님",
+                            "value": {
+                                "code": NOT_DEVELOPMENT_ROOM[0],
+                                "message": NOT_DEVELOPMENT_ROOM[1],
+                            },
+                        },
+                        "CONTRACT_ALREADY_SIGNED": {
+                            "summary": "이미 서명함",
+                            "value": {
+                                "code": CONTRACT_ALREADY_SIGNED[0],
+                                "message": CONTRACT_ALREADY_SIGNED[1],
+                            },
+                        },
+                    }
+                }
+            },
+        },
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패 · 계약서에 넣을 수 없는 요구사항",
+        },
+        502: {
+            "model": ErrorResponse,
+            "description": "AI가 계약에 맞는 후보를 만들지 못함",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": AI_RESPONSE_INVALID[0],
+                        "message": AI_RESPONSE_INVALID[1],
+                    }
+                }
+            },
+        },
+        503: {
+            "model": ErrorResponse,
+            "description": "확인 문장 생성 서비스에 연결할 수 없음",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": AI_SERVICE_UNAVAILABLE[0],
+                        "message": AI_SERVICE_UNAVAILABLE[1],
+                    }
+                }
+            },
+        },
+        **AREA1_UNAUTHORIZED,
+        500: AREA1_ERRORS[500],
+    },
+    summary="계약 작업 확인 문장 후보 생성",
+    description=(
+        "**화면 — `5_개발자_계약서작성` › 작업별 확인 문장 추천**\n\n"
+        "개발자가 계약서를 편집하면서 작업 하나의 확인 문장 후보를 세 건 요청한다. "
+        "기존 요구사항에 붙은 작업은 `issueId`를 보내고, 아직 저장하지 않은 새 작업은 "
+        "`issueId`를 null로 보낸다. 두 경우 모두 현재 편집기에 적힌 `title`과 `detail`을 "
+        "생성 기준으로 사용한다.\n\n"
+        "후보를 받거나 고르는 것만으로 계약서·요구사항·확인 문장은 저장되지 않는다. "
+        "개발자가 고르거나 고쳐 넣은 문장은 기존 개발 계약서 작성 API를 호출할 때 함께 "
+        "저장된다. 최초 AI 계약 초안은 별도 초안 API가 한 번 만들고, 이후 편집·재전송·저장은 "
+        "이 API를 자동 호출하지 않는다. (R-CON-22)\n\n"
+        "기존 `issueId`는 이 방의 요청서에 있거나 현재 계약서에 이미 들어 있는 요구사항만 "
+        "허용한다. 계약서가 아직 없어도 직접 작성 중인 내용으로 후보를 요청할 수 있다.\n\n"
+        "- **200**: 계약 작업에 맞는 후보 세 건을 만들었을 때\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **403 / FORBIDDEN**: 이 방의 개발자가 아닐 때\n"
+        "- **404 / ROOM_NOT_FOUND**: `roomId`가 404일 때. 없는 방이거나 이 방의 당사자가 "
+        "아닌 사람이 부른 경우다\n"
+        "- **409 / NOT_DEVELOPMENT_ROOM**: 개발방이 아닐 때\n"
+        "- **409 / CONTRACT_ALREADY_SIGNED**: 한쪽이라도 이미 서명했을 때 (R-CON-02)\n"
+        "- **422 / INVALID_REQUEST**: 요청 값이 형식에 맞지 않거나, 기존 `issueId`가 이 방의 "
+        "요청서와 현재 계약서 어느 쪽에도 없을 때\n"
+        "- **502 / AI_RESPONSE_INVALID**: 생성 결과의 개수·길이·형식이 계약에 맞지 않을 때\n"
+        "- **503 / AI_SERVICE_UNAVAILABLE**: 생성 서비스에 연결할 수 없을 때\n"
+        "- **500 / INTERNAL_ERROR**: 그 밖의 서버 오류가 발생했을 때\n\n"
+        "Mock은 고정된 200 응답만 반환한다. 권한·서명·502·503은 후속 Service 구현을 위한 "
+        "응답 계약 예시이며 Mock 전용 실패 트리거를 만들지 않는다."
+    ),
+)
+def suggest_contract_qa_criteria(
+    roomId: Annotated[
+        int,
+        Path(
+            description="개발 방 식별자. 404는 없음 재현용 예약값이다.",
+            examples=[CONVERTED_DEVELOPMENT_ROOM_ID],
+        ),
+    ],
+    request: ContractQaSuggestionRequest,
+) -> QaSuggestionListResponse | JSONResponse:
+    if roomId == NOT_FOUND_ROOM_ID:
+        return _error_response(404, ROOM_NOT_FOUND)
+    return QaSuggestionListResponse(**QA_SUGGESTION_LIST_EXAMPLE)
 
 
 @router.post(
