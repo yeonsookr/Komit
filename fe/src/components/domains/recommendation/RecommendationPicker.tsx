@@ -147,7 +147,12 @@ function RecommendationRow({ item, checked, onToggle }: Readonly<RecommendationR
         className="shrink-0"
       />
 
-      <Avatar size="md" name={developer.name} className="shrink-0" />
+      <Avatar
+        size="md"
+        name={developer.name}
+        src={developer.profileImageUrl ?? undefined}
+        className="shrink-0"
+      />
 
       <div className="min-w-0 flex-1">
         <p className="truncate text-base font-bold text-fg">{developer.name} 개발자</p>
