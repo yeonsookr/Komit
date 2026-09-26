@@ -9077,6 +9077,11 @@ PAYMENT_METHODS = [
     tags=[AREA8_TAG],
     responses={
         200: {"content": {"application/json": {"example": {"content": PAYMENT_METHODS}}}},
+        503: {
+            "model": ErrorResponse,
+            "description": "에스크로 서버에 연결하지 못함",
+            "content": {"application/json": {"example": ESCROW_UNAVAILABLE_EXAMPLE}},
+        },
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -9086,9 +9091,12 @@ PAYMENT_METHODS = [
         "회원가입 때 발급한 SSAFY 입출금 계좌를 유일한 예치 출금 수단으로 내려준다. "
         "`paymentMethodId`는 예치 API에서 같은 계좌를 가리킨다. 다른 계좌 선택이나 "
         "별도 결제창은 없다. (`R-PAY-09`)\n\n"
+        "**늘 한 건이다.** 아직 발급되지 않았으면 이때 에스크로에 발급을 요청한다. 발급은 "
+        "멱등해서 여러 번 불러도 계좌는 하나다. (`R-ACC-13`)\n\n"
         "- **200**: 발급 계좌 한 건을 `content`에 담아 반환\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **500 / INTERNAL_ERROR**: 목록을 읽지 못했을 때"
+        "- **500 / INTERNAL_ERROR**: 목록을 읽지 못했을 때\n"
+        "- **503 / ESCROW_UNAVAILABLE**: 에스크로 서버에 연결하지 못했을 때"
     ),
 )
 def get_payment_methods() -> PaymentMethodListResponse:
