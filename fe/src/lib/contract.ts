@@ -175,6 +175,35 @@ export function nearestAutoPassAt(milestones: Milestone[]): string | null {
 export const AUTO_PASS_DAYS = 3;
 
 /**
+ * 컨설팅 세션이 끝난 뒤 의뢰인이 이의를 낼 수 있는 기간(일). 지나면 대금이 개발자에게 나갑니다.
+ * R-CON-10: 이의 없으면 자동 지급. 값이 같아도 R-QA-02 와 다른 규칙입니다.
+ */
+export const CONSULTING_DISPUTE_DAYS = 3;
+
+/** 컨설팅 결제 화면에서 보여 줄 것. */
+export type ConsultingPaymentStage = "developer" | "cancelled" | "unsigned" | "paid" | "pay";
+
+/**
+ * 컨설팅 결제 화면에서 무엇을 보여 줄지.
+ *
+ * 결제는 의뢰인이 자기가 서명한 계약서에만 합니다 (R-CON-20). 취소된 계약은 받지 않고
+ * (R-CON-21), 이미 결제했으면 다시 받지 않습니다.
+ *
+ * @param depositedAmount 예치된 금액. 예치를 건 적이 없으면 null. 결과가 나오기 전에는 0 입니다.
+ */
+export function consultingPaymentStage(
+  contract: Contract,
+  received: boolean,
+  depositedAmount: number | null,
+): ConsultingPaymentStage {
+  if (received) return "developer";
+  if (isCancelled(contract)) return "cancelled";
+  if (contract.clientSignature?.isSigned !== true) return "unsigned";
+  if (depositedAmount !== null && depositedAmount > 0) return "paid";
+  return "pay";
+}
+
+/**
  * 방 머리 배지에 적는 개발 계약의 단계.
  *
  * 화면이 계약 상태를 직접 분기하지 않도록 한 곳에서 이름을 붙입니다.

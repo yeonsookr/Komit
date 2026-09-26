@@ -7,6 +7,7 @@ import {
   isCancelled,
   isHandover,
   isConsultingDraft,
+  consultingPaymentStage,
   isSignedByAnyone,
   isSignedByBoth,
   hasSigned,
@@ -271,5 +272,31 @@ describe("canCancel", () => {
     const cancelled = contract({ status: "CANCELLED" });
     expect(isCancelled(cancelled)).toBe(true);
     expect(canCancel(cancelled, false)).toBe(false);
+  });
+});
+
+describe("consultingPaymentStage", () => {
+  const signedBy = (userId: number) => ({ userId, isSigned: true, signedAt: null, signatureImageFileId: 1 });
+  const clientSigned = contract({ clientSignature: signedBy(12) });
+
+  it("개발자에게는 결제 화면을 주지 않는다", () => {
+    expect(consultingPaymentStage(clientSigned, true, null)).toBe("developer");
+  });
+
+  it("취소된 계약은 결제받지 않는다", () => {
+    expect(consultingPaymentStage({ ...clientSigned, status: "CANCELLED" }, false, null)).toBe("cancelled");
+  });
+
+  it("의뢰인이 서명하기 전에는 결제받지 않는다", () => {
+    expect(consultingPaymentStage(contract(), false, null)).toBe("unsigned");
+  });
+
+  it("예치된 금액이 있으면 결제를 마친 것이다", () => {
+    expect(consultingPaymentStage(clientSigned, false, 50_000)).toBe("paid");
+  });
+
+  it("예치를 건 적이 없거나 결과가 나오기 전이면 결제 화면을 준다", () => {
+    expect(consultingPaymentStage(clientSigned, false, null)).toBe("pay");
+    expect(consultingPaymentStage(clientSigned, false, 0)).toBe("pay");
   });
 });
