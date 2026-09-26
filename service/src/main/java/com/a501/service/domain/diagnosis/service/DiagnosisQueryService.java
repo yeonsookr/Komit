@@ -92,6 +92,6 @@ public class DiagnosisQueryService {
     }
 
     private IssueBrief toBrief(Issue issue) {
-        return new IssueBrief(issue.getTitle(), issue.getLocation());
+        return new IssueBrief(issue.getTitle(), issue.getDetail(), issue.getLocation());
     }
 }

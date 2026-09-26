@@ -7,6 +7,8 @@ import com.a501.service.domain.chat.service.ChatMessageService;
 import com.a501.service.domain.contract.ContractErrorCode;
 import com.a501.service.domain.contract.dto.ContractDraftInput;
 import com.a501.service.domain.contract.dto.ContractDraftMessage;
+import com.a501.service.domain.diagnosis.dto.DraftRequirements;
+import com.a501.service.domain.diagnosis.service.ContractRequirementService;
 import com.a501.service.domain.room.RoomErrorCode;
 import com.a501.service.domain.room.dto.ContractDraftRoomView;
 import com.a501.service.domain.room.service.RoomQueryService;
@@ -19,8 +21,11 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 public class ContractDraftPreparationService {
+    private static final String DEVELOPMENT = "DEVELOPMENT";
+
     private final RoomQueryService roomQueryService;
     private final ChatMessageService chatMessageService;
+    private final ContractRequirementService contractRequirementService;
 
     /**
      * 새 방의 개발자인지와 정상 전환 출처가 있는지 확인한 뒤 무료 상담 전체 메시지를 변환합니다.
@@ -42,7 +47,13 @@ public class ContractDraftPreparationService {
                 .stream()
                 .map(message -> toDraftMessage(room, message))
                 .toList();
-        return new ContractDraftInput(room.targetType(), messages);
+        if (!DEVELOPMENT.equals(room.targetType())) {
+            return new ContractDraftInput(room.targetType(), messages);
+        }
+        // 개발 계약은 요청서와 채팅을 종합한다. 요청서에 담긴 요구사항은 계약서에 그대로 들어간다.
+        DraftRequirements requirements = contractRequirementService.findDraftRequirements(room.projectId());
+        return new ContractDraftInput(
+                room.targetType(), messages, requirements.requested(), requirements.leftOut());
     }
 
     private ContractDraftMessage toDraftMessage(

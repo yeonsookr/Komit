@@ -59,7 +59,7 @@ JSON은 파싱 실패로만 보여 원인이 모델에 있는 것처럼 읽힌�
 | 작업 | 한도 | 근거 (2026-09-24 실측) |
 | --- | --- | --- |
 | 확인 문장 | 1024 | 계약이 3건 × 500자다. 한국어 0.5토큰/자로 약 750토큰. 실제 응답이 235~266토큰까지 나왔고 옛 기본값 256으로는 8회 중 6회가 잘렸다 |
-| 계약 초안 | 2048 | 개수 상한이 없어 계산으로 못 낸다. 요구사항 6건·마일스톤 2~3개가 174~255토큰이었다 |
+| 계약 초안 | 2048 | 개수 상한이 없어 계산으로 못 낸다. 요구사항 6건·마일스톤 2~3개가 174~255토큰이었다. 요청서 요구사항까지 다시 적던 이전 출력 형식의 값이고, 채팅에서 더한 것만 내는 지금 형식은 아직 재지 않았다 |
 | 컨설팅 요약 | 2048 | 짧은 전사가 151~165토큰. 90분 세션은 오디오 fixture가 없어 아직 못 쟀다 |
 
 설정을 읽는 `read_local_env`는 `.env` 값에 환경변수 전체를 합쳐 돌려준다. 쓰는 쪽에서
@@ -92,17 +92,19 @@ Copy-Item ai\worker\.env.example ai\worker\.env
 
 | 구분 | 내용 |
 | --- | --- |
-| 입력 | `chatRefId` `authorRole`(`CLIENT`·`DEVELOPER`) `createdAt` `content` + 개발 계약이면 기존 요구사항 `issueId` `title` |
+| 입력 | `chatRefId` `authorRole`(`CLIENT`·`DEVELOPER`) `createdAt` `content` + 개발 계약이면 요청서 요구사항 `issues[]`(`issueId` `title` `detail` `qaCriteria`)와 고르지 않은 요구사항 `rejectedIssues[]`(`issueId` `title`) |
 | 컨설팅 출력 | `topic`(1~255자) `detail`(근거 없으면 `null`) |
-| 개발 출력 | `issueIds` `milestones[].title` `milestones[].qaCriteria` `rejectedIssues[].issueId` `.reason` |
-| 확인 문장 | `R-REQ-01` `R-REQ-04` `R-QA-01` `R-QA-05`. 작업마다 하나 이상, 문장마다 1~500자 |
+| 개발 출력 | `criteriaAdditions[].issueId` `.qaCriteria` `newMilestones[].title` `.detail` `.qaCriteria` |
+| 확인 문장 | `R-REQ-01` `R-REQ-04` `R-QA-01` `R-QA-05`. 채팅에서 합의한 것만, 문장마다 1~500자 |
 | 짧은 대화 | 전환된 계약방이므로 확인 가능한 내용으로 반드시 초안 생성 |
 | 생성 실패 | 형식·식별자 검증 위반은 `InvalidGmsResponseError`. 빈 계약서를 대신 만들지 않는다 |
 
 일정·기간·금액·인계물·전달 메시지는 개발자 입력 필드다. 모델이 이 필드를 함께 내놓으면
-초안 전체를 실패로 처리한다. `issueIds`와 `rejectedIssues[].issueId`는 입력으로 받은
-요구사항 안에서만 고르고 같은 식별자를 양쪽에 함께 넣지 않는다. 서로 다른 `chatRefId`가
-섞이거나 작성 시각 순이 아닌 입력은 호출 전에 거른다.
+초안 전체를 실패로 처리한다. 요청서 요구사항은 서버가 그대로 계약서에 넣으므로 모델은
+고르지 않는다. `criteriaAdditions[].issueId`는 `issues[]` 안에서 한 번씩만 가리키고 요청서에
+이미 있는 문장을 되풀이하지 않는다. `newMilestones`는 요청서 밖에 새로 합의한 작업이며 합의한
+확인 문장이 없으면 `qaCriteria`가 비어 있다. `issues[]`와 `rejectedIssues[]`에 같은 식별자가
+있거나, 서로 다른 `chatRefId`가 섞이거나 작성 시각 순이 아닌 입력은 호출 전에 거른다.
 
 방 전환 성공 여부(`R-MATCH-03`), 채팅 저장·조회, 계약 제출·서명은 이 모듈 밖이다.
 
@@ -111,7 +113,7 @@ Copy-Item ai\worker\.env.example ai\worker\.env
 .\.venv\Scripts\python.exe -m unittest discover -s ai\worker\tests -p "test_contract_draft.py"
 ```
 
-입력 JSON은 `targetType`, `messages`, 개발 계약이면 `issues`를 가진다. 단위 테스트는
+입력 JSON은 `targetType`, `messages`, 개발 계약이면 `issues`와 `rejectedIssues`를 가진다. 단위 테스트는
 고정 응답을 쓰므로 키 없이 실행되고 외부 요청을 하지 않는다. 실제 채팅 저장·조회와
 전환 트리거는 BE 연동 전까지 확인할 수 없다.
 

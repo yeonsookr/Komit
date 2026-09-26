@@ -2,11 +2,14 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/layouts";
 import { EmptyState } from "@/components/feedback";
-import { ConsultingContractDraftForm, ContractEditor } from "@/components/domains/contract";
+import {
+  ConsultingContractDraftForm,
+  DevelopmentContractDraftForm,
+} from "@/components/domains/contract";
 import { RoomHeader } from "@/components/domains/room";
 import { getContract, getIssues, getMe, getRoom } from "@/lib/api/services";
 import { isReceived } from "@/lib/rooms";
-import { isConsultingDraft } from "@/lib/contract";
+import { isConsultingDraft, isDevelopmentDraft } from "@/lib/contract";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
 import type { Contract } from "@/types/contract";
@@ -35,7 +38,7 @@ export async function generateMetadata({
 
 /**
  * 방·내 정보·계약서와 요청서의 요구사항을 읽습니다.
- * 계약서는 요청서의 요구사항을 작업으로 나눈 것이라 그 식별자가 필요합니다.
+ * 계약서는 요청서의 요구사항을 작업으로 나눈 것입니다. AI 초안을 받지 못하면 요청서로 작업을 채웁니다.
  */
 async function loadEditor(roomId: number) {
   try {
@@ -63,8 +66,9 @@ export default async function ContractNewPage({
 
   const { room, me, contract, issues } = await loadEditor(id);
 
-  // 작성이 끝난 계약으로 새 작성 주소에 다시 들어오면 세션을 하나 더 만들지 않습니다.
-  if (contract !== null && !isConsultingDraft(contract)) {
+  // 작성이 끝난 계약으로 새 작성 주소에 다시 들어오면 계약서를 하나 더 만들지 않습니다.
+  // AI 초안은 아직 보내지 않은 것이라 이어서 씁니다.
+  if (contract !== null && !isConsultingDraft(contract) && !isDevelopmentDraft(contract)) {
     redirect(ROUTES.roomContract(id));
   }
 
@@ -83,11 +87,11 @@ export default async function ContractNewPage({
           initialDraft={isConsultingDraft(contract) ? contract : null}
         />
       ) : canWrite ? (
-        <ContractEditor
+        <DevelopmentContractDraftForm
           roomId={room.roomId}
-          contract={null}
-          issueIds={issues.map((issue) => issue.issueId)}
           counterpartName={room.counterpartName}
+          initialDraft={isDevelopmentDraft(contract) ? contract : null}
+          requested={issues}
         />
       ) : (
         <EmptyState

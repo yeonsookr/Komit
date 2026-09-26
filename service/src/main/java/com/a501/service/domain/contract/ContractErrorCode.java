@@ -9,6 +9,15 @@ public enum ContractErrorCode implements ErrorCode {
     /** 무료 상담에서 컨설팅·개발 갈래로 정상 전환된 방이 아니다. */
     ROOM_NOT_CONVERTED(
             HttpStatus.CONFLICT, "ROOM_NOT_CONVERTED", "갈래를 정하기 전에는 계약 초안을 만들 수 없습니다."),
+    /**
+     * 개발방이 아닌 곳에서 개발 계약서를 쓰려 했다. 화면에는 그런 길이 없어 API 를 직접 부를 때만 걸린다.
+     * 부른 사람이 그 방의 당사자라 방이 없다고 감추지 않는다.
+     */
+    NOT_DEVELOPMENT_ROOM(
+            HttpStatus.CONFLICT, "NOT_DEVELOPMENT_ROOM", "개발방에서만 개발 계약서를 쓸 수 있습니다."),
+    /** 납기일이 착수일보다 이르다. 같은 날은 받는다. 형식 오류(422)가 아니라 400 이다. 목과 같다. */
+    DUE_DATE_BEFORE_START(
+            HttpStatus.BAD_REQUEST, "DUE_DATE_BEFORE_START", "납기일은 착수일보다 늦어야 합니다."),
     /** 한쪽이라도 서명한 뒤에는 고칠 수 없다. 그때는 채팅으로 이야기한 뒤 다시 쓴다. (`R-CON-02`) */
     CONTRACT_ALREADY_SIGNED(
             HttpStatus.CONFLICT, "CONTRACT_ALREADY_SIGNED", "이미 서명한 계약서는 고칠 수 없습니다."),

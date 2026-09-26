@@ -4,7 +4,7 @@ import { Container } from "@/components/layouts";
 import { EmptyState } from "@/components/feedback";
 import { ConsultingContractForm, ContractEditor } from "@/components/domains/contract";
 import { RoomHeader } from "@/components/domains/room";
-import { getContract, getIssues, getMe, getRoom } from "@/lib/api/services";
+import { getContract, getMe, getRoom } from "@/lib/api/services";
 import { isCancelled, isSignedByAnyone } from "@/lib/contract";
 import { isReceived } from "@/lib/rooms";
 import { ROUTES } from "@/lib/routes";
@@ -29,17 +29,14 @@ export async function generateMetadata({
 }
 
 /**
- * 방·내 정보·계약서와 요청서의 요구사항을 읽습니다.
- * 계약서는 요청서의 요구사항을 작업으로 나눈 것이라 그 식별자가 필요합니다.
+ * 방·내 정보·계약서를 읽습니다. 작업이 붙은 요구사항은 계약서의 작업마다 들어 있습니다.
  */
 async function loadEditor(roomId: number) {
   try {
     const [room, me] = await Promise.all([getRoom(roomId), getMe()]);
     const contract: Contract | null =
       room.contractId === null ? null : await getContract(room.contractId);
-    const issues =
-      room.request === null ? [] : await getIssues(room.request.diagnosisId);
-    return { room, me, contract, issues };
+    return { room, me, contract };
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) notFound();
     if (error instanceof ApiError && error.status === 401) redirect(ROUTES.login);
@@ -56,7 +53,7 @@ export default async function ContractEditPage({
   const id = Number(roomId);
   if (!Number.isInteger(id) || id <= 0) notFound();
 
-  const { room, me, contract, issues } = await loadEditor(id);
+  const { room, me, contract } = await loadEditor(id);
 
   /** 계약서는 개발자가 씁니다. 의뢰인은 받아서 서명만 합니다. */
   const canWrite = isReceived(room, me);
@@ -79,7 +76,6 @@ export default async function ContractEditPage({
         <ContractEditor
           roomId={room.roomId}
           contract={contract}
-          issueIds={issues.map((issue) => issue.issueId)}
           counterpartName={room.counterpartName}
         />
       ) : (

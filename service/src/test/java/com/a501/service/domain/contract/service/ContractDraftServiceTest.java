@@ -1,14 +1,17 @@
 package com.a501.service.domain.contract.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.a501.service.domain.contract.client.ContractDraftClient;
 import com.a501.service.domain.contract.client.ContractDraftClient.GeneratedConsultingDraft;
+import com.a501.service.domain.contract.client.ContractDraftClient.GeneratedDevelopmentDraft;
 import com.a501.service.domain.contract.dto.ContractDraftInput;
 import com.a501.service.domain.contract.dto.response.ContractResponse;
+import com.a501.service.domain.diagnosis.dto.DraftRequirements;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
@@ -72,5 +75,21 @@ class ContractDraftServiceTest {
         verify(draftClient, never()).generateConsulting(input);
         verify(draftStore, never()).saveConsultingIfAbsent(org.mockito.ArgumentMatchers.anyInt(),
                 org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void developmentRoomUsesTheDevelopmentDraft() {
+        List<DraftRequirements.Requested> requested =
+                List.of(new DraftRequirements.Requested(312, "관리자 화면에 인증이 없다", null, List.of()));
+        ContractDraftInput development = new ContractDraftInput("DEVELOPMENT", List.of(), requested, List.of());
+        GeneratedDevelopmentDraft generated = new GeneratedDevelopmentDraft(List.of(), List.of(), "{}");
+        when(preparationService.prepare(ROOM_ID, USER_ID)).thenReturn(development);
+        when(contractQueryService.findContractIdByRoomId(ROOM_ID)).thenReturn(Optional.empty());
+        when(draftClient.generateDevelopment(development)).thenReturn(generated);
+        when(draftStore.saveDevelopmentIfAbsent(ROOM_ID, requested, generated)).thenReturn(CONTRACT_ID);
+        when(contractDetailService.getContract(USER_ID, CONTRACT_ID)).thenReturn(response);
+
+        assertThat(service.generate(ROOM_ID, USER_ID)).isSameAs(response);
+        verify(draftClient, never()).generateConsulting(any());
     }
 }

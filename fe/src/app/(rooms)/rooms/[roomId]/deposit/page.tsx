@@ -13,7 +13,11 @@ import {
   getPaymentMethods,
   getRoom,
 } from "@/lib/api/services";
-import { consultingPaymentStage, type ConsultingPaymentStage } from "@/lib/contract";
+import {
+  consultingPaymentStage,
+  isDevelopmentDraft,
+  type ConsultingPaymentStage,
+} from "@/lib/contract";
 import { isReceived } from "@/lib/rooms";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
@@ -51,7 +55,10 @@ async function loadDeposit(roomId: number) {
     const received = isReceived(room, me);
     const contract: Contract | null =
       room.contractId === null ? null : await getContract(room.contractId);
-    const development = contract?.development ?? null;
+    // AI version 1 은 개발자가 아직 보내지 않은 초안입니다. 금액이 모두 0 이라 작업을 그대로
+    // 그리면 인계 작업으로 읽히므로, 계약서 탭과 같이 작성 중이라고만 알립니다.
+    const draft = isDevelopmentDraft(contract);
+    const development = draft ? null : (contract?.development ?? null);
     const canDeposit = !received && development !== null;
 
     let stage: ConsultingPaymentStage | null = null;
@@ -67,7 +74,7 @@ async function loadDeposit(roomId: number) {
     }
 
     const paymentMethods = canDeposit || stage === "pay" ? await getPaymentMethods() : [];
-    return { room, me, contract, development, canDeposit, stage, paymentMethods };
+    return { room, me, contract, draft, development, canDeposit, stage, paymentMethods };
   });
 }
 
@@ -98,7 +105,7 @@ export default async function RoomDepositPage({
   const id = Number(roomId);
   if (!Number.isInteger(id) || id <= 0) notFound();
 
-  const { room, me, contract, development, canDeposit, stage, paymentMethods } =
+  const { room, me, contract, draft, development, canDeposit, stage, paymentMethods } =
     await loadDeposit(id);
 
   const contractLink = (
@@ -154,7 +161,16 @@ export default async function RoomDepositPage({
     <Container className="py-8 sm:py-10">
       <RoomHeader room={room} me={me} contract={contract} />
 
-      {canDeposit && contract && development ? (
+      {draft ? (
+        <EmptyState
+          title="계약서 초안을 작성하고 있습니다"
+          description={
+            isReceived(room, me)
+              ? "계약서를 보내고 의뢰인이 서명·예치하면 진행 탭에서 착수할 수 있습니다."
+              : "개발자가 금액과 일정을 채워 보내면 여기에서 서명하고 예치합니다."
+          }
+        />
+      ) : canDeposit && contract && development ? (
         <DepositForm
           contractId={contract.contractId}
           roomId={room.roomId}

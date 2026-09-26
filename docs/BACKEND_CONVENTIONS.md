@@ -728,7 +728,7 @@ QueryDSL 쿼리는 필요한 정보만 가져오도록 작성합니다.
 
 - Komit Service 스키마는 JPA 엔티티 매핑이 기준이며 `spring.jpa.hibernate.ddl-auto: update`로 만듭니다.
 - Komit Service의 `data.sql`은 스키마 생성 파일이 아니라 서버 기동에 필요한 공통코드 초기 데이터를 넣는 파일입니다.
-- Escrow 스키마는 `escrow/src/main/resources/db/migration/V1__create_escrow_schema.sql`이 기준입니다. Escrow에서는 JPA 자동 DDL로 이 테이블을 생성·변경하지 않습니다.
+- Escrow 스키마는 `escrow/src/main/resources/db/migration/`의 Flyway 파일이 기준입니다. `V1__create_escrow_schema.sql`이 기준본이고 그 뒤 변경은 다음 번호(`V2`, `V3`…)로 추가합니다. 이미 적용된 파일은 고치지 않습니다. Escrow에서는 JPA 자동 DDL로 이 테이블을 생성·변경하지 않습니다.
 - `create`, `create-drop`은 운영 설정에 사용하지 않습니다.
 - 테이블·컬럼 변경은 해당 서버의 기준 스키마와 ERD에 함께 반영합니다.
 - `ddl-auto: update`에 컬럼 삭제·이름 변경·타입 축소 같은 파괴적 변경을 맡기지 않습니다. 이런 변경은 데이터 영향과 적용 절차를 별도로 검토하고 MR에 기록합니다.

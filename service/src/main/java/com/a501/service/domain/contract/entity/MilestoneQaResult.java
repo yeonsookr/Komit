@@ -8,6 +8,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -39,4 +40,12 @@ public class MilestoneQaResult extends CreatedSoftDeleteEntity {
 
     @Column(name = "qa_criterion_id", nullable = false)
     private Integer qaCriterionId;
+
+    /** 작업에 확인 문장 하나를 건다. 통과 체크는 여기에 남는다. */
+    public static MilestoneQaResult of(Integer milestoneId, Integer qaCriterionId) {
+        MilestoneQaResult entity = new MilestoneQaResult();
+        entity.milestoneId = Objects.requireNonNull(milestoneId, "milestoneId");
+        entity.qaCriterionId = Objects.requireNonNull(qaCriterionId, "qaCriterionId");
+        return entity;
+    }
 }

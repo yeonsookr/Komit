@@ -197,6 +197,8 @@ def _reason(error: dict) -> str:
         return "형식이 올바르지 않습니다."
     if error_type == "career_period":
         return CAREER_PERIOD_REASON
+    if error_type == "duplicate_issue":
+        return DUPLICATE_ISSUE_REASON
     if error_type == "literal_error":
         expected = context.get("expected")
         return f"{expected} 중 하나여야 합니다." if expected else "허용되지 않는 값입니다."
@@ -5158,15 +5160,14 @@ class ConsultingAgreementResponse(BaseModel):
     """컨설팅 계약에만 있는 내용. 개발 계약이면 이 자리가 null이다."""
 
     status: Literal[
-        "PRE_SIGNED", "SIGNED", "DEPOSITED", "IN_PROGRESS", "COMPLETED", "TERMINATED"
+        "SIGNED", "DEPOSITED", "IN_PROGRESS", "COMPLETED", "TERMINATED"
     ] = Field(
         description=(
-            "컨설팅 진행. PRE_SIGNED는 **가계약**으로, 계약서를 주고받으며 조정하는 "
-            "동안의 상태다. 양쪽이 서명하면 SIGNED, 예치가 끝나면 DEPOSITED, 세션이 "
-            "시작되면 IN_PROGRESS가 된다. COMPLETED는 완료됨, TERMINATED는 파기됨이다. "
-            "개발 계약과 같은 순서다.\n\n"
-            "**체결 여부는 바깥 계약의 `status`로만 판단한다.** 이 값이 PRE_SIGNED를 "
-            "지나쳤다고 체결된 것이 아니다. 서명 두 개가 모두 찍혀야 계약이 성립한다. "
+            "컨설팅 진행. 계약서를 처음 쓸 때부터 SIGNED다. AI가 만든 version 1도 같다. "
+            "예치가 끝나면 DEPOSITED, 세션이 시작되면 IN_PROGRESS가 된다. COMPLETED는 "
+            "완료됨, TERMINATED는 파기됨이다. 개발 계약과 같은 순서다.\n\n"
+            "**체결 여부는 바깥 계약의 `status`로만 판단한다.** 이 값이 SIGNED여도 "
+            "체결된 것이 아니다. 서명 두 개가 모두 찍혀야 계약이 성립한다. "
             "(`R-CON-01`)"
         ),
         examples=["SIGNED"],
@@ -6605,9 +6606,26 @@ class MilestoneResponse(BaseModel):
     """작업 하나. 화면에서는 '작업'으로 부르고 ERD에서는 마일스톤이다."""
 
     milestoneId: int = Field(description="작업 식별자.", examples=[301])
+    issueId: int | None = Field(
+        description=(
+            "붙은 요구사항 식별자. 계약서를 다시 쓸 때 이 값을 그대로 보낸다. "
+            "요구사항에 붙지 않은 작업이면 null이다."
+        ),
+        examples=[312],
+    )
     title: str = Field(
-        description="작업 이름.",
+        description=(
+            "작업 이름. 계약서에서 바꾼 이름이 있으면 그것, 없으면 붙은 요구사항의 이름이다. "
+            "계약서에서 바꿔도 요청서는 바뀌지 않는다."
+        ),
         examples=["1차 · 관리자 API에 인증 추가"],
+    )
+    detail: str | None = Field(
+        description=(
+            "작업 설명. 계약서에서 바꾼 설명이 있으면 그것, 없으면 붙은 요구사항의 설명이다. "
+            "둘 다 없으면 null이다."
+        ),
+        examples=["로그인하지 않아도 관리자 주소로 회원 목록이 열립니다."],
     )
     price: int = Field(
         description=(
@@ -6695,7 +6713,6 @@ class DevelopmentAgreementResponse(BaseModel):
     """개발 계약에만 있는 내용. 컨설팅 계약이면 이 자리가 null이다."""
 
     status: Literal[
-        "PRE_SIGNED",
         "SIGNED",
         "DEPOSITED",
         "IN_PROGRESS",
@@ -6704,10 +6721,13 @@ class DevelopmentAgreementResponse(BaseModel):
         "TERMINATED",
     ] = Field(
         description=(
-            "개발 진행. PRE_SIGNED는 **가계약**으로, 계약서를 주고받으며 조정하는 동안의 "
-            "상태다. 양쪽이 서명하면 SIGNED, 예치가 끝나면 DEPOSITED, 착수하면 "
-            "IN_PROGRESS가 된다. AFTER_SERVICE는 하자보수, COMPLETED는 완료됨, "
-            "TERMINATED는 파기됨이며 이 셋은 운영 콘솔에서 다룬다."
+            "개발 진행. 계약서를 처음 쓸 때부터 SIGNED다. AI가 만든 version 1도 같다. "
+            "예치가 끝나면 DEPOSITED, 착수하면 IN_PROGRESS가 된다. AFTER_SERVICE는 "
+            "하자보수, COMPLETED는 완료됨, TERMINATED는 파기됨이며 이 셋은 운영 "
+            "콘솔에서 다룬다.\n\n"
+            "**체결 여부는 바깥 계약의 `status`로만 판단한다.** 이 값이 SIGNED여도 "
+            "체결된 것이 아니다. 서명 두 개가 모두 찍혀야 계약이 성립한다. "
+            "(`R-CON-01`)"
         ),
         examples=["IN_PROGRESS"],
     )
@@ -6721,7 +6741,7 @@ class DevelopmentAgreementResponse(BaseModel):
             "작업 하나가 되므로 어느 줄을 맡기로 했는지가 계약의 내용이다. 컨설팅은 "
             "요청서의 줄에 매이지 않아 대신 `topic` 한 줄을 둔다."
         ),
-        examples=[[312, 313, 311]],
+        examples=[[312, 313, 311, 320]],
     )
     startDate: str | None = Field(
         description="착수일. 정하기 전이면 null이다.",
@@ -6746,83 +6766,114 @@ class DevelopmentAgreementResponse(BaseModel):
 
 
 class WriteDevelopmentContractRequest(BaseModel):
-    """개발 계약서 작성 요청."""
+    """개발 계약서 작성 요청.
 
-    issueIds: list[int] = Field(
-        description="이 계약에서 다룰 요구사항 식별자.",
-        examples=[[312, 311]],
-    )
+    계약에서 다룰 요구사항은 작업이 가리키는 것이다. 목록을 따로 받지 않는다. 따로 받으면
+    작업과 어긋난 목록이 올 수 있다.
+    """
+
     startDate: str = Field(description="착수일.", examples=["2026-08-26"])
     dueDate: str = Field(description="최종 납기일.", examples=["2026-09-16"])
     freeRepairDays: int = Field(
+        ge=0,
         description="무상 하자보수 기간(일).",
         examples=[14],
     )
     milestones: list["WriteMilestoneRequest"] = Field(
         min_length=1,
-        description="맡기로 한 작업. 가격의 합이 계약 금액이 된다. 하나 이상이어야 한다.",
-    )
-    rejectedIssues: list["RejectedIssueRequest"] = Field(
-        default_factory=list,
         description=(
-            "맡지 않기로 한 요구사항과 그 사유. 요청서에는 있었지만 이 계약에서 빼는 것들이다."
+            "맡기로 한 작업. 가격의 합이 계약 금액이 된다. 하나 이상이어야 한다. "
+            "한 요구사항에는 작업이 하나라 같은 `issueId`를 두 작업에 담을 수 없다."
         ),
     )
-    deliverableTitles: list[str] = Field(
+    deliverableTitles: list[Annotated[str, Field(min_length=1, max_length=100)]] = Field(
         default_factory=list,
-        description="넘겨받을 인계물 이름.",
+        description="넘겨받을 인계물 이름. 이름마다 100자까지 받는다.",
         examples=[["소스 파일 전체", "관리자 계정과 비밀번호", "운영 설명서"]],
-    )
-    detail: str | None = Field(
-        default=None,
-        description="계약서의 상세 설명. 적지 않아도 된다.",
-        examples=[None],
     )
     message: str | None = Field(
         default=None,
-        description="계약서와 함께 남길 전달 메시지.",
+        max_length=300,
+        description="계약서와 함께 남길 전달 메시지. 300자까지 받는다.",
         examples=[None],
     )
 
-
-class RejectedIssueRequest(BaseModel):
-    """맡지 않기로 한 요구사항 하나."""
-
-    issueId: int = Field(description="빼는 요구사항 식별자.", examples=[313])
-    reason: str = Field(
-        description="왜 맡지 않는지. 의뢰인이 계약서에서 이 사유를 본다.",
-        examples=["이번 범위에서는 다루기 어렵습니다."],
-    )
+    @field_validator("milestones")
+    @classmethod
+    def validate_distinct_issues(
+        cls, value: list["WriteMilestoneRequest"]
+    ) -> list["WriteMilestoneRequest"]:
+        # 새 작업은 아직 요구사항이 없어 겹칠 것이 없다.
+        issue_ids = [milestone.issueId for milestone in value if milestone.issueId is not None]
+        if len(issue_ids) != len(set(issue_ids)):
+            raise PydanticCustomError("duplicate_issue", "same issue in two milestones")
+        return value
 
 
 class WriteMilestoneRequest(BaseModel):
     """계약서에 담을 작업 하나.
 
-    작업은 이슈 하나에 붙는다. 그 이슈는 서버가 이 작업을 저장하면서 함께 만들어
-    붙이므로 여기서 식별자를 보내지 않는다.
+    작업은 언제나 요구사항 하나에 붙는다. 요청서에 있던 요구사항이면 `issueId`를
+    보내고, 개발방에서 새로 합의한 작업이면 `issueId` 없이 `title`을 보낸다. 새 작업은
+    서버가 계약용 요구사항을 만들어 붙인다.
+
+    `title`·`detail`은 계약서에서 쓰는 이름·설명이다. 기존 요구사항에서 보내지 않으면
+    그 요구사항의 이름·설명을 그대로 쓴다. 계약서에서 바꿔도 요청서는 바뀌지 않는다.
     """
 
-    title: str = Field(
-        description="작업 이름.",
-        examples=["1차 · 관리자 API에 인증 추가"],
+    issueId: int | None = Field(
+        default=None,
+        description="붙일 요구사항 식별자. 개발방에서 새로 합의한 작업이면 보내지 않는다.",
+        examples=[312],
+    )
+    title: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=200,
+        validate_default=True,
+        description=(
+            "작업 이름. 새 작업이면 반드시 보낸다. 기존 요구사항이면 계약서에서 바꾼 "
+            "이름만 보내고, 보내지 않으면 요구사항 이름을 쓴다."
+        ),
+        examples=["관리자 API에 인증 추가"],
+    )
+    detail: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=1000,
+        description=(
+            "작업 설명. 적지 않아도 된다. 기존 요구사항이면 보내지 않았을 때 요구사항 "
+            "설명을 쓴다."
+        ),
+        examples=[None],
     )
     price: int = Field(
+        ge=0,
         description="작업 가격. 인계 작업은 0으로 보낸다.",
         examples=[400000],
     )
     workDate: int | None = Field(
         default=None,
+        ge=0,
         description=(
             "이 작업에 잡은 기간(일). 최종 납기일이 어떻게 나왔는지 보여주는 참고값이라 "
             "정하지 않아도 된다."
         ),
         examples=[10],
     )
-    qaCriteria: list[str] = Field(
+    qaCriteria: list[Annotated[str, Field(min_length=1, max_length=500)]] = Field(
         min_length=1,
-        description="이 작업의 확인 문장. 하나 이상이어야 한다.",
+        description="이 작업의 확인 문장. 하나 이상이어야 하고 문장마다 500자까지 받는다.",
         examples=[["관리자 주소로 들어가면 로그인 화면이 뜬다"]],
     )
+
+    @field_validator("title")
+    @classmethod
+    def validate_new_work_title(cls, value: str | None, info: ValidationInfo) -> str | None:
+        # 새 작업은 붙일 요구사항이 없어 이름을 여기서 받아야 한다.
+        if value is None and info.data.get("issueId") is None:
+            raise PydanticCustomError("missing", "title is required for new work")
+        return value
 
 
 class EscrowDepositResponse(BaseModel):
@@ -6945,6 +6996,15 @@ DUE_DATE_BEFORE_START = (
     "DUE_DATE_BEFORE_START",
     "납기일은 착수일보다 늦어야 합니다.",
 )
+# 같은 요구사항을 두 작업에 담았을 때. 어느 작업의 통과가 그 요구사항의 통과인지 가를 수 없다.
+DUPLICATE_ISSUE_REASON = "같은 요구사항을 두 작업에 담을 수 없습니다."
+
+# 개발방이 아닌 곳에서 개발 계약서를 쓰려 했을 때. 화면에는 그런 길이 없어 API를 직접 부를 때만 난다.
+NOT_DEVELOPMENT_ROOM = (
+    "NOT_DEVELOPMENT_ROOM",
+    "개발방에서만 개발 계약서를 쓸 수 있습니다.",
+)
+
 DUE_DATE_BEFORE_START_EXAMPLE = {
     "code": DUE_DATE_BEFORE_START[0],
     "message": DUE_DATE_BEFORE_START[1],
@@ -6974,7 +7034,9 @@ DEPOSITED_CONTRACT_ID = 409
 MILESTONES = [
     {
         "milestoneId": 301,
+        "issueId": 312,
         "title": "1차 · 관리자 API에 인증 추가",
+        "detail": "로그인하지 않아도 관리자 주소로 회원 목록이 열립니다.",
         "location": "app/api/admin/* · 4개 라우트",
         "workDate": 10,
         "price": 400000,
@@ -7002,7 +7064,9 @@ MILESTONES = [
     },
     {
         "milestoneId": 302,
+        "issueId": 313,
         "title": "2차 · 회원탈퇴 경로 구현",
+        "detail": None,
         "location": "신규 작성 · 데이터는 30일 보관 후 삭제",
         "workDate": 6,
         "price": 200000,
@@ -7037,7 +7101,9 @@ MILESTONES = [
     },
     {
         "milestoneId": 303,
+        "issueId": 311,
         "title": "3차 · 결제 간헐 실패 수정",
+        "detail": None,
         "location": "app/api/checkout/route.ts:47",
         "workDate": 4,
         "price": 50000,
@@ -7058,7 +7124,9 @@ MILESTONES = [
     },
     {
         "milestoneId": 304,
+        "issueId": 320,
         "title": "인계 · 소스 · 계정 · 설명서",
+        "detail": None,
         "location": None,
         "workDate": None,
         "price": 0,
@@ -7073,21 +7141,21 @@ MILESTONES = [
                 "testCase": "소스 파일 전체를 받았다",
                 "condition": None,
                 "status": "UNRESOLVED",
-                "issueId": None,
+                "issueId": 320,
             },
             {
                 "qaCriterionId": 208,
                 "testCase": "관리자 계정과 비밀번호를 받았다",
                 "condition": None,
                 "status": "UNRESOLVED",
-                "issueId": None,
+                "issueId": 320,
             },
             {
                 "qaCriterionId": 209,
                 "testCase": "운영 설명서를 받았다",
                 "condition": None,
                 "status": "UNRESOLVED",
-                "issueId": None,
+                "issueId": 320,
             },
         ],
     },
@@ -7113,7 +7181,7 @@ DEV_CONTRACT_EXAMPLE = {
     "development": {
         "status": "IN_PROGRESS",
         "totalAmount": 650000,
-        "issueIds": [312, 313, 311],
+        "issueIds": [312, 313, 311, 320],
         "startDate": "2026-08-26",
         "dueDate": "2026-09-16",
         "freeRepairDays": 14,
@@ -7173,7 +7241,7 @@ def _draft_contract(contract_id: int, room_id: int) -> dict:
     draft["status"] = "NEGOTIATING"
     draft["contractText"] = None
     draft["updatedAt"] = "2026-08-22T16:10:00+09:00"
-    draft["development"]["status"] = "PRE_SIGNED"
+    draft["development"]["status"] = "SIGNED"
     for milestone in draft["development"]["milestones"]:
         milestone["status"] = "PROPOSED"
         milestone["submittedAt"] = None
@@ -7311,8 +7379,11 @@ DRAFT_DEVELOPMENT_CONTRACT_EXAMPLE["development"]["status"] = "SIGNED"
         "성립하므로(`R-CON-01`) 초안을 만드는 것만으로는 아무것도 확정되지 않는다. AI는 "
         "계약서를 보내지도 서명하지도 않는다.\n\n"
         "**AI가 채우지 않는 칸이 있다.** 일정·기간·금액·인계물·전달 메시지는 비어 있다. "
-        "합의와 검수가 필요한 값이라 개발자가 직접 입력한다. 요구사항 식별자는 요청서에 "
-        "있는 것만 담고 새로 만들지 않는다.\n\n"
+        "합의와 검수가 필요한 값이라 개발자가 직접 입력한다.\n\n"
+        "**개발 초안은 요청서와 채팅을 종합한다.** 요청서의 요구사항은 모두 작업으로 들어가고 "
+        "요청서의 확인 문장이 그대로 옮겨진다. 채팅에서 새로 합의한 확인 문장은 해당 작업에 "
+        "더해지고, 요청서 밖에 더 하기로 합의한 작업은 새 작업으로 들어간다. 새 작업은 "
+        "합의한 확인 문장이 없으면 `qaCriteria`가 비어 있다.\n\n"
         "- **200**: 계약에 맞는 초안을 만들었을 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 방의 개발자가 아닐 때\n"
@@ -7594,10 +7665,41 @@ def start_development(
             "description": "방 없음",
             "content": {"application/json": {"example": ROOM_NOT_FOUND_EXAMPLE}},
         },
+        409: {
+            "model": ErrorResponse,
+            "description": "개발방이 아님 · 이미 서명함 · 취소된 계약",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "NOT_DEVELOPMENT_ROOM": {
+                            "summary": "개발방이 아님",
+                            "value": {
+                                "code": NOT_DEVELOPMENT_ROOM[0],
+                                "message": NOT_DEVELOPMENT_ROOM[1],
+                            },
+                        },
+                        "CONTRACT_ALREADY_SIGNED": {
+                            "summary": "이미 서명함",
+                            "value": {
+                                "code": CONTRACT_ALREADY_SIGNED[0],
+                                "message": CONTRACT_ALREADY_SIGNED[1],
+                            },
+                        },
+                        "CONTRACT_CANCELLED": {
+                            "summary": "취소된 계약",
+                            "value": {
+                                "code": CONTRACT_CANCELLED[0],
+                                "message": CONTRACT_CANCELLED[1],
+                            },
+                        },
+                    }
+                }
+            },
+        },
         **AREA1_UNAUTHORIZED,
         422: {
             "model": ValidationErrorResponse,
-            "description": "요청 스키마 유효성 검증 실패",
+            "description": "요청 스키마 유효성 검증 실패 · 계약서에 넣을 수 없는 요구사항",
             "content": {"application/json": {"example": WRITE_CONTRACT_ERROR_EXAMPLE}},
         },
         500: AREA1_ERRORS[500],
@@ -7605,13 +7707,20 @@ def start_development(
     summary="개발 계약서 작성",
     description=(
         "**화면 — `5_개발자_계약서작성` › 요구사항 고르기 · 작업 나누기 · 확인 문장 · 납기 · 보내기**\n\n"
-        "개발자가 개발 계약서를 써서 의뢰인에게 보낸다. 요청서에 담긴 요구사항 중 **맡을 "
-        "것을 고르고**, 고른 것을 작업으로 나눠 가격과 확인 문장을 붙인다. 작업 가격의 합이 "
-        "계약 금액이 된다.\n\n"
-        "**고르지 않은 요구사항은 맡지 않는 것으로 기록된다.** `rejectedIssues`에 사유와 "
-        "함께 담아 보내면 의뢰인이 계약서에서 왜 빠졌는지 볼 수 있다.\n\n"
-        "보낸 계약서는 **가계약** 상태다. 양쪽이 서명할 때까지 서로 주고받으며 조정하는 "
-        "구간이며, 서명이 끝나야 체결된다. 협의 중에 다시 보내면 그 계약서의 내용을 이 "
+        "개발자가 개발 계약서를 써서 의뢰인에게 보낸다. 작업마다 가격과 확인 문장을 붙이고, "
+        "작업 가격의 합이 계약 금액이 된다.\n\n"
+        "**작업은 언제나 요구사항 하나에 붙는다.** 요청서에 있던 요구사항이면 `issueId`를 "
+        "보내고, 개발방에서 새로 합의한 작업이면 `issueId` 없이 `title`을 보낸다. 새 작업은 "
+        "서버가 계약용 요구사항을 만들어 붙인다. 계약에서 다룰 요구사항 목록은 작업이 "
+        "가리키는 것이라 따로 받지 않는다.\n\n"
+        "**계약서는 요청서를 바꾸지 않는다.** 이름·설명·확인 문장을 계약서에서 바꿔도 "
+        "계약서에만 남는다.\n\n"
+        "**받는 요구사항은 요청서에 담긴 것과 이 계약서에 이미 들어 있는 것이다.** 개발자는 "
+        "요청서에 담긴 것만 볼 수 있다(R-REQ-05). 다시 쓸 때는 앞서 새로 만든 작업이 그 "
+        "요구사항 번호를 달고 돌아온다.\n\n"
+        "보낸 계약서는 양쪽이 서명할 때까지 **협의 중**이다. 공통 계약 `status`는 "
+        "`NEGOTIATING`이고 개발 쪽 `status`는 처음부터 `SIGNED`다. 서명 두 개가 모두 "
+        "찍혀야 체결된다(`R-CON-01`). 협의 중에 다시 보내면 그 계약서의 내용을 이 "
         "요청으로 덮어쓴다. 계약서는 방에 하나이고, 양쪽이 서명한 뒤에 내용을 바꾸려면 "
         "그때 새 계약서를 쓴다.\n\n"
         "**작업마다 따로 납기를 두지 않는다.** 최종 납기일 하나만 있고, 대금도 모든 작업이 "
@@ -7624,8 +7733,14 @@ def start_development(
         "- **403 / FORBIDDEN**: 이 방의 개발자가 아닐 때. 계약서는 개발자만 쓴다\n"
         "- **404 / ROOM_NOT_FOUND**: `roomId`가 404일 때. 없는 방이거나 이 방의 당사자가 "
         "아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 준다\n"
+        "- **409 / NOT_DEVELOPMENT_ROOM**: 개발방이 아닐 때. 화면에는 그런 길이 없어 API를 "
+        "직접 부를 때만 난다\n"
+        "- **409 / CONTRACT_ALREADY_SIGNED**: 한쪽이라도 이미 서명했을 때 (R-CON-02)\n"
+        "- **409 / CONTRACT_CANCELLED**: 취소된 계약일 때 (R-CON-21)\n"
         "- **422 / INVALID_REQUEST**: `milestones`가 비었거나, 작업의 `qaCriteria`가 비었거나, "
-        "`issueIds`·`startDate`·`dueDate`·`freeRepairDays`·`milestones` 중 빠진 것이 있을 때\n"
+        "새 작업에 `title`이 없거나, 같은 `issueId`를 두 작업에 담았거나, "
+        "`startDate`·`dueDate`·`freeRepairDays`·`milestones` 중 빠진 것이 있을 때. "
+        "요청서에도 이 계약서에도 없는 요구사항을 넣었을 때도 422다\n"
         "- **500 / INTERNAL_ERROR**: 계약서를 만들지 못했을 때"
     ),
 )
@@ -7652,7 +7767,7 @@ def write_development_contract(
             "contractText": None,
             "development": {
                 **DEV_CONTRACT_EXAMPLE["development"],
-                "status": "PRE_SIGNED",
+                "status": "SIGNED",
             },
         }
     )

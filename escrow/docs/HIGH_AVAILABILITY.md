@@ -50,6 +50,10 @@ DISPATCHING(dispatched_by, dispatched_at)
 - `REQUESTED → DISPATCHING` 조건부 갱신이 1행 성공한 Pod만 금융망을 호출한다.
 - `dispatched_by`에는 Pod 이름처럼 실행 생명주기 동안 고유한 값을 저장한다.
 - 같은 거래·단계에는 미확정 시도를 하나만 허용하는 Unique 제약을 둔다.
+- 송금 단계(`DEPOSIT_TRANSFER`·`PAYOUT_TRANSFER`·`FEE_TRANSFER`·`REFUND_TRANSFER`)는 거절(FAILED)되지 않은 시도를 거래당 하나만 허용한다. (V4)
+- 송금 시도는 거래 행을 잠근 뒤 거래가 `PENDING`·`PROCESSING`일 때만 만든다. 송금 결과는 거래 행을 먼저 잠가 거래 상태와 시도 결과를 한 트랜잭션으로 기록한다. 다른 Pod가 송금을 끝낸 직후 들어온 요청은 잠금을 기다린 뒤 끝난 거래를 보고 멈춘다.
+- `COMPLETED`·`FAILED` 거래는 같은 멱등키로 다시 요청해도 송금하지 않는다. (`R-PAY-12`)
+- 정상 응답을 받은 이체의 본문을 해석하지 못하면 `FAILED`가 아니라 `UNKNOWN`으로 두고 조회로 확인한다.
 - 상태 변경과 멱등 결과는 하나의 DB 트랜잭션으로 확정한다.
 - 같은 `idempotencyKey`와 요청 지문은 어느 Pod가 받아도 동일한 결과를 반환한다.
 - 외부 호출을 DB 트랜잭션 안에서 오래 유지하지 않는다.
@@ -94,6 +98,16 @@ synchronous_commit: remote_apply
 - `@Transactional(readOnly = true)`만으로 권한 경계를 대신하지 않는다.
 - Flyway는 배포당 한 번 실행하는 migration Job 또는 동등한 단일 실행 절차로 수행한다.
 - 일반 애플리케이션 Pod의 동시 기동 횟수에 migration 실행 횟수가 좌우되지 않게 한다.
+
+### 복식부기 원장과 다중 Pod (`R-PAY-15`)
+
+- 분개는 애플리케이션이 아니라 `escrow_transactions`의 DB 트리거가 남긴다. 거래 완료와 같은 트랜잭션이라 완료만 커밋되고 분개가 빠지는 경우가 없다.
+- 롤링 배포 중 아직 V3 이전 이미지로 도는 Pod가 완료한 거래도 트리거가 분개한다.
+- 이전 이미지로 되돌려도 Flyway는 적용된 V3를 future migration으로 보고 기동을 막지 않는다. 트리거와 원장 테이블은 그대로 남아 계속 분개한다.
+- 두 Pod가 같은 거래를 동시에 완료하면 행 잠금 뒤 두 번째 갱신은 이미 `COMPLETED`인 행을 보므로 분개하지 않는다. `(transaction_id, line_no)` 유일성이 한 번 더 막는다.
+- V3 적용 중에는 `escrow_transactions`에 트리거를 만드는 잠금이 걸린다. 같은 트랜잭션에서 기존 완료 거래를 이관하므로 거래 수에 비례해 잠시 쓰기가 대기한다.
+- `LEDGER_READ_SOURCE`는 모든 Pod에 같은 값을 준다. Pod마다 다르면 같은 계약의 잔액을 서로 다른 기록에서 읽는다.
+- 운영 콘솔의 원장 대조는 `readOnly` 조회라 Standby에서 읽는다. 복제 지연 동안은 방금 완료된 거래가 반영되지 않았을 수 있다.
 
 ## 7. 실제 금융 환경 검증
 

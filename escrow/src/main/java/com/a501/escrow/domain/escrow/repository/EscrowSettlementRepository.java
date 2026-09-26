@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import com.a501.escrow.config.LedgerProperties;
+import com.a501.escrow.domain.ledger.repository.LedgerRepository;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Propagation;
@@ -21,9 +23,13 @@ public class EscrowSettlementRepository {
     private static final String TRANSACTION_ID = "transactionId";
     private static final String EXTERNAL_ID = "externalId";
     private final JdbcClient jdbc;
+    private final LedgerRepository ledger;
+    private final LedgerProperties ledgerProperties;
 
-    public EscrowSettlementRepository(JdbcClient jdbc) {
+    public EscrowSettlementRepository(JdbcClient jdbc, LedgerRepository ledger, LedgerProperties ledgerProperties) {
         this.jdbc = jdbc;
+        this.ledger = ledger;
+        this.ledgerProperties = ledgerProperties;
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -118,7 +124,11 @@ public class EscrowSettlementRepository {
                         rs.getString("recipient_name"), rs.getString("financial_transaction_id"))).list();
     }
 
+    /** 완료된 자금 이동만 반영한 잔액 (R-PAY-12). 어느 기록에서 읽을지는 app.ledger.read-source 를 따릅니다 (R-PAY-15). */
     public BigInteger balance(long escrowId) {
+        if (ledgerProperties.readsLedger()) {
+            return ledger.balance(escrowId);
+        }
         return jdbc.sql("""
                 SELECT COALESCE(sum(CASE WHEN transaction_type='DEPOSIT' THEN amount ELSE -amount END),0)
                 FROM escrow_transactions WHERE escrow_id=:escrowId AND status='COMPLETED'
@@ -126,6 +136,9 @@ public class EscrowSettlementRepository {
     }
 
     public Totals totals(long escrowId) {
+        if (ledgerProperties.readsLedger()) {
+            return ledger.totals(escrowId);
+        }
         return jdbc.sql("""
                 SELECT COALESCE(sum(amount) FILTER (WHERE transaction_type='RELEASE'),0) released,
                        COALESCE(sum(amount) FILTER (WHERE transaction_type='FEE'),0) fee,
@@ -172,14 +185,20 @@ public class EscrowSettlementRepository {
                 """).param(EXTERNAL_ID, externalId).param("id", transactionId).update();
     }
 
+    /** 끝나지 않은 거래만 결과 불명으로 바꾼다. 다른 Pod가 먼저 완료한 거래를 되돌리지 않는다. */
     public void unknown(long transactionId) {
-        jdbc.sql("UPDATE escrow_transactions SET status='UNKNOWN',updated_at=clock_timestamp() WHERE id=:id")
-                .param("id", transactionId).update();
+        jdbc.sql("""
+                UPDATE escrow_transactions SET status='UNKNOWN',updated_at=clock_timestamp()
+                WHERE id=:id AND status IN ('PENDING','PROCESSING')
+                """).param("id", transactionId).update();
     }
 
+    /** 끝나지 않은 거래만 실패로 확정한다. 완료·결과 불명 거래는 실패로 바꾸지 않는다. (R-PAY-12) */
     public void failed(long transactionId, String code) {
-        jdbc.sql("UPDATE escrow_transactions SET status='FAILED',failure_code=:code,updated_at=clock_timestamp() WHERE id=:id")
-                .param("code", code).param("id", transactionId).update();
+        jdbc.sql("""
+                UPDATE escrow_transactions SET status='FAILED',failure_code=:code,updated_at=clock_timestamp()
+                WHERE id=:id AND status IN ('PENDING','PROCESSING')
+                """).param("code", code).param("id", transactionId).update();
     }
 
     public void refreshSettlement(long settlementId, long escrowId) {
@@ -212,6 +231,34 @@ public class EscrowSettlementRepository {
                 RETURNING id
                 """).param(TRANSACTION_ID, transactionId).param("step", step).param(REFERENCE, reference)
                 .query(Long.class).optional();
+    }
+
+    /**
+     * 송금 시도를 만든다. 거래 행을 먼저 잠그고 아직 끝나지 않은 거래(PENDING·PROCESSING)일 때만 만든다. (R-PAY-12)
+     * 결과 기록({@link #transferSucceeded}, {@link #transferFailed})도 거래 행을 먼저 잠그므로,
+     * 다른 Pod가 송금을 마친 직후에는 이 잠금을 기다린 뒤 끝난 거래를 보고 시도를 만들지 않는다.
+     */
+    @Transactional
+    public Optional<Long> prepareTransferAttempt(long transactionId, String step, String reference) {
+        boolean open = jdbc.sql("""
+                SELECT id FROM escrow_transactions
+                WHERE id=:id AND status IN ('PENDING','PROCESSING') FOR UPDATE
+                """).param("id", transactionId).query(Long.class).optional().isPresent();
+        return open ? prepareAttempt(transactionId, step, reference) : Optional.empty();
+    }
+
+    /** 송금 성공. 거래 완료와 시도 성공을 함께 기록한다. 거래 행을 먼저 잠가 시도 생성과 잠금 순서를 맞춘다. */
+    @Transactional
+    public void transferSucceeded(long transactionId, long attemptId, String externalId) {
+        complete(transactionId, externalId);
+        finishAttempt(attemptId, "SUCCEEDED", externalId, "H0000");
+    }
+
+    /** 금융망이 송금을 거절했다. 자금 유출이 없으므로 거래를 FAILED로 확정하고, 이후 같은 거래는 다시 보내지 않는다. */
+    @Transactional
+    public void transferFailed(long transactionId, long attemptId, String code) {
+        failed(transactionId, code);
+        finishAttempt(attemptId, "FAILED", null, code);
     }
 
     public Optional<Long> prepareRecoveryAttempt(long transactionId, String reference) {

@@ -154,17 +154,56 @@ location /escrow/ {
 ### 운영 콘솔
 
 - Spring MVC + Thymeleaf 기반 조회 전용 화면이다.
-- 에스크로 건수·상태, 원장 합계, 계좌 잔액, 최근 대사, 최근 에스크로, 서비스 클라이언트와 인증 문구를 표시한다.
+- 에스크로 건수·상태, 원장 합계, 복식부기 원장 계정 잔액과 대조, 계좌 잔액, 최근 대사, 최근 에스크로, 서비스 클라이언트와 인증 문구를 표시한다.
 - 자금 초기화, 강제 지급·환불 같은 변경 기능은 없다.
 - 로그인은 Spring Security의 메모리 사용자 한 명을 사용한다.
 - 현재 운영 prefix 라우팅 장애는 이 문서 1절을 따른다.
 
 ## 3. 데이터베이스와 실행 구조
 
-Flyway migration은 다음 두 파일이다.
+Flyway migration은 다음 네 파일이다. 이미 적용된 파일은 고치지 않고 다음 번호로 추가한다.
 
 - `V1__create_escrow_schema.sql`: 서비스 클라이언트, 회원 발급, 1원 인증, 에스크로, 상태 명령, 정산, 원장 거래, 금융 시도, 감사 이벤트
 - `V2__create_reconciliation_snapshots.sql`: 대사 결과 이력
+- `V3__create_double_entry_ledger.sql`: 복식부기 원장. 계정과목 `ledger_accounts`, 분개 `ledger_postings`, 분개 트리거, 기존 완료 거래 이관
+- `V4__limit_one_transfer_attempt.sql`: 같은 거래·송금 단계에 거절(FAILED)되지 않은 송금 시도를 하나만 허용하는 부분 유니크 인덱스
+
+### 같은 송금을 다시 보내지 않는 방식 (`R-PAY-12`)
+
+| 경우 | 동작 |
+| --- | --- |
+| `COMPLETED`·`FAILED` 거래를 같은 멱등키로 다시 요청 | 송금하지 않고 현재 결과를 돌려준다. `FAILED`는 금융망이 거절해 자금 유출이 없는 확정 결과다 |
+| 지급이 `FAILED` | 아직 보내지 않은 같은 정산의 수수료도 `FAILED`(`PAYOUT_FAILED`)로 닫아 정산이 `FAILED`로 확정된다. 이후 요청은 새 정산 식별자를 쓴다 |
+| 금융망이 이체를 정상 응답했는데 본문을 해석하지 못함 | 돈이 움직였을 수 있으므로 `FAILED`가 아니라 결과 불명(`UNKNOWN`)으로 두고 거래내역 조회로 확인한다. 예치 이체도 같다 |
+| 두 Pod가 같은 거래를 동시에 처리 | 송금 시도 생성(`prepareTransferAttempt`)은 거래 행을 잠그고 `PENDING`·`PROCESSING`일 때만 만든다. 결과 기록(`transferSucceeded`·`transferFailed`)도 거래 행을 먼저 잠가 한 트랜잭션으로 남기므로, 뒤에 온 Pod는 끝난 거래를 보고 멈춘다 |
+| 그래도 새 시도가 들어오면 | V4 인덱스가 성공·진행 중인 송금 시도가 있는 거래에 두 번째 시도를 거절한다 |
+
+### 복식부기 원장 (`R-PAY-15`)
+
+`escrow_transactions`가 `COMPLETED`로 바뀌는 순간 DB 트리거가 같은 트랜잭션 안에서 분개를 남긴다. 애플리케이션 쓰기 코드는 분개를 직접 쓰지 않는다.
+
+| 거래 | 차변 | 대변 |
+| --- | --- | --- |
+| 예치 `DEPOSIT` | `CUSTODY_CASH` 보관계좌 현금 | `ESCROW_LIABILITY` 예치금 반환 의무 |
+| 지급 `RELEASE` | `ESCROW_LIABILITY` | `CUSTODY_CASH` |
+| 환불 `REFUND` | `ESCROW_LIABILITY` | `CUSTODY_CASH` |
+| 수수료 `FEE` 1줄 | `ESCROW_LIABILITY` | `FEE_REVENUE` 수수료 수익 |
+| 수수료 `FEE` 2줄 | `FEE_CASH` 수수료계좌 현금 | `CUSTODY_CASH` |
+
+- 한 행이 차변 1건과 대변 1건이고 금액이 같아 행마다 대차가 맞는다.
+- `(transaction_id, line_no)`가 유일해 같은 거래를 두 번 분개하지 않는다. 완료 뒤 다시 `COMPLETED`로 갱신해도 새로 분개하지 않는다.
+- 분개와 계정과목은 추가만 허용한다. UPDATE·DELETE·TRUNCATE는 트리거가 거절한다.
+- 트리거는 거래를 거절하지 않는다. 분개 뒤 거래 상태나 금액이 바뀌면 운영 화면의 원장 대조가 불일치로 표시한다.
+- 불변식: 보관계좌 현금 = 모든 계약의 반환 의무 합계, 수수료계좌 현금 = 수수료 수익.
+
+잔액·정산 합계·대사 합계를 어느 기록에서 읽을지는 `app.ledger.read-source`(환경변수 `LEDGER_READ_SOURCE`)가 정한다.
+
+| 값 | 읽는 곳 |
+| --- | --- |
+| `LEDGER` (기본) | 분개 합산 (`LedgerRepository`) |
+| `TRANSACTIONS` | 완료 거래 합산. V3 이전과 같다. 원장에 문제가 생겼을 때 되돌리는 용도 |
+
+운영 콘솔의 "복식부기 원장" 대조가 불일치이면 원인을 확인하는 동안 `TRANSACTIONS`로 되돌릴 수 있다. 값은 모든 Pod에 같게 준다.
 
 JPA와 QueryDSL은 Escrow에서 사용하지 않는다. 접근 방식은 Spring JDBC(`JdbcClient`, `JdbcTemplate`)다.
 

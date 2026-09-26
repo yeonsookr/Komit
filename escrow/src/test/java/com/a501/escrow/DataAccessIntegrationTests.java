@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.math.BigInteger;
@@ -38,8 +40,12 @@ import com.a501.escrow.domain.escrow.service.EscrowHoldService;
 import com.a501.escrow.domain.escrow.service.EscrowSettlementService;
 import com.a501.escrow.domain.escrow.repository.EscrowSettlementRepository;
 import com.a501.escrow.domain.finance.repository.FinancialOperationAttemptRepository;
+import com.a501.escrow.integration.finance.FinanceApiException;
 import com.a501.escrow.integration.finance.FinanceClient;
+import com.a501.escrow.config.LedgerProperties;
+import com.a501.escrow.domain.ledger.repository.LedgerRepository;
 import com.a501.escrow.domain.reconciliation.dto.ReconciliationDtos;
+import com.a501.escrow.domain.reconciliation.repository.ReconciliationRepository;
 import com.a501.escrow.domain.reconciliation.service.ReconciliationService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.AfterAll;
@@ -47,6 +53,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -137,6 +144,15 @@ class DataAccessIntegrationTests {
     @Autowired
     ReconciliationService reconciliationService;
 
+    @Autowired
+    ReconciliationRepository reconciliationRepository;
+
+    @Autowired
+    LedgerRepository ledgerRepository;
+
+    @Autowired
+    JdbcClient jdbcClient;
+
     @MockitoBean
     FinanceClient financeClient;
 
@@ -170,6 +186,12 @@ class DataAccessIntegrationTests {
 
     @BeforeEach
     void seed() {
+        // 분개는 추가만 허용하므로 테스트 사이 정리에서만 보호 트리거를 잠시 끈다. 트랜잭션이 끝나면 다시 켜져 있다.
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            jdbcTemplate.execute("ALTER TABLE ledger_postings DISABLE TRIGGER trg_ledger_postings_append_only");
+            jdbcTemplate.update("DELETE FROM ledger_postings");
+            jdbcTemplate.execute("ALTER TABLE ledger_postings ENABLE TRIGGER trg_ledger_postings_append_only");
+        });
         jdbcTemplate.update("DELETE FROM reconciliation_snapshots");
         jdbcTemplate.update("DELETE FROM escrow_state_commands");
         jdbcTemplate.update("DELETE FROM financial_operation_attempts");
@@ -229,7 +251,7 @@ class DataAccessIntegrationTests {
                   AND table_name IN ('service_clients', 'escrows', 'financial_operation_attempts')
                 """, Integer.class);
 
-        assertThat(migrationCount).isEqualTo(2);
+        assertThat(migrationCount).isEqualTo(4);
         assertThat(tableCount).isEqualTo(3);
     }
 
@@ -591,6 +613,360 @@ class DataAccessIntegrationTests {
                         exception -> assertThat(exception.responseCode()).isEqualTo("E5001"));
     }
 
+
+    /** R-PAY-15: 예치·지급·수수료·환불이 끝날 때마다 대차가 맞는 분개가 남고, 잔액은 거래 원장과 같다. */
+    @Test
+    void postsEveryCompletedMoneyMovementAsBalancedDoubleEntry() {
+        String payerAccount = "0012222222222222";
+        String workerAccount = "0013333333333333";
+        jdbcTemplate.update("UPDATE escrows SET expected_amount=650000,status='ACTIVE' WHERE id=1");
+        jdbcTemplate.update("""
+                UPDATE escrow_transactions SET amount=650000,status='COMPLETED',deposit_verification_status='MATCHED',
+                    source_bank_code='001',source_account_encrypted=?,completed_at=clock_timestamp() WHERE id=1
+                """, fieldEncryption.encrypt(payerAccount));
+        when(financeClient.inquireAccountHolder(anyString(), anyString())).thenAnswer(invocation -> {
+            String account = invocation.getArgument(1);
+            String name = account.equals(workerAccount) ? "worker" : account.equals(payerAccount) ? "payer" : "KOMIT";
+            return new FinanceClient.AccountHolder("001", account, name);
+        });
+        when(financeClient.transfer(anyString(), anyString(), anyString(), any(BigInteger.class),
+                anyString(), anyString(), anyString())).thenReturn("bank-release", "bank-fee", "bank-refund");
+
+        escrowSettlementService.release(new EscrowSettlementDtos.ReleaseRequest(
+                validHeader("releaseEscrow", "test-client-api-key", "release-key", null),
+                1, "SETTLEMENT:9001", BigInteger.valueOf(400_000), "001", workerAccount, "worker"));
+
+        assertThat(ledgerRepository.balance(1))
+                .isEqualTo(escrowSettlementRepository.balance(1)).isEqualTo(BigInteger.valueOf(250_000));
+        assertThat(ledgerRepository.totals(1)).isEqualTo(escrowSettlementRepository.totals(1));
+        assertThat(ledgerRepository.check()).satisfies(check -> {
+            assertThat(check.custody()).isEqualTo(BigInteger.valueOf(250_000));
+            assertThat(check.liability()).isEqualTo(BigInteger.valueOf(250_000));
+            assertThat(check.feeCash()).isEqualTo(BigInteger.valueOf(4_000));
+            assertThat(check.feeRevenue()).isEqualTo(BigInteger.valueOf(4_000));
+            assertThat(check.consistent()).isTrue();
+        });
+
+        escrowSettlementService.refund(new EscrowSettlementDtos.RefundRequest(
+                validHeader("refundEscrow", "test-client-api-key", "refund-key", null),
+                1, BigInteger.valueOf(250_000), "001", payerAccount, "payer", "SETTLEMENT:9001"));
+
+        assertThat(jdbcTemplate.queryForList("""
+                SELECT entry_type || ' ' || debit_account || '>' || credit_account || ' ' || amount
+                FROM ledger_postings ORDER BY transaction_id, line_no
+                """, String.class)).containsExactly(
+                "DEPOSIT CUSTODY_CASH>ESCROW_LIABILITY 650000",
+                "RELEASE ESCROW_LIABILITY>CUSTODY_CASH 396000",
+                "FEE ESCROW_LIABILITY>FEE_REVENUE 4000",
+                "FEE FEE_CASH>CUSTODY_CASH 4000",
+                "REFUND ESCROW_LIABILITY>CUSTODY_CASH 250000");
+        assertThat(ledgerRepository.balance(1)).isZero();
+        assertThat(ledgerRepository.totals(1)).isEqualTo(escrowSettlementRepository.totals(1));
+        assertThat(ledgerRepository.check()).satisfies(check -> {
+            assertThat(check.custody()).isZero();
+            assertThat(check.liability()).isZero();
+            assertThat(check.consistent()).isTrue();
+        });
+    }
+
+    /** 완료로 바뀔 때만 분개한다. 완료 전 상태 변화나 완료 뒤 재갱신은 분개하지 않는다. */
+    @Test
+    void postsOnlyWhenTransactionFirstBecomesCompleted() {
+        jdbcTemplate.update("UPDATE escrow_transactions SET status='PROCESSING' WHERE id=1");
+        jdbcTemplate.update("UPDATE escrow_transactions SET status='UNKNOWN' WHERE id=1");
+        assertThat(postingCount()).isZero();
+
+        completeSeedDeposit();
+        jdbcTemplate.update("UPDATE escrow_transactions SET status='COMPLETED',updated_at=clock_timestamp() WHERE id=1");
+
+        assertThat(postingCount()).isEqualTo(1);
+    }
+
+    /** 두 파드가 같은 거래를 동시에 완료해도 행 잠금 뒤 두 번째는 이미 완료된 행을 보므로 한 번만 분개한다. */
+    @Test
+    void concurrentCompletionsFromTwoPodsPostOnce() {
+        CountDownLatch start = new CountDownLatch(1);
+        Runnable complete = () -> {
+            try {
+                start.await();
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException(exception);
+            }
+            new TransactionTemplate(transactionManager).executeWithoutResult(status -> completeSeedDeposit());
+        };
+        var first = CompletableFuture.runAsync(complete);
+        var second = CompletableFuture.runAsync(complete);
+        start.countDown();
+        CompletableFuture.allOf(first, second).join();
+
+        assertThat(postingCount()).isEqualTo(1);
+    }
+
+    @Test
+    void ledgerIsAppendOnly() {
+        completeSeedDeposit();
+
+        assertThatThrownBy(() -> jdbcTemplate.update("UPDATE ledger_postings SET amount=2"))
+                .hasMessageContaining("append-only");
+        assertThatThrownBy(() -> jdbcTemplate.update("DELETE FROM ledger_postings"))
+                .hasMessageContaining("append-only");
+        assertThatThrownBy(() -> jdbcTemplate.execute("TRUNCATE ledger_postings"))
+                .hasMessageContaining("append-only");
+        assertThatThrownBy(() -> jdbcTemplate.update("UPDATE ledger_accounts SET name='x'"))
+                .hasMessageContaining("append-only");
+        assertThat(postingCount()).isEqualTo(1);
+    }
+
+    /** V3 이전에 완료된 거래를 V3 의 이관 문장이 분개하고, 다시 돌려도 두 번 분개하지 않는다. */
+    @Test
+    void backfillPostsTransactionsCompletedBeforeV3OnlyOnce() {
+        completeSeedDepositWithoutLedger();
+        assertThat(postingCount()).isZero();
+        assertThat(ledgerRepository.check().unposted()).isEqualTo(1);
+        assertThat(ledgerRepository.check().consistent()).isFalse();
+
+        jdbcTemplate.queryForList(V3_BACKFILL);
+        jdbcTemplate.queryForList(V3_BACKFILL);
+
+        assertThat(postingCount()).isEqualTo(1);
+        assertThat(ledgerRepository.check().consistent()).isTrue();
+    }
+
+    /** R-PAY-15: 기본은 분개에서 읽고, TRANSACTIONS 로 되돌리면 완료 거래 합산에서 읽는다. */
+    @Test
+    void readsBalanceAndReconciliationFromLedgerByDefault() {
+        var transactionSource = new LedgerProperties(LedgerProperties.ReadSource.TRANSACTIONS);
+        var reconciliationFromTransactions =
+                new ReconciliationRepository(jdbcClient, ledgerRepository, transactionSource);
+        var settlementFromTransactions =
+                new EscrowSettlementRepository(jdbcClient, ledgerRepository, transactionSource);
+        completeSeedDepositWithoutLedger();
+
+        assertThat(reconciliationRepository.ledgerTotal()).isZero();
+        assertThat(escrowSettlementRepository.balance(1)).isZero();
+        assertThat(reconciliationFromTransactions.ledgerTotal()).isEqualTo(BigInteger.ONE);
+        assertThat(settlementFromTransactions.balance(1)).isEqualTo(BigInteger.ONE);
+
+        jdbcTemplate.queryForList(V3_BACKFILL);
+
+        assertThat(reconciliationRepository.ledgerTotal()).isEqualTo(reconciliationFromTransactions.ledgerTotal());
+        assertThat(reconciliationRepository.escrowCount()).isEqualTo(reconciliationFromTransactions.escrowCount())
+                .isEqualTo(1);
+        assertThat(escrowSettlementRepository.balance(1)).isEqualTo(settlementFromTransactions.balance(1));
+        assertThat(escrowSettlementRepository.totals(1)).isEqualTo(settlementFromTransactions.totals(1));
+    }
+
+    /** R-PAY-07: 수수료는 에스크로에 고정된 요율로 계산하고 원 미만은 버린다. */
+    @Test
+    void chargesFeeAtTheRateFixedOnTheEscrow() {
+        String workerAccount = activateFundedEscrow();
+        jdbcTemplate.update("UPDATE escrows SET fee_rate_bps=250 WHERE id=1");
+        when(financeClient.transfer(anyString(), anyString(), anyString(), any(BigInteger.class),
+                anyString(), anyString(), anyString())).thenReturn("bank-release", "bank-fee");
+
+        var released = escrowSettlementService.release(new EscrowSettlementDtos.ReleaseRequest(
+                validHeader("releaseEscrow", "test-client-api-key", "release-key", null),
+                1, "SETTLEMENT:9001", BigInteger.valueOf(400_033), "001", workerAccount, "worker"));
+
+        assertThat(released.status()).isEqualTo("COMPLETED");
+        assertThat(released.feeAmount()).isEqualTo(BigInteger.valueOf(10_000)); // 400,033 × 2.5% = 10,000.825
+        assertThat(released.netAmount()).isEqualTo(BigInteger.valueOf(390_033));
+        assertThat(released.balance()).isEqualTo(BigInteger.valueOf(249_967));
+    }
+
+    /** R-PAY-07: 요율이 0이면 수수료 거래와 이체를 만들지 않는다. */
+    @Test
+    void skipsFeeTransferWhenTheFixedRateIsZero() {
+        String workerAccount = activateFundedEscrow();
+        jdbcTemplate.update("UPDATE escrows SET fee_rate_bps=0 WHERE id=1");
+        when(financeClient.transfer(anyString(), anyString(), anyString(), any(BigInteger.class),
+                anyString(), anyString(), anyString())).thenReturn("bank-release");
+
+        var released = escrowSettlementService.release(new EscrowSettlementDtos.ReleaseRequest(
+                validHeader("releaseEscrow", "test-client-api-key", "release-key", null),
+                1, "SETTLEMENT:9001", BigInteger.valueOf(400_000), "001", workerAccount, "worker"));
+
+        assertThat(released.status()).isEqualTo("COMPLETED");
+        assertThat(released.feeAmount()).isZero();
+        assertThat(released.netAmount()).isEqualTo(BigInteger.valueOf(400_000));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM escrow_transactions WHERE transaction_type='FEE'", Integer.class)).isZero();
+        verify(financeClient, times(1)).transfer(anyString(), anyString(), anyString(), any(BigInteger.class),
+                anyString(), anyString(), anyString());
+    }
+
+    /** 새로 만든 에스크로에는 R-PAY-07 의 1% 요율이 고정된다. */
+    @Test
+    void newEscrowIsCreatedWithTheRuleFeeRate() {
+        escrowDepositRepository.create(1, 1, "CONTRACT-FEE-RATE", "DEVELOPMENT",
+                BigInteger.valueOf(100_000), "fee-rate-key", "f".repeat(64),
+                fieldEncryption.encrypt("김의뢰"), "001", fieldEncryption.encrypt("0012222222222222"));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT fee_rate_bps FROM escrows WHERE external_contract_id='CONTRACT-FEE-RATE'", Integer.class))
+                .isEqualTo(100);
+    }
+
+    /** R-PAY-12: 금융망이 거절해 FAILED로 끝난 지급은 같은 멱등키로 다시 불러도 송금하지 않고 현재 결과를 돌려준다. */
+    @Test
+    void failedPayoutIsNeverResentWithTheSameKey() {
+        String workerAccount = activateFundedEscrow();
+        when(financeClient.transfer(anyString(), anyString(), anyString(), any(BigInteger.class),
+                anyString(), anyString(), anyString()))
+                .thenThrow(new FinanceApiException(400, "A1014", "이체 거절"))
+                .thenReturn("bank-release-retry");
+        var request = new EscrowSettlementDtos.ReleaseRequest(
+                validHeader("releaseEscrow", "test-client-api-key", "release-key", null),
+                1, "SETTLEMENT:9001", BigInteger.valueOf(400_000), "001", workerAccount, "worker");
+
+        assertThatThrownBy(() -> escrowSettlementService.release(request))
+                .isInstanceOfSatisfying(EscrowApiException.class,
+                        exception -> assertThat(exception.responseCode()).isEqualTo("A1014"));
+        var retried = escrowSettlementService.release(request);
+
+        assertThat(retried.status()).isEqualTo("FAILED");
+        assertThat(retried.releasedAmount()).isZero();
+        assertThat(retried.balance()).isEqualTo(BigInteger.valueOf(650_000));
+        verify(financeClient, times(1)).transfer(anyString(), anyString(), anyString(), any(BigInteger.class),
+                anyString(), anyString(), anyString());
+        assertThat(jdbcTemplate.queryForObject("""
+                SELECT count(*) FROM financial_operation_attempts WHERE step='PAYOUT_TRANSFER'
+                """, Integer.class)).isEqualTo(1);
+    }
+
+    /** 다른 Pod가 송금을 끝낸 거래에는 새 송금 시도를 만들지 않는다. 끝나기 전이면 진행 중인 시도가 막는다. */
+    @Test
+    void transferAttemptIsCreatedOnlyForAnUnfinishedTransaction() {
+        insertOpenRelease(2);
+
+        var first = new TransactionTemplate(transactionManager).execute(status ->
+                escrowSettlementRepository.prepareTransferAttempt(2, "PAYOUT_TRANSFER", "pod-a-transfer"));
+        assertThat(first).isPresent();
+        assertThat(escrowSettlementRepository.claimAttempt(first.orElseThrow(), "pod-a")).isTrue();
+        assertThat(escrowSettlementRepository.prepareTransferAttempt(2, "PAYOUT_TRANSFER", "pod-b-in-flight"))
+                .isEmpty();
+
+        escrowSettlementRepository.transferSucceeded(2, first.orElseThrow(), "bank-tx");
+
+        assertThat(escrowSettlementRepository.prepareTransferAttempt(2, "PAYOUT_TRANSFER", "pod-b-after"))
+                .isEmpty();
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM escrow_transactions WHERE id=2", String.class)).isEqualTo("COMPLETED");
+    }
+
+    /** 늦게 도착한 Pod의 결과 불명·실패 기록이 다른 Pod가 먼저 완료한 거래를 되돌리지 않는다. */
+    @Test
+    void lateUnknownOrFailureNeverDemotesCompletedTransaction() {
+        insertOpenRelease(2);
+        escrowSettlementRepository.complete(2, "bank-tx");
+
+        escrowSettlementRepository.unknown(2);
+        escrowSettlementRepository.failed(2, "A1014");
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT status FROM escrow_transactions WHERE id=2", String.class)).isEqualTo("COMPLETED");
+        assertThat(ledgerRepository.check().consistent()).isTrue();
+    }
+
+    /** 두 Pod가 동시에 같은 거래의 송금 시도를 만들어도 하나만 생긴다. */
+    @Test
+    void concurrentTransferAttemptsFromTwoPodsCreateOne() {
+        insertOpenRelease(2);
+        CountDownLatch start = new CountDownLatch(1);
+        var first = CompletableFuture.supplyAsync(() -> prepareTransferAfter(start, "pod-a-transfer"));
+        var second = CompletableFuture.supplyAsync(() -> prepareTransferAfter(start, "pod-b-transfer"));
+        start.countDown();
+
+        assertThat(java.util.List.of(first.join(), second.join()))
+                .filteredOn(java.util.Optional::isPresent).hasSize(1);
+    }
+
+    /** V4: 성공한 송금 시도가 있으면 같은 거래·단계의 송금 시도를 DB가 더 받지 않는다. 거절된 시도는 세지 않는다. */
+    @Test
+    void databaseAllowsOneNonFailedTransferAttemptPerTransaction() {
+        insertOpenRelease(2);
+        jdbcTemplate.update("""
+                INSERT INTO financial_operation_attempts(transaction_id,step,attempt_no,request_reference,
+                    status,dispatched_by,dispatched_at,responded_at)
+                VALUES (2,'PAYOUT_TRANSFER',1,'rejected',  'FAILED',   'pod-a',clock_timestamp(),clock_timestamp()),
+                       (2,'PAYOUT_TRANSFER',2,'succeeded','SUCCEEDED','pod-a',clock_timestamp(),clock_timestamp())
+                """);
+
+        assertThatThrownBy(() -> jdbcTemplate.update("""
+                INSERT INTO financial_operation_attempts(transaction_id,step,attempt_no,request_reference,
+                    status,dispatched_by,dispatched_at,responded_at)
+                VALUES (2,'PAYOUT_TRANSFER',3,'second-success','SUCCEEDED','pod-b',clock_timestamp(),clock_timestamp())
+                """)).hasMessageContaining("uq_financial_operation_attempts_one_transfer");
+    }
+
+    private java.util.Optional<Long> prepareTransferAfter(CountDownLatch start, String reference) {
+        try {
+            start.await();
+            return escrowSettlementRepository.prepareTransferAttempt(2, "PAYOUT_TRANSFER", reference);
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(exception);
+        }
+    }
+
+    /** 예치 650,000원이 끝난 활성 에스크로. 금융망 예금주 조회는 계좌마다 맞는 이름을 돌려준다. */
+    private String activateFundedEscrow() {
+        String payerAccount = "0012222222222222";
+        String workerAccount = "0013333333333333";
+        jdbcTemplate.update("UPDATE escrows SET expected_amount=650000,status='ACTIVE' WHERE id=1");
+        jdbcTemplate.update("""
+                UPDATE escrow_transactions SET amount=650000,status='COMPLETED',deposit_verification_status='MATCHED',
+                    source_bank_code='001',source_account_encrypted=?,completed_at=clock_timestamp() WHERE id=1
+                """, fieldEncryption.encrypt(payerAccount));
+        when(financeClient.inquireAccountHolder(anyString(), anyString())).thenAnswer(invocation -> {
+            String account = invocation.getArgument(1);
+            String name = account.equals(workerAccount) ? "worker" : "KOMIT";
+            return new FinanceClient.AccountHolder("001", account, name);
+        });
+        return workerAccount;
+    }
+
+    private void insertOpenRelease(long transactionId) {
+        jdbcTemplate.update("""
+                INSERT INTO settlements(id,escrow_id,external_reference_id,approved_amount,status)
+                VALUES (2,1,'SETTLEMENT:RETRY-1',1,'PROCESSING')
+                """);
+        jdbcTemplate.update("""
+                INSERT INTO escrow_transactions(id,service_client_id,escrow_id,settlement_id,transaction_type,
+                    amount,status,external_reference_id,idempotency_key,request_fingerprint,
+                    recipient_bank_code,recipient_account_encrypted,recipient_name)
+                VALUES (?,1,1,2,'RELEASE',1,'PROCESSING','SETTLEMENT:RETRY-1','retry-release',repeat('c',64),
+                    '001','encrypted','worker')
+                """, transactionId);
+    }
+
+    private static final String V3_BACKFILL = """
+            SELECT post_ledger_entries(id, service_client_id, escrow_id, transaction_type, amount, completed_at)
+            FROM escrow_transactions
+            WHERE status = 'COMPLETED'
+            ORDER BY id
+            """;
+
+    private void completeSeedDeposit() {
+        jdbcTemplate.update("""
+                UPDATE escrow_transactions SET status='COMPLETED',deposit_verification_status='MATCHED',
+                    completed_at=clock_timestamp() WHERE id=1
+                """);
+    }
+
+    /** V3 이전에 완료된 거래처럼, 분개 트리거 없이 완료로 바꾼다. */
+    private void completeSeedDepositWithoutLedger() {
+        new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
+            jdbcTemplate.execute("ALTER TABLE escrow_transactions DISABLE TRIGGER trg_escrow_transactions_post_ledger");
+            completeSeedDeposit();
+            jdbcTemplate.execute("ALTER TABLE escrow_transactions ENABLE TRIGGER trg_escrow_transactions_post_ledger");
+        });
+    }
+
+    private int postingCount() {
+        return jdbcTemplate.queryForObject("SELECT count(*) FROM ledger_postings", Integer.class);
+    }
 
     @Test
     void validatesMockHeaderRulesAndReaderRejectsWrites() {

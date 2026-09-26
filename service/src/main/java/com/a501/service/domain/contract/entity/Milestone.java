@@ -8,6 +8,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -27,6 +28,18 @@ public class Milestone extends SoftDeleteEntity {
 
     @Column(name = "issue_id")
     private Integer issueId;
+
+    /**
+     * 계약서에서 바꾼 작업 이름. 비어 있으면 붙은 요구사항의 이름을 쓴다.
+     *
+     * <p>요청서는 계약서가 건드리지 않는다. 합의해 바꾼 이름은 요구사항이 아니라 작업에 남긴다.
+     */
+    @Column(name = "title", length = 200)
+    private String title;
+
+    /** 계약서에서 바꾼 작업 설명. 비어 있으면 붙은 요구사항의 설명을 쓴다. */
+    @Column(name = "detail", length = 1000)
+    private String detail;
 
     @Column(name = "price", nullable = false)
     private Integer price;
@@ -48,4 +61,34 @@ public class Milestone extends SoftDeleteEntity {
 
     @Column(name = "confirmed_at")
     private LocalDateTime confirmedAt;
+
+    /**
+     * 계약서에 담은 작업 하나. 요구사항 하나에 붙고, 서명 전이라 제안 상태로 시작한다.
+     *
+     * @param title 계약서에서 바꾼 이름. 요구사항 이름을 그대로 쓰면 {@code null}
+     * @param detail 계약서에서 바꾼 설명. 요구사항 설명을 그대로 쓰면 {@code null}
+     */
+    public static Milestone of(
+            Integer developmentContractId,
+            Integer issueId,
+            String title,
+            String detail,
+            Integer price,
+            Integer workDate) {
+        Milestone entity = new Milestone();
+        entity.developmentContractId = Objects.requireNonNull(developmentContractId, "developmentContractId");
+        entity.issueId = Objects.requireNonNull(issueId, "issueId");
+        entity.title = title;
+        entity.detail = detail;
+        entity.price = Objects.requireNonNull(price, "price");
+        entity.workDate = workDate;
+        entity.status = "PROPOSED";
+        entity.statusGroup = "MILESTONE_STATUS";
+        return entity;
+    }
+
+    /** 계약서를 다시 써서 빠진 작업. 서명 전이라 통과 기록이 없어 지워도 잃는 것이 없다. */
+    public void removeFromContract(LocalDateTime removedAt) {
+        markDeleted(removedAt);
+    }
 }

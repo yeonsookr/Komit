@@ -1,6 +1,7 @@
 ---
 name: komit-scan
 description: Komit 사전점검. 프로젝트를 검사해 출시 준비 상태를 알아보고 결과 파일을 만든다. 프로젝트에 komit-scan.md 가 있을 때, 또는 코밋·Komit 검사·사전점검·출시 점검을 요청받았을 때 쓴다.
+argument-hint: <진단 번호> [의뢰인이 겪은 일]
 ---
 
 # Komit 사전점검
@@ -58,19 +59,24 @@ description: Komit 사전점검. 프로젝트를 검사해 출시 준비 상태�
 
 ## 1단계 — 준비
 
-### 검사 파일 읽기
+### 진단 번호와 증상 받기
 
-프로젝트 안의 `komit-scan.md` 를 찾아 읽는다. 여기에 이런 것이 들어 있다.
+의뢰인은 명령 한 줄로 검사를 시작한다.
 
-- 의뢰인이 설문에 적은 증상
-- 진단 번호
-- 검사 지시문 판 번호
-- 프로젝트 정보
+```
+/komit-scan 19 예약을 취소했는데 결제 화면이 또 떠요
+            ↑ 진단 번호   ↑ 의뢰인이 겪은 일 (증상)
+```
 
-진단 번호와 검사 지시문 판 번호는 따로 만들거나 바꾸지 않는다. 결과 파일의
-`diagnosisId` 와 `scanVersion` 에 검사 파일의 값을 그대로 옮긴다.
+이번에 받은 값: `$ARGUMENTS`
 
-없으면 검사를 시작하지 말고, 의뢰인에게 Komit에서 검사 파일을 내려받아 프로젝트에 넣어 달라고 말한다.
+- **맨 앞의 숫자**가 진단 번호다. 결과 파일의 `diagnosisId` 에 **숫자 그대로** 옮긴다. 따로 만들거나 바꾸지 않는다
+- **그 뒤의 글**이 의뢰인이 겪은 일이다. 「의뢰 내용과 잇기」(2단계)의 증상으로 쓴다
+- 증상이 없으면 증상 없이 검사한다
+- 프로젝트 맨 위에 `komit-scan.md` 가 있으면 그것도 읽는다. 진단 번호 · 증상 · 프로젝트 정보가 들어 있다. 명령에 값이 있으면 **명령 값이 먼저**다
+- 진단 번호를 어디서도 못 찾으면 검사를 시작하지 말고, Komit 사전점검 화면에 나온 명령을 그대로 붙여 넣거나 검사 파일을 내려받아 프로젝트에 넣어 달라고 말한다
+
+검사 지시문 판은 **`0.1.0`** 이다. 결과 파일의 `scanVersion` 에 그대로 적는다. (`R-SCAN-04`)
 
 ### 얼개 파악
 
@@ -310,12 +316,63 @@ Python  pip-audit --format=json
 
 ### 아래부분 — Komit이 읽는 코드블록
 
-**` ```json ` 으로 시작하는 코드블록 하나**를 파일 끝에 둔다. 내용은 `schema/komit-result.schema.json` 형식을 그대로 따른다. 예시는 `schema/komit-result.example.json` 에 있다.
+**` ```json ` 으로 시작하는 코드블록 하나**를 파일 끝에 둔다. Komit 서버가 이 블록을 읽는다.
+
+**칸 이름과 값은 아래와 글자 하나까지 같아야 한다.** 이름이 다르면 서버가 그 칸을 버리거나(위치 · 설명이 사라짐) 올리기가 실패한다. 칸 이름을 바꾸거나 새로 만들지 않는다. 분류 · 심각도 · 답 방식은 **영문 대문자**로 쓴다.
+
+```json
+{
+  "diagnosisId": 19,
+  "scanVersion": "0.1.0",
+  "scannedAt": "2026-09-26T15:00:00+09:00",
+  "readinessScore": 11,
+  "techCategories": ["Next.js", "React", "TypeScript"],
+  "issues": [
+    {
+      "title": "취소한 예약인데 결제 화면이 그대로 열립니다",
+      "detail": "예약을 취소해도 결제 화면 주소로 들어가면 다시 결제할 수 있습니다. 손님이 헷갈려 두 번 결제할 수 있습니다.",
+      "location": "app/checkout/[id]/page.tsx:32",
+      "category": "PAYMENT",
+      "severity": "MEDIUM",
+      "isInput": true,
+      "fingerprint": "PAYMENT/flow/cancelled-booking-checkout-open/app/checkout"
+    }
+  ],
+  "questions": [
+    {
+      "content": "실제로 결제를 받을 계획인가요?",
+      "answerType": "SINGLE",
+      "options": ["네", "아니요"],
+      "reason": "결제 처리 코드가 결제회사에 아무것도 보내지 않고 성공으로 처리합니다"
+    }
+  ],
+  "scannedScope": ["로그인 · 가입", "예약 · 결제 · 취소"],
+  "unscannedScope": [{ "scope": "데이터베이스 권한", "reason": "코드가 아니라 서비스 콘솔에 있다" }]
+}
+```
+
+| 칸 | 규칙 |
+| --- | --- |
+| `diagnosisId` | 1단계에서 받은 진단 번호 (숫자) |
+| `scanVersion` | `"0.1.0"` |
+| `issues[].title` | 비개발자가 읽는 한 줄 |
+| `issues[].detail` | 무슨 일이 생기는지 설명. **`description` 이 아니라 `detail`** |
+| `issues[].location` | **`"파일경로:줄번호"` 한 칸.** `file` · `line` 으로 나누지 않는다 |
+| `issues[].category` | `COMPLIANCE` `SECURITY` `PAYMENT` `DATA` `COST` `HANDOVER` `AI_RESIDUE` `ETC` 중 하나. **한글로 쓰지 않는다** |
+| `issues[].securityGroup` | 보안일 때만: `ACCESS_CONTROL` `SECRET` `INPUT` `AUTH_SESSION` `CONFIG` `PII_ENCRYPTION` |
+| `issues[].severity` | `HIGH` `MEDIUM` `LOW` |
+| `issues[].isInput` | 증상과 이어지면 `true`, 아니면 `false` |
+| `issues[].fingerprint` | `분류/유형/대상` — 줄 번호를 넣지 않는다 |
+| `questions[].content` | 물어볼 문장. **`question` 이 아니라 `content`** |
+| `questions[].answerType` | `SINGLE` `MULTI` `TEXT` 중 하나. **`type` 이 아니라 `answerType`** |
+| `questions[].reason` | 어떤 발견 때문에 묻는지 |
+
+위 예시와 표는 플러그인의 `schema/komit-result.schema.json` 에서 옮긴 것이다. 그 파일은 의뢰인 프로젝트에서 보이지 않을 수 있으므로 **위 표를 기준으로 쓴다.**
 
 | 항목 | 내용 |
 | --- | --- |
-| 진단 번호 | `komit-scan.md` 에 적힌 값을 `diagnosisId` 로 그대로 |
-| 검사 지시문 판 | `komit-scan.md` 에 적힌 값을 그대로 |
+| 진단 번호 | 1단계에서 받은 값을 `diagnosisId` 로 그대로 |
+| 검사 지시문 판 | `0.1.0` |
 | 검사 시각 | 지금 시각 |
 | 준비도 점수 | 5단계에서 계산한 값 |
 | 기술 | 1단계에서 확인한 것 |
@@ -402,7 +459,8 @@ Python  pip-audit --format=json
 파일을 쓰기 전에 다시 본다.
 
 - [ ] 모든 문제에 파일 경로와 줄 번호가 있는가
-- [ ] 진단 번호와 검사 지시문 판 번호를 검사 파일에서 그대로 옮겼는가
+- [ ] 진단 번호를 1단계에서 받은 값 그대로, 판을 `0.1.0` 으로 적었는가
+- [ ] **결과 JSON 칸 이름이 6단계 표와 글자까지 같은가** — `location` (한 칸) · `detail` · 영문 분류 · `content` · `answerType`
 - [ ] 모든 문제에 `fingerprint` 가 있고, 그 안에 줄 번호가 들어가지 않았는가
 - [ ] 추측으로 만든 문제가 없는가
 - [ ] 분류가 여덟 개를 벗어나지 않았는가

@@ -194,7 +194,7 @@ class ContractDetailRepositoryTest {
         ConsultingAgreement entity = BeanUtils.instantiateClass(ConsultingAgreement.class);
         set(entity, "contractId", contractId);
         set(entity, "topic", "주제");
-        set(entity, "status", "PRE_SIGNED");
+        set(entity, "status", "SIGNED");
         set(entity, "statusGroup", "CONSULTING_AGREEMENT_STATUS");
         set(entity, "totalAmount", 0);
         markDeleted(entity, deleted);
@@ -204,7 +204,7 @@ class ContractDetailRepositoryTest {
     private DevelopmentContract developmentContract(Integer contractId, boolean deleted) {
         DevelopmentContract entity = BeanUtils.instantiateClass(DevelopmentContract.class);
         set(entity, "contractId", contractId);
-        set(entity, "status", "PRE_SIGNED");
+        set(entity, "status", "SIGNED");
         set(entity, "statusGroup", "DEVELOPMENT_CONTRACT_STATUS");
         set(entity, "totalAmount", 650000);
         set(entity, "freeRepairDays", 14);

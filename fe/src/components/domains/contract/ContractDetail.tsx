@@ -8,6 +8,7 @@ import {
   isSignedByAnyone,
   isSignedByBoth,
   isConsultingDraft,
+  isDevelopmentDraft,
   lastCounterpartMessage,
   totalWorkDays,
 } from "@/lib/contract";
@@ -76,7 +77,8 @@ export function ContractDetail({
     );
   }
 
-  if (isConsultingDraft(contract)) {
+  // AI version 1 은 금액·일정이 비어 있어 서명할 것이 아닙니다. 개발자가 채워 보내야 계약서가 됩니다.
+  if (isConsultingDraft(contract) || isDevelopmentDraft(contract)) {
     return (
       <EmptyState
         title="계약서 초안을 작성하고 있습니다"

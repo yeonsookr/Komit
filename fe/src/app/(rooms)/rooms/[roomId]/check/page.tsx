@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/feedback";
 import { QaCheckPanel, QaSubmitPanel } from "@/components/domains/contract";
 import { RoomHeader } from "@/components/domains/room";
 import { getContract, getMe, getRoom } from "@/lib/api/services";
+import { isDevelopmentDraft } from "@/lib/contract";
 import { isReceived } from "@/lib/rooms";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
@@ -52,13 +53,21 @@ export default async function RoomCheckPage({
   if (!Number.isInteger(id) || id <= 0) notFound();
 
   const { room, me, contract } = await loadCheck(id);
-  const development = contract?.development ?? null;
+  // AI version 1 은 개발자가 아직 보내지 않은 초안입니다. 금액이 모두 0 이라 작업을 그대로
+  // 그리면 인계 작업으로 읽히므로, 계약서 탭과 같이 작성 중이라고만 알립니다.
+  const draft = isDevelopmentDraft(contract);
+  const development = draft ? null : (contract?.development ?? null);
 
   return (
     <Container className="py-8 sm:py-10">
       <RoomHeader room={room} me={me} contract={contract} />
 
-      {development === null ? (
+      {draft ? (
+        <EmptyState
+          title="계약서 초안을 작성하고 있습니다"
+          description="계약서에 양쪽이 서명하고 개발자가 착수하면 여기에서 작업을 확인합니다."
+        />
+      ) : development === null ? (
         <EmptyState
           title="아직 확인할 작업이 없습니다"
           description="계약서에 양쪽이 서명하고 개발자가 착수하면 여기에서 작업을 확인합니다."
