@@ -31,13 +31,21 @@ export function isConsultingDraft(contract: Contract | null): boolean {
   );
 }
 
-/**
- * 양쪽이 서명했는지. 서명해야 계약이 성립하고 그 뒤에는 고칠 수 없습니다
- * (R-CON-01 · R-CON-02).
- */
+/** 양쪽이 서명했는지. 양쪽이 서명해야 계약이 성립합니다 (R-CON-01). */
 export function isSignedByBoth(contract: Contract): boolean {
   return (
     contract.clientSignature?.isSigned === true &&
+    contract.developerSignature?.isSigned === true
+  );
+}
+
+/**
+ * 한 사람이라도 서명했는지. 서명한 계약서는 고칠 수 없습니다 (R-CON-02).
+ * 성립(양쪽 서명)을 기다리지 않습니다 — 상대가 서명한 내용이 바뀌면 안 됩니다.
+ */
+export function isSignedByAnyone(contract: Contract): boolean {
+  return (
+    contract.clientSignature?.isSigned === true ||
     contract.developerSignature?.isSigned === true
   );
 }

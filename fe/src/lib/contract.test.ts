@@ -7,6 +7,7 @@ import {
   isCancelled,
   isHandover,
   isConsultingDraft,
+  isSignedByAnyone,
   isSignedByBoth,
   hasSigned,
   lastCounterpartMessage,
@@ -161,6 +162,11 @@ describe("서명", () => {
       developerSignature: { ...unsigned, isSigned: true },
     });
     expect(isSignedByBoth(both)).toBe(true);
+  });
+
+  it("한쪽만 서명해도 고칠 수 없다", () => {
+    expect(isSignedByAnyone(contract({ clientSignature: unsigned, developerSignature: unsigned }))).toBe(false);
+    expect(isSignedByAnyone(contract({ clientSignature: unsigned, developerSignature: signed }))).toBe(true);
   });
 
   it("내 서명만 골라낸다", () => {

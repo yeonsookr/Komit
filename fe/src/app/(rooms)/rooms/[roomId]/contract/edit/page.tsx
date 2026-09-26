@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/feedback";
 import { ConsultingContractForm, ContractEditor } from "@/components/domains/contract";
 import { RoomHeader } from "@/components/domains/room";
 import { getContract, getIssues, getMe, getRoom } from "@/lib/api/services";
-import { isSignedByBoth } from "@/lib/contract";
+import { isCancelled, isSignedByAnyone } from "@/lib/contract";
 import { isReceived } from "@/lib/rooms";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
@@ -60,19 +60,22 @@ export default async function ContractEditPage({
 
   /** 계약서는 개발자가 씁니다. 의뢰인은 받아서 서명만 합니다. */
   const canWrite = isReceived(room, me);
+  // R-CON-02: 한 사람이라도 서명하면 고칠 수 없습니다. R-CON-21: 취소된 계약서도 고치지 않습니다.
+  const cancelled = contract !== null && isCancelled(contract);
+  const locked = contract !== null && isSignedByAnyone(contract);
+  const editable = canWrite && contract !== null && !cancelled && !locked;
 
   return (
     <Container className="py-8 sm:py-10">
       <RoomHeader room={room} me={me} contract={contract} />
 
-      {canWrite && contract !== null && !isSignedByBoth(contract) &&
-      room.type === "CONSULTING" ? (
+      {editable && room.type === "CONSULTING" ? (
         <ConsultingContractForm
           roomId={room.roomId}
           counterpartName={room.counterpartName}
           contract={contract}
         />
-      ) : canWrite && contract !== null && !isSignedByBoth(contract) ? (
+      ) : editable ? (
         <ContractEditor
           roomId={room.roomId}
           contract={contract}
@@ -82,15 +85,13 @@ export default async function ContractEditPage({
       ) : (
         <EmptyState
           title={
-            contract !== null && isSignedByBoth(contract)
-              ? "서명한 계약서는 고칠 수 없습니다"
-              : "고칠 계약서가 없습니다"
+            cancelled
+              ? "취소된 계약입니다"
+              : locked
+                ? "서명한 계약서는 수정할 수 없습니다"
+                : "고칠 계약서가 없습니다"
           }
-          description={
-            contract !== null && isSignedByBoth(contract)
-              ? "바꿔야 할 것이 있으면 계약서를 새로 써서 다시 서명합니다."
-              : "계약서를 먼저 작성해 주세요."
-          }
+          description={cancelled || locked ? undefined : "계약서를 먼저 작성해 주세요."}
         />
       )}
     </Container>

@@ -6,6 +6,7 @@ import {
   canCancel,
   hasSigned,
   isCancelled,
+  isSignedByAnyone,
   isSignedByBoth,
   lastCounterpartMessage,
 } from "@/lib/contract";
@@ -58,6 +59,7 @@ export function ConsultingContractDetail({
   if (consulting === null) return null;
 
   const signed = isSignedByBoth(contract);
+  const locked = isSignedByAnyone(contract);
   const cancelled = isCancelled(contract);
   const mine = hasSigned(contract, myUserId);
   // 지금은 계약 하나에 세션 하나입니다. 목 명세가 배열로 두어 나중에 늘릴 여지만 남겼습니다.
@@ -157,10 +159,12 @@ export function ConsultingContractDetail({
       {!signed && !cancelled && (
         <div className="mt-10">
           <p className="text-[13px] text-fg-subtle">
-            서명하면 계약서는 더 이상 수정할 수 없습니다.
+            {locked
+              ? "서명한 계약서는 더 이상 수정할 수 없습니다."
+              : "서명하면 계약서는 더 이상 수정할 수 없습니다."}
           </p>
           <div className="mt-3 flex flex-wrap justify-end gap-2">
-            {received && (
+            {received && !locked && (
               <Link
                 href={ROUTES.roomContractEdit(roomId)}
                 className={buttonClass({ variant: "outline", size: "lg" })}
@@ -184,12 +188,7 @@ export function ConsultingContractDetail({
                 roomId={roomId}
                 contractId={contract.contractId}
                 subject={`컨설팅 계약서 · ${roomTitle} · ${amount}원`}
-                /*
-                  개발 계약은 「예치」라고 적지만 컨설팅은 「결제」입니다. 한 번 만나고
-                  끝나는 거래라 돈을 맡겨 두고 단계마다 푸는 구조가 아닙니다.
-                  에스크로를 거치는지는 아직 정해지지 않았습니다
-                  (`RULES.md` 「미확정」 — 컨설팅 대금의 에스크로 경유 여부).
-                */
+                // 돈은 개발 계약처럼 에스크로에 맡기지만 화면은 「결제」라고 적습니다. (R-CON-09)
                 label={received ? "서명하고 계약하기" : `서명하고 ${amount}원 결제`}
                 confirmLabel={received ? "서명하고 계약" : `서명하고 ${amount}원 결제`}
                 depositNext={!received}
