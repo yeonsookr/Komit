@@ -97,5 +97,6 @@ export const config = {
     "/recommendations/:path*",
     "/settlements/:path*",
     "/mypage/:path*",
+    "/developers/:developerId/inquiry",
   ],
 };

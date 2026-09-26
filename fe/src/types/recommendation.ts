@@ -34,6 +34,12 @@ export interface CreateConsultationRequestBody {
   recommendationItemIds: number[];
 }
 
+/** 추천을 거치지 않고 직접 찾은 개발자에게 보내는 상담 요청. */
+export interface CreateDirectConsultationRequestBody {
+  /** 한 명 이상. 없는 개발자가 섞이거나 자기 자신이면 422. */
+  developerIds: number[];
+}
+
 /** 고른 요구사항으로 추천 회차를 만듭니다. 진단 없이 부를 수 없습니다. */
 export interface CreateRecommendationRequest {
   diagnosisId: number;

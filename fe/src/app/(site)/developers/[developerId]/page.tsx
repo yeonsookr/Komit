@@ -23,9 +23,6 @@ import { ApiError } from "@/types/api";
 /** 프로필에 미리 보여주는 리뷰 수. 나머지는 '모두 보기'로 넘깁니다. */
 const PREVIEW_REVIEW_COUNT = 3;
 
-/** 와이어프레임의 무료 상담 예시 방. */
-const FREE_INQUIRY_ROOM_ID = 91;
-
 /** 경로의 개발자 식별자를 읽습니다. 숫자가 아니면 없는 개발자로 봅니다. */
 function parseDeveloperId(value: string): number | null {
   if (!/^\d+$/.test(value)) return null;
@@ -138,10 +135,10 @@ export default async function DeveloperProfilePage({
         </div>
       </ProfileSection>
 
-      {/* 하단 고정 CTA. 와이어프레임의 무료 상담방으로 바로 이동합니다. */}
+      {/* 하단 고정 CTA. 어느 요청서로 물어볼지 고르는 화면으로 갑니다. */}
       <StickyBar className="mt-10">
         <Link
-          href={ROUTES.room(FREE_INQUIRY_ROOM_ID)}
+          href={ROUTES.developerInquiry(id)}
           className={buttonClass({ variant: "primary", size: "lg", fullWidth: true })}
         >
           무료로 물어보기
