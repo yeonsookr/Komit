@@ -117,6 +117,17 @@ class ContractDetailServiceTest {
     }
 
     @Test
+    void exposesTheIssueEachMilestoneIsAttachedTo() {
+        givenOneMilestone(null);
+        when(diagnosisQueryService.findBriefs(any())).thenReturn(Map.of());
+
+        MilestoneResponse milestone = firstMilestone(service.getContract(CLIENT_ID, CONTRACT_ID));
+
+        // 다시 쓸 때 이 값을 보내야 같은 요구사항에 붙는다. 없으면 새 작업으로 한 번 더 만들어진다.
+        assertThat(milestone.issueId()).isEqualTo(ISSUE_ID);
+    }
+
+    @Test
     void collectsIssueIdsFromTheMilestones() {
         givenOneMilestone(null);
         when(diagnosisQueryService.findBriefs(any())).thenReturn(Map.of());

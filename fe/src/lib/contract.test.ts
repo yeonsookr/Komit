@@ -31,6 +31,7 @@ function qa(id: number, passed: boolean): ContractQaCriterion {
 function milestone(override: Partial<Milestone> = {}): Milestone {
   return {
     milestoneId: 1,
+    issueId: 312,
     title: "관리자 API에 인증 추가",
     location: "app/api/admin/* · 4개 라우트",
     workDate: 10,

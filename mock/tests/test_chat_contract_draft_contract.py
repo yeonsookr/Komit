@@ -52,24 +52,21 @@ class ChatContractDraftContractTest(unittest.TestCase):
             {"topic", "scheduledAt", "durationMinutes", "price", "detail", "message"},
         )
 
-    def test_development_contract_keeps_existing_request_fields(self) -> None:
+    def test_development_contract_request_points_each_milestone_at_an_issue(self) -> None:
         self.assertEqual(
             set(WriteDevelopmentContractRequest.model_fields),
             {
-                "issueIds",
                 "startDate",
                 "dueDate",
                 "freeRepairDays",
                 "milestones",
-                "rejectedIssues",
                 "deliverableTitles",
-                "detail",
                 "message",
             },
         )
         self.assertEqual(
             set(WriteMilestoneRequest.model_fields),
-            {"title", "price", "workDate", "qaCriteria"},
+            {"issueId", "title", "detail", "price", "workDate", "qaCriteria"},
         )
 
 

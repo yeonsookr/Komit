@@ -16,6 +16,7 @@ import java.util.List;
  * 요구사항에 있어, 진단 도메인에서 받은 값을 넣습니다.
  *
  * @param milestoneId 작업 id
+ * @param issueId 붙은 요구사항 id. 계약서를 다시 쓸 때 이 값을 그대로 보낸다. 없으면 {@code null}
  * @param title 작업 이름. 붙은 요구사항의 제목
  * @param price 작업 가격
  * @param location 문제가 있는 위치. 없으면 {@code null}
@@ -30,6 +31,11 @@ import java.util.List;
 @Schema(description = "계약에 속한 작업 하나.")
 public record MilestoneResponse(
         @Schema(description = "작업 식별자.", example = "301") Integer milestoneId,
+        @Schema(
+                        description = "붙은 요구사항 식별자. 계약서를 다시 쓸 때 이 값을 그대로 보낸다."
+                                + " 요구사항에 붙지 않은 작업이면 null 이다.",
+                        example = "312")
+                Integer issueId,
         @Schema(description = "작업 이름.", example = "1차 · 관리자 API에 인증 추가") String title,
         @Schema(description = "작업 가격. 인계 작업은 0 이다.", example = "400000") Long price,
         @Schema(description = "문제가 있는 위치. 없으면 null 이다.", example = "/admin") String location,
@@ -58,6 +64,7 @@ public record MilestoneResponse(
             Milestone entity, IssueBrief issue, List<QaCriterionResponse> qaCriteria) {
         return new MilestoneResponse(
                 entity.getId(),
+                entity.getIssueId(),
                 issue == null ? null : issue.title(),
                 entity.getPrice() == null ? null : entity.getPrice().longValue(),
                 issue == null ? null : issue.location(),

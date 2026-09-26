@@ -66,6 +66,8 @@ export interface ContractQaCriterion {
 /** 작업 하나. */
 export interface Milestone {
   milestoneId: number;
+  /** 붙은 요구사항. 계약서를 다시 쓸 때 이 값을 그대로 보냅니다. 요구사항에 붙지 않은 작업이면 null. */
+  issueId: number | null;
   title: string;
   /** 이 작업이 다루는 요구사항의 위치. 개발자가 직접 만든 작업이면 null. */
   location: string | null;
