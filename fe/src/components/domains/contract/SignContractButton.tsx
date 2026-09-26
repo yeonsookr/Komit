@@ -63,8 +63,7 @@ export function SignContractButton({
       if (depositNext) router.push(ROUTES.roomDeposit(roomId));
       else router.refresh();
     } catch (error) {
-      // 컨설팅 계약을 성립시키는 서명은 결제 여부를 확인하지 못하면 500 입니다. (R-CON-22)
-      // 서버 문구가 「예치」를 말해 서명하던 사람에게는 뜻이 닿지 않아 덮어 씁니다.
+      // 결제 여부를 확인하지 못한 서명은 500 이고 서버 문구가 「예치」를 말해 덮어 씁니다. (R-CON-22)
       const known = error instanceof ApiError && error.status < 500;
       showToast({
         tone: "danger",

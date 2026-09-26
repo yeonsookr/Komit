@@ -57,7 +57,6 @@ async function loadDeposit(roomId: number) {
     let stage: ConsultingPaymentStage | null = null;
     if (contract?.consulting) {
       stage = consultingPaymentStage(contract, received, null);
-      // 결제할 수 있는 계약서일 때만 이미 결제했는지 묻습니다.
       if (stage === "pay") {
         stage = consultingPaymentStage(
           contract,

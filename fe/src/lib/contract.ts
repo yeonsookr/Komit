@@ -180,7 +180,6 @@ export const AUTO_PASS_DAYS = 3;
  */
 export const CONSULTING_DISPUTE_DAYS = 3;
 
-/** 컨설팅 결제 화면에서 보여 줄 것. */
 export type ConsultingPaymentStage = "developer" | "cancelled" | "unsigned" | "paid" | "pay";
 
 /**
