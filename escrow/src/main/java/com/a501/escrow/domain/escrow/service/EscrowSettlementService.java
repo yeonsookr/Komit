@@ -33,7 +33,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 @Service
 public class EscrowSettlementService {
     private static final BigInteger TEN_THOUSAND = BigInteger.valueOf(10_000);
-    private static final BigInteger FEE_RATE_BPS = BigInteger.valueOf(100); // R-PAY-07: 1%
     private static final String COMPLETED = "COMPLETED";
     private static final String FAILED = "FAILED";
     private static final String UNKNOWN = "UNKNOWN";
@@ -122,7 +121,8 @@ public class EscrowSettlementService {
         if (request.amount().compareTo(balance) > 0) {
             throw error("E5008", "에스크로 잔액이 부족합니다.", request.header());
         }
-        BigInteger fee = request.amount().multiply(FEE_RATE_BPS).divide(TEN_THOUSAND);
+        // R-PAY-07: 에스크로 생성 때 고정한 요율을 쓰고, 원 미만은 버린다.
+        BigInteger fee = request.amount().multiply(BigInteger.valueOf(escrow.feeRateBps())).divide(TEN_THOUSAND);
         BigInteger net = request.amount().subtract(fee);
         return settlements.createRelease(clientId, escrow.id(), request.referenceId(), request.amount(), net, fee,
                 request.header().idempotencyKey(), fingerprint, request.recipientBankCode(),

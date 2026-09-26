@@ -757,6 +757,57 @@ class DataAccessIntegrationTests {
         assertThat(escrowSettlementRepository.totals(1)).isEqualTo(settlementFromTransactions.totals(1));
     }
 
+    /** R-PAY-07: 수수료는 에스크로에 고정된 요율로 계산하고 원 미만은 버린다. */
+    @Test
+    void chargesFeeAtTheRateFixedOnTheEscrow() {
+        String workerAccount = activateFundedEscrow();
+        jdbcTemplate.update("UPDATE escrows SET fee_rate_bps=250 WHERE id=1");
+        when(financeClient.transfer(anyString(), anyString(), anyString(), any(BigInteger.class),
+                anyString(), anyString(), anyString())).thenReturn("bank-release", "bank-fee");
+
+        var released = escrowSettlementService.release(new EscrowSettlementDtos.ReleaseRequest(
+                validHeader("releaseEscrow", "test-client-api-key", "release-key", null),
+                1, "SETTLEMENT:9001", BigInteger.valueOf(400_033), "001", workerAccount, "worker"));
+
+        assertThat(released.status()).isEqualTo("COMPLETED");
+        assertThat(released.feeAmount()).isEqualTo(BigInteger.valueOf(10_000)); // 400,033 × 2.5% = 10,000.825
+        assertThat(released.netAmount()).isEqualTo(BigInteger.valueOf(390_033));
+        assertThat(released.balance()).isEqualTo(BigInteger.valueOf(249_967));
+    }
+
+    /** R-PAY-07: 요율이 0이면 수수료 거래와 이체를 만들지 않는다. */
+    @Test
+    void skipsFeeTransferWhenTheFixedRateIsZero() {
+        String workerAccount = activateFundedEscrow();
+        jdbcTemplate.update("UPDATE escrows SET fee_rate_bps=0 WHERE id=1");
+        when(financeClient.transfer(anyString(), anyString(), anyString(), any(BigInteger.class),
+                anyString(), anyString(), anyString())).thenReturn("bank-release");
+
+        var released = escrowSettlementService.release(new EscrowSettlementDtos.ReleaseRequest(
+                validHeader("releaseEscrow", "test-client-api-key", "release-key", null),
+                1, "SETTLEMENT:9001", BigInteger.valueOf(400_000), "001", workerAccount, "worker"));
+
+        assertThat(released.status()).isEqualTo("COMPLETED");
+        assertThat(released.feeAmount()).isZero();
+        assertThat(released.netAmount()).isEqualTo(BigInteger.valueOf(400_000));
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT count(*) FROM escrow_transactions WHERE transaction_type='FEE'", Integer.class)).isZero();
+        verify(financeClient, times(1)).transfer(anyString(), anyString(), anyString(), any(BigInteger.class),
+                anyString(), anyString(), anyString());
+    }
+
+    /** 새로 만든 에스크로에는 R-PAY-07 의 1% 요율이 고정된다. */
+    @Test
+    void newEscrowIsCreatedWithTheRuleFeeRate() {
+        escrowDepositRepository.create(1, 1, "CONTRACT-FEE-RATE", "DEVELOPMENT",
+                BigInteger.valueOf(100_000), "fee-rate-key", "f".repeat(64),
+                fieldEncryption.encrypt("김의뢰"), "001", fieldEncryption.encrypt("0012222222222222"));
+
+        assertThat(jdbcTemplate.queryForObject(
+                "SELECT fee_rate_bps FROM escrows WHERE external_contract_id='CONTRACT-FEE-RATE'", Integer.class))
+                .isEqualTo(100);
+    }
+
     /** R-PAY-12: 금융망이 거절해 FAILED로 끝난 지급은 같은 멱등키로 다시 불러도 송금하지 않고 현재 결과를 돌려준다. */
     @Test
     void failedPayoutIsNeverResentWithTheSameKey() {
