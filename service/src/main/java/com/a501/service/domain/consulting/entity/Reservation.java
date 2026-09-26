@@ -54,4 +54,11 @@ public class Reservation extends SoftDeleteEntity {
     public void reschedule(LocalDateTime scheduledAt) {
         this.scheduledAt = Objects.requireNonNull(scheduledAt, "scheduledAt");
     }
+
+    /** 양쪽이 서명해 계약이 성립했을 때 예약을 확정합니다. 이미 확정이면 그대로 둡니다. (R-CON-01) */
+    public void confirm() {
+        if ("PROPOSED".equals(status)) {
+            this.status = "CONFIRMED";
+        }
+    }
 }

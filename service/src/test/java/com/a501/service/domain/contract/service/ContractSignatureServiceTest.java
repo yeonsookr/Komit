@@ -8,11 +8,17 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.a501.service.common.exception.BusinessException;
+import com.a501.service.domain.consulting.entity.ConsultingSession;
+import com.a501.service.domain.consulting.entity.Reservation;
+import com.a501.service.domain.consulting.repository.ConsultingSessionRepository;
+import com.a501.service.domain.consulting.repository.ReservationRepository;
 import com.a501.service.domain.contract.ContractErrorCode;
 import com.a501.service.domain.contract.dto.request.SignContractRequest;
+import com.a501.service.domain.contract.entity.ConsultingAgreement;
 import com.a501.service.domain.contract.entity.Contract;
 import com.a501.service.domain.contract.entity.ContractSignature;
 import com.a501.service.domain.contract.entity.ContractTemplate;
+import com.a501.service.domain.contract.repository.ConsultingAgreementRepository;
 import com.a501.service.domain.contract.repository.ContractRepository;
 import com.a501.service.domain.contract.repository.ContractSignatureRepository;
 import com.a501.service.domain.contract.repository.ContractTemplateRepository;
@@ -22,6 +28,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
@@ -61,9 +68,16 @@ class ContractSignatureServiceTest {
     private RoomQueryService roomQueryService;
     @Mock
     private ContractDetailService contractDetailService;
+    @Mock
+    private ConsultingAgreementRepository consultingAgreementRepository;
+    @Mock
+    private ConsultingSessionRepository consultingSessionRepository;
+    @Mock
+    private ReservationRepository reservationRepository;
 
     private ContractSignatureService service;
     private Contract contract;
+    private Reservation reservation;
 
     @BeforeEach
     void setUp() {
@@ -73,6 +87,9 @@ class ContractSignatureServiceTest {
                 templateRepository,
                 roomQueryService,
                 contractDetailService,
+                consultingAgreementRepository,
+                consultingSessionRepository,
+                reservationRepository,
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
         contract = Contract.of(ROOM_ID, Contract.ContractType.CONSULTING);
@@ -94,6 +111,47 @@ class ContractSignatureServiceTest {
         ContractTemplate template = org.mockito.Mockito.mock(ContractTemplate.class);
         when(template.getBody()).thenReturn("제1조 …");
         when(templateRepository.findById(TEMPLATE_ID)).thenReturn(Optional.of(template));
+
+        ConsultingAgreement agreement = ConsultingAgreement.of(CONTRACT_ID, "인증 오류 확인", 50_000);
+        ReflectionTestUtils.setField(agreement, "id", 70);
+        ConsultingSession session = ConsultingSession.of(70, 50_000, 30);
+        ReflectionTestUtils.setField(session, "id", 80);
+        reservation = Reservation.of(80, LocalDateTime.of(2026, 9, 26, 5, 0));
+        when(consultingAgreementRepository.findByContractIdAndDeletedFalse(CONTRACT_ID))
+                .thenReturn(Optional.of(agreement));
+        when(consultingSessionRepository.findAllByConsultingAgreementIdAndDeletedFalseOrderByIdAsc(70))
+                .thenReturn(List.of(session));
+        when(reservationRepository.findByConsultingSessionIdAndDeletedFalse(80))
+                .thenReturn(Optional.of(reservation));
+    }
+
+    @Test
+    @DisplayName("컨설팅 계약이 양쪽 서명으로 성립하면 예약을 확정한다 (R-CON-01)")
+    void confirmsReservationWhenConsultingConcludes() {
+        service.sign(CONTRACT_ID, CLIENT_ID, new SignContractRequest(FILE_ID));
+        service.sign(CONTRACT_ID, DEVELOPER_USER_ID, new SignContractRequest(42));
+
+        assertThat(reservation.getStatus()).isEqualTo("CONFIRMED");
+    }
+
+    @Test
+    @DisplayName("한쪽만 서명한 동안에는 예약이 제안 상태로 남는다")
+    void keepsReservationProposedUntilBothSign() {
+        service.sign(CONTRACT_ID, CLIENT_ID, new SignContractRequest(FILE_ID));
+
+        assertThat(reservation.getStatus()).isEqualTo("PROPOSED");
+    }
+
+    @Test
+    @DisplayName("개발 계약은 예약을 찾지 않는다")
+    void skipsReservationForDevelopment() {
+        ReflectionTestUtils.setField(contract, "contractType", Contract.ContractType.DEVELOPMENT.name());
+
+        service.sign(CONTRACT_ID, CLIENT_ID, new SignContractRequest(FILE_ID));
+        service.sign(CONTRACT_ID, DEVELOPER_USER_ID, new SignContractRequest(42));
+
+        assertThat(contract.isConcluded()).isTrue();
+        verify(consultingAgreementRepository, never()).findByContractIdAndDeletedFalse(any());
     }
 
     @Test

@@ -1,12 +1,16 @@
 package com.a501.service.domain.contract.service;
 
 import com.a501.service.common.exception.BusinessException;
+import com.a501.service.domain.consulting.entity.Reservation;
+import com.a501.service.domain.consulting.repository.ConsultingSessionRepository;
+import com.a501.service.domain.consulting.repository.ReservationRepository;
 import com.a501.service.domain.contract.ContractErrorCode;
 import com.a501.service.domain.contract.dto.request.SignContractRequest;
 import com.a501.service.domain.contract.dto.response.ContractResponse;
 import com.a501.service.domain.contract.entity.Contract;
 import com.a501.service.domain.contract.entity.ContractSignature;
 import com.a501.service.domain.contract.entity.ContractTemplate;
+import com.a501.service.domain.contract.repository.ConsultingAgreementRepository;
 import com.a501.service.domain.contract.repository.ContractRepository;
 import com.a501.service.domain.contract.repository.ContractSignatureRepository;
 import com.a501.service.domain.contract.repository.ContractTemplateRepository;
@@ -35,6 +39,9 @@ public class ContractSignatureService {
     private final ContractTemplateRepository templateRepository;
     private final RoomQueryService roomQueryService;
     private final ContractDetailService contractDetailService;
+    private final ConsultingAgreementRepository consultingAgreementRepository;
+    private final ConsultingSessionRepository consultingSessionRepository;
+    private final ReservationRepository reservationRepository;
     private final Clock clock;
 
     @Autowired
@@ -43,13 +50,19 @@ public class ContractSignatureService {
             ContractSignatureRepository signatureRepository,
             ContractTemplateRepository templateRepository,
             RoomQueryService roomQueryService,
-            ContractDetailService contractDetailService) {
+            ContractDetailService contractDetailService,
+            ConsultingAgreementRepository consultingAgreementRepository,
+            ConsultingSessionRepository consultingSessionRepository,
+            ReservationRepository reservationRepository) {
         this(
                 contractRepository,
                 signatureRepository,
                 templateRepository,
                 roomQueryService,
                 contractDetailService,
+                consultingAgreementRepository,
+                consultingSessionRepository,
+                reservationRepository,
                 Clock.systemUTC());
     }
 
@@ -60,12 +73,18 @@ public class ContractSignatureService {
             ContractTemplateRepository templateRepository,
             RoomQueryService roomQueryService,
             ContractDetailService contractDetailService,
+            ConsultingAgreementRepository consultingAgreementRepository,
+            ConsultingSessionRepository consultingSessionRepository,
+            ReservationRepository reservationRepository,
             Clock clock) {
         this.contractRepository = contractRepository;
         this.signatureRepository = signatureRepository;
         this.templateRepository = templateRepository;
         this.roomQueryService = roomQueryService;
         this.contractDetailService = contractDetailService;
+        this.consultingAgreementRepository = consultingAgreementRepository;
+        this.consultingSessionRepository = consultingSessionRepository;
+        this.reservationRepository = reservationRepository;
         this.clock = clock;
     }
 
@@ -99,8 +118,30 @@ public class ContractSignatureService {
         ContractSignature signature = signatureRepository.save(ContractSignature.of(
                 userId, request.signatureImageFileId(), LocalDateTime.now(clock)));
         contract.sign(client, signature.getId(), contractText(contract));
+        if (contract.isConcluded()) {
+            confirmReservation(contract);
+        }
 
         return contractDetailService.getContract(userId, contractId);
+    }
+
+    /**
+     * 컨설팅 계약이 성립하면 잡아 둔 예약을 확정한다. 화면은 확정된 예약에만 입장 배너를 띄운다.
+     *
+     * <p>계약 하나에 세션은 하나다. 예약이 없는 옛 계약은 서명만 받고 넘어간다.
+     */
+    private void confirmReservation(Contract contract) {
+        if (!Contract.ContractType.CONSULTING.name().equals(contract.getContractType())) {
+            return;
+        }
+        consultingAgreementRepository
+                .findByContractIdAndDeletedFalse(contract.getId())
+                .flatMap(agreement -> consultingSessionRepository
+                        .findAllByConsultingAgreementIdAndDeletedFalseOrderByIdAsc(agreement.getId())
+                        .stream()
+                        .findFirst())
+                .flatMap(session -> reservationRepository.findByConsultingSessionIdAndDeletedFalse(session.getId()))
+                .ifPresent(Reservation::confirm);
     }
 
     /**
