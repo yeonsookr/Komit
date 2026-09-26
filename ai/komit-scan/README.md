@@ -28,11 +28,17 @@
 ### Claude Code
 
 ```
-/plugin marketplace add <저장소 주소>
+/plugin marketplace add parking-been/komit-plugins
 /plugin install komit-scan@komit
 ```
 
-설치한 뒤 프로젝트에서 검사를 요청한다.
+설치한 뒤 프로젝트 폴더에서 Komit 사전점검 화면에 나온 명령을 붙여 넣는다.
+
+```
+/komit-scan <진단 번호> <겪은 일>
+```
+
+공개 저장소 [parking-been/komit-plugins](https://github.com/parking-been/komit-plugins) 는 이 폴더의 `.claude-plugin/plugin.json` · `skills/` · `schema/` 를 옮겨 둔 사본이다. **여기를 고치면 공개 저장소에도 같이 옮긴다.** 옮기지 않으면 의뢰인은 옛 지시문으로 검사한다.
 
 ### Cursor · Codex · 그 외
 
