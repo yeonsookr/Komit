@@ -78,9 +78,11 @@ test.describe('사전점검 설문', () => {
     await page.goto('/checkup/31?step=3');
 
     await expect(page.getByRole('heading', { name: 'Claude Code에서 직접 검사해주세요' })).toBeVisible();
+    await expect(page.getByText('/plugin marketplace add parking-been/komit-plugins')).toBeVisible();
     await expect(page.getByText('/plugin install komit-scan@komit')).toBeVisible();
     // 검사 명령은 진단 번호로 시작합니다. 설문2에 적은 증상이 있으면 뒤에 붙습니다.
     await expect(page.getByText(/^\/komit-scan 31/)).toBeVisible();
+    await expect(page.getByRole('button', { name: '저장소 추가 명령 복사' })).toBeVisible();
     await expect(page.getByRole('button', { name: '설치 명령 복사' })).toBeVisible();
     await expect(page.getByRole('button', { name: '검사 명령 복사' })).toBeVisible();
     await expect(page.getByRole('button', { name: '파일 선택' })).toBeVisible();

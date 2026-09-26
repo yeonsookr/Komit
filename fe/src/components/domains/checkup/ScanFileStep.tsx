@@ -9,7 +9,11 @@ import { INTERNAL } from "@/lib/api/endpoints";
 import { ApiError } from "@/types/api";
 import type { Inspection } from "@/types/diagnosis";
 
-/** ① 에 적히는 설치 명령. */
+/**
+ * ① 에 적히는 설치 명령 두 줄. 플러그인은 공개 저장소의 마켓플레이스를 거쳐야 설치됩니다.
+ * 한 줄씩 붙여 넣어야 하므로 따로 복사합니다.
+ */
+const MARKETPLACE_COMMAND = "/plugin marketplace add parking-been/komit-plugins";
 const INSTALL_COMMAND = "/plugin install komit-scan@komit";
 
 /**
@@ -19,6 +23,7 @@ const INSTALL_COMMAND = "/plugin install komit-scan@komit";
 function runCommand(diagnosisId: number, symptom: string): string {
   return symptom ? `/komit-scan ${diagnosisId} ${symptom}` : `/komit-scan ${diagnosisId}`;
 }
+
 /** 검사가 만들어 주는 파일. 내려받은 검사 파일이 아니라 이것을 올립니다. */
 const RESULT_FILE_NAME = "komit-result.md";
 
@@ -91,21 +96,37 @@ export function ScanFileStep({
 
   return (
     <div className="flex flex-col gap-6">
-      <NumberedRow index="①" label="Claude Code에 검사 도구 설치 (처음 한 번)">
-        <CommandBox
-          text={INSTALL_COMMAND}
-          action={
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => copy(INSTALL_COMMAND)}
-              leftIcon={<CopyIcon />}
-              aria-label="설치 명령 복사"
-            >
-              복사
-            </Button>
-          }
-        />
+      <NumberedRow index="①" label="Claude Code에 검사 도구 설치 (처음 한 번, 한 줄씩)">
+        <div className="flex flex-col gap-2">
+          <CommandBox
+            text={MARKETPLACE_COMMAND}
+            action={
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => copy(MARKETPLACE_COMMAND)}
+                leftIcon={<CopyIcon />}
+                aria-label="저장소 추가 명령 복사"
+              >
+                복사
+              </Button>
+            }
+          />
+          <CommandBox
+            text={INSTALL_COMMAND}
+            action={
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => copy(INSTALL_COMMAND)}
+                leftIcon={<CopyIcon />}
+                aria-label="설치 명령 복사"
+              >
+                복사
+              </Button>
+            }
+          />
+        </div>
       </NumberedRow>
 
       <NumberedRow index="②" label="프로젝트 폴더에서 검사 실행">
@@ -156,7 +177,7 @@ export function ScanFileStep({
 
       <div className="flex flex-col gap-1">
         <HelpDisclosure summary="Claude Code 실행 방법 보기">
-          프로젝트 폴더에서 Claude Code를 열고 ① 을 한 번 입력해 설치한 뒤, ② 를 그대로 붙여
+          프로젝트 폴더에서 Claude Code를 열고 ① 의 두 줄을 차례로 입력해 설치한 뒤, ② 를 그대로 붙여
           넣으세요. 명령에 진단 번호와 적어 주신 증상이 들어 있어 검사가 그 원인부터 찾습니다.
           검사를 마치면 프로젝트 폴더에 <Mono>{RESULT_FILE_NAME}</Mono> 이 만들어집니다.
           <br />
