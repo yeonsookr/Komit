@@ -1,6 +1,7 @@
--- ERD Cloud 가져오기용 MySQL 형식. 실제 PostgreSQL 생성 기준은 db/migration/V1__create_escrow_schema.sql이다.
+-- ERD Cloud 가져오기용 MySQL 형식. 실제 PostgreSQL 생성 기준은 db/migration/ 의 V1 기준본과 그 뒤 V2·V3 이다.
+-- 대사 스냅샷(V2 reconciliation_snapshots)은 아직 이 파일에 옮기지 않았다. 복식부기 원장(V3)은 맨 아래에 있다.
 -- PostgreSQL TIMESTAMPTZ는 ERD 표시를 위해 DATETIME(6)으로 표현했다.
--- 부분 유니크 인덱스와 감사 테이블 변경 방지 트리거는 MySQL ERD 형식으로 표현하지 않았다.
+-- 부분 유니크 인덱스, 감사·원장 테이블 변경 방지 트리거, 거래 완료 시 분개 트리거는 MySQL ERD 형식으로 표현하지 않았다.
 -- 운영 DB에 이 파일을 실행하지 않는다.
 
 CREATE TABLE service_clients (
@@ -287,7 +288,7 @@ CREATE TABLE escrow_transactions (
     CONSTRAINT ck_escrow_transactions_request_fingerprint
         CHECK (request_fingerprint REGEXP '^[0-9a-f]{64}$')
 
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='에스크로 거래 | 업무 단위 자금 거래. 복식부기 전표가 아닌 대사 집계 대상';
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='에스크로 거래 | 업무 단위 자금 거래. 완료 시 ledger_postings 로 분개됨 (R-PAY-15)';
 
 CREATE TABLE financial_operation_attempts (
     id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '호출 시도 ID | 서버에서 생성한 식별자',
@@ -379,3 +380,44 @@ CREATE INDEX idx_operation_audit_events_transaction_created_at
 
 CREATE INDEX idx_escrows_status_hold_status ON escrows (status, hold_status);
 CREATE INDEX idx_escrow_state_commands_escrow_created_at ON escrow_state_commands (escrow_id, created_at);
+
+-- V3 복식부기 원장 (R-PAY-15)
+CREATE TABLE ledger_accounts (
+    code VARCHAR(30) PRIMARY KEY COMMENT '계정 코드 | 분개의 차변·대변 계정',
+    account_type VARCHAR(20) NOT NULL COMMENT '계정 유형 | ASSET 자산 / LIABILITY 부채 / REVENUE 수익',
+    normal_side VARCHAR(6) NOT NULL COMMENT '정상 잔액 방향 | 자산은 DEBIT, 부채·수익은 CREDIT',
+    name VARCHAR(100) NOT NULL COMMENT '계정 이름 | 운영 화면 표시용',
+    CONSTRAINT ck_ledger_accounts_type CHECK (account_type IN ('ASSET', 'LIABILITY', 'REVENUE')),
+    CONSTRAINT ck_ledger_accounts_normal_side CHECK (
+        (account_type = 'ASSET' AND normal_side = 'DEBIT')
+        OR (account_type IN ('LIABILITY', 'REVENUE') AND normal_side = 'CREDIT')
+    )
+
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='원장 계정과목 | CUSTODY_CASH / FEE_CASH / ESCROW_LIABILITY / FEE_REVENUE 고정';
+
+CREATE TABLE ledger_postings (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY COMMENT '분개 ID | 기록 순서',
+    transaction_id BIGINT NOT NULL COMMENT '거래 ID | 분개를 만든 완료 거래',
+    line_no SMALLINT NOT NULL COMMENT '분개 줄 번호 | 거래 안의 순번. 거래와 함께 유일해 같은 거래를 두 번 분개하지 않음',
+    service_client_id BIGINT NOT NULL COMMENT '이용 서비스 ID | 거래의 서비스',
+    escrow_id BIGINT NOT NULL COMMENT '에스크로 ID | 예치금 반환 의무의 보조원장 키',
+    entry_type VARCHAR(20) NOT NULL COMMENT '분개 유형 | 거래 유형과 같음. 같은 계정 조합인 지급과 환불을 구분',
+    debit_account VARCHAR(30) NOT NULL COMMENT '차변 계정 | ledger_accounts.code',
+    credit_account VARCHAR(30) NOT NULL COMMENT '대변 계정 | ledger_accounts.code',
+    amount DECIMAL(19, 0) NOT NULL COMMENT '분개 금액 | 원 단위 양수',
+    occurred_at DATETIME(6) NOT NULL COMMENT '발생 일시 | 거래 완료 일시',
+    posted_at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '기록 일시 | 분개가 원장에 들어간 시각. 이관분은 V3 적용 시각',
+    CONSTRAINT fk_ledger_postings_transaction FOREIGN KEY (transaction_id) REFERENCES escrow_transactions (id),
+    CONSTRAINT fk_ledger_postings_escrow
+        FOREIGN KEY (escrow_id, service_client_id) REFERENCES escrows (id, service_client_id),
+    CONSTRAINT fk_ledger_postings_debit FOREIGN KEY (debit_account) REFERENCES ledger_accounts (code),
+    CONSTRAINT fk_ledger_postings_credit FOREIGN KEY (credit_account) REFERENCES ledger_accounts (code),
+    CONSTRAINT uq_ledger_postings_line UNIQUE (transaction_id, line_no),
+    CONSTRAINT ck_ledger_postings_line_no CHECK (line_no > 0),
+    CONSTRAINT ck_ledger_postings_entry_type CHECK (entry_type IN ('DEPOSIT', 'RELEASE', 'FEE', 'REFUND')),
+    CONSTRAINT ck_ledger_postings_sides CHECK (debit_account <> credit_account),
+    CONSTRAINT ck_ledger_postings_amount CHECK (amount > 0)
+
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='복식부기 분개 | 한 행이 차변 1건과 대변 1건. 추가만 허용 (R-PAY-15)';
+
+CREATE INDEX idx_ledger_postings_escrow ON ledger_postings (escrow_id);

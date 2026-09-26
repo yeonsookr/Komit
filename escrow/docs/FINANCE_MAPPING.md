@@ -7,7 +7,7 @@
 | 항목 | 내용 |
 | --- | --- |
 | 대상 | `escrow`(be-escrow) 앱 전용 |
-| 스키마 | 배포 전 통합한 `V1__create_escrow_schema.sql`: 회원·계좌 발급, 예치, 정산, 감사 기록 |
+| 스키마 | 배포 전 통합한 `V1__create_escrow_schema.sql`: 회원·계좌 발급, 예치, 정산, 감사 기록. 이후 `V2` 대사 스냅샷(`R-PAY-13`), `V3` 복식부기 원장(`R-PAY-15`) |
 | 금융망 | SSAFY 교육용 금융망 API |
 
 ---
