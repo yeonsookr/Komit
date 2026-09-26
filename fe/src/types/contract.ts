@@ -11,12 +11,13 @@ export type ContractType = "CONSULTING" | "DEVELOPMENT";
 export type ContractStatus = "NEGOTIATING" | "AGREED" | "SIGNED" | "CANCELLED";
 
 /**
- * 개발 진행. PRE_SIGNED 는 계약서를 주고받으며 조정하는 가계약 상태이고,
- * 예치가 끝나면 DEPOSITED, 착수하면 IN_PROGRESS 가 됩니다.
- * AFTER_SERVICE · COMPLETED · TERMINATED 는 운영 콘솔에서 다룹니다.
+ * 개발 진행. 계약서를 처음 쓸 때부터 SIGNED 이고, 예치가 끝나면 DEPOSITED,
+ * 착수하면 IN_PROGRESS 가 됩니다. AFTER_SERVICE · COMPLETED · TERMINATED 는
+ * 운영 콘솔에서 다룹니다.
+ *
+ * SIGNED 여도 계약이 성립한 것은 아닙니다. 양쪽이 서명했는지는 `Contract.status` 로 봅니다 (R-CON-01).
  */
 export type DevelopmentStatus =
-  | "PRE_SIGNED"
   | "SIGNED"
   | "DEPOSITED"
   | "IN_PROGRESS"

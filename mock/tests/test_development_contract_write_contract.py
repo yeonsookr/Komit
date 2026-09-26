@@ -1,4 +1,5 @@
 import unittest
+from typing import get_args
 
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
@@ -206,6 +207,18 @@ class DevelopmentContractWriteEndpointTest(unittest.TestCase):
             result.development.issueIds,
             list(dict.fromkeys(milestone.issueId for milestone in milestones)),
         )
+
+    def test_sent_contract_is_negotiating_and_development_side_is_signed(self):
+        result = service.write_development_contract(93, _request())
+
+        # 체결 여부는 공통 계약 상태가 가진다. 개발 쪽은 처음 쓸 때부터 SIGNED 다. (R-CON-01)
+        self.assertEqual(result.status, "NEGOTIATING")
+        self.assertEqual(result.development.status, "SIGNED")
+
+    def test_no_pre_signed_status(self):
+        for model in (service.DevelopmentAgreementResponse, service.ConsultingAgreementResponse):
+            self.assertNotIn("PRE_SIGNED", get_args(model.model_fields["status"].annotation))
+        self.assertEqual(service.DRAFT_DEV_CONTRACT_EXAMPLE["development"]["status"], "SIGNED")
 
 
 class DevelopmentContractWriteSpecificationTest(unittest.TestCase):

@@ -88,7 +88,7 @@ AI는 채팅 저장소를 직접 조회하지 않는다. 채팅 담당 영역이
   version 2·3 전체 판본은 별도로 보존하지 않고 최신 내용만 유지한다.
 - AI ver1부터 갈래별 상태는 `SIGNED`지만 실제 체결을 뜻하지 않는다. 실제 서명 전까지 공통
   `contracts.status`는 `NEGOTIATING`이고, 서명 두 개가 모두 찍혀야 `SIGNED`가 된다 (`R-CON-01`).
-- `PRE_SIGNED`는 사용하지 않는다.
+- 갈래별 상태에 `PRE_SIGNED`(가계약)는 없다. 협의 중인지는 공통 `contracts.status`로 본다.
 - `ai_contract_draft_snapshots.contract_id`는 UNIQUE다. 이미 저장된 원본을 수정·삭제하는 API는
   만들지 않고, 일반 계약 조회 응답에도 `content_snapshot`을 포함하지 않는다.
 
@@ -160,7 +160,7 @@ AI는 채팅에 등장한 일정·시간·금액을 자동 확정하지 않는�
   별도로 추가한다 (`3절`).
 - 기존 응답에 무료 상담 요약용 필드를 덧붙이지 않는다. 초안은 계약서 한 건이므로 기존 계약
   조회 응답 형식을 그대로 쓴다.
-- 갈래별 계약은 AI ver1부터 기존 `SIGNED`를 사용하며 `PRE_SIGNED`를 추가하지 않는다.
+- 갈래별 계약은 AI ver1부터 `SIGNED`를 사용한다. 가계약 상태를 따로 두지 않는다.
 - `POST /rooms/{roomId}/consulting-contracts`의 요청·응답 형식을 변경하지 않는다.
   `POST /rooms/{roomId}/development-contracts`는 작업마다 `issueId`·`title`·`detail`을 받으며,
   초안에서 넣은 작업을 그대로 고쳐 보낼 수 있다.

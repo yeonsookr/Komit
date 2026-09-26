@@ -298,7 +298,7 @@ class ContractDetailServiceTest {
         DevelopmentContract development = BeanUtils.instantiateClass(DevelopmentContract.class);
         ReflectionTestUtils.setField(development, "id", DEVELOPMENT_ID);
         ReflectionTestUtils.setField(development, "contractId", CONTRACT_ID);
-        ReflectionTestUtils.setField(development, "status", "PRE_SIGNED");
+        ReflectionTestUtils.setField(development, "status", "SIGNED");
         ReflectionTestUtils.setField(development, "totalAmount", 650000);
         ReflectionTestUtils.setField(development, "freeRepairDays", 14);
         return development;

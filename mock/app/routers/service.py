@@ -5160,15 +5160,14 @@ class ConsultingAgreementResponse(BaseModel):
     """컨설팅 계약에만 있는 내용. 개발 계약이면 이 자리가 null이다."""
 
     status: Literal[
-        "PRE_SIGNED", "SIGNED", "DEPOSITED", "IN_PROGRESS", "COMPLETED", "TERMINATED"
+        "SIGNED", "DEPOSITED", "IN_PROGRESS", "COMPLETED", "TERMINATED"
     ] = Field(
         description=(
-            "컨설팅 진행. PRE_SIGNED는 **가계약**으로, 계약서를 주고받으며 조정하는 "
-            "동안의 상태다. 양쪽이 서명하면 SIGNED, 예치가 끝나면 DEPOSITED, 세션이 "
-            "시작되면 IN_PROGRESS가 된다. COMPLETED는 완료됨, TERMINATED는 파기됨이다. "
-            "개발 계약과 같은 순서다.\n\n"
-            "**체결 여부는 바깥 계약의 `status`로만 판단한다.** 이 값이 PRE_SIGNED를 "
-            "지나쳤다고 체결된 것이 아니다. 서명 두 개가 모두 찍혀야 계약이 성립한다. "
+            "컨설팅 진행. 계약서를 처음 쓸 때부터 SIGNED다. AI가 만든 version 1도 같다. "
+            "예치가 끝나면 DEPOSITED, 세션이 시작되면 IN_PROGRESS가 된다. COMPLETED는 "
+            "완료됨, TERMINATED는 파기됨이다. 개발 계약과 같은 순서다.\n\n"
+            "**체결 여부는 바깥 계약의 `status`로만 판단한다.** 이 값이 SIGNED여도 "
+            "체결된 것이 아니다. 서명 두 개가 모두 찍혀야 계약이 성립한다. "
             "(`R-CON-01`)"
         ),
         examples=["SIGNED"],
@@ -6710,7 +6709,6 @@ class DevelopmentAgreementResponse(BaseModel):
     """개발 계약에만 있는 내용. 컨설팅 계약이면 이 자리가 null이다."""
 
     status: Literal[
-        "PRE_SIGNED",
         "SIGNED",
         "DEPOSITED",
         "IN_PROGRESS",
@@ -6719,10 +6717,13 @@ class DevelopmentAgreementResponse(BaseModel):
         "TERMINATED",
     ] = Field(
         description=(
-            "개발 진행. PRE_SIGNED는 **가계약**으로, 계약서를 주고받으며 조정하는 동안의 "
-            "상태다. 양쪽이 서명하면 SIGNED, 예치가 끝나면 DEPOSITED, 착수하면 "
-            "IN_PROGRESS가 된다. AFTER_SERVICE는 하자보수, COMPLETED는 완료됨, "
-            "TERMINATED는 파기됨이며 이 셋은 운영 콘솔에서 다룬다."
+            "개발 진행. 계약서를 처음 쓸 때부터 SIGNED다. AI가 만든 version 1도 같다. "
+            "예치가 끝나면 DEPOSITED, 착수하면 IN_PROGRESS가 된다. AFTER_SERVICE는 "
+            "하자보수, COMPLETED는 완료됨, TERMINATED는 파기됨이며 이 셋은 운영 "
+            "콘솔에서 다룬다.\n\n"
+            "**체결 여부는 바깥 계약의 `status`로만 판단한다.** 이 값이 SIGNED여도 "
+            "체결된 것이 아니다. 서명 두 개가 모두 찍혀야 계약이 성립한다. "
+            "(`R-CON-01`)"
         ),
         examples=["IN_PROGRESS"],
     )
@@ -7236,7 +7237,7 @@ def _draft_contract(contract_id: int, room_id: int) -> dict:
     draft["status"] = "NEGOTIATING"
     draft["contractText"] = None
     draft["updatedAt"] = "2026-08-22T16:10:00+09:00"
-    draft["development"]["status"] = "PRE_SIGNED"
+    draft["development"]["status"] = "SIGNED"
     for milestone in draft["development"]["milestones"]:
         milestone["status"] = "PROPOSED"
         milestone["submittedAt"] = None
@@ -7713,8 +7714,9 @@ def start_development(
         "**받는 요구사항은 요청서에 담긴 것과 이 계약서에 이미 들어 있는 것이다.** 개발자는 "
         "요청서에 담긴 것만 볼 수 있다(R-REQ-05). 다시 쓸 때는 앞서 새로 만든 작업이 그 "
         "요구사항 번호를 달고 돌아온다.\n\n"
-        "보낸 계약서는 **가계약** 상태다. 양쪽이 서명할 때까지 서로 주고받으며 조정하는 "
-        "구간이며, 서명이 끝나야 체결된다. 협의 중에 다시 보내면 그 계약서의 내용을 이 "
+        "보낸 계약서는 양쪽이 서명할 때까지 **협의 중**이다. 공통 계약 `status`는 "
+        "`NEGOTIATING`이고 개발 쪽 `status`는 처음부터 `SIGNED`다. 서명 두 개가 모두 "
+        "찍혀야 체결된다(`R-CON-01`). 협의 중에 다시 보내면 그 계약서의 내용을 이 "
         "요청으로 덮어쓴다. 계약서는 방에 하나이고, 양쪽이 서명한 뒤에 내용을 바꾸려면 "
         "그때 새 계약서를 쓴다.\n\n"
         "**작업마다 따로 납기를 두지 않는다.** 최종 납기일 하나만 있고, 대금도 모든 작업이 "
@@ -7761,7 +7763,7 @@ def write_development_contract(
             "contractText": None,
             "development": {
                 **DEV_CONTRACT_EXAMPLE["development"],
-                "status": "PRE_SIGNED",
+                "status": "SIGNED",
             },
         }
     )

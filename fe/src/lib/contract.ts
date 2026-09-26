@@ -198,7 +198,6 @@ export function developmentStageLabel(contract: Contract | null): string | null 
   if (contract.status !== "SIGNED") return "계약 전";
 
   const labels: Record<DevelopmentStatus, string> = {
-    PRE_SIGNED: "계약 전",
     SIGNED: "예치 대기",
     DEPOSITED: "착수 전",
     IN_PROGRESS: "진행 중",

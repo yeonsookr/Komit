@@ -85,7 +85,7 @@ class ContractDraftDeliveryTest(unittest.TestCase):
         self.assertEqual(result.messages, [])
 
     def test_sent_contract_keeps_the_amounts_the_developer_filled(self) -> None:
-        """초안과 가계약은 다르다. 개발자가 써서 보낸 계약서에는 금액과 일정이 있다."""
+        """초안과 개발자가 보낸 계약서는 다르다. 보낸 계약서에는 금액과 일정이 있다."""
         sent = get_contract(DRAFT_DEV_CONTRACT_ID)
 
         self.assertIsInstance(sent, ContractResponse)
