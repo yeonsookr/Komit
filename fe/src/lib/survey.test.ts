@@ -3,6 +3,7 @@ import {
   isAnswered,
   parseStep,
   questionsForStep,
+  symptomOf,
   toggleOption,
   toQuestionValue,
 } from './survey';
@@ -129,5 +130,23 @@ describe('questionsForStep', () => {
 
   it('검사 전이라 설문4 문항이 없으면 빈 배열이다', () => {
     expect(questionsForStep(questions.slice(0, 3), 4)).toEqual([]);
+  });
+});
+
+describe('symptomOf', () => {
+  it('설문2 주관식에 적은 증상을 읽는다', () => {
+    expect(symptomOf([single(), multi(), text('결제가 안 돼요')])).toBe('결제가 안 돼요');
+  });
+
+  it('검사 명령이 한 줄이 되도록 줄바꿈과 겹친 공백을 줄인다', () => {
+    expect(symptomOf([single(), multi(), text('  결제가\n\n안   돼요 ')])).toBe('결제가 안 돼요');
+  });
+
+  it('적지 않았으면 빈 글이다', () => {
+    expect(symptomOf([single(), multi(), text()])).toBe('');
+  });
+
+  it('검사 결과에서 나온 주관식 문항은 증상으로 보지 않는다', () => {
+    expect(symptomOf([single(), multi(), text(), text('검사 문항 답')])).toBe('');
   });
 });

@@ -13,6 +13,7 @@ import com.a501.service.domain.consulting.entity.Reservation;
 import com.a501.service.domain.consulting.repository.ConsultingSessionRepository;
 import com.a501.service.domain.consulting.repository.ReservationRepository;
 import com.a501.service.domain.contract.ContractErrorCode;
+import com.a501.service.domain.contract.client.EscrowDepositClient;
 import com.a501.service.domain.contract.dto.request.SignContractRequest;
 import com.a501.service.domain.contract.entity.ConsultingAgreement;
 import com.a501.service.domain.contract.entity.Contract;
@@ -24,6 +25,7 @@ import com.a501.service.domain.contract.repository.ContractSignatureRepository;
 import com.a501.service.domain.contract.repository.ContractTemplateRepository;
 import com.a501.service.domain.room.dto.RoomParties;
 import com.a501.service.domain.room.service.RoomQueryService;
+import java.math.BigInteger;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -74,6 +76,8 @@ class ContractSignatureServiceTest {
     private ConsultingSessionRepository consultingSessionRepository;
     @Mock
     private ReservationRepository reservationRepository;
+    @Mock
+    private EscrowDepositClient escrowDepositClient;
 
     private ContractSignatureService service;
     private Contract contract;
@@ -87,9 +91,11 @@ class ContractSignatureServiceTest {
                 templateRepository,
                 roomQueryService,
                 contractDetailService,
-                consultingAgreementRepository,
-                consultingSessionRepository,
-                reservationRepository,
+                new ConsultingReservationConfirmation(
+                        consultingAgreementRepository,
+                        consultingSessionRepository,
+                        reservationRepository,
+                        escrowDepositClient),
                 Clock.fixed(NOW, ZoneOffset.UTC));
 
         contract = Contract.of(ROOM_ID, Contract.ContractType.CONSULTING);
@@ -123,10 +129,16 @@ class ContractSignatureServiceTest {
                 .thenReturn(List.of(session));
         when(reservationRepository.findByConsultingSessionIdAndDeletedFalse(80))
                 .thenReturn(Optional.of(reservation));
+        when(escrowDepositClient.findByContract("120")).thenReturn(Optional.of(deposit(50_000)));
+    }
+
+    private static EscrowDepositClient.Deposit deposit(long amount) {
+        return new EscrowDepositClient.Deposit(
+                77L, "120", "ACTIVE", BigInteger.valueOf(amount), BigInteger.valueOf(amount));
     }
 
     @Test
-    @DisplayName("컨설팅 계약이 양쪽 서명으로 성립하면 예약을 확정한다 (R-CON-01)")
+    @DisplayName("대금이 예치된 컨설팅 계약이 양쪽 서명으로 성립하면 예약을 확정한다 (R-CON-22)")
     void confirmsReservationWhenConsultingConcludes() {
         service.sign(CONTRACT_ID, CLIENT_ID, new SignContractRequest(FILE_ID));
         service.sign(CONTRACT_ID, DEVELOPER_USER_ID, new SignContractRequest(42));
@@ -135,11 +147,47 @@ class ContractSignatureServiceTest {
     }
 
     @Test
-    @DisplayName("한쪽만 서명한 동안에는 예약이 제안 상태로 남는다")
+    @DisplayName("양쪽이 서명해도 대금을 예치하기 전이면 예약을 확정하지 않는다 (R-CON-22)")
+    void keepsReservationProposedUntilDeposited() {
+        when(escrowDepositClient.findByContract("120")).thenReturn(Optional.empty());
+
+        service.sign(CONTRACT_ID, DEVELOPER_USER_ID, new SignContractRequest(42));
+        service.sign(CONTRACT_ID, CLIENT_ID, new SignContractRequest(FILE_ID));
+
+        assertThat(contract.isConcluded()).isTrue();
+        assertThat(reservation.getStatus()).isEqualTo("PROPOSED");
+    }
+
+    @Test
+    @DisplayName("예치가 끝나지 않았으면 예치 기록이 있어도 확정하지 않는다")
+    void keepsReservationProposedWhileDepositPending() {
+        when(escrowDepositClient.findByContract("120")).thenReturn(Optional.of(deposit(0)));
+
+        service.sign(CONTRACT_ID, CLIENT_ID, new SignContractRequest(FILE_ID));
+        service.sign(CONTRACT_ID, DEVELOPER_USER_ID, new SignContractRequest(42));
+
+        assertThat(reservation.getStatus()).isEqualTo("PROPOSED");
+    }
+
+    @Test
+    @DisplayName("성립하는 서명에서 예치 여부를 확인하지 못하면 서명도 실패한다")
+    void failsSignatureWhenDepositCannotBeChecked() {
+        service.sign(CONTRACT_ID, CLIENT_ID, new SignContractRequest(FILE_ID));
+        when(escrowDepositClient.findByContract("120"))
+                .thenThrow(new BusinessException(ContractErrorCode.ESCROW_UNAVAILABLE));
+
+        assertThatThrownBy(() -> service.sign(CONTRACT_ID, DEVELOPER_USER_ID, new SignContractRequest(42)))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ContractErrorCode.ESCROW_UNAVAILABLE);
+    }
+
+    @Test
+    @DisplayName("한쪽만 서명한 동안에는 예치를 묻지 않고 예약이 제안 상태로 남는다")
     void keepsReservationProposedUntilBothSign() {
         service.sign(CONTRACT_ID, CLIENT_ID, new SignContractRequest(FILE_ID));
 
         assertThat(reservation.getStatus()).isEqualTo("PROPOSED");
+        verify(escrowDepositClient, never()).findByContract(any());
     }
 
     @Test
@@ -152,6 +200,7 @@ class ContractSignatureServiceTest {
 
         assertThat(contract.isConcluded()).isTrue();
         verify(consultingAgreementRepository, never()).findByContractIdAndDeletedFalse(any());
+        verify(escrowDepositClient, never()).findByContract(any());
     }
 
     @Test

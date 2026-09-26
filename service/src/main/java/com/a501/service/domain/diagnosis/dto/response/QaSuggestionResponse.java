@@ -3,7 +3,7 @@ package com.a501.service.domain.diagnosis.dto.response;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
- * 저장 전 확인 문장 후보 한 건. (`R-REQ-04`, `R-CON-22`)
+ * 저장 전 확인 문장 후보 한 건. (`R-REQ-04`, `R-CON-23`)
  *
  * <p><b>식별자와 상태가 없다.</b> 아직 저장하지 않은 후보라 붙일 식별자가 없다. 사용자가
  * 고르고 고친 뒤 요청서나 계약서 저장이 확정하며, 그때 식별자가 생긴다.

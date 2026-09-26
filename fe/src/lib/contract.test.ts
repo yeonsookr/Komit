@@ -8,8 +8,9 @@ import {
   isCancelled,
   isHandover,
   isConsultingDraft,
+  consultingPaymentStage,
   isDevelopmentDraft,
-  hasAnySignature,
+  isSignedByAnyone,
   isSignedByBoth,
   hasSigned,
   lastCounterpartMessage,
@@ -168,16 +169,10 @@ describe("서명", () => {
     expect(isSignedByBoth(both)).toBe(true);
   });
 
-  it("한쪽만 서명해도 수정할 수 없는 계약으로 본다", () => {
-    expect(
-      hasAnySignature(contract({ clientSignature: signed, developerSignature: unsigned })),
-    ).toBe(true);
-    expect(
-      hasAnySignature(contract({ clientSignature: unsigned, developerSignature: signed })),
-    ).toBe(true);
-    expect(
-      hasAnySignature(contract({ clientSignature: unsigned, developerSignature: unsigned })),
-    ).toBe(false);
+  it("한쪽만 서명해도 고칠 수 없다", () => {
+    expect(isSignedByAnyone(contract({ clientSignature: unsigned, developerSignature: unsigned }))).toBe(false);
+    expect(isSignedByAnyone(contract({ clientSignature: signed, developerSignature: unsigned }))).toBe(true);
+    expect(isSignedByAnyone(contract({ clientSignature: unsigned, developerSignature: signed }))).toBe(true);
   });
 
   it("내 서명만 골라낸다", () => {
@@ -282,6 +277,32 @@ describe("canCancel", () => {
     const cancelled = contract({ status: "CANCELLED" });
     expect(isCancelled(cancelled)).toBe(true);
     expect(canCancel(cancelled, false)).toBe(false);
+  });
+});
+
+describe("consultingPaymentStage", () => {
+  const signedBy = (userId: number) => ({ userId, isSigned: true, signedAt: null, signatureImageFileId: 1 });
+  const clientSigned = contract({ clientSignature: signedBy(12) });
+
+  it("개발자에게는 결제 화면을 주지 않는다", () => {
+    expect(consultingPaymentStage(clientSigned, true, null)).toBe("developer");
+  });
+
+  it("취소된 계약은 결제받지 않는다", () => {
+    expect(consultingPaymentStage({ ...clientSigned, status: "CANCELLED" }, false, null)).toBe("cancelled");
+  });
+
+  it("의뢰인이 서명하기 전에는 결제받지 않는다", () => {
+    expect(consultingPaymentStage(contract(), false, null)).toBe("unsigned");
+  });
+
+  it("예치된 금액이 있으면 결제를 마친 것이다", () => {
+    expect(consultingPaymentStage(clientSigned, false, 50_000)).toBe("paid");
+  });
+
+  it("예치를 건 적이 없거나 결과가 나오기 전이면 결제 화면을 준다", () => {
+    expect(consultingPaymentStage(clientSigned, false, null)).toBe("pay");
+    expect(consultingPaymentStage(clientSigned, false, 0)).toBe("pay");
   });
 });
 

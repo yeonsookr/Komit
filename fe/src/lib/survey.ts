@@ -32,6 +32,18 @@ export const STEP_QUESTION_INDEXES: Record<number, number[]> = {
 /** 설문4 앞에 오는 고정 문항의 수. 그 뒤가 검사 결과에서 나온 문항입니다. */
 const FIXED_QUESTION_COUNT = 3;
 
+/**
+ * 의뢰인이 설문2 주관식에 적은 증상. 검사 명령 뒤에 붙여 검사가 원인을 찾게 합니다.
+ * 명령은 한 줄이어야 하므로 줄바꿈과 겹친 공백을 하나로 줄입니다. 적지 않았으면 빈 글입니다.
+ */
+export function symptomOf(questions: SurveyQuestion[]): string {
+  const textQuestion = questions
+    .slice(0, FIXED_QUESTION_COUNT)
+    .find((question) => question.answerType === "TEXT");
+  if (!textQuestion) return "";
+  return toQuestionValue(textQuestion).text.replace(/\s+/g, " ").trim();
+}
+
 /** 그 단계에서 답할 문항들. 아직 없는 문항은 빠집니다. */
 export function questionsForStep(questions: SurveyQuestion[], step: number): SurveyQuestion[] {
   if (step === TOTAL_STEPS) return questions.slice(FIXED_QUESTION_COUNT);

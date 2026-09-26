@@ -64,7 +64,7 @@ export async function writeDevelopmentContract(
 
 /**
  * 계약 편집 중인 작업에 맞는 확인 문장 후보 세 건을 만듭니다.
- * 후보만 반환하며 작업이나 계약서를 저장하지 않습니다. (R-CON-22)
+ * 후보만 반환하며 작업이나 계약서를 저장하지 않습니다. (R-CON-23)
  */
 export async function suggestContractQaCriteria(
   roomId: number,
@@ -132,8 +132,7 @@ export async function depositContract(
 /**
  * 예치에 쓸 결제 수단.
  *
- * 카드 결제는 쓰지 않으므로 실시간 계좌이체 수단만 옵니다. 빈 배열이면 아직
- * 등록한 것이 없다는 뜻이고, 그대로 예치를 걸면 409(ACCOUNT_REQUIRED) 입니다.
+ * 회원가입 때 발급한 계좌 한 건이 옵니다. 예치는 이 계좌에서만 빠집니다. (R-PAY-09)
  */
 export async function getPaymentMethods(): Promise<PaymentMethod[]> {
   const { data } = await authenticatedBackendApi().get<{ content: PaymentMethod[] }>(

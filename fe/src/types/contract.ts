@@ -281,7 +281,7 @@ export interface QaSuggestion {
   testCase: string;
 }
 
-/** 확인 문장 후보는 한 페이지에 정확히 세 건 옵니다. (R-CON-22) */
+/** 확인 문장 후보는 한 페이지에 정확히 세 건 옵니다. (R-CON-23) */
 export interface QaSuggestionList {
   content: QaSuggestion[];
   page: number;

@@ -7,7 +7,7 @@ import com.a501.service.domain.diagnosis.dto.response.QaSuggestionListResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-/** 계약 편집 중인 작업의 확인 문장 후보를 만들며 아무것도 저장하지 않는다. (R-CON-22) */
+/** 계약 편집 중인 작업의 확인 문장 후보를 만들며 아무것도 저장하지 않는다. (R-CON-23) */
 @Service
 @RequiredArgsConstructor
 @SlowCallThreshold("30s")

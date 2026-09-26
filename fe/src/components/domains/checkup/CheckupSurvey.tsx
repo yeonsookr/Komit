@@ -9,6 +9,7 @@ import { INTERNAL } from "@/lib/api/endpoints";
 import {
   isAnswered,
   questionsForStep,
+  symptomOf,
   toQuestionValue,
   TOTAL_STEPS,
   type QuestionValue,
@@ -24,7 +25,7 @@ import { SurveyStep } from "./SurveyStep";
 const STEP_HEADING: Record<number, { title: string; description?: string }> = {
   2: { title: "지금 상황을 알려주세요" },
   3: {
-    title: "검사 파일을 받아 직접 실행해주세요",
+    title: "Claude Code에서 직접 검사해주세요",
     description: "코드는 컴퓨터 밖으로 나가지 않습니다. 만들어진 결과 파일만 올려주시면 됩니다.",
   },
   4: {
@@ -194,6 +195,7 @@ export function CheckupSurvey({
       {isScanStep ? (
         <ScanFileStep
           diagnosisId={diagnosisId}
+          symptom={symptomOf(survey.questions)}
           uploadedFileName={uploadedFileName}
           onUploaded={onUploaded}
         />
