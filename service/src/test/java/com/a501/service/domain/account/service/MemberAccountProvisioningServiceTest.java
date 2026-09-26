@@ -14,6 +14,7 @@ import com.a501.service.domain.account.AccountErrorCode;
 import com.a501.service.domain.account.client.EscrowAccountClient;
 import com.a501.service.domain.account.crypto.AccountDataCrypto;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DataIntegrityViolationException;
 
 class MemberAccountProvisioningServiceTest {
     private static final String KEY = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=";
@@ -52,6 +53,20 @@ class MemberAccountProvisioningServiceTest {
         assertThat(account.accountNo()).isEqualTo("0011012345678843");
         verify(store).complete(any(), anyString(), anyString(), anyString());
         verify(store, never()).fail(any());
+    }
+
+    /** R-ACC-13: 같은 회원의 발급이 동시에 시작돼도 먼저 만든 행을 이어받아 같은 멱등 키로 발급한다. */
+    @Test
+    void takesOverTheRowCreatedByAConcurrentRequest() {
+        when(store.prepare(10))
+                .thenThrow(new DataIntegrityViolationException("uk_member_account_provision_user"))
+                .thenReturn(new MemberAccountStore.Pending(
+                        "komit-10@komit.local", "idempotency-10", null, null, null));
+        when(escrow.createMemberAccount("komit-10@komit.local", "idempotency-10"))
+                .thenReturn(new EscrowAccountClient.MemberAccount(
+                        "user-key-10", "001", "0011012345678844"));
+
+        assertThat(service.provision(10).accountNo()).isEqualTo("0011012345678844");
     }
 
     /** 발급이 실패하면 상태를 남긴다. 행과 멱등 키는 그대로 두어 다음 시도가 이어받는다. */
