@@ -7,6 +7,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import com.a501.escrow.config.LedgerProperties;
+import com.a501.escrow.domain.ledger.repository.LedgerRepository;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Propagation;
@@ -21,9 +23,13 @@ public class EscrowSettlementRepository {
     private static final String TRANSACTION_ID = "transactionId";
     private static final String EXTERNAL_ID = "externalId";
     private final JdbcClient jdbc;
+    private final LedgerRepository ledger;
+    private final LedgerProperties ledgerProperties;
 
-    public EscrowSettlementRepository(JdbcClient jdbc) {
+    public EscrowSettlementRepository(JdbcClient jdbc, LedgerRepository ledger, LedgerProperties ledgerProperties) {
         this.jdbc = jdbc;
+        this.ledger = ledger;
+        this.ledgerProperties = ledgerProperties;
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -118,7 +124,11 @@ public class EscrowSettlementRepository {
                         rs.getString("recipient_name"), rs.getString("financial_transaction_id"))).list();
     }
 
+    /** 완료된 자금 이동만 반영한 잔액 (R-PAY-12). 어느 기록에서 읽을지는 app.ledger.read-source 를 따릅니다 (R-PAY-15). */
     public BigInteger balance(long escrowId) {
+        if (ledgerProperties.readsLedger()) {
+            return ledger.balance(escrowId);
+        }
         return jdbc.sql("""
                 SELECT COALESCE(sum(CASE WHEN transaction_type='DEPOSIT' THEN amount ELSE -amount END),0)
                 FROM escrow_transactions WHERE escrow_id=:escrowId AND status='COMPLETED'
@@ -126,6 +136,9 @@ public class EscrowSettlementRepository {
     }
 
     public Totals totals(long escrowId) {
+        if (ledgerProperties.readsLedger()) {
+            return ledger.totals(escrowId);
+        }
         return jdbc.sql("""
                 SELECT COALESCE(sum(amount) FILTER (WHERE transaction_type='RELEASE'),0) released,
                        COALESCE(sum(amount) FILTER (WHERE transaction_type='FEE'),0) fee,

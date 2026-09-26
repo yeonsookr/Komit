@@ -4,6 +4,8 @@ import java.math.BigInteger;
 import java.time.OffsetDateTime;
 import java.util.List;
 
+import com.a501.escrow.config.LedgerProperties;
+import com.a501.escrow.domain.ledger.repository.LedgerRepository;
 import com.a501.escrow.domain.reconciliation.dto.ReconciliationDtos;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -13,12 +15,20 @@ public class ReconciliationRepository {
     private static final String RESULT = "result";
 
     private final JdbcClient jdbc;
+    private final LedgerRepository ledger;
+    private final LedgerProperties ledgerProperties;
 
-    public ReconciliationRepository(JdbcClient jdbc) {
+    public ReconciliationRepository(JdbcClient jdbc, LedgerRepository ledger, LedgerProperties ledgerProperties) {
         this.jdbc = jdbc;
+        this.ledger = ledger;
+        this.ledgerProperties = ledgerProperties;
     }
 
+    /** 보관계좌에 있어야 할 금액 (R-PAY-13). 어느 기록에서 읽을지는 app.ledger.read-source 를 따릅니다 (R-PAY-15). */
     public BigInteger ledgerTotal() {
+        if (ledgerProperties.readsLedger()) {
+            return ledger.custodyTotal();
+        }
         return jdbc.sql("""
                 SELECT COALESCE(sum(CASE WHEN transaction_type='DEPOSIT' THEN amount ELSE -amount END),0)
                 FROM escrow_transactions WHERE status='COMPLETED'
@@ -26,6 +36,9 @@ public class ReconciliationRepository {
     }
 
     public int escrowCount() {
+        if (ledgerProperties.readsLedger()) {
+            return ledger.fundedEscrowCount();
+        }
         return jdbc.sql("""
                 SELECT count(*) FROM (
                     SELECT escrow_id
