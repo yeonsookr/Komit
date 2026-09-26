@@ -90,12 +90,15 @@ public class ContractController {
 
                     서명한 뒤에는 계약서를 고칠 수 없다.
 
+                    **컨설팅은 서명만으로 세션이 잡히지 않는다.** 양쪽 서명과 대금 예치가 모두 끝나야 세션 예약을 확정한다. 계약을 성립시키는 서명에서 Escrow 에 예치가 끝났는지 묻는다. (R-CON-22)
+
                     - 201: 서명했을 때. 상대가 아직이면 계약은 협의중으로 남는다
                     - 401 UNAUTHORIZED: 로그인하지 않았을 때
                     - 404 CONTRACT_NOT_FOUND: 없는 계약이거나 요청자가 그 계약의 당사자가 아닐 때
                     - 409 ALREADY_SIGNED_BY_ME: 이미 내가 서명했을 때
                     - 409 CONTRACT_CANCELLED: 의뢰인이 취소한 계약일 때. 개발자가 뒤늦게 서명해도 받지 않는다 (R-CON-21)
-                    - 422 INVALID_REQUEST: signatureImageFileId 가 없을 때""")
+                    - 422 INVALID_REQUEST: signatureImageFileId 가 없을 때
+                    - 500 INTERNAL_ERROR: 컨설팅 계약을 성립시키는 서명에서 예치 여부를 확인하지 못했을 때. 서명은 남지 않는다""")
     @ResponseStatus(HttpStatus.CREATED)
     @PostMapping("/{contractId}/signatures")
     ContractResponse signContract(
@@ -109,11 +112,11 @@ public class ContractController {
             summary = "계약 취소",
             description =
                     """
-                    개발자가 서명하기 전에 의뢰인이 계약을 취소한다. 예치금이 있으면 전액을 예치할 때                     쓴 회원가입 발급 계좌로 돌려준다. (R-CON-21, R-PAY-04)
+                    개발자가 서명하기 전에 의뢰인이 계약을 취소한다. 예치금이 있으면 전액을 예치할 때 쓴 회원가입 발급 계좌로 돌려준다. (R-CON-21, R-PAY-04)
 
-                    **취소는 되돌릴 수 없다.** 취소된 계약에는 서명·수정·예치를 받지 않고, 그 계약의                     세션에 들어갈 수 없으며, 대금도 개발자에게 나가지 않는다.
+                    **취소는 되돌릴 수 없다.** 취소된 계약에는 서명·수정·예치를 받지 않고, 그 계약의 세션에 들어갈 수 없으며, 대금도 개발자에게 나가지 않는다.
 
-                    **같은 요청을 다시 보내도 된다.** 이미 취소된 계약이면 그대로 돌려주고, 환불이 끝나지                     않았으면 같은 멱등키로 잇는다. 돈은 두 번 나가지 않는다.
+                    **같은 요청을 다시 보내도 된다.** 이미 취소된 계약이면 그대로 돌려주고, 환불이 끝나지 않았으면 같은 멱등키로 잇는다. 돈은 두 번 나가지 않는다.
 
                     - 200: 취소했을 때. 예치금이 있었으면 환불까지 끝났다
                     - 401 UNAUTHORIZED: 로그인하지 않았을 때
@@ -139,6 +142,8 @@ public class ContractController {
 
                     **예치는 의뢰인만 한다.** 돈을 내는 쪽이다. 방의 당사자는 계약이 있다는 것을 \
                     알고 있으므로 개발자에게는 감추지 않고 403 으로 답한다.
+
+                    컨설팅 계약이 이미 양쪽 서명으로 성립했으면 예치가 끝나는 순간 세션 예약을 확정한다. (R-CON-22)
 
                     - 201: 예치를 걸었을 때. 결제가 바로 확인되면 DEPOSITED, 기다리는 중이면 PENDING
                     - 401 UNAUTHORIZED: 로그인하지 않았을 때

@@ -42,6 +42,7 @@ public class ContractDepositService {
     private final UserQueryService userQueryService;
     private final MemberAccountProvisioningService accountProvisioning;
     private final EscrowDepositClient escrowDepositClient;
+    private final ConsultingReservationConfirmation reservationConfirmation;
 
     /**
      * 예치를 건다.
@@ -89,6 +90,8 @@ public class ContractDepositService {
                 account.bankCode(),
                 account.accountNo(),
                 request.idempotencyKey());
+        // R-CON-22: 개발자가 먼저 서명했으면 이 예치로 세션이 확정된다.
+        reservationConfirmation.afterDeposited(contract, deposit);
 
         return toResponse(contractId, deposit);
     }

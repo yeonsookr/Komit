@@ -67,6 +67,8 @@ class ContractDepositServiceTest {
     private MemberAccountProvisioningService accountProvisioning;
     @Mock
     private EscrowDepositClient escrowDepositClient;
+    @Mock
+    private ConsultingReservationConfirmation reservationConfirmation;
 
     @InjectMocks
     private ContractDepositService service;
@@ -111,6 +113,14 @@ class ContractDepositServiceTest {
         assertThat(amount.getValue()).isEqualTo(BigInteger.valueOf(50_000));
         assertThat(response.status()).isEqualTo("DEPOSITED");
         assertThat(response.amount()).isEqualTo(BigInteger.valueOf(50_000));
+    }
+
+    @Test
+    @DisplayName("예치한 결과로 세션 예약을 확정할지 본다 (R-CON-22)")
+    void checksReservationAfterDeposit() {
+        service.deposit(CONTRACT_ID, CLIENT_ID, REQUEST);
+
+        verify(reservationConfirmation).afterDeposited(eq(contract), any(EscrowDepositClient.Deposit.class));
     }
 
     @Test
