@@ -18,7 +18,7 @@
 | `docs/BACKEND_CONVENTIONS.md` | 백엔드 코드 컨벤션 | 서버 코드를 쓸 때 |
 | `docs/FRONTEND_CONVENTIONS.md` | 프론트 코드 컨벤션 | 화면 코드를 쓸 때 |
 | `docs/git_guide.md` | 브랜치·커밋·MR 규칙 | 브랜치를 파거나 커밋할 때 |
-| `Readme.md` | 프로젝트 개요와 일자별 기획 변경 기록 | 맥락을 처음 잡을 때 |
+| `README.md` | 서비스 소개, 시스템 구성, 실행·테스트·배포 안내, 문서 지도 | 맥락을 처음 잡을 때, 로컬에 띄울 때 |
 
 ### 기획서와 규칙서의 경계
 
