@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.a501.service.common.exception.BusinessException;
@@ -13,6 +14,8 @@ import com.a501.service.domain.chat.dto.ChatMessageView;
 import com.a501.service.domain.chat.service.ChatMessageService;
 import com.a501.service.domain.contract.ContractErrorCode;
 import com.a501.service.domain.contract.dto.ContractDraftMessage;
+import com.a501.service.domain.diagnosis.dto.DraftRequirements;
+import com.a501.service.domain.diagnosis.service.ContractRequirementService;
 import com.a501.service.domain.room.RoomErrorCode;
 import com.a501.service.domain.room.dto.ContractDraftRoomView;
 import com.a501.service.domain.room.dto.RoomParties;
@@ -33,8 +36,9 @@ class ContractDraftPreparationServiceTest {
 
     private final RoomQueryService roomQueryService = mock(RoomQueryService.class);
     private final ChatMessageService chatMessageService = mock(ChatMessageService.class);
+    private final ContractRequirementService contractRequirementService = mock(ContractRequirementService.class);
     private final ContractDraftPreparationService service =
-            new ContractDraftPreparationService(roomQueryService, chatMessageService);
+            new ContractDraftPreparationService(roomQueryService, chatMessageService, contractRequirementService);
 
     @BeforeEach
     void setUp() {
@@ -105,10 +109,46 @@ class ContractDraftPreparationServiceTest {
     }
 
     private static ContractDraftRoomView room(String inquiryChatRefId) {
+        return room("CONSULTING", inquiryChatRefId);
+    }
+
+    private static ContractDraftRoomView room(String targetType, String inquiryChatRefId) {
         return new ContractDraftRoomView(
                 ROOM_ID,
-                "CONSULTING",
+                targetType,
                 inquiryChatRefId,
-                new RoomParties(CLIENT_ID, DEVELOPER_ID));
+                new RoomParties(CLIENT_ID, DEVELOPER_ID),
+                8);
+    }
+
+    @Test
+    void 개발방은_요청서와_고르지_않은_요구사항을_함께_담는다() {
+        when(roomQueryService.findContractDraftRoom(ROOM_ID))
+                .thenReturn(Optional.of(room("DEVELOPMENT", INQUIRY_CHAT_REF_ID)));
+        when(chatMessageService.findAllChronological(INQUIRY_CHAT_REF_ID))
+                .thenReturn(List.of(new ChatMessageView(CLIENT_ID, "관리자 화면이 열립니다", BASE)));
+        var requested = new DraftRequirements.Requested(
+                312, "관리자 화면에 인증이 없다", null, List.of("로그인 화면이 뜬다"));
+        var leftOut = new DraftRequirements.LeftOut(313, "결제가 가끔 실패한다");
+        when(contractRequirementService.findDraftRequirements(8))
+                .thenReturn(new DraftRequirements(List.of(requested), List.of(leftOut)));
+
+        var input = service.prepare(ROOM_ID, DEVELOPER_ID);
+
+        assertThat(input.targetType()).isEqualTo("DEVELOPMENT");
+        assertThat(input.issues()).containsExactly(requested);
+        assertThat(input.rejectedIssues()).containsExactly(leftOut);
+    }
+
+    @Test
+    void 컨설팅방은_요청서를_읽지_않는다() {
+        when(chatMessageService.findAllChronological(INQUIRY_CHAT_REF_ID))
+                .thenReturn(List.of(new ChatMessageView(CLIENT_ID, "결제가 실패합니다", BASE)));
+
+        var input = service.prepare(ROOM_ID, DEVELOPER_ID);
+
+        assertThat(input.issues()).isEmpty();
+        assertThat(input.rejectedIssues()).isEmpty();
+        verifyNoInteractions(contractRequirementService);
     }
 }

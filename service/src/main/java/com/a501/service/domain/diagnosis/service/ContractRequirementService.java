@@ -5,6 +5,8 @@ import com.a501.service.common.exception.CommonErrorCode;
 import com.a501.service.domain.code.service.CodeQueryService;
 import com.a501.service.domain.diagnosis.DiagnosisErrorCode;
 import com.a501.service.domain.diagnosis.IssueCategory;
+import com.a501.service.domain.diagnosis.IssueStatus;
+import com.a501.service.domain.diagnosis.dto.DraftRequirements;
 import com.a501.service.domain.diagnosis.entity.Diagnosis;
 import com.a501.service.domain.diagnosis.entity.Inspection;
 import com.a501.service.domain.diagnosis.entity.Issue;
@@ -16,6 +18,7 @@ import com.a501.service.domain.diagnosis.repository.QaCriterionRepository;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -107,6 +110,46 @@ public class ContractRequirementService {
                         .map(Issue::getId)
                         .collect(Collectors.toSet()))
                 .orElseGet(Set::of);
+    }
+
+    /**
+     * 개발 계약 초안이 쓰는 요청서. 진단의 현재 회차에서 요청서에 담긴 요구사항과 그 확인 문장, 의뢰인이 고르지
+     * 않은 요구사항이다. 계약서에서 만든 요구사항과 계약서 문장은 빠진다.
+     *
+     * <p>의뢰인이 직접 해결한 것은 고르지 않은 것이 아니라 끝난 것이라 어느 쪽에도 넣지 않는다.
+     *
+     * @return 요청서. 진단이나 현재 회차 검사가 없으면 둘 다 비어 있다
+     */
+    public DraftRequirements findDraftRequirements(Integer projectId) {
+        List<Issue> issues = diagnosisRepository
+                .findByProjectIdAndDeletedFalse(projectId)
+                .flatMap(diagnosis -> inspectionRepository.findByDiagnosisIdAndDiagnosisVersionAndDeletedFalse(
+                        diagnosis.getId(), diagnosis.getVersion()))
+                .map(inspection -> issueRepository.findByInspectionIdAndDeletedFalseOrderByIdAsc(inspection.getId()))
+                .orElseGet(List::of);
+        List<Issue> requested = issues.stream()
+                .filter(issue -> Issue.REQUEST_STATUSES.contains(issue.getStatus()))
+                .toList();
+        Map<Integer, List<String>> criteria = requested.isEmpty()
+                ? Map.of()
+                : qaCriterionRepository
+                        .findByIssueIdInAndDeletedFalseOrderByIdAsc(requested.stream().map(Issue::getId).toList())
+                        .stream()
+                        .collect(Collectors.groupingBy(
+                                QaCriterion::getIssueId,
+                                Collectors.mapping(QaCriterion::getTestCase, Collectors.toList())));
+        return new DraftRequirements(
+                requested.stream()
+                        .map(issue -> new DraftRequirements.Requested(
+                                issue.getId(),
+                                issue.getTitle(),
+                                issue.getDetail(),
+                                criteria.getOrDefault(issue.getId(), List.of())))
+                        .toList(),
+                issues.stream()
+                        .filter(issue -> IssueStatus.UNRESOLVED.name().equals(issue.getStatus()))
+                        .map(issue -> new DraftRequirements.LeftOut(issue.getId(), issue.getTitle()))
+                        .toList());
     }
 
     /**

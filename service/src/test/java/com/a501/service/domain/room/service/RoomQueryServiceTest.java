@@ -108,6 +108,7 @@ class RoomQueryServiceTest {
         assertThat(found.targetType()).isEqualTo("CONSULTING");
         assertThat(found.inquiryChatRefId()).isEqualTo(INQUIRY_CHAT_REF_ID);
         assertThat(found.parties()).isEqualTo(new RoomParties(CLIENT_ID, DEVELOPER_USER_ID));
+        assertThat(found.projectId()).isEqualTo(PROJECT_ID);
     }
 
     @Test

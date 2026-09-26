@@ -128,7 +128,8 @@ public class RoomQueryService {
                                 .findByConvertedRoomIdAndDeletedFalse(room.getId())
                                 .map(Room::getChatRefId)
                                 .orElse(null),
-                        parties)));
+                        parties,
+                        room.getProjectId())));
     }
 
     /**

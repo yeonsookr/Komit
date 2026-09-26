@@ -248,6 +248,31 @@ class ContractRequirementServiceTest {
         assertThat(line.isDeleted()).isFalse();
     }
 
+    @Test
+    @DisplayName("초안용 요청서는 현재 회차에서 담긴 요구사항과 확인 문장, 고르지 않은 요구사항이다. 직접 해결한 것은 빠진다")
+    void findsDraftRequirements() {
+        Diagnosis rediagnosed = Diagnosis.of(PROJECT_ID);
+        ReflectionTestUtils.setField(rediagnosed, "id", DIAGNOSIS_ID);
+        rediagnosed.startNextVersion();
+        when(diagnosisRepository.findByProjectIdAndDeletedFalse(PROJECT_ID)).thenReturn(Optional.of(rediagnosed));
+        Inspection current = Inspection.of(DIAGNOSIS_ID, (short) 2, 50, null);
+        ReflectionTestUtils.setField(current, "id", 60);
+        when(inspectionRepository.findByDiagnosisIdAndDiagnosisVersionAndDeletedFalse(DIAGNOSIS_ID, (short) 2))
+                .thenReturn(Optional.of(current));
+        when(issueRepository.findByInspectionIdAndDeletedFalseOrderByIdAsc(60)).thenReturn(List.of(
+                issue(311, "SUGGESTED"), issue(312, "UNRESOLVED"), issue(313, "RESOLVED"), issue(314, "SUGGESTED")));
+        when(qaCriterionRepository.findByIssueIdInAndDeletedFalseOrderByIdAsc(List.of(311, 314)))
+                .thenReturn(List.of(QaCriterion.of(311, "로그인 화면이 뜬다"), QaCriterion.of(311, "관리자만 들어간다")));
+
+        var requirements = service.findDraftRequirements(PROJECT_ID);
+
+        assertThat(requirements.requested()).extracting(requested -> requested.issueId()).containsExactly(311, 314);
+        assertThat(requirements.requested().getFirst().qaCriteria())
+                .containsExactly("로그인 화면이 뜬다", "관리자만 들어간다");
+        assertThat(requirements.requested().get(1).qaCriteria()).isEmpty();
+        assertThat(requirements.leftOut()).extracting(leftOut -> leftOut.issueId()).containsExactly(312);
+    }
+
     private Issue issue(int id, String status) {
         Issue issue = Issue.writtenBySelf(60, "요구사항 " + id, null, ETC_CATEGORY_ID, "HIGH");
         ReflectionTestUtils.setField(issue, "id", id);
