@@ -57,6 +57,14 @@ export function isSignedByBoth(contract: Contract): boolean {
   );
 }
 
+/** 한쪽이라도 서명했는지. 첫 서명부터 계약 내용은 고칠 수 없습니다 (R-CON-02). */
+export function hasAnySignature(contract: Contract): boolean {
+  return (
+    contract.clientSignature?.isSigned === true ||
+    contract.developerSignature?.isSigned === true
+  );
+}
+
 /**
  * 거래가 끝났는지. 컨설팅과 개발 둘 다 유료 거래라 어느 쪽이든 끝나면 참입니다.
  * 리뷰는 끝난 거래에만 달립니다 (R-REV-02).

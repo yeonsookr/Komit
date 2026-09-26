@@ -5,7 +5,7 @@ import { EmptyState } from "@/components/feedback";
 import { ConsultingContractForm, ContractEditor } from "@/components/domains/contract";
 import { RoomHeader } from "@/components/domains/room";
 import { getContract, getMe, getRoom } from "@/lib/api/services";
-import { isSignedByBoth } from "@/lib/contract";
+import { hasAnySignature } from "@/lib/contract";
 import { isReceived } from "@/lib/rooms";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
@@ -62,14 +62,14 @@ export default async function ContractEditPage({
     <Container className="py-8 sm:py-10">
       <RoomHeader room={room} me={me} contract={contract} />
 
-      {canWrite && contract !== null && !isSignedByBoth(contract) &&
+      {canWrite && contract !== null && !hasAnySignature(contract) &&
       room.type === "CONSULTING" ? (
         <ConsultingContractForm
           roomId={room.roomId}
           counterpartName={room.counterpartName}
           contract={contract}
         />
-      ) : canWrite && contract !== null && !isSignedByBoth(contract) ? (
+      ) : canWrite && contract !== null && !hasAnySignature(contract) ? (
         <ContractEditor
           roomId={room.roomId}
           contract={contract}
@@ -78,12 +78,12 @@ export default async function ContractEditPage({
       ) : (
         <EmptyState
           title={
-            contract !== null && isSignedByBoth(contract)
+            contract !== null && hasAnySignature(contract)
               ? "서명한 계약서는 고칠 수 없습니다"
               : "고칠 계약서가 없습니다"
           }
           description={
-            contract !== null && isSignedByBoth(contract)
+            contract !== null && hasAnySignature(contract)
               ? "바꿔야 할 것이 있으면 계약서를 새로 써서 다시 서명합니다."
               : "계약서를 먼저 작성해 주세요."
           }

@@ -4,6 +4,7 @@ import { Card, CardHeader, KeyValueRow, Money } from "@/components/common";
 import { Callout } from "@/components/feedback";
 import {
   canCancel,
+  hasAnySignature,
   hasSigned,
   isCancelled,
   isSignedByBoth,
@@ -58,6 +59,7 @@ export function ConsultingContractDetail({
   if (consulting === null) return null;
 
   const signed = isSignedByBoth(contract);
+  const signedByAnyone = hasAnySignature(contract);
   const cancelled = isCancelled(contract);
   const mine = hasSigned(contract, myUserId);
   // 지금은 계약 하나에 세션 하나입니다. 목 명세가 배열로 두어 나중에 늘릴 여지만 남겼습니다.
@@ -160,7 +162,7 @@ export function ConsultingContractDetail({
             서명하면 계약서는 더 이상 수정할 수 없습니다.
           </p>
           <div className="mt-3 flex flex-wrap justify-end gap-2">
-            {received && (
+            {received && !signedByAnyone && (
               <Link
                 href={ROUTES.roomContractEdit(roomId)}
                 className={buttonClass({ variant: "outline", size: "lg" })}

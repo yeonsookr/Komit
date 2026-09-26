@@ -9,6 +9,7 @@ import {
   isHandover,
   isConsultingDraft,
   isDevelopmentDraft,
+  hasAnySignature,
   isSignedByBoth,
   hasSigned,
   lastCounterpartMessage,
@@ -165,6 +166,18 @@ describe("서명", () => {
       developerSignature: { ...unsigned, isSigned: true },
     });
     expect(isSignedByBoth(both)).toBe(true);
+  });
+
+  it("한쪽만 서명해도 수정할 수 없는 계약으로 본다", () => {
+    expect(
+      hasAnySignature(contract({ clientSignature: signed, developerSignature: unsigned })),
+    ).toBe(true);
+    expect(
+      hasAnySignature(contract({ clientSignature: unsigned, developerSignature: signed })),
+    ).toBe(true);
+    expect(
+      hasAnySignature(contract({ clientSignature: unsigned, developerSignature: unsigned })),
+    ).toBe(false);
   });
 
   it("내 서명만 골라낸다", () => {
