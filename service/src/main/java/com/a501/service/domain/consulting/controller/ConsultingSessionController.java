@@ -105,7 +105,7 @@ public class ConsultingSessionController {
                     - 202: 내 동의는 기록됐지만 상대방 동의를 기다릴 때
                     - 401 UNAUTHORIZED: 로그인하지 않았을 때
                     - 404 SESSION_NOT_FOUND: 없는 세션이거나 요청자가 그 세션의 당사자가 아닐 때
-                    - 409 SESSION_NOT_OPEN: 아직 이른 시각이거나 이미 끝난 세션일 때""")
+                    - 409 SESSION_NOT_OPEN: 아직 이른 시각이거나, 이미 끝났거나, 계약이 성립하지 않은 세션일 때""")
     @PostMapping("/{sessionId}/participations")
     ResponseEntity<ConsultingSessionResponse> join(
             @AuthenticationPrincipal AuthenticatedUser user, @PathVariable Integer sessionId) {

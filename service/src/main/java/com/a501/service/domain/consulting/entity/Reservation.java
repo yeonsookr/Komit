@@ -55,6 +55,11 @@ public class Reservation extends SoftDeleteEntity {
         this.scheduledAt = Objects.requireNonNull(scheduledAt, "scheduledAt");
     }
 
+    /** 계약이 성립해 확정된 예약인지. 확정 전에는 세션에 들어가지 못합니다. (R-CON-01) */
+    public boolean isConfirmed() {
+        return "CONFIRMED".equals(status);
+    }
+
     /** 양쪽이 서명해 계약이 성립했을 때 예약을 확정합니다. 이미 확정이면 그대로 둡니다. (R-CON-01) */
     public void confirm() {
         if ("PROPOSED".equals(status)) {
