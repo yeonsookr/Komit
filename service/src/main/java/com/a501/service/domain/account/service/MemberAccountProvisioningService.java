@@ -3,6 +3,7 @@ package com.a501.service.domain.account.service;
 import com.a501.service.domain.account.client.EscrowAccountClient;
 import com.a501.service.domain.account.crypto.AccountDataCrypto;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -23,7 +24,7 @@ public class MemberAccountProvisioningService {
      * 다시 들어와도 같은 계좌를 이어받습니다. 새로 발급하지 않습니다. (R-ACC-13)
      */
     public MemberAccount provision(Integer userId) {
-        MemberAccountStore.Pending pending = store.prepare(userId);
+        MemberAccountStore.Pending pending = prepare(userId);
         if (pending.isIssued()) {
             return new MemberAccount(crypto.decrypt(pending.encryptedUserKey()),
                     pending.bankCode(), crypto.decrypt(pending.encryptedAccountNo()));
@@ -39,6 +40,18 @@ public class MemberAccountProvisioningService {
         store.complete(userId, crypto.encrypt(issued.userKey()), issued.bankCode(),
                 crypto.encrypt(issued.accountNo()));
         return new MemberAccount(issued.userKey(), issued.bankCode(), issued.accountNo());
+    }
+
+    /**
+     * 같은 회원의 발급이 동시에 시작되면 한쪽만 행을 만들고 다른 쪽은 중복 키로 실패합니다.
+     * 실패한 쪽은 먼저 만든 행과 멱등 키를 다시 읽어 이어받습니다. (R-ACC-13)
+     */
+    private MemberAccountStore.Pending prepare(Integer userId) {
+        try {
+            return store.prepare(userId);
+        } catch (DataIntegrityViolationException exception) {
+            return store.prepare(userId);
+        }
     }
 
     public record MemberAccount(String userKey, String bankCode, String accountNo) {}

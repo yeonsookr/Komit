@@ -63,10 +63,12 @@ export function SignContractButton({
       if (depositNext) router.push(ROUTES.roomDeposit(roomId));
       else router.refresh();
     } catch (error) {
+      // 결제 여부를 확인하지 못한 서명은 500 이고 서버 문구가 「예치」를 말해 덮어 씁니다. (R-CON-22)
+      const known = error instanceof ApiError && error.status < 500;
       showToast({
         tone: "danger",
-        title:
-          error instanceof ApiError ? error.message : "서명하지 못했습니다.",
+        title: known ? error.message : "지금은 서명할 수 없습니다.",
+        description: known ? undefined : "잠시 뒤 다시 시도해 주세요.",
       });
       setSaving(false);
     }

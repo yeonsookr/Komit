@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/feedback";
 import {
   billableMilestones,
   hasSigned,
+  isSignedByAnyone,
   isSignedByBoth,
   isConsultingDraft,
   isDevelopmentDraft,
@@ -99,6 +100,7 @@ export function ContractDetail({
 
   const development = contract.development;
   const signed = isSignedByBoth(contract);
+  const locked = isSignedByAnyone(contract);
 
   // 컨설팅은 세션 하나가 계약의 전부라 읽는 방식이 다릅니다. 그쪽 화면에 넘깁니다.
   if (development === null) {
@@ -244,10 +246,12 @@ export function ContractDetail({
       {!signed && (
         <div className="mt-10">
           <p className="text-[13px] text-fg-subtle">
-            서명하면 계약서는 더 이상 수정할 수 없습니다.
+            {locked
+              ? "서명한 계약서는 더 이상 수정할 수 없습니다."
+              : "서명하면 계약서는 더 이상 수정할 수 없습니다."}
           </p>
           <div className="mt-3 flex flex-wrap justify-end gap-2">
-            {received && (
+            {received && !locked && (
               <Link
                 href={ROUTES.roomContractEdit(roomId)}
                 className={buttonClass({ variant: "outline", size: "lg" })}

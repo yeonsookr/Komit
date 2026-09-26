@@ -86,6 +86,15 @@ public class AccountQueryService {
                         holderNameOf(provision.getEscrowUserId())));
     }
 
+    /** 금융망 은행코드의 은행 이름. 금융망에서 쓰는 은행이 아니면 비어 있습니다. (`R-ACC-10`) */
+    public String bankNameOf(String financeBankCode) {
+        if (!SSAFY_FINANCE_BANK_CODE.equals(financeBankCode)) {
+            return null;
+        }
+        CodeResponse bank = codeQueryService.findCodes(List.of(SSAFY_BANK_CODE_ID)).get(SSAFY_BANK_CODE_ID);
+        return bank == null ? null : bank.codeName();
+    }
+
     /**
      * 금융망 사용자 ID 에서 예금주명을 뗍니다. {@code komit-5@komit.local} → {@code komit-5}
      *

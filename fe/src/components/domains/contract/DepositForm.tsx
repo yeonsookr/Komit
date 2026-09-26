@@ -13,7 +13,7 @@ import {
   NumberedSteps,
   StickyBar,
 } from "@/components/common";
-import { Callout, EmptyState, useToast } from "@/components/feedback";
+import { Callout, useToast } from "@/components/feedback";
 import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
 import { AUTO_PASS_DAYS, isHandover } from "@/lib/contract";
@@ -26,7 +26,7 @@ export interface DepositFormProps {
   contractId: number;
   roomId: number;
   development: DevelopmentAgreement;
-  /** 등록해 둔 결제 수단. 비어 있으면 먼저 등록해야 합니다. */
+  /** 회원가입 때 발급한 계좌 한 건. 예치는 이 계좌에서만 빠집니다. (R-PAY-09) */
   paymentMethods: PaymentMethod[];
   /** 요청서로 돌아가는 경로. 진단이 없으면 null. */
   requestHref: string | null;
@@ -67,13 +67,12 @@ export function DepositForm({
   );
 
   const deposit = async () => {
-    if (paying) return;
+    if (paying || picked === null) return;
     setPaying(true);
 
     try {
       await clientApi.post(INTERNAL.CONTRACT_DEPOSIT(contractId), {
-        // 비우면 결제창에서 계좌를 고릅니다.
-        ...(picked === null ? {} : { paymentMethodId: picked }),
+        paymentMethodId: picked,
         // 재시도해도 결제가 두 번 나가지 않게 하는 키입니다.
         idempotencyKey: crypto.randomUUID(),
       });
@@ -175,41 +174,19 @@ export function DepositForm({
 
       <div className="mt-8">
         <CardHeader title="결제 수단" />
-        {paymentMethods.length === 0 ? (
-          <EmptyState
-            className="mt-3"
-            title="등록한 결제 수단이 없습니다"
-            description="예치는 등록해 둔 실시간 계좌이체 수단에서 빠집니다. 먼저 등록해 주세요."
-            action={
-              <Link href={ROUTES.accountRegister} className={buttonClass()}>
-                결제 수단 등록
-              </Link>
-            }
-          />
-        ) : (
-          <div className="mt-3 flex flex-col gap-2">
-            {paymentMethods.map((method) => (
-              <ChoiceCard
-                key={method.paymentMethodId}
-                type="radio"
-                name="paymentMethod"
-                label={method.maskedNumber ?? "등록한 수단"}
-                meta="등록해 둔 실시간 계좌이체 수단"
-                checked={picked === method.paymentMethodId}
-                onChange={() => setPicked(method.paymentMethodId)}
-              />
-            ))}
-            {/* 등록해 두지 않은 계좌로 내는 길. 결제창이 은행을 고르게 합니다. */}
+        <div className="mt-3 flex flex-col gap-2">
+          {paymentMethods.map((method) => (
             <ChoiceCard
+              key={method.paymentMethodId}
               type="radio"
               name="paymentMethod"
-              label="다른 계좌로 이체"
-              meta="결제창에서 은행을 고르고 바로 이체합니다"
-              checked={picked === null}
-              onChange={() => setPicked(null)}
+              label={method.maskedNumber ?? "발급 계좌"}
+              meta="회원가입 때 발급한 계좌에서 실시간으로 이체합니다"
+              checked={picked === method.paymentMethodId}
+              onChange={() => setPicked(method.paymentMethodId)}
             />
-          </div>
-        )}
+          ))}
+        </div>
       </div>
 
       <div className="mt-8">
@@ -229,7 +206,7 @@ export function DepositForm({
               {
                 title: "통과하지 않은 대금은 예치금에 남습니다",
                 description:
-                  "중간에 끝나면 통과된 작업분만 지급되고 남은 금액은 등록한 계좌로 환불됩니다.",
+                  "중간에 끝나면 통과된 작업분만 지급되고 남은 금액은 예치한 계좌로 환불됩니다.",
               },
             ]}
           />
@@ -259,7 +236,13 @@ export function DepositForm({
               요청서 다시 보기
             </Link>
           )}
-          <Button variant="dark" size="lg" loading={paying} onClick={deposit}>
+          <Button
+            variant="dark"
+            size="lg"
+            loading={paying}
+            disabled={picked === null}
+            onClick={deposit}
+          >
             {development.totalAmount.toLocaleString("ko-KR")}원 예치하기
           </Button>
         </span>

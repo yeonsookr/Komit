@@ -46,13 +46,21 @@ export function isDevelopmentDraft(contract: Contract | null): boolean {
   );
 }
 
-/**
- * 양쪽이 서명했는지. 서명해야 계약이 성립하고 그 뒤에는 고칠 수 없습니다
- * (R-CON-01 · R-CON-02).
- */
+/** 양쪽이 서명했는지. 양쪽이 서명해야 계약이 성립합니다 (R-CON-01). */
 export function isSignedByBoth(contract: Contract): boolean {
   return (
     contract.clientSignature?.isSigned === true &&
+    contract.developerSignature?.isSigned === true
+  );
+}
+
+/**
+ * 한 사람이라도 서명했는지. 서명한 계약서는 고칠 수 없습니다 (R-CON-02).
+ * 성립(양쪽 서명)을 기다리지 않습니다 — 상대가 서명한 내용이 바뀌면 안 됩니다.
+ */
+export function isSignedByAnyone(contract: Contract): boolean {
+  return (
+    contract.clientSignature?.isSigned === true ||
     contract.developerSignature?.isSigned === true
   );
 }
@@ -180,6 +188,34 @@ export function nearestAutoPassAt(milestones: Milestone[]): string | null {
  * R-QA-02: 확인 요청 후 무응답 시 자동 통과.
  */
 export const AUTO_PASS_DAYS = 3;
+
+/**
+ * 컨설팅 세션이 끝난 뒤 의뢰인이 이의를 낼 수 있는 기간(일). 지나면 대금이 개발자에게 나갑니다.
+ * R-CON-10: 이의 없으면 자동 지급. 값이 같아도 R-QA-02 와 다른 규칙입니다.
+ */
+export const CONSULTING_DISPUTE_DAYS = 3;
+
+export type ConsultingPaymentStage = "developer" | "cancelled" | "unsigned" | "paid" | "pay";
+
+/**
+ * 컨설팅 결제 화면에서 무엇을 보여 줄지.
+ *
+ * 결제는 의뢰인이 자기가 서명한 계약서에만 합니다 (R-CON-20). 취소된 계약은 받지 않고
+ * (R-CON-21), 이미 결제했으면 다시 받지 않습니다.
+ *
+ * @param depositedAmount 예치된 금액. 예치를 건 적이 없으면 null. 결과가 나오기 전에는 0 입니다.
+ */
+export function consultingPaymentStage(
+  contract: Contract,
+  received: boolean,
+  depositedAmount: number | null,
+): ConsultingPaymentStage {
+  if (received) return "developer";
+  if (isCancelled(contract)) return "cancelled";
+  if (contract.clientSignature?.isSigned !== true) return "unsigned";
+  if (depositedAmount !== null && depositedAmount > 0) return "paid";
+  return "pay";
+}
 
 /**
  * 방 머리 배지에 적는 개발 계약의 단계.

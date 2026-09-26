@@ -5917,6 +5917,9 @@ def amend_contract(
         "양쪽이 모두 서명하면 계약이 체결되고 그 시점 문구가 `contractText`에 그대로 "
         "보관된다.\n\n"
         "서명한 뒤에는 계약서를 고칠 수 없다.\n\n"
+        "**컨설팅은 서명만으로 세션이 잡히지 않는다.** 양쪽 서명과 의뢰인의 대금 예치가 모두 "
+        "끝나야 세션 예약을 확정한다. 계약을 성립시키는 서명에서는 Escrow에 예치가 끝났는지 "
+        "물어 확정한다. (`R-CON-22`)\n\n"
         "- **201**: 서명했을 때. 상대가 아직이면 계약은 협의중으로 남는다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때\n"
@@ -5925,7 +5928,8 @@ def amend_contract(
         "해도 받지 않는다 (R-CON-21). 목에서는 "
         f"`contractId`={CANCELLED_CONTRACT_ID}이다\n"
         "- **422 / INVALID_REQUEST**: `signatureImageFileId`가 없을 때\n"
-        "- **500 / INTERNAL_ERROR**: 서명하지 못했을 때"
+        "- **500 / INTERNAL_ERROR**: 서명하지 못했을 때. 컨설팅 계약을 성립시키는 서명에서 "
+        "대금 예치 여부를 확인하지 못해도 이 응답이다. 서명은 남지 않는다"
     ),
 )
 def sign_contract(
@@ -7817,7 +7821,8 @@ def write_development_contract(
         "컨설팅이 '결제', 개발이 '예치'로 다르지만 돈이 오가는 방식은 같다 — 맡겨 두었다가 "
         "일이 끝나면 개발자에게 나간다.\n\n"
         "컨설팅은 서명과 결제를 한 버튼에서 하므로, 화면이 서명 API를 먼저 부르고 이어서 "
-        "이 API를 부른다.\n\n"
+        "이 API를 부른다. 개발자가 이미 서명했으면 이 예치가 끝나는 순간 세션 예약을 "
+        "확정한다. (`R-CON-22`)\n\n"
         "예치가 확인되면 계약 상태가 `DEPOSITED`가 되고 개발자에게 착수 알림이 간다.\n\n"
         "**돈의 원장은 이 서버가 갖지 않는다.** 결제와 보관은 Escrow 서버가 맡고, 여기서는 "
         "예치를 걸고 그 결과를 확인만 한다. 같은 `idempotencyKey`로 다시 보내면 결제가 "
@@ -9192,6 +9197,11 @@ PAYMENT_METHODS = [
     tags=[AREA8_TAG],
     responses={
         200: {"content": {"application/json": {"example": {"content": PAYMENT_METHODS}}}},
+        503: {
+            "model": ErrorResponse,
+            "description": "에스크로 서버에 연결하지 못함",
+            "content": {"application/json": {"example": ESCROW_UNAVAILABLE_EXAMPLE}},
+        },
         **AREA1_UNAUTHORIZED,
         **AREA1_ERRORS,
     },
@@ -9201,9 +9211,12 @@ PAYMENT_METHODS = [
         "회원가입 때 발급한 SSAFY 입출금 계좌를 유일한 예치 출금 수단으로 내려준다. "
         "`paymentMethodId`는 예치 API에서 같은 계좌를 가리킨다. 다른 계좌 선택이나 "
         "별도 결제창은 없다. (`R-PAY-09`)\n\n"
+        "**늘 한 건이다.** 아직 발급되지 않았으면 이때 에스크로에 발급을 요청한다. 발급은 "
+        "멱등해서 여러 번 불러도 계좌는 하나다. (`R-ACC-13`)\n\n"
         "- **200**: 발급 계좌 한 건을 `content`에 담아 반환\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **500 / INTERNAL_ERROR**: 목록을 읽지 못했을 때"
+        "- **500 / INTERNAL_ERROR**: 목록을 읽지 못했을 때\n"
+        "- **503 / ESCROW_UNAVAILABLE**: 에스크로 서버에 연결하지 못했을 때"
     ),
 )
 def get_payment_methods() -> PaymentMethodListResponse:
