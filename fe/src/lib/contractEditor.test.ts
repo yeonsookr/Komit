@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyQaSuggestion,
   canSendMilestones,
   HANDOVER_TITLE,
   toEditorState,
@@ -160,6 +161,27 @@ describe("canSendMilestones", () => {
 
   it("인계 확인 문장이 없으면 보낼 수 없다", () => {
     expect(canSendMilestones([row()], { issueId: null, lines: [""] })).toBe(false);
+  });
+});
+
+describe("applyQaSuggestion", () => {
+  it("빈 입력 칸 하나뿐이면 후보로 교체한다", () => {
+    expect(applyQaSuggestion([""], " 로그인 화면이 뜬다 ")).toEqual([
+      "로그인 화면이 뜬다",
+    ]);
+  });
+
+  it("기존 문장은 보존하고 새 후보만 마지막에 더한다", () => {
+    expect(applyQaSuggestion(["관리자만 들어간다"], "로그인 화면이 뜬다")).toEqual([
+      "관리자만 들어간다",
+      "로그인 화면이 뜬다",
+    ]);
+  });
+
+  it("앞뒤와 연속 공백만 다른 후보는 중복으로 넣지 않는다", () => {
+    const lines = ["로그인하지 않으면 로그인 화면이 뜬다"];
+
+    expect(applyQaSuggestion(lines, " 로그인하지  않으면 로그인 화면이 뜬다 ")).toBe(lines);
   });
 });
 
