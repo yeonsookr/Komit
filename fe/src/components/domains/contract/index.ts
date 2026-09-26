@@ -6,6 +6,7 @@ export * from "./ContractDetail";
 export * from "./ContractEditor";
 export * from "./DeliverableFiles";
 export * from "./DepositForm";
+export * from "./DevelopmentContractDraftForm";
 export * from "./MilestoneList";
 export * from "./ProgressPanel";
 export * from "./QaCheckPanel";

@@ -42,6 +42,39 @@ describe("컨설팅 계약 초안 화면 흐름", () => {
     expect(html).not.toContain("서명하고 계약하기");
   });
 
+  it("개발 계약 AI 초안도 서명 대신 작성 계속하기를 보여주고 의뢰인에게는 버튼을 보이지 않는다", () => {
+    const development: Contract = {
+      ...draft,
+      contractType: "DEVELOPMENT",
+      consulting: null,
+      development: {
+        status: "SIGNED",
+        totalAmount: 0,
+        issueIds: [],
+        startDate: null,
+        dueDate: null,
+        freeRepairDays: 0,
+        milestones: [],
+        deliverables: [],
+      },
+    };
+    const render = (received: boolean) =>
+      renderToStaticMarkup(
+        <ContractDetail
+          roomId={93}
+          roomTitle="관리자 화면 보안"
+          counterpartName="의뢰인"
+          contract={development}
+          received={received}
+          myUserId={9}
+        />,
+      );
+
+    expect(render(true)).toContain("계약서 작성 계속하기");
+    expect(render(false)).toContain("계약서 초안을 작성하고 있습니다");
+    expect(render(false)).not.toContain("서명");
+  });
+
   it("작성 완료된 계약 상세에서 상담 내용을 확인할 수 있다", () => {
     const signed = {
       ...draft,

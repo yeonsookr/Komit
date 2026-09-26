@@ -30,10 +30,10 @@ export async function getContract(contractId: number): Promise<Contract> {
 }
 
 /**
- * 전환 전 무료 상담의 전체 대화로 컨설팅 계약서 version 1을 만듭니다.
+ * 전환 전 무료 상담의 전체 대화로 계약서 version 1을 만듭니다. 개발 계약이면 요청서도 함께 씁니다.
  * 이미 만든 초안이 있으면 AI를 다시 부르지 않고 저장된 최신 편집본을 받습니다.
  */
-export async function generateConsultingContractDraft(roomId: number): Promise<Contract> {
+export async function generateContractDraft(roomId: number): Promise<Contract> {
   const { data } = await authenticatedBackendApi().post<Contract>(
     BACKEND.CONTRACT_DRAFT(roomId),
     undefined,

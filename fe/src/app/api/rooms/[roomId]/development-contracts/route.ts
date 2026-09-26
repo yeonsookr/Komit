@@ -9,12 +9,27 @@ import type {
 const INVALID_REQUEST = { code: "INVALID_REQUEST", message: "요청 값을 확인해 주세요." };
 const NOT_FOUND = { code: "ROOM_NOT_FOUND", message: "방을 찾을 수 없습니다." };
 
-/** 작업 하나. 확인 문장이 하나 이상 있어야 완료 조건이 생깁니다. */
+/** 비어 있지 않은 글. 없으면 undefined, 글이 아니거나 비어 있으면 null 입니다. */
+function optionalText(value: unknown): string | null | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string" || value.trim() === "") return null;
+  return value.trim();
+}
+
+/**
+ * 작업 하나. 확인 문장이 하나 이상 있어야 완료 조건이 생깁니다.
+ * 요구사항에 붙지 않은 새 작업은 이름이 있어야 서버가 요구사항을 만들 수 있습니다.
+ */
 function parseMilestone(value: unknown): WriteMilestoneRequest | null {
   if (typeof value !== "object" || value === null) return null;
   const input = value as Record<string, unknown>;
 
-  if (typeof input.title !== "string" || input.title.trim() === "") return null;
+  const issueId = input.issueId;
+  if (issueId !== undefined && issueId !== null && !Number.isInteger(issueId)) return null;
+  const title = optionalText(input.title);
+  const detail = optionalText(input.detail);
+  if (title === null || detail === null) return null;
+  if (!Number.isInteger(issueId) && title === undefined) return null;
   if (!Number.isInteger(input.price) || (input.price as number) < 0) return null;
   if (!Array.isArray(input.qaCriteria) || input.qaCriteria.length === 0) return null;
   if (!input.qaCriteria.every((qa) => typeof qa === "string" && qa.trim() !== "")) return null;
@@ -23,7 +38,9 @@ function parseMilestone(value: unknown): WriteMilestoneRequest | null {
   if (workDate !== undefined && workDate !== null && !Number.isInteger(workDate)) return null;
 
   return {
-    title: input.title.trim(),
+    ...(Number.isInteger(issueId) ? { issueId: issueId as number } : {}),
+    ...(title === undefined ? {} : { title }),
+    ...(detail === undefined ? {} : { detail }),
     price: input.price as number,
     ...(Number.isInteger(workDate) ? { workDate: workDate as number } : {}),
     qaCriteria: (input.qaCriteria as string[]).map((qa) => qa.trim()),
@@ -34,9 +51,6 @@ function parseBody(body: unknown): WriteDevelopmentContractRequest | null {
   if (typeof body !== "object" || body === null) return null;
   const input = body as Record<string, unknown>;
 
-  if (!Array.isArray(input.issueIds) || !input.issueIds.every((id) => Number.isInteger(id))) {
-    return null;
-  }
   if (typeof input.startDate !== "string" || typeof input.dueDate !== "string") return null;
   if (!Number.isInteger(input.freeRepairDays)) return null;
   if (!Array.isArray(input.milestones) || input.milestones.length === 0) return null;
@@ -48,7 +62,6 @@ function parseBody(body: unknown): WriteDevelopmentContractRequest | null {
   if (titles !== undefined && !Array.isArray(titles)) return null;
 
   return {
-    issueIds: input.issueIds as number[],
     startDate: input.startDate,
     dueDate: input.dueDate,
     freeRepairDays: input.freeRepairDays as number,

@@ -229,9 +229,18 @@ export interface Contract {
 /* 요청                                                                */
 /* ------------------------------------------------------------------ */
 
-/** 계약서에 담을 작업 하나. */
+/**
+ * 계약서에 담을 작업 하나.
+ *
+ * 작업은 언제나 요구사항 하나에 붙습니다. 요청서나 이 계약에 있던 요구사항이면 `issueId` 를
+ * 보내고, 새로 합의한 작업이면 빼고 `title` 을 보냅니다. 서버가 계약용 요구사항을 만들어 붙입니다.
+ */
 export interface WriteMilestoneRequest {
-  title: string;
+  issueId?: number | null;
+  /** 계약서에서 쓰는 이름. 새 작업이면 반드시 보냅니다. 1~200자. */
+  title?: string | null;
+  /** 계약서에서 쓰는 설명. 1~1000자. 기존 요구사항에서 보내지 않으면 그 요구사항의 설명을 씁니다. */
+  detail?: string | null;
   /** 인계 작업은 0 으로 보냅니다. */
   price: number;
   /** 이 작업에 잡은 기간(일). 정하지 않아도 됩니다. */
@@ -240,23 +249,19 @@ export interface WriteMilestoneRequest {
   qaCriteria: string[];
 }
 
-/** 맡지 않기로 한 요구사항 하나. 의뢰인이 계약서에서 이 사유를 봅니다. */
-export interface RejectedIssueRequest {
-  issueId: number;
-  reason: string;
-}
-
-/** 개발 계약서 작성 요청. */
+/**
+ * 개발 계약서 작성 요청.
+ *
+ * 계약에서 다룰 요구사항은 작업이 가리키는 것입니다. 목록을 따로 보내지 않습니다.
+ * 같은 요구사항을 두 작업에 담을 수 없습니다.
+ */
 export interface WriteDevelopmentContractRequest {
-  issueIds: number[];
   startDate: string;
   dueDate: string;
   freeRepairDays: number;
   /** 가격의 합이 계약 금액이 됩니다. 하나 이상이어야 합니다. */
   milestones: WriteMilestoneRequest[];
-  rejectedIssues?: RejectedIssueRequest[];
   deliverableTitles?: string[];
-  detail?: string | null;
   message?: string | null;
 }
 

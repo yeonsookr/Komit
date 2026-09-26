@@ -66,7 +66,11 @@ export default async function RoomProgressPage({
 
   const { room, me, contract, deposit } = await loadProgress(id);
   const received = isReceived(room, me);
-  const development = contract?.development ?? null;
+  /**
+   * 개발 쪽 상태는 계약서를 처음 쓸 때부터 `SIGNED` 라 양쪽이 서명했는지 알려 주지 않습니다.
+   * 계약이 성립했는지는 공통 계약 상태로 봅니다 (R-CON-01). 성립 전에는 진행할 것이 없습니다.
+   */
+  const development = contract?.status === "SIGNED" ? contract.development : null;
 
   /**
    * 개발자는 착수 전까지 착수 화면을 봅니다. 착수하면 의뢰인과 같은 진행 상황을
