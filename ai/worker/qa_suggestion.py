@@ -49,6 +49,7 @@ class ChatClient(Protocol):
         max_tokens: int,
         model: str | None = None,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        json_object: bool = False,
     ) -> str: ...
 
 
@@ -83,6 +84,7 @@ class GmsChatClient:
         max_tokens: int,
         model: str | None = None,
         timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        json_object: bool = False,
     ) -> str:
         """작업마다 출력 크기가 다르므로 한도를 호출에서 **반드시** 받는다.
 
@@ -92,16 +94,19 @@ class GmsChatClient:
         두지 않는다. (`ai/AGENTS.md` — 한도는 호출에서 정한다)
 
         `model` 을 주면 설정의 모델 대신 그것을 쓴다. 작업마다 맞는 모델이 다르다.
+
+        `json_object` 를 켜면 모델이 올바른 JSON 객체만 내게 한다. 지시문만으로는 끝에 `}` 를
+        하나 더 붙이는 일이 있어, 계약 초안이 여러 번에 한 번꼴로 파싱에 실패했다.
         """
         limit = max_tokens
         if limit < 1:
             raise ValueError("max_tokens는 양수여야 합니다")
-        payload = json.dumps(
-            # gpt-5 계열은 `max_tokens` 를 400 으로 거절한다. `max_completion_tokens` 는 gpt-4.1
-            # 계열도 받으므로 이 이름 하나로 보낸다. 추론 모델은 추론 토큰도 이 한도에 든다.
-            {"model": model or self._model, "messages": messages, "max_completion_tokens": limit},
-            ensure_ascii=False,
-        ).encode("utf-8")
+        # gpt-5 계열은 `max_tokens` 를 400 으로 거절한다. `max_completion_tokens` 는 gpt-4.1
+        # 계열도 받으므로 이 이름 하나로 보낸다. 추론 모델은 추론 토큰도 이 한도에 든다.
+        fields: dict = {"model": model or self._model, "messages": messages, "max_completion_tokens": limit}
+        if json_object:
+            fields["response_format"] = {"type": "json_object"}
+        payload = json.dumps(fields, ensure_ascii=False).encode("utf-8")
         request = Request(
             f"{self._base_url}/chat/completions",
             data=payload,

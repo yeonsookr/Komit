@@ -125,6 +125,17 @@ class QaSuggestionTest(unittest.TestCase):
         self.assertEqual(sent["model"], "gpt-4.1-nano")
         self.assertEqual(urlopen.call_args.kwargs["timeout"], 20)
 
+    def test_JSON_객체를_요청하면_응답_형식을_싣는다(self):
+        client = GmsChatClient({"GMS_API_KEY": "test-key"})
+        body = {"choices": [{"finish_reason": "stop", "message": {"content": "{}"}}]}
+        with patch("qa_suggestion.urlopen", return_value=FakeResponse(body)) as urlopen:
+            client.complete([{"role": "user", "content": "JSON"}], max_tokens=16, json_object=True)
+            client.complete([{"role": "user", "content": "JSON"}], max_tokens=16)
+
+        first, second = (json.loads(call.args[0].data) for call in urlopen.call_args_list)
+        self.assertEqual(first["response_format"], {"type": "json_object"})
+        self.assertNotIn("response_format", second)
+
     def test_작업이_준_모델과_한도를_쓴다(self):
         client = GmsChatClient({"GMS_API_KEY": "test-key", "GMS_MODEL": "gpt-4.1-nano"})
         body = {"choices": [{"finish_reason": "stop", "message": {"content": "{}"}}]}

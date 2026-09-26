@@ -337,7 +337,9 @@ def draft_contract(
     known = normalize_issues(issues)
     rejected = normalize_rejected(rejected_issues, known)
     raw = client.complete(
-        build_messages(target_type, rows, known, rejected), max_tokens=DRAFT_MAX_OUTPUT_TOKENS
+        build_messages(target_type, rows, known, rejected),
+        max_tokens=DRAFT_MAX_OUTPUT_TOKENS,
+        json_object=True,
     )
     return parse_draft(raw, target_type, known)
 
