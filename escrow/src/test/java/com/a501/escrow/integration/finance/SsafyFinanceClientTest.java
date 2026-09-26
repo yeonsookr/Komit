@@ -1,6 +1,7 @@
 package com.a501.escrow.integration.finance;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -181,6 +182,27 @@ class SsafyFinanceClientTest {
                 .isEqualTo("CLOSED");
         server.verify();
     }
+    /** R-PAY-12: 정상 응답을 받은 이체는 돈이 움직였을 수 있어, 응답을 해석하지 못해도 실패가 아니라 결과 불명이다. */
+    @Test
+    void unreadableSuccessfulTransferResponseIsUnknownNotFailed() {
+        RestClient.Builder builder = RestClient.builder();
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+        SsafyFinanceClient client = new SsafyFinanceClient(builder, JsonMapper.builder().build(),
+                properties("https://finance.example", "test-api-key"),
+                Clock.fixed(Instant.parse("2026-09-19T12:34:56Z"), ZoneOffset.UTC));
+        server.expect(requestTo("https://finance.example/api/v1/edu/demandDeposit/updateDemandDepositAccountTransfer"))
+                .andRespond(withSuccess("""
+                        {"Header":{"responseCode":"H0000"},
+                         "REC":[{"accountNo":"0019999999999999","transactionUniqueNo":"tx-other"}]}
+                        """, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> client.transfer("escrow-key", "0013333333333333", "0010000000000000",
+                BigInteger.valueOf(396_000), "worker", "KOMIT-RELEASE-2", "20260919213456000009"))
+                .isInstanceOf(FinanceClientUnavailableException.class)
+                .hasCauseInstanceOf(FinanceApiException.class);
+        server.verify();
+    }
+
     private static FinanceProperties properties(String baseUrl, String apiKey) {
         return new FinanceProperties(true, baseUrl, apiKey, "Asia/Seoul", "product",
                 "escrow-user-key", "0010000000000000", "0010000000000001", 30);

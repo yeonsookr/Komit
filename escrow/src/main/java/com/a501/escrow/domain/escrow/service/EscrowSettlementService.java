@@ -6,6 +6,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Optional;
 
 import com.a501.escrow.common.api.EscrowRequestHeader;
 import com.a501.escrow.common.crypto.FieldEncryption;
@@ -80,13 +81,31 @@ public class EscrowSettlementService {
             payout = transaction.execute(status -> createRelease(caller.serviceClientId(), request, fingerprint));
         }
         requireRequest(payout, request.escrowId(), request.referenceId(), fingerprint, request.header());
-        execute(payout, "PAYOUT_TRANSFER", request.header());
+        try {
+            execute(payout, "PAYOUT_TRANSFER", request.header());
+        } finally {
+            abandonFeeAfterFailedPayout(payout, request.referenceId());
+        }
         SettlementTransaction fee = settlements.findByReference(request.escrowId(), "FEE", request.referenceId()).orElse(null);
         if (COMPLETED.equals(settlements.findById(payout.id()).orElseThrow().status()) && fee != null) {
             execute(fee, "FEE_TRANSFER", request.header());
         }
         settlements.refreshSettlement(payout.settlementId(), payout.escrowId());
         return releaseResult(settlements.findById(payout.id()).orElseThrow());
+    }
+
+    /**
+     * 수수료는 지급이 완료된 뒤에만 보낸다. 지급이 FAILED로 끝났으면 수수료도 보내지 않은 채 FAILED로 닫아
+     * 정산이 FAILED로 확정되게 한다. 자금 유출은 없다. (R-PAY-12)
+     */
+    private void abandonFeeAfterFailedPayout(SettlementTransaction payout, String reference) {
+        if (!FAILED.equals(settlements.findById(payout.id()).orElseThrow().status())) return;
+        settlements.findByReference(payout.escrowId(), "FEE", reference)
+                .filter(fee -> "PENDING".equals(fee.status()))
+                .ifPresent(fee -> {
+                    settlements.failed(fee.id(), "PAYOUT_FAILED");
+                    settlements.refreshSettlement(payout.settlementId(), payout.escrowId());
+                });
     }
 
     private SettlementTransaction createRelease(long clientId, EscrowSettlementDtos.ReleaseRequest request,
@@ -162,17 +181,19 @@ public class EscrowSettlementService {
 
     private void execute(SettlementTransaction transactionRow, String transferStep, EscrowRequestHeader header) {
         SettlementTransaction current = settlements.findById(transactionRow.id()).orElseThrow();
-        if (COMPLETED.equals(current.status())) return;
+        // R-PAY-12: 완료와 실패는 확정된 결과다. 같은 정산 식별자로 다시 불러도 이체하지 않고 현재 결과를 돌려준다.
+        if (COMPLETED.equals(current.status()) || FAILED.equals(current.status())) return;
         if (UNKNOWN.equals(current.status())) {
             recover(current);
             current = settlements.findById(current.id()).orElseThrow();
-            if (!"PROCESSING".equals(current.status()) && !"PENDING".equals(current.status())) return;
+            if (!isOpen(current)) return;
         }
         try {
             if (!verifyHolder(current, header)) return;
             current = settlements.findById(current.id()).orElseThrow();
+            if (!isOpen(current)) return;
             settlements.processing(current.id());
-            Attempt attempt = claim(current.id(), transferStep);
+            Attempt attempt = claimTransfer(current.id(), transferStep);
             if (attempt == null) return;
             transfer(current, attempt);
         } catch (FinanceApiException exception) {
@@ -219,10 +240,9 @@ public class EscrowSettlementService {
             String externalId = finance.transfer(properties.escrowUserKey(), account,
                     properties.escrowAccountNo(), row.amount(), row.recipientName(),
                     summary(row), attempt.reference());
-            settlements.finishAttempt(attempt.id(), "SUCCEEDED", externalId, "H0000");
-            settlements.complete(row.id(), externalId);
+            settlements.transferSucceeded(row.id(), attempt.id(), externalId);
         } catch (FinanceApiException exception) {
-            settlements.finishAttempt(attempt.id(), FAILED, null, exception.code());
+            settlements.transferFailed(row.id(), attempt.id(), exception.code());
             throw exception;
         } catch (FinanceClientUnavailableException exception) {
             settlements.finishAttempt(attempt.id(), UNKNOWN, null, null);
@@ -279,12 +299,23 @@ public class EscrowSettlementService {
     }
 
     private Attempt claim(long transactionId, String step) {
-        String reference = nextReference();
-        var prepared = settlements.prepareAttempt(transactionId, step, reference);
+        return dispatch(settlements.prepareAttempt(transactionId, step, nextReference()));
+    }
+
+    /** 송금 시도는 거래가 아직 끝나지 않았을 때만 만든다. 다른 Pod가 먼저 끝냈으면 비어 있다. */
+    private Attempt claimTransfer(long transactionId, String step) {
+        return dispatch(settlements.prepareTransferAttempt(transactionId, step, nextReference()));
+    }
+
+    private Attempt dispatch(Optional<Long> prepared) {
         if (prepared.isEmpty()) return null;
         long id = prepared.orElseThrow();
         return settlements.claimAttempt(id, instanceId)
                 ? new Attempt(id, settlements.attemptReference(id)) : null;
+    }
+
+    private static boolean isOpen(SettlementTransaction row) {
+        return "PENDING".equals(row.status()) || "PROCESSING".equals(row.status());
     }
 
     private String nextReference() {

@@ -171,15 +171,20 @@ public class SsafyFinanceClient implements FinanceClient {
     @Override
     public String transfer(String userKey, String depositAccountNo, String withdrawalAccountNo,
             BigInteger amount, String depositSummary, String withdrawalSummary, String requestReference) {
-        JsonNode result = requiredRecord(postWithHeader("updateDemandDepositAccountTransfer", userKey,
+        JsonNode response = postWithHeader("updateDemandDepositAccountTransfer", userKey,
                 requestReference, Map.of(
                         "depositAccountNo", depositAccountNo,
                         "withdrawalAccountNo", withdrawalAccountNo,
                         TRANSACTION_BALANCE, amount.toString(),
                         "depositTransactionSummary", depositSummary,
-                        "withdrawalTransactionSummary", withdrawalSummary)));
-        JsonNode withdrawal = transferWithdrawal(result, withdrawalAccountNo);
-        return text(withdrawal, TRANSACTION_NO);
+                        "withdrawalTransactionSummary", withdrawalSummary));
+        try {
+            JsonNode withdrawal = transferWithdrawal(requiredRecord(response), withdrawalAccountNo);
+            return text(withdrawal, TRANSACTION_NO);
+        } catch (RuntimeException exception) {
+            // R-PAY-12: 금융망이 이체를 정상 응답으로 받았으면 돈이 움직였을 수 있다. 실패로 확정하지 않고 조회로 확인한다.
+            throw new FinanceClientUnavailableException("금융망 이체 응답을 해석할 수 없습니다.", exception);
+        }
     }
 
     private static JsonNode transferWithdrawal(JsonNode result, String withdrawalAccountNo) {
