@@ -1,6 +1,7 @@
 package com.a501.service.domain.diagnosis.entity;
 
 import com.a501.service.common.persistence.CreatedSoftDeleteEntity;
+import com.a501.service.domain.diagnosis.IssueSeverity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -12,6 +13,7 @@ import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.ColumnDefault;
 
 @Getter
 @Entity
@@ -69,6 +71,16 @@ public class Issue extends CreatedSoftDeleteEntity {
     @Column(name = "fingerprint", length = 120)
     private String fingerprint;
 
+    /**
+     * 계약서를 쓰며 만든 요구사항인지. 진단에서 나온 것과 의뢰인이 요청서에 직접 적은 것은 {@code false} 다.
+     *
+     * <p>요청서는 계약서가 건드리지 않는다. 계약서에서 새로 합의한 작업이 요청서와 진단 목록에 섞이지 않게
+     * 이 값으로 가른다.
+     */
+    @ColumnDefault("FALSE")
+    @Column(name = "is_contract", nullable = false)
+    private boolean contract = false;
+
     public static Issue of(
             Integer inspectionId,
             String title,
@@ -101,6 +113,23 @@ public class Issue extends CreatedSoftDeleteEntity {
             Integer categoryCodeId,
             String severity) {
         return of(inspectionId, title, detail, null, categoryCodeId, severity, false, null);
+    }
+
+    /**
+     * 계약서에서 새로 합의한 작업의 요구사항. 진단이 찾은 것이 아니라 위치와 지문이 없다. 계약서에 들어간
+     * 것이라 처음부터 계약 상태다.
+     *
+     * <p>분류와 심각도는 정해 넣는다. 계약용 요구사항은 요청서·진단 목록에 나오지 않아 두 값을 쓰는 화면이
+     * 없지만 칸은 비울 수 없다. 심각도는 `보통`이다 — 계약에 넣어 하기로 한 일은 「출시 전에 고쳐야
+     * 하는 것」에 가깝다. (R-SCAN-09)
+     */
+    public static Issue forContract(
+            Integer inspectionId, String title, String detail, Integer categoryCodeId) {
+        Issue entity = of(
+                inspectionId, title, detail, null, categoryCodeId, IssueSeverity.MEDIUM.name(), false, null);
+        entity.contract = true;
+        entity.status = "CONTRACTED";
+        return entity;
     }
 
     /** 요청서에서 고쳐 쓴 내용을 반영한다. 위치와 지문은 검사가 낸 값이라 건드리지 않는다. */
@@ -136,6 +165,14 @@ public class Issue extends CreatedSoftDeleteEntity {
     public void reopen() {
         status = "UNRESOLVED";
         fixedVersion = null;
+    }
+
+    /**
+     * 계약서에 들어간 것으로 표시한다. 이후 요청서에서 빼거나 상태를 바꾸지 못한다. 계약에서 다시 뺄 때
+     * 되돌리는 길은 아직 없다.
+     */
+    public void putIntoContract() {
+        status = "CONTRACTED";
     }
 
     public boolean isContracted() {
