@@ -2,9 +2,11 @@ package com.a501.service.domain.contract.controller;
 
 import com.a501.service.common.security.AuthenticatedUser;
 import com.a501.service.domain.contract.dto.request.WriteConsultingContractRequest;
+import com.a501.service.domain.contract.dto.request.WriteDevelopmentContractRequest;
 import com.a501.service.domain.contract.dto.response.ContractResponse;
 import com.a501.service.domain.contract.service.ConsultingContractWriteService;
 import com.a501.service.domain.contract.service.ContractDraftService;
+import com.a501.service.domain.contract.service.DevelopmentContractWriteService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -26,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class RoomContractController {
     private final ConsultingContractWriteService consultingContractWriteService;
     private final ContractDraftService contractDraftService;
+    private final DevelopmentContractWriteService developmentContractWriteService;
 
     @Operation(
             summary = "컨설팅 계약서 초안 생성",
@@ -60,5 +63,37 @@ public class RoomContractController {
             @Valid @RequestBody WriteConsultingContractRequest request,
             @AuthenticationPrincipal AuthenticatedUser user) {
         return consultingContractWriteService.write(roomId, user.userId(), request);
+    }
+
+    @Operation(
+            summary = "개발 계약서 작성",
+            description =
+                    """
+                    개발자가 개발 계약서를 써서 의뢰인에게 보낸다. 작업마다 가격과 확인 문장을 붙이고, \
+                    작업 가격의 합이 계약 금액이 된다. 협의 중에 다시 보내면 그 계약서를 이 요청으로 바꾼다.
+
+                    **작업은 언제나 요구사항 하나에 붙는다.** 요청서에 있던 요구사항이면 issueId 를 \
+                    보내고, 개발방에서 새로 합의한 작업이면 issueId 없이 title 을 보낸다. 새 작업은 \
+                    서버가 계약용 요구사항을 만들어 붙인다. 계약서에서 바꾼 이름·설명·확인 문장은 \
+                    계약서에만 남고 요청서는 바뀌지 않는다.
+
+                    **받는 요구사항은 요청서에 담긴 것과 이 계약서에 이미 들어 있는 것이다.** (R-REQ-05)
+
+                    - 201: 계약서를 보냈을 때. 협의 중인 계약서가 있었으면 그 내용이 이걸로 바뀐다
+                    - 400 DUE_DATE_BEFORE_START: dueDate 가 startDate 보다 이를 때
+                    - 401 UNAUTHORIZED: 로그인하지 않았을 때
+                    - 403 FORBIDDEN: 이 방의 개발자가 아닐 때. 계약서는 개발자만 쓴다
+                    - 404 ROOM_NOT_FOUND: 없는 방이거나 이 방의 당사자가 아닐 때
+                    - 409 NOT_DEVELOPMENT_ROOM: 개발방이 아닐 때
+                    - 409 CONTRACT_ALREADY_SIGNED: 한쪽이라도 이미 서명했을 때 (R-CON-02)
+                    - 409 CONTRACT_CANCELLED: 취소된 계약일 때 (R-CON-21)
+                    - 422 INVALID_REQUEST: 요청 형식이 틀렸거나, 계약서에 넣을 수 없는 요구사항이 섞였을 때""")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PostMapping("/development-contracts")
+    ContractResponse writeDevelopmentContract(
+            @Parameter(description = "개발 방 식별자.", example = "93") @PathVariable Integer roomId,
+            @Valid @RequestBody WriteDevelopmentContractRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return developmentContractWriteService.write(roomId, user.userId(), request);
     }
 }

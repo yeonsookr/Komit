@@ -201,6 +201,60 @@ class ContractRequirementServiceTest {
         assertThat(found.getStatus()).isEqualTo("UNRESOLVED");
     }
 
+    @Test
+    @DisplayName("요청서에 담긴 요구사항은 현재 회차에서 고른 것과 계약에 들어간 것이다")
+    void findsRequestIssuesOfCurrentRound() {
+        Inspection current = Inspection.of(DIAGNOSIS_ID, (short) 1, 50, null);
+        ReflectionTestUtils.setField(current, "id", 60);
+        when(inspectionRepository.findByDiagnosisIdAndDiagnosisVersionAndDeletedFalse(DIAGNOSIS_ID, (short) 1))
+                .thenReturn(Optional.of(current));
+        Issue suggested = issue(311, "SUGGESTED");
+        Issue contracted = issue(312, "CONTRACTED");
+        Issue unresolved = issue(313, "UNRESOLVED");
+        Issue resolved = issue(314, "RESOLVED");
+        when(issueRepository.findByInspectionIdAndDeletedFalseOrderByIdAsc(60))
+                .thenReturn(List.of(suggested, contracted, unresolved, resolved));
+
+        assertThat(service.findRequestIssueIds(PROJECT_ID)).containsExactlyInAnyOrder(311, 312);
+    }
+
+    @Test
+    @DisplayName("현재 회차에 검사가 없으면 요청서도 비어 있다")
+    void emptyRequestWithoutCurrentInspection() {
+        when(inspectionRepository.findByDiagnosisIdAndDiagnosisVersionAndDeletedFalse(DIAGNOSIS_ID, (short) 1))
+                .thenReturn(Optional.empty());
+
+        assertThat(service.findRequestIssueIds(PROJECT_ID)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("계약서 문장을 지운다")
+    void dropsContractCriteria() {
+        QaCriterion line = QaCriterion.forContract(312, "관리자만 들어간다");
+        when(qaCriterionRepository.findAllByIdInAndDeletedFalse(List.of(5001))).thenReturn(List.of(line));
+
+        service.dropCriteria(List.of(5001));
+
+        assertThat(line.isDeleted()).isTrue();
+    }
+
+    @Test
+    @DisplayName("요청서 문장은 계약서가 지우지 않는다")
+    void refusesToDropRequirementLine() {
+        QaCriterion line = QaCriterion.of(312, "로그인 화면이 뜬다");
+        when(qaCriterionRepository.findAllByIdInAndDeletedFalse(List.of(5001))).thenReturn(List.of(line));
+
+        assertThatThrownBy(() -> service.dropCriteria(List.of(5001))).isInstanceOf(IllegalStateException.class);
+        assertThat(line.isDeleted()).isFalse();
+    }
+
+    private Issue issue(int id, String status) {
+        Issue issue = Issue.writtenBySelf(60, "요구사항 " + id, null, ETC_CATEGORY_ID, "HIGH");
+        ReflectionTestUtils.setField(issue, "id", id);
+        ReflectionTestUtils.setField(issue, "status", status);
+        return issue;
+    }
+
     private Issue savedIssue() {
         ArgumentCaptor<Issue> saved = ArgumentCaptor.forClass(Issue.class);
         verify(issueRepository).save(saved.capture());

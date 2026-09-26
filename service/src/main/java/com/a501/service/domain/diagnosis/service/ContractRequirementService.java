@@ -13,9 +13,11 @@ import com.a501.service.domain.diagnosis.repository.DiagnosisRepository;
 import com.a501.service.domain.diagnosis.repository.InspectionRepository;
 import com.a501.service.domain.diagnosis.repository.IssueRepository;
 import com.a501.service.domain.diagnosis.repository.QaCriterionRepository;
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -82,6 +84,40 @@ public class ContractRequirementService {
             throw new BusinessException(DiagnosisErrorCode.ISSUE_NOT_FOUND);
         }
         issues.forEach(Issue::putIntoContract);
+    }
+
+    /**
+     * 프로젝트 요청서에 담긴 요구사항. 진단의 현재 회차에서 의뢰인이 고른 것과 이미 계약에 들어간 것이다.
+     * 개발자는 요청서에 담긴 것만 볼 수 있어 계약서에도 이것만 넣을 수 있다. (R-REQ-05)
+     *
+     * <p>계약서에서 만든 요구사항은 요청서에 없어 여기 빠진다. 계약서를 다시 쓸 때 그것을 받을지는 부르는
+     * 쪽이 그 계약에 이미 들어 있는지로 가린다.
+     *
+     * @return 요구사항 id. 진단이나 현재 회차 검사가 없으면 비어 있다
+     */
+    public Set<Integer> findRequestIssueIds(Integer projectId) {
+        return diagnosisRepository
+                .findByProjectIdAndDeletedFalse(projectId)
+                .flatMap(diagnosis -> inspectionRepository.findByDiagnosisIdAndDiagnosisVersionAndDeletedFalse(
+                        diagnosis.getId(), diagnosis.getVersion()))
+                .map(inspection -> issueRepository
+                        .findByInspectionIdAndDeletedFalseOrderByIdAsc(inspection.getId())
+                        .stream()
+                        .filter(issue -> Issue.REQUEST_STATUSES.contains(issue.getStatus()))
+                        .map(Issue::getId)
+                        .collect(Collectors.toSet()))
+                .orElseGet(Set::of);
+    }
+
+    /**
+     * 계약서를 다시 써서 빠진 계약서 문장을 지운다. 요청서 문장은 계약서가 지우지 않는다 — 섞여 오면
+     * 부르는 쪽 잘못이라 멈춘다.
+     */
+    @Transactional
+    public void dropCriteria(Collection<Integer> qaCriterionIds) {
+        LocalDateTime now = LocalDateTime.now();
+        qaCriterionRepository.findAllByIdInAndDeletedFalse(qaCriterionIds)
+                .forEach(criterion -> criterion.dropFromContract(now));
     }
 
     private Inspection latestInspection(Integer projectId) {

@@ -69,6 +69,8 @@ export interface Milestone {
   /** 붙은 요구사항. 계약서를 다시 쓸 때 이 값을 그대로 보냅니다. 요구사항에 붙지 않은 작업이면 null. */
   issueId: number | null;
   title: string;
+  /** 작업 설명. 계약서에서 바꾼 설명, 없으면 요구사항의 설명. 둘 다 없으면 null. */
+  detail: string | null;
   /** 이 작업이 다루는 요구사항의 위치. 개발자가 직접 만든 작업이면 null. */
   location: string | null;
   /**

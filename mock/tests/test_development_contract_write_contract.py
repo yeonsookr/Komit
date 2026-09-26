@@ -208,5 +208,32 @@ class DevelopmentContractWriteEndpointTest(unittest.TestCase):
         )
 
 
+class DevelopmentContractWriteSpecificationTest(unittest.TestCase):
+    def setUp(self):
+        from fastapi import FastAPI
+
+        app = FastAPI()
+        app.include_router(service.router)
+        self.write = app.openapi()["paths"]["/api/rooms/{roomId}/development-contracts"]["post"]
+
+    def test_documents_every_failure_case(self):
+        self.assertEqual(
+            set(self.write["responses"]), {"201", "400", "401", "403", "404", "409", "422", "500"}
+        )
+
+    def test_conflicts_name_the_three_reasons(self):
+        examples = self.write["responses"]["409"]["content"]["application/json"]["examples"]
+
+        self.assertEqual(
+            set(examples), {"NOT_DEVELOPMENT_ROOM", "CONTRACT_ALREADY_SIGNED", "CONTRACT_CANCELLED"}
+        )
+
+    def test_milestones_carry_a_detail(self):
+        milestone = service.MILESTONES[0]
+
+        self.assertIn("detail", milestone)
+        self.assertEqual(service.MilestoneResponse(**milestone).detail, milestone["detail"])
+
+
 if __name__ == "__main__":
     unittest.main()

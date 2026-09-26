@@ -12,12 +12,14 @@ import java.util.List;
 /**
  * 계약에 속한 작업 하나.
  *
- * <p>작업 이름과 위치는 작업이 들고 있지 않습니다. 작업은 요구사항 하나에 붙고 그 둘이
- * 요구사항에 있어, 진단 도메인에서 받은 값을 넣습니다.
+ * <p>작업은 요구사항 하나에 붙습니다. 이름과 설명은 계약서에서 바꿨으면 작업에 적힌 값을, 아니면
+ * 요구사항의 값을 씁니다. 요청서는 계약서가 건드리지 않아 바꾼 값은 작업에만 있습니다. 위치는
+ * 요구사항의 값입니다.
  *
  * @param milestoneId 작업 id
  * @param issueId 붙은 요구사항 id. 계약서를 다시 쓸 때 이 값을 그대로 보낸다. 없으면 {@code null}
- * @param title 작업 이름. 붙은 요구사항의 제목
+ * @param title 작업 이름. 계약서에서 바꾼 이름, 없으면 붙은 요구사항의 제목
+ * @param detail 작업 설명. 계약서에서 바꾼 설명, 없으면 붙은 요구사항의 설명. 둘 다 없으면 {@code null}
  * @param price 작업 가격
  * @param location 문제가 있는 위치. 없으면 {@code null}
  * @param workDate 이 작업에 잡은 기간(일). 정하지 않았으면 {@code null}
@@ -37,6 +39,7 @@ public record MilestoneResponse(
                         example = "312")
                 Integer issueId,
         @Schema(description = "작업 이름.", example = "1차 · 관리자 API에 인증 추가") String title,
+        @Schema(description = "작업 설명. 없으면 null 이다.") String detail,
         @Schema(description = "작업 가격. 인계 작업은 0 이다.", example = "400000") Long price,
         @Schema(description = "문제가 있는 위치. 없으면 null 이다.", example = "/admin") String location,
         @Schema(description = "이 작업에 잡은 기간(일). 정하지 않았으면 null 이다.", example = "10")
@@ -65,7 +68,8 @@ public record MilestoneResponse(
         return new MilestoneResponse(
                 entity.getId(),
                 entity.getIssueId(),
-                issue == null ? null : issue.title(),
+                entity.getTitle() != null ? entity.getTitle() : issue == null ? null : issue.title(),
+                entity.getDetail() != null ? entity.getDetail() : issue == null ? null : issue.detail(),
                 entity.getPrice() == null ? null : entity.getPrice().longValue(),
                 issue == null ? null : issue.location(),
                 entity.getWorkDate(),

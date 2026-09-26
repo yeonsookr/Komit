@@ -5,6 +5,7 @@ import com.a501.service.domain.project.service.ProjectQueryService;
 import com.a501.service.domain.room.dto.MyRoomView;
 import com.a501.service.domain.room.dto.RoomCountView;
 import com.a501.service.domain.room.dto.ContractDraftRoomView;
+import com.a501.service.domain.room.dto.ContractRoomView;
 import com.a501.service.domain.room.dto.RoomParties;
 import com.a501.service.domain.room.entity.Room;
 import com.a501.service.domain.room.repository.RoomRepository;
@@ -128,6 +129,18 @@ public class RoomQueryService {
                                 .map(Room::getChatRefId)
                                 .orElse(null),
                         parties)));
+    }
+
+    /**
+     * 계약서를 쓰는 방의 종류·프로젝트·당사자. 방이 없거나 당사자를 찾을 수 없으면 비어 있습니다.
+     *
+     * @param roomId 방 id
+     * @return 계약서를 쓰는 데 필요한 방 정보
+     */
+    public Optional<ContractRoomView> findContractRoom(Integer roomId) {
+        return roomRepository.findByIdAndDeletedFalse(roomId).flatMap(room ->
+                toParties(room).map(parties ->
+                        new ContractRoomView(room.getId(), room.getType(), room.getProjectId(), parties)));
     }
 
     private Optional<RoomParties> toParties(Room room) {

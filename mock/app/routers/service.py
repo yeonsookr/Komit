@@ -6611,8 +6611,18 @@ class MilestoneResponse(BaseModel):
         examples=[312],
     )
     title: str = Field(
-        description="작업 이름.",
+        description=(
+            "작업 이름. 계약서에서 바꾼 이름이 있으면 그것, 없으면 붙은 요구사항의 이름이다. "
+            "계약서에서 바꿔도 요청서는 바뀌지 않는다."
+        ),
         examples=["1차 · 관리자 API에 인증 추가"],
+    )
+    detail: str | None = Field(
+        description=(
+            "작업 설명. 계약서에서 바꾼 설명이 있으면 그것, 없으면 붙은 요구사항의 설명이다. "
+            "둘 다 없으면 null이다."
+        ),
+        examples=["로그인하지 않아도 관리자 주소로 회원 목록이 열립니다."],
     )
     price: int = Field(
         description=(
@@ -6984,6 +6994,12 @@ DUE_DATE_BEFORE_START = (
 # 같은 요구사항을 두 작업에 담았을 때. 어느 작업의 통과가 그 요구사항의 통과인지 가를 수 없다.
 DUPLICATE_ISSUE_REASON = "같은 요구사항을 두 작업에 담을 수 없습니다."
 
+# 개발방이 아닌 곳에서 개발 계약서를 쓰려 했을 때. 화면에는 그런 길이 없어 API를 직접 부를 때만 난다.
+NOT_DEVELOPMENT_ROOM = (
+    "NOT_DEVELOPMENT_ROOM",
+    "개발방에서만 개발 계약서를 쓸 수 있습니다.",
+)
+
 DUE_DATE_BEFORE_START_EXAMPLE = {
     "code": DUE_DATE_BEFORE_START[0],
     "message": DUE_DATE_BEFORE_START[1],
@@ -7015,6 +7031,7 @@ MILESTONES = [
         "milestoneId": 301,
         "issueId": 312,
         "title": "1차 · 관리자 API에 인증 추가",
+        "detail": "로그인하지 않아도 관리자 주소로 회원 목록이 열립니다.",
         "location": "app/api/admin/* · 4개 라우트",
         "workDate": 10,
         "price": 400000,
@@ -7044,6 +7061,7 @@ MILESTONES = [
         "milestoneId": 302,
         "issueId": 313,
         "title": "2차 · 회원탈퇴 경로 구현",
+        "detail": None,
         "location": "신규 작성 · 데이터는 30일 보관 후 삭제",
         "workDate": 6,
         "price": 200000,
@@ -7080,6 +7098,7 @@ MILESTONES = [
         "milestoneId": 303,
         "issueId": 311,
         "title": "3차 · 결제 간헐 실패 수정",
+        "detail": None,
         "location": "app/api/checkout/route.ts:47",
         "workDate": 4,
         "price": 50000,
@@ -7102,6 +7121,7 @@ MILESTONES = [
         "milestoneId": 304,
         "issueId": 320,
         "title": "인계 · 소스 · 계정 · 설명서",
+        "detail": None,
         "location": None,
         "workDate": None,
         "price": 0,
@@ -7637,10 +7657,41 @@ def start_development(
             "description": "방 없음",
             "content": {"application/json": {"example": ROOM_NOT_FOUND_EXAMPLE}},
         },
+        409: {
+            "model": ErrorResponse,
+            "description": "개발방이 아님 · 이미 서명함 · 취소된 계약",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "NOT_DEVELOPMENT_ROOM": {
+                            "summary": "개발방이 아님",
+                            "value": {
+                                "code": NOT_DEVELOPMENT_ROOM[0],
+                                "message": NOT_DEVELOPMENT_ROOM[1],
+                            },
+                        },
+                        "CONTRACT_ALREADY_SIGNED": {
+                            "summary": "이미 서명함",
+                            "value": {
+                                "code": CONTRACT_ALREADY_SIGNED[0],
+                                "message": CONTRACT_ALREADY_SIGNED[1],
+                            },
+                        },
+                        "CONTRACT_CANCELLED": {
+                            "summary": "취소된 계약",
+                            "value": {
+                                "code": CONTRACT_CANCELLED[0],
+                                "message": CONTRACT_CANCELLED[1],
+                            },
+                        },
+                    }
+                }
+            },
+        },
         **AREA1_UNAUTHORIZED,
         422: {
             "model": ValidationErrorResponse,
-            "description": "요청 스키마 유효성 검증 실패",
+            "description": "요청 스키마 유효성 검증 실패 · 계약서에 넣을 수 없는 요구사항",
             "content": {"application/json": {"example": WRITE_CONTRACT_ERROR_EXAMPLE}},
         },
         500: AREA1_ERRORS[500],
@@ -7656,6 +7707,9 @@ def start_development(
         "가리키는 것이라 따로 받지 않는다.\n\n"
         "**계약서는 요청서를 바꾸지 않는다.** 이름·설명·확인 문장을 계약서에서 바꿔도 "
         "계약서에만 남는다.\n\n"
+        "**받는 요구사항은 요청서에 담긴 것과 이 계약서에 이미 들어 있는 것이다.** 개발자는 "
+        "요청서에 담긴 것만 볼 수 있다(R-REQ-05). 다시 쓸 때는 앞서 새로 만든 작업이 그 "
+        "요구사항 번호를 달고 돌아온다.\n\n"
         "보낸 계약서는 **가계약** 상태다. 양쪽이 서명할 때까지 서로 주고받으며 조정하는 "
         "구간이며, 서명이 끝나야 체결된다. 협의 중에 다시 보내면 그 계약서의 내용을 이 "
         "요청으로 덮어쓴다. 계약서는 방에 하나이고, 양쪽이 서명한 뒤에 내용을 바꾸려면 "
@@ -7670,9 +7724,14 @@ def start_development(
         "- **403 / FORBIDDEN**: 이 방의 개발자가 아닐 때. 계약서는 개발자만 쓴다\n"
         "- **404 / ROOM_NOT_FOUND**: `roomId`가 404일 때. 없는 방이거나 이 방의 당사자가 "
         "아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 준다\n"
+        "- **409 / NOT_DEVELOPMENT_ROOM**: 개발방이 아닐 때. 화면에는 그런 길이 없어 API를 "
+        "직접 부를 때만 난다\n"
+        "- **409 / CONTRACT_ALREADY_SIGNED**: 한쪽이라도 이미 서명했을 때 (R-CON-02)\n"
+        "- **409 / CONTRACT_CANCELLED**: 취소된 계약일 때 (R-CON-21)\n"
         "- **422 / INVALID_REQUEST**: `milestones`가 비었거나, 작업의 `qaCriteria`가 비었거나, "
         "새 작업에 `title`이 없거나, 같은 `issueId`를 두 작업에 담았거나, "
-        "`startDate`·`dueDate`·`freeRepairDays`·`milestones` 중 빠진 것이 있을 때\n"
+        "`startDate`·`dueDate`·`freeRepairDays`·`milestones` 중 빠진 것이 있을 때. "
+        "요청서에도 이 계약서에도 없는 요구사항을 넣었을 때도 422다\n"
         "- **500 / INTERNAL_ERROR**: 계약서를 만들지 못했을 때"
     ),
 )

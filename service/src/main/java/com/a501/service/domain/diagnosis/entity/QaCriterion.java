@@ -68,6 +68,14 @@ public class QaCriterion extends SoftDeleteEntity {
         this.testCase = Objects.requireNonNull(testCase, "testCase");
     }
 
+    /** 계약서를 다시 써서 빠진 계약서 문장. 요청서 문장은 여기로 지우지 않는다. */
+    public void dropFromContract(java.time.LocalDateTime deletedAt) {
+        if (!contract) {
+            throw new IllegalStateException("요청서 문장은 계약서에서 지우지 않는다");
+        }
+        markDeleted(deletedAt);
+    }
+
     /** 요청서에서 지운 것으로 표시한다. */
     public void dropFromRequirements(java.time.LocalDateTime deletedAt) {
         markDeleted(deletedAt);

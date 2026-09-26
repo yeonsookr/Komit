@@ -108,11 +108,32 @@ class ContractDetailServiceTest {
     void takesWorkTitleAndLocationFromTheIssueItIsAttachedTo() {
         givenOneMilestone(null);
         when(diagnosisQueryService.findBriefs(List.of(ISSUE_ID)))
-                .thenReturn(Map.of(ISSUE_ID, new IssueBrief("관리자 API에 인증 추가", "app/api/admin/*")));
+                .thenReturn(Map.of(ISSUE_ID, new IssueBrief("관리자 API에 인증 추가", "로그인 없이 열립니다", "app/api/admin/*")));
 
         MilestoneResponse milestone = firstMilestone(service.getContract(CLIENT_ID, CONTRACT_ID));
 
         assertThat(milestone.title()).isEqualTo("관리자 API에 인증 추가");
+        assertThat(milestone.detail()).isEqualTo("로그인 없이 열립니다");
+        assertThat(milestone.location()).isEqualTo("app/api/admin/*");
+    }
+
+    @Test
+    void prefersTitleAndDetailChangedInTheContract() {
+        Milestone renamed = milestone(null);
+        ReflectionTestUtils.setField(renamed, "title", "관리자 인증 강화");
+        ReflectionTestUtils.setField(renamed, "detail", "토큰도 확인한다");
+        when(milestoneRepository.findAllByDevelopmentContractIdAndDeletedFalseOrderByIdAsc(DEVELOPMENT_ID))
+                .thenReturn(List.of(renamed));
+        when(milestoneQaResultRepository.findAllByMilestoneIdInAndDeletedFalseOrderByIdAsc(any()))
+                .thenReturn(List.of());
+        when(diagnosisQueryService.findBriefs(List.of(ISSUE_ID)))
+                .thenReturn(Map.of(ISSUE_ID, new IssueBrief("관리자 API에 인증 추가", "로그인 없이 열립니다", "app/api/admin/*")));
+
+        MilestoneResponse milestone = firstMilestone(service.getContract(CLIENT_ID, CONTRACT_ID));
+
+        // 요청서는 계약서가 건드리지 않는다. 바꾼 이름·설명은 작업에만 있고, 위치는 요구사항의 값이다.
+        assertThat(milestone.title()).isEqualTo("관리자 인증 강화");
+        assertThat(milestone.detail()).isEqualTo("토큰도 확인한다");
         assertThat(milestone.location()).isEqualTo("app/api/admin/*");
     }
 
