@@ -92,7 +92,7 @@ class DevelopmentContractWriteServiceTest {
                 milestoneQaResultRepository,
                 deliverableRepository,
                 tempMessageRepository,
-                roomQueryService,
+                new DevelopmentContractEditingPolicy(roomQueryService, contractRequirementService),
                 contractRequirementService,
                 contractDetailService);
 

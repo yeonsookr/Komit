@@ -13,7 +13,7 @@ import java.util.List;
  * <p>값은 {@link #of(List)} 가 목록 크기에서 뽑는다. 숫자를 직접 적으면 후보 수가 바뀔 때 한쪽만
  * 고치게 된다.
  *
- * @param content 후보. 목 명세상 언제나 세 건이다 (`R-REQ-04`)
+ * @param content 후보. 목 명세상 언제나 세 건이다 (`R-REQ-04`, `R-CON-23`)
  */
 @Schema(description = "확인 문장 후보 목록. 저장 전이라 넘길 다음 쪽이 없다.")
 public record QaSuggestionListResponse(

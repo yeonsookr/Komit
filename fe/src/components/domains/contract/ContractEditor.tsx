@@ -16,6 +16,7 @@ import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
 import { isDevelopmentDraft } from "@/lib/contract";
 import {
+  applyQaSuggestion,
   canSendMilestones,
   emptyMilestone,
   filledLines,
@@ -28,7 +29,7 @@ import {
 } from "@/lib/contractEditor";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
-import type { Contract } from "@/types/contract";
+import type { Contract, QaSuggestionList } from "@/types/contract";
 import type { Issue } from "@/types/diagnosis";
 
 /** 요청서가 없을 때 쓰는 빈 목록. 그릴 때마다 새 배열을 만들지 않습니다. */
@@ -89,6 +90,8 @@ export function ContractEditor({
   );
   const [message, setMessage] = React.useState("");
   const [saving, setSaving] = React.useState(false);
+  const [suggestingKey, setSuggestingKey] = React.useState<string | null>(null);
+  const [suggestions, setSuggestions] = React.useState<Record<string, string[]>>({});
 
   const total = drafts.reduce(
     (sum, draft) => sum + (Number(draft.price) || 0),
@@ -126,6 +129,34 @@ export function ContractEditor({
   const unpriced = drafts.some(isUnpriced);
   const canSend =
     startDate !== "" && dueDate !== "" && canSendMilestones(drafts, handover);
+
+  const suggestQa = async (draft: EditorMilestone) => {
+    if (draft.title.trim() === "" || suggestingKey !== null) return;
+    setSuggestingKey(draft.key);
+    try {
+      const { data } = await clientApi.post<QaSuggestionList>(
+        INTERNAL.CONTRACT_QA_SUGGESTIONS(roomId),
+        {
+          issueId: draft.issueId,
+          title: draft.title.trim(),
+          detail: draft.detail.trim() === "" ? null : draft.detail.trim(),
+        },
+        // Next 서버가 백엔드 AI 응답을 30초까지 기다리므로 브라우저는 조금 더 기다립니다.
+        { timeout: 35_000 },
+      );
+      setSuggestions((prev) => ({
+        ...prev,
+        [draft.key]: data.content.map((item) => item.testCase),
+      }));
+    } catch (error) {
+      showToast({
+        tone: "danger",
+        title: error instanceof ApiError ? error.message : "확인 문장을 추천하지 못했습니다.",
+      });
+    } finally {
+      setSuggestingKey(null);
+    }
+  };
 
   const send = async () => {
     if (!canSend || saving) return;
@@ -286,6 +317,43 @@ export function ContractEditor({
                 >
                   + 확인 문장 추가
                 </Button>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-2 ml-2"
+                  loading={suggestingKey === draft.key}
+                  disabled={draft.title.trim() === "" || suggestingKey !== null}
+                  onClick={() => void suggestQa(draft)}
+                >
+                  AI 확인 문장 추천
+                </Button>
+
+                {(suggestions[draft.key]?.length ?? 0) > 0 && (
+                  <div className="mt-3 rounded-lg bg-surface px-3 py-3" aria-live="polite">
+                    <p className="text-xs font-semibold text-fg-secondary">추천 후보</p>
+                    <ul className="mt-2 flex flex-col gap-2">
+                      {(suggestions[draft.key] ?? []).map((candidate) => (
+                        <li key={candidate}>
+                          <button
+                            type="button"
+                            className="w-full rounded-md border border-line bg-bg px-3 py-2 text-left text-sm leading-6 text-fg-secondary transition-colors hover:border-primary hover:text-fg"
+                            onClick={() =>
+                              patch(draft.key, {
+                                qaCriteria: applyQaSuggestion(draft.qaCriteria, candidate),
+                              })
+                            }
+                          >
+                            {candidate}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-2 text-xs text-fg-subtle">
+                      후보를 누르면 확인 문장에 추가됩니다. 추가한 뒤에도 문구를 고칠 수 있습니다.
+                    </p>
+                  </div>
+                )}
               </li>
             ))}
 

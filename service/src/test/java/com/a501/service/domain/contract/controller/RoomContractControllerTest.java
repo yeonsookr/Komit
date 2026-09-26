@@ -11,15 +11,20 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.a501.service.common.exception.CommonErrorCode;
 import com.a501.service.common.exception.BusinessException;
 import com.a501.service.common.security.JwtTokenProvider;
 import com.a501.service.common.security.WebMvcSecurityTest;
 import com.a501.service.domain.contract.ContractErrorCode;
+import com.a501.service.domain.contract.dto.request.ContractQaSuggestionRequest;
 import com.a501.service.domain.contract.dto.request.WriteDevelopmentContractRequest;
 import com.a501.service.domain.contract.dto.response.ContractResponse;
 import com.a501.service.domain.contract.service.ConsultingContractWriteService;
 import com.a501.service.domain.contract.service.ContractDraftService;
+import com.a501.service.domain.contract.service.ContractQaSuggestionService;
 import com.a501.service.domain.contract.service.DevelopmentContractWriteService;
+import com.a501.service.domain.diagnosis.dto.response.QaSuggestionListResponse;
+import com.a501.service.domain.diagnosis.dto.response.QaSuggestionResponse;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -39,6 +44,7 @@ class RoomContractControllerTest {
     @MockitoBean private ConsultingContractWriteService consultingContractWriteService;
     @MockitoBean private ContractDraftService contractDraftService;
     @MockitoBean private DevelopmentContractWriteService developmentContractWriteService;
+    @MockitoBean private ContractQaSuggestionService contractQaSuggestionService;
 
     @Test
     void generatesDraftForAuthenticatedUser() throws Exception {
@@ -204,5 +210,64 @@ class RoomContractControllerTest {
                 .andExpect(status().isUnauthorized());
 
         verifyNoInteractions(developmentContractWriteService);
+    }
+
+    @Test
+    void suggestsContractQaCriteriaForUnsavedWork() throws Exception {
+        when(contractQaSuggestionService.suggest(eq(93), eq(USER_ID), any()))
+                .thenReturn(QaSuggestionListResponse.of(List.of(
+                        new QaSuggestionResponse("로그인하지 않으면 로그인 화면이 나타난다."),
+                        new QaSuggestionResponse("일반 회원은 관리자 화면에 들어갈 수 없다."),
+                        new QaSuggestionResponse("관리자는 관리자 화면을 볼 수 있다."))));
+
+        mockMvc.perform(post("/api/rooms/{roomId}/contract-qa-suggestions", 93)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"issueId":null,"title":"관리자 API에 인증 추가","detail":null}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content.length()").value(3))
+                .andExpect(jsonPath("$.page").value(1))
+                .andExpect(jsonPath("$.size").value(3));
+
+        ArgumentCaptor<ContractQaSuggestionRequest> sent =
+                ArgumentCaptor.forClass(ContractQaSuggestionRequest.class);
+        verify(contractQaSuggestionService).suggest(eq(93), eq(USER_ID), sent.capture());
+        org.assertj.core.api.Assertions.assertThat(sent.getValue().issueId()).isNull();
+        org.assertj.core.api.Assertions.assertThat(sent.getValue().title())
+                .isEqualTo("관리자 API에 인증 추가");
+    }
+
+    @Test
+    void rejectsInvalidContractQaTextAndMissingToken() throws Exception {
+        String body = "{\"issueId\":312,\"title\":\"\",\"detail\":null}";
+
+        mockMvc.perform(post("/api/rooms/{roomId}/contract-qa-suggestions", 93)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors[0].field").value("title"));
+        mockMvc.perform(post("/api/rooms/{roomId}/contract-qa-suggestions", 93)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"issueId\":null,\"title\":\"새 작업\",\"detail\":null}"))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(contractQaSuggestionService);
+    }
+
+    @Test
+    void rejectsIssueOutsideRequestAndContractWithoutFieldErrors() throws Exception {
+        when(contractQaSuggestionService.suggest(eq(93), eq(USER_ID), any()))
+                .thenThrow(new BusinessException(CommonErrorCode.INVALID_REQUEST));
+
+        mockMvc.perform(post("/api/rooms/{roomId}/contract-qa-suggestions", 93)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"issueId\":999,\"title\":\"남의 작업\",\"detail\":null}"))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(jsonPath("$.errors").doesNotExist());
     }
 }

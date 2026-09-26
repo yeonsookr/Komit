@@ -124,6 +124,24 @@ export function filledLines(lines: string[]): string[] {
   return lines.map((line) => line.trim()).filter((line) => line !== "");
 }
 
+/** 후보 중복 판정용 문장. 앞뒤와 연속 공백 차이는 같은 문장으로 봅니다. */
+export function normalizeQaText(line: string): string {
+  return line.trim().replaceAll(/\s+/g, " ");
+}
+
+/**
+ * 추천 후보를 작업의 확인 문장에 더합니다.
+ * 비어 있는 입력 칸 하나뿐이면 그 칸을 채우고, 이미 같은 문장이 있으면 다시 넣지 않습니다.
+ */
+export function applyQaSuggestion(lines: string[], candidate: string): string[] {
+  const next = candidate.trim();
+  const normalized = normalizeQaText(next);
+  if (normalized === "" || lines.some((line) => normalizeQaText(line) === normalized)) {
+    return lines;
+  }
+  return lines.length === 1 && lines[0].trim() === "" ? [next] : [...lines, next];
+}
+
 /** 금액이 정해지지 않은 일반 작업인지. 0 원은 인계 작업에만 씁니다. */
 export function isUnpriced(milestone: EditorMilestone): boolean {
   return !(Number(milestone.price) >= 1);

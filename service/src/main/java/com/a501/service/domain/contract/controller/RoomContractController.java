@@ -1,12 +1,15 @@
 package com.a501.service.domain.contract.controller;
 
 import com.a501.service.common.security.AuthenticatedUser;
+import com.a501.service.domain.contract.dto.request.ContractQaSuggestionRequest;
 import com.a501.service.domain.contract.dto.request.WriteConsultingContractRequest;
 import com.a501.service.domain.contract.dto.request.WriteDevelopmentContractRequest;
 import com.a501.service.domain.contract.dto.response.ContractResponse;
 import com.a501.service.domain.contract.service.ConsultingContractWriteService;
+import com.a501.service.domain.contract.service.ContractQaSuggestionService;
 import com.a501.service.domain.contract.service.ContractDraftService;
 import com.a501.service.domain.contract.service.DevelopmentContractWriteService;
+import com.a501.service.domain.diagnosis.dto.response.QaSuggestionListResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -29,6 +32,7 @@ public class RoomContractController {
     private final ConsultingContractWriteService consultingContractWriteService;
     private final ContractDraftService contractDraftService;
     private final DevelopmentContractWriteService developmentContractWriteService;
+    private final ContractQaSuggestionService contractQaSuggestionService;
 
     @Operation(
             summary = "컨설팅 계약서 초안 생성",
@@ -95,5 +99,35 @@ public class RoomContractController {
             @Valid @RequestBody WriteDevelopmentContractRequest request,
             @AuthenticationPrincipal AuthenticatedUser user) {
         return developmentContractWriteService.write(roomId, user.userId(), request);
+    }
+
+    @Operation(
+            summary = "계약 작업 확인 문장 후보 생성",
+            description =
+                    """
+                    개발자가 계약서를 편집하면서 현재 작업 이름·설명으로 확인 문장 후보 세 건을 만든다.
+
+                    **저장하지 않는다.** 고르거나 고친 문장은 개발 계약서 작성 API를 호출할 때 저장한다. \
+                    최초 AI 계약 초안 이후 편집·재전송·저장이 이 API를 자동 호출하지 않는다. (R-CON-23)
+
+                    기존 작업은 issueId 를 보내며 요청서 또는 현재 계약서에 속해야 한다. 아직 저장하지 않은 \
+                    새 작업은 issueId 를 null 로 보낸다. 계약서가 아직 없어도 요청할 수 있다.
+
+                    - 200: 후보 세 건을 만들었을 때
+                    - 401 UNAUTHORIZED: 로그인하지 않았을 때
+                    - 403 FORBIDDEN: 이 방의 개발자가 아닐 때
+                    - 404 ROOM_NOT_FOUND: 없는 방이거나 이 방의 당사자가 아닐 때
+                    - 409 NOT_DEVELOPMENT_ROOM: 개발방이 아닐 때
+                    - 409 CONTRACT_ALREADY_SIGNED: 한쪽이라도 이미 서명했을 때 (R-CON-02)
+                    - 409 CONTRACT_CANCELLED: 취소된 계약일 때 (R-CON-21)
+                    - 422 INVALID_REQUEST: 요청 형식이 틀렸거나 계약서에 넣을 수 없는 issueId 일 때
+                    - 502 AI_RESPONSE_INVALID: AI가 계약에 맞는 후보를 만들지 못했을 때
+                    - 503 AI_SERVICE_UNAVAILABLE: 확인 문장 생성 서비스에 연결할 수 없을 때""")
+    @PostMapping("/contract-qa-suggestions")
+    QaSuggestionListResponse suggestContractQaCriteria(
+            @Parameter(description = "개발 방 식별자.", example = "93") @PathVariable Integer roomId,
+            @Valid @RequestBody ContractQaSuggestionRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return contractQaSuggestionService.suggest(roomId, user.userId(), request);
     }
 }

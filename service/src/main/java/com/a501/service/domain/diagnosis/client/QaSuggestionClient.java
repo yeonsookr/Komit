@@ -41,7 +41,7 @@ public class QaSuggestionClient {
 
     private static final String RESPONSE_INVALID = "AI_RESPONSE_INVALID";
     private static final String REQUEST_INVALID = "AI_REQUEST_INVALID";
-    /** `R-REQ-04`: 후보 3건, 각 문장 1~500자. 목 명세도 같은 값으로 고정돼 있다. */
+    /** `R-REQ-04`·`R-CON-23`: 후보 3건, 각 문장 1~500자. 목 명세도 같은 값으로 고정돼 있다. */
     private static final int CANDIDATE_COUNT = 3;
 
     private static final int MAX_TEST_CASE_LENGTH = 500;

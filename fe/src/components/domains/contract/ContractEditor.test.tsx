@@ -72,6 +72,7 @@ describe("ContractEditor", () => {
     expect(html).not.toContain('value="0"');
     expect(html).toContain('value="14"');
     expect(html).toContain("금액을 정하지 않은 작업이 있습니다");
+    expect(html.match(/AI 확인 문장 추천/g)).toHaveLength(2);
   });
 
   it("AI 초안은 아직 보내지 않은 것이라 새로 쓰는 화면으로 연다", () => {

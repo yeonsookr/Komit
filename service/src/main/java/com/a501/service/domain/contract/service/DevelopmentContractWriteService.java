@@ -21,15 +21,10 @@ import com.a501.service.domain.contract.repository.TempMessageRepository;
 import com.a501.service.domain.diagnosis.service.ContractRequirementService;
 import com.a501.service.domain.room.RoomErrorCode;
 import com.a501.service.domain.room.dto.ContractRoomView;
-import com.a501.service.domain.room.dto.request.RoomType;
-import com.a501.service.domain.room.service.RoomQueryService;
 import java.time.LocalDateTime;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
-import java.util.Set;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,7 +40,6 @@ import org.springframework.transaction.annotation.Transactional;
  * <p>계약서에 담는 요구사항은 요청서에 담긴 것과, 이 계약서에 이미 들어 있는 것이다. 개발자는 요청서에
  * 담긴 것만 볼 수 있고(R-REQ-05), 다시 쓸 때는 앞서 새로 만든 작업이 그 요구사항 번호를 달고 돌아온다.
  */
-@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -56,7 +50,7 @@ public class DevelopmentContractWriteService {
     private final MilestoneQaResultRepository milestoneQaResultRepository;
     private final DeliverableRepository deliverableRepository;
     private final TempMessageRepository tempMessageRepository;
-    private final RoomQueryService roomQueryService;
+    private final DevelopmentContractEditingPolicy editingPolicy;
     private final ContractRequirementService contractRequirementService;
     private final ContractDetailService contractDetailService;
 
@@ -73,7 +67,7 @@ public class DevelopmentContractWriteService {
      */
     @Transactional
     public ContractResponse write(Integer roomId, Integer userId, WriteDevelopmentContractRequest request) {
-        ContractRoomView room = requireDeveloperRoom(roomId, userId);
+        ContractRoomView room = editingPolicy.requireDeveloperRoom(roomId, userId);
         if (request.dueDateBeforeStart()) {
             throw new BusinessException(ContractErrorCode.DUE_DATE_BEFORE_START);
         }
@@ -82,14 +76,20 @@ public class DevelopmentContractWriteService {
         DevelopmentContract development = null;
         List<Milestone> previous = List.of();
         if (contract != null) {
-            requireWritable(contract);
+            editingPolicy.requireWritable(contract);
             development = developmentContractRepository.findByContractIdAndDeletedFalse(contract.getId()).orElse(null);
             if (development != null) {
                 previous = milestoneRepository.findAllByDevelopmentContractIdAndDeletedFalseOrderByIdAsc(
                         development.getId());
             }
         }
-        requireKnownIssues(room.projectId(), previous, request.milestones());
+        editingPolicy.requireKnownIssues(
+                room.projectId(),
+                previous,
+                request.milestones().stream()
+                        .map(WriteMilestoneRequest::issueId)
+                        .filter(Objects::nonNull)
+                        .toList());
 
         if (contract == null) {
             contract = contractRepository.save(Contract.of(roomId, Contract.ContractType.DEVELOPMENT));
@@ -123,57 +123,6 @@ public class DevelopmentContractWriteService {
         leaveMessage(contract.getId(), request.message());
 
         return contractDetailService.getContract(userId, contract.getId());
-    }
-
-    /**
-     * 계약서는 개발자가 쓴다. 방의 당사자가 아니면 방이 있다는 것을 알리지 않는다. 의뢰인은 방이 있다는
-     * 것을 알고 있으므로 감추지 않고 403 으로 답한다.
-     */
-    private ContractRoomView requireDeveloperRoom(Integer roomId, Integer userId) {
-        ContractRoomView room = roomQueryService
-                .findContractRoom(roomId)
-                .filter(found -> found.parties().includes(userId))
-                .orElseThrow(() -> new BusinessException(RoomErrorCode.ROOM_NOT_FOUND));
-        if (!Objects.equals(room.parties().developerUserId(), userId)) {
-            throw new BusinessException(CommonErrorCode.FORBIDDEN);
-        }
-        if (!RoomType.DEVELOPMENT.name().equals(room.type())) {
-            throw new BusinessException(ContractErrorCode.NOT_DEVELOPMENT_ROOM);
-        }
-        return room;
-    }
-
-    /** R-CON-02: 한쪽이라도 서명했으면 고칠 수 없다. R-CON-21: 취소된 계약서를 되살리는 길이 되면 안 된다. */
-    private void requireWritable(Contract contract) {
-        if (contract.isCancelled()) {
-            throw new BusinessException(ContractErrorCode.CONTRACT_CANCELLED);
-        }
-        if (contract.isSigned()) {
-            throw new BusinessException(ContractErrorCode.CONTRACT_ALREADY_SIGNED);
-        }
-        if (!Contract.ContractType.DEVELOPMENT.name().equals(contract.getContractType())) {
-            // 개발방에 컨설팅 계약이 있다. 방 종류를 거르고 들어왔으므로 데이터가 어긋난 것이다.
-            log.error("개발방에 개발 계약이 아닌 계약이 있다 contractId={} type={}",
-                    contract.getId(), contract.getContractType());
-            throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
-        }
-    }
-
-    /**
-     * 요청서에 담긴 요구사항과 이 계약서에 이미 들어 있는 요구사항만 받는다. 없는 요구사항, 다른 프로젝트의
-     * 요구사항, 의뢰인이 고르지 않은 요구사항은 여기서 걸린다.
-     */
-    private void requireKnownIssues(
-            Integer projectId, List<Milestone> previous, List<WriteMilestoneRequest> milestones) {
-        Set<Integer> known = new HashSet<>(contractRequirementService.findRequestIssueIds(projectId));
-        previous.stream().map(Milestone::getIssueId).filter(Objects::nonNull).forEach(known::add);
-        boolean allKnown = milestones.stream()
-                .map(WriteMilestoneRequest::issueId)
-                .filter(Objects::nonNull)
-                .allMatch(known::contains);
-        if (!allKnown) {
-            throw new BusinessException(CommonErrorCode.INVALID_REQUEST);
-        }
     }
 
     /**

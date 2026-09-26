@@ -1,8 +1,16 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Contract } from "@/types/contract";
 import { ConsultingContractDetail } from "./ConsultingContractDetail";
 import { ContractDetail } from "./ContractDetail";
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+}));
+vi.mock("@/components/feedback", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/components/feedback")>();
+  return { ...original, useToast: () => vi.fn() };
+});
 
 const draft: Contract = {
   contractId: 120,
@@ -126,5 +134,90 @@ describe("컨설팅 계약 초안 화면 흐름", () => {
 
     expect(html).toContain("상담 내용");
     expect(html).toContain("재현 조건과 로그를 함께 확인합니다.");
+  });
+
+  it("의뢰인이 먼저 서명한 계약은 개발자에게 수정 링크를 보이지 않는다", () => {
+    const clientSigned = {
+      ...draft,
+      consulting: {
+        ...draft.consulting!,
+        totalAmount: 50_000,
+        sessions: [
+          {
+            sessionId: 55,
+            contractId: 120,
+            price: 50_000,
+            durationMinutes: 30,
+            reservation: {
+              reservationId: 80,
+              scheduledAt: "2026-10-01T14:00:00+09:00",
+              status: "PROPOSED" as const,
+            },
+            startedAt: null,
+            endedAt: null,
+            chatRefId: "consulting-session-55",
+          },
+        ],
+      },
+      clientSignature: {
+        userId: 3,
+        isSigned: true,
+        signedAt: "2026-09-26T01:00:00Z",
+        signatureImageFileId: 1,
+      },
+    } satisfies Contract;
+
+    const html = renderToStaticMarkup(
+      <ConsultingContractDetail
+        roomId={92}
+        roomTitle="결제 오류 상담"
+        counterpartName="의뢰인"
+        contract={clientSigned}
+        received
+        myUserId={9}
+      />,
+    );
+
+    expect(html).not.toContain("수정하기");
+    expect(html).toContain("서명하고 계약하기");
+  });
+
+  it("개발 계약도 한쪽이 서명하면 수정 링크만 숨기고 남은 서명은 허용한다", () => {
+    const clientSignedDevelopment = {
+      ...draft,
+      contractType: "DEVELOPMENT" as const,
+      consulting: null,
+      development: {
+        status: "SIGNED" as const,
+        totalAmount: 50_000,
+        issueIds: [],
+        startDate: "2026-10-01",
+        dueDate: "2026-10-02",
+        freeRepairDays: 0,
+        milestones: [],
+        deliverables: [],
+      },
+      clientSignature: {
+        userId: 3,
+        isSigned: true,
+        signedAt: "2026-09-26T01:00:00Z",
+        signatureImageFileId: 1,
+      },
+    } satisfies Contract;
+
+    const html = renderToStaticMarkup(
+      <ContractDetail
+        roomId={92}
+        roomTitle="관리자 화면 보안"
+        counterpartName="의뢰인"
+        contract={clientSignedDevelopment}
+        received
+        myUserId={9}
+      />,
+    );
+
+    expect(html).not.toContain("수정하기");
+    expect(html).toContain("서명하고 계약하기");
+    expect(html).toContain("수락하면 50,000원 전액을 먼저 예치합니다");
   });
 });

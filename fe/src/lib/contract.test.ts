@@ -171,6 +171,7 @@ describe("서명", () => {
 
   it("한쪽만 서명해도 고칠 수 없다", () => {
     expect(isSignedByAnyone(contract({ clientSignature: unsigned, developerSignature: unsigned }))).toBe(false);
+    expect(isSignedByAnyone(contract({ clientSignature: signed, developerSignature: unsigned }))).toBe(true);
     expect(isSignedByAnyone(contract({ clientSignature: unsigned, developerSignature: signed }))).toBe(true);
   });
 
