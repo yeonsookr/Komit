@@ -34,7 +34,7 @@ public class IssueRepositoryImpl implements IssueRepositoryCustom {
             Pageable pageable) {
         List<Issue> content = queryFactory
                 .selectFrom(ISSUE)
-                .where(inInspection(inspectionId), hasStatus(status), isInput(input), inRequest(requestOnly), notDeleted())
+                .where(inInspection(inspectionId), hasStatus(status), isInput(input), inRequest(requestOnly), notContract(), notDeleted())
                 .orderBy(ISSUE.id.asc())
                 .offset(pageable.getOffset())
                 .limit(pageable.getPageSize())
@@ -43,7 +43,7 @@ public class IssueRepositoryImpl implements IssueRepositoryCustom {
         JPAQuery<Long> countQuery = queryFactory
                 .select(ISSUE.count())
                 .from(ISSUE)
-                .where(inInspection(inspectionId), hasStatus(status), isInput(input), inRequest(requestOnly), notDeleted());
+                .where(inInspection(inspectionId), hasStatus(status), isInput(input), inRequest(requestOnly), notContract(), notDeleted());
 
         return PageableExecutionUtils.getPage(
                 content, pageable, () -> Optional.ofNullable(countQuery.fetchOne()).orElse(0L));
@@ -69,6 +69,11 @@ public class IssueRepositoryImpl implements IssueRepositoryCustom {
 
     private static BooleanExpression isInput(Boolean input) {
         return input == null ? null : ISSUE.input.eq(input);
+    }
+
+    /** 계약서에서 만든 요구사항. 요청서와 진단 목록에 섞지 않는다. 계약서 화면은 이 목록을 쓰지 않는다. */
+    private static BooleanExpression notContract() {
+        return ISSUE.contract.isFalse();
     }
 
     private static BooleanExpression notDeleted() {
