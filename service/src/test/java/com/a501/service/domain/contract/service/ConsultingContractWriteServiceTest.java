@@ -267,6 +267,22 @@ class ConsultingContractWriteServiceTest {
     }
 
     @Test
+    @DisplayName("상세 설명을 빈 문자열로 보내면 지운다")
+    void clearsDetailWhenBlank() {
+        service.amend(
+                CONTRACT_ID,
+                CLIENT_ID,
+                new AmendConsultingContractRequest(null, null, null, null, "설명", null));
+
+        service.amend(
+                CONTRACT_ID,
+                CLIENT_ID,
+                new AmendConsultingContractRequest(null, null, null, null, "  ", null));
+
+        assertThat(agreement.getDetail()).isNull();
+    }
+
+    @Test
     @DisplayName("수정 제안은 의뢰인도 보낸다")
     void clientMayAmend() {
         service.amend(

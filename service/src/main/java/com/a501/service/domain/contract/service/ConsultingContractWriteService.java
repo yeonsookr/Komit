@@ -179,7 +179,7 @@ public class ConsultingContractWriteService {
         agreement.rewrite(
                 request.topic() == null ? agreement.getTopic() : request.topic(),
                 price,
-                request.detail() == null ? agreement.getDetail() : request.detail());
+                amendedDetail(agreement.getDetail(), request.detail()));
         session.rewrite(
                 price,
                 request.durationMinutes() == null
@@ -203,6 +203,14 @@ public class ConsultingContractWriteService {
         if (!Objects.equals(parties.developerUserId(), userId)) {
             throw new BusinessException(CommonErrorCode.FORBIDDEN);
         }
+    }
+
+    /** 보내지 않았으면 그대로 두고, 비워서 보냈으면 지운다. */
+    private static String amendedDetail(String current, String requested) {
+        if (requested == null) {
+            return current;
+        }
+        return requested.isBlank() ? null : requested.trim();
     }
 
     /** 지난 시각으로는 약속을 잡을 수 없다. */
