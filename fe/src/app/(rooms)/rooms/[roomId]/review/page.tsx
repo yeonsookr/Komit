@@ -6,6 +6,7 @@ import { ReviewForm } from "@/components/domains/contract";
 import { RoomHeader } from "@/components/domains/room";
 import { getContract, getMe, getRoom } from "@/lib/api/services";
 import { isCompleted } from "@/lib/contract";
+import { formatDateLabel, formatDateTimeLabel } from "@/lib/format";
 import { isReceived } from "@/lib/rooms";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
@@ -43,6 +44,24 @@ export async function generateMetadata({
   };
 }
 
+/** 리뷰 머리말. 컨설팅은 세션이 끝난 시각, 개발은 마지막 작업이 통과된 날을 적습니다. */
+function completionNote(contract: Contract): string {
+  if (contract.consulting) {
+    const endedAt = contract.consulting.sessions
+      .map((session) => session.endedAt)
+      .filter((at): at is string => at !== null)
+      .sort()
+      .at(-1);
+    return endedAt ? `세션 완료 ${formatDateTimeLabel(endedAt)}` : "세션 완료";
+  }
+  const confirmedAt = contract.development?.milestones
+    .map((milestone) => milestone.confirmedAt)
+    .filter((at): at is string => at !== null)
+    .sort()
+    .at(-1);
+  return confirmedAt ? `개발 완료 ${formatDateLabel(confirmedAt)} · 정산 완료` : "정산 완료";
+}
+
 export default async function RoomReviewPage({
   params,
 }: {
@@ -69,14 +88,7 @@ export default async function RoomReviewPage({
         <ReviewForm
           contractId={contract.contractId}
           roomId={room.roomId}
-          // 마지막으로 통과 확정된 작업의 시각이 곧 개발 완료 시각입니다.
-          completedAt={
-            contract.development?.milestones
-              .map((milestone) => milestone.confirmedAt)
-              .filter((at): at is string => at !== null)
-              .sort()
-              .at(-1) ?? null
-          }
+          note={completionNote(contract)}
         />
       ) : (
         <EmptyState
@@ -84,7 +96,9 @@ export default async function RoomReviewPage({
           description={
             isReceived(room, me)
               ? "받은 리뷰에는 내 프로필 화면에서 답글을 쓸 수 있습니다."
-              : "작업이 모두 끝나고 정산이 마무리되면 여기에서 리뷰를 남깁니다."
+              : contract?.consulting
+                ? "세션이 끝나면 여기에서 리뷰를 남깁니다."
+                : "작업이 모두 끝나고 정산이 마무리되면 여기에서 리뷰를 남깁니다."
           }
         />
       )}
