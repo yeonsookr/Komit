@@ -3,8 +3,10 @@ package com.a501.service.domain.recommendation.controller;
 import com.a501.service.common.exception.ErrorResponse;
 import com.a501.service.common.security.AuthenticatedUser;
 import com.a501.service.domain.recommendation.dto.request.CreateConsultationRequest;
+import com.a501.service.domain.recommendation.dto.request.CreateDirectConsultationRequest;
 import com.a501.service.domain.recommendation.dto.request.CreateRecommendationRequest;
 import com.a501.service.domain.recommendation.dto.response.RecommendationBatchResponse;
+import com.a501.service.domain.recommendation.service.DirectConsultationService;
 import com.a501.service.domain.recommendation.service.RecommendationQueryService;
 import com.a501.service.domain.recommendation.service.RecommendationService;
 import com.a501.service.domain.room.dto.response.RoomListResponse;
@@ -35,6 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class RecommendationController {
     private final RecommendationService recommendationService;
     private final RecommendationQueryService recommendationQueryService;
+    private final DirectConsultationService directConsultationService;
 
     @Operation(
             summary = "개발자 추천 받기",
@@ -118,5 +121,34 @@ public class RecommendationController {
             @Valid @RequestBody CreateConsultationRequest request,
             @AuthenticationPrincipal AuthenticatedUser user) {
         return recommendationQueryService.requestConsultations(batchId, user.userId(), request);
+    }
+
+    @Operation(
+            summary = "직접 찾은 개발자에게 상담 요청 보내기",
+            description = "**화면 — `3_의뢰인_개발자프로필` › 무료로 물어보기 → `3_의뢰인_요청서선택`**\n\n"
+                    + "추천을 거치지 않고 직접 찾은 개발자에게 상담을 요청한다. 개발자마다 무료 상담방이 하나씩 열린다. 상담은 무료다.\n\n"
+                    + "**프로젝트에 진단이 있으면 요청서가 함께 걸린다.** 진단 전이라면 요청서 없이 방만 열리고 방 상세의 `request`가 null이다.\n\n"
+                    + "**추천 회차를 만들지 않는다.** 그래서 이렇게 열린 방은 `recommendationItemId`가 비어 있다.\n\n"
+                    + "**몇 번을 보내도 방은 개발자마다 하나다.** 이미 방이 있는 개발자는 그 방을 그대로 응답에 담고 새로 만들지 않는다.\n\n"
+                    + "- **201**: 요청을 보냈을 때. 이번에 연 방과 이미 있던 방이 함께 내려온다\n"
+                    + "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+                    + "- **404 / PROJECT_NOT_FOUND**: 없거나 남의 프로젝트일 때\n"
+                    + "- **422 / INVALID_REQUEST**: `developerIds`가 비었거나, 없는 개발자가 섞였거나, **자기 자신에게 요청했을 때**\n"
+                    + "- **500 / INTERNAL_ERROR**: 요청을 보내지 못했을 때",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "상담 요청 완료"),
+            @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "프로젝트 없음", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "422", description = "요청 스키마 유효성 검증 실패", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "500", description = "서버 내부 오류", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @ResponseStatus(HttpStatus.CREATED)
+    @PostMapping("/projects/{projectId}/consultation-requests")
+    RoomListResponse requestDirectConsultations(
+            @Parameter(description = "프로젝트 식별자.", example = "8") @PathVariable Integer projectId,
+            @Valid @RequestBody CreateDirectConsultationRequest request,
+            @AuthenticationPrincipal AuthenticatedUser user) {
+        return directConsultationService.request(projectId, user.userId(), request);
     }
 }

@@ -34,6 +34,8 @@ export const ROUTES = {
   developersByField: (codeId: number) =>
     `/developers?${FIELD_CODE_IDS_PARAM}=${codeId}`,
   developer: (developerId: number) => `/developers/${developerId}`,
+  /** 무료로 물어보기 — 어느 요청서로 물어볼지 고릅니다. 로그인해야 들어옵니다. */
+  developerInquiry: (developerId: number) => `/developers/${developerId}/inquiry`,
 
   /**
    * 약관과 정책. 문서마다 주소가 따로입니다.

@@ -6261,7 +6261,7 @@ def get_session_ice_servers(
                 "application/json": {
                     "examples": {
                         "SESSION_NOT_OPEN": {
-                            "summary": "입장 시각 전이거나 끝난 세션",
+                            "summary": "입장 시각 전이거나 끝났거나 계약 성립 전인 세션",
                             "value": {
                                 "code": SESSION_NOT_OPEN[0],
                                 "message": SESSION_NOT_OPEN[1],
@@ -6295,8 +6295,8 @@ def get_session_ice_servers(
         "- **202**: 내 동의는 기록됐지만 상대방 동의를 기다릴 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / SESSION_NOT_FOUND**: `sessionId`가 404일 때\n"
-        "- **409 / SESSION_NOT_OPEN**: `sessionId`가 409일 때. 아직 이른 시각이거나 이미 "
-        "끝난 세션이다\n"
+        "- **409 / SESSION_NOT_OPEN**: `sessionId`가 409일 때. 아직 이른 시각이거나, 이미 "
+        "끝났거나, 계약이 성립하지 않은 세션이다\n"
         "- **409 / SESSION_CANCELLED**: 의뢰인이 취소한 계약의 세션일 때. 동의도 기록하지 "
         f"않는다 (R-CON-21). 목에서는 `sessionId`={CANCELLED_SESSION_ID}이다\n"
         "- **500 / INTERNAL_ERROR**: 들어가지 못했을 때"

@@ -4,6 +4,7 @@ import { authenticatedBackendApi } from "../server";
 import { BACKEND } from "../endpoints";
 import type {
   CreateConsultationRequestBody,
+  CreateDirectConsultationRequestBody,
   CreateRecommendationRequest,
   RecommendationBatch,
 } from "@/types/recommendation";
@@ -30,6 +31,23 @@ export async function createConsultationRequests(
 ): Promise<RoomSummary[]> {
   const { data } = await authenticatedBackendApi().post<{ content: RoomSummary[] }>(
     BACKEND.CONSULTATION_REQUESTS(batchId),
+    body,
+  );
+  return data.content;
+}
+
+/**
+ * 직접 찾은 개발자에게 상담 요청 보내기.
+ *
+ * 추천 회차를 거치지 않고 개발자마다 무료 상담방을 엽니다. 멱등합니다 — 이미 방이 있는
+ * 개발자는 그 방을 그대로 돌려줍니다. 프로젝트에 진단이 있으면 요청서가 방에 함께 걸립니다.
+ */
+export async function createDirectConsultationRequests(
+  projectId: number,
+  body: CreateDirectConsultationRequestBody,
+): Promise<RoomSummary[]> {
+  const { data } = await authenticatedBackendApi().post<{ content: RoomSummary[] }>(
+    BACKEND.DIRECT_CONSULTATION_REQUESTS(projectId),
     body,
   );
   return data.content;

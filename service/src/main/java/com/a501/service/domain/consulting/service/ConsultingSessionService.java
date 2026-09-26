@@ -139,8 +139,8 @@ public class ConsultingSessionService {
      * @return 실제로 들어갔는지와 세션 응답
      * @throws BusinessException {@link ConsultingErrorCode#SESSION_NOT_FOUND} — 없거나 지워진 세션,
      *     또는 요청자가 당사자가 아닌 경우
-     * @throws BusinessException {@link ConsultingErrorCode#SESSION_NOT_OPEN} — 아직 이른 시각이거나
-     *     이미 끝난 세션인 경우
+     * @throws BusinessException {@link ConsultingErrorCode#SESSION_NOT_OPEN} — 아직 이른 시각이거나,
+     *     이미 끝났거나, 계약이 성립하지 않은 세션인 경우
      */
     @Transactional
     public SessionEntry join(Integer userId, Integer sessionId) {
@@ -153,6 +153,10 @@ public class ConsultingSessionService {
             throw new BusinessException(ConsultingErrorCode.SESSION_CANCELLED);
         }
         Reservation reservation = findReservation(sessionId);
+        // R-CON-01: 계약이 성립하기 전 세션은 열지 않는다. 동의도 남기지 않는다.
+        if (!reservation.isConfirmed()) {
+            throw new BusinessException(ConsultingErrorCode.SESSION_NOT_OPEN);
+        }
 
         LocalDateTime now = LocalDateTime.now(clock);
         requireOpen(session, reservation, now);

@@ -219,6 +219,17 @@ class ConsultingSessionServiceTest {
     }
 
     @Test
+    void 계약이_성립하기_전이면_막고_동의를_남기지_않는다() {
+        givenReservation(SCHEDULED_AT, "PROPOSED");
+        givenParticipants();
+
+        assertThatThrownBy(() -> service.join(CLIENT_ID, SESSION_ID))
+                .isInstanceOf(BusinessException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ConsultingErrorCode.SESSION_NOT_OPEN);
+        verify(participationRepository, never()).save(any());
+    }
+
+    @Test
     void 아직_이른_시각이면_막는다() {
         givenReservation(NOW_AT.plusMinutes(11));
         givenParticipants(CLIENT_ID, DEVELOPER_ID);
@@ -369,11 +380,15 @@ class ConsultingSessionServiceTest {
     }
 
     private void givenReservation(LocalDateTime scheduledAt) {
+        givenReservation(scheduledAt, "CONFIRMED");
+    }
+
+    private void givenReservation(LocalDateTime scheduledAt, String status) {
         Reservation reservation = BeanUtils.instantiateClass(Reservation.class);
         ReflectionTestUtils.setField(reservation, "id", 71);
         ReflectionTestUtils.setField(reservation, "consultingSessionId", SESSION_ID);
         ReflectionTestUtils.setField(reservation, "scheduledAt", scheduledAt);
-        ReflectionTestUtils.setField(reservation, "status", "CONFIRMED");
+        ReflectionTestUtils.setField(reservation, "status", status);
         when(reservationRepository.findByConsultingSessionIdAndDeletedFalse(SESSION_ID))
                 .thenReturn(Optional.of(reservation));
     }
