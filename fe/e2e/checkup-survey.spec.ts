@@ -74,13 +74,15 @@ test.describe('사전점검 설문', () => {
     await expect(page.getByRole('textbox')).toHaveValue('');
   });
 
-  test('설문3은 검사 파일 단계다', async ({ page }) => {
+  test('설문3은 Claude Code 검사 단계다', async ({ page }) => {
     await page.goto('/checkup/31?step=3');
 
-    await expect(page.getByRole('heading', { name: '검사 파일을 받아 직접 실행해주세요' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Claude Code에서 직접 검사해주세요' })).toBeVisible();
     await expect(page.getByText('/plugin install komit-scan@komit')).toBeVisible();
-    await expect(page.getByRole('button', { name: '내려받기' })).toBeVisible();
-    await expect(page.getByRole('button', { name: '복사' })).toBeVisible();
+    // 검사 명령은 진단 번호로 시작합니다. 설문2에 적은 증상이 있으면 뒤에 붙습니다.
+    await expect(page.getByText(/^\/komit-scan 31/)).toBeVisible();
+    await expect(page.getByRole('button', { name: '설치 명령 복사' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '검사 명령 복사' })).toBeVisible();
     await expect(page.getByRole('button', { name: '파일 선택' })).toBeVisible();
     // 마지막 문항이 검사 결과에서 만들어지므로 올리기 전에는 넘어갈 수 없습니다.
     await expect(page.getByRole('button', { name: '다음 →' })).toBeDisabled();
