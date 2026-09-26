@@ -16,7 +16,7 @@ import type { RoomSummary } from "@/types/room";
 
 export interface InquiryRequestPickerProps {
   developerId: number;
-  /** 진단을 한 번 이상 한 프로젝트. 진단이 있어야 요청서가 방에 함께 걸립니다. */
+  /** 진단을 한 번 이상 한 프로젝트. */
   projects: MyProject[];
 }
 
