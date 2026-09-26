@@ -25,8 +25,8 @@ app:
   instance-role: ${APP_INSTANCE_ROLE}
   ledger:
     # R-PAY-15: 잔액·정산 합계·대사 합계를 읽을 기록. TRANSACTIONS(완료 거래 합산) | LEDGER(복식부기 분개 합산).
-    # 운영 화면의 원장 대조가 계속 일치하는 것을 확인한 뒤 LEDGER 로 바꿉니다. 모든 파드에 같은 값을 줍니다.
-    read-source: ${LEDGER_READ_SOURCE:TRANSACTIONS}
+    # 기본은 LEDGER 입니다. 원장에 문제가 생기면 TRANSACTIONS 로 되돌립니다. 모든 파드에 같은 값을 줍니다.
+    read-source: ${LEDGER_READ_SOURCE:LEDGER}
   # 이 서버가 밖에서 보이는 주소. nginx 뒤에서는 경로 접두사까지 포함합니다. (예: https://komit.site/escrow)
   public-base-url: ${APP_PUBLIC_BASE_URL}
   security:

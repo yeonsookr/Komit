@@ -17,6 +17,9 @@ import org.springframework.transaction.support.TransactionTemplate;
 // SQL column/parameter names intentionally mirror the database contract; extracting them obscures each statement.
 @SuppressWarnings({"java:S107", "java:S1192", "java:S6203"})
 public class EscrowDepositRepository {
+    /** R-PAY-07: 새 에스크로에 고정할 중개 수수료율 1% (bp). 이미 만든 에스크로는 저장된 요율을 그대로 쓴다. */
+    static final int NEW_ESCROW_FEE_RATE_BPS = 100;
+
     private final JdbcClient jdbc;
     private final TransactionTemplate transactions;
 
@@ -75,9 +78,10 @@ public class EscrowDepositRepository {
                 long escrowId = jdbc.sql("""
                         INSERT INTO escrows(service_client_id,payer_provision_id,external_contract_id,
                           contract_type,expected_amount,fee_rate_bps,status)
-                        VALUES (:clientId,:provisionId,:contractId,:contractType,:amount,100,'CREATED')
+                        VALUES (:clientId,:provisionId,:contractId,:contractType,:amount,:feeRateBps,'CREATED')
                         RETURNING id
                         """).param("clientId", clientId).param("provisionId", provisionId)
+                        .param("feeRateBps", NEW_ESCROW_FEE_RATE_BPS)
                         .param("contractId", contractId).param("contractType", contractType)
                         .param("amount", new BigDecimal(amount)).query(Long.class).single();
                 jdbc.sql("""

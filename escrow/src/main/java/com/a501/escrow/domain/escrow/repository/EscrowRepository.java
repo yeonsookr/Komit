@@ -25,7 +25,7 @@ public class EscrowRepository {
     public Optional<LockedEscrow> findOwnedByIdForUpdate(long serviceClientId, long escrowId) {
         String sql = """
                 SELECT id, service_client_id, external_contract_id, expected_amount, status, hold_status,
-                       external_report_id
+                       external_report_id, fee_rate_bps
                 FROM escrows
                 WHERE id = :escrowId AND service_client_id = :serviceClientId
                 FOR UPDATE
@@ -41,7 +41,8 @@ public class EscrowRepository {
                         Money.fromDatabase(resultSet.getBigDecimal("expected_amount")),
                         resultSet.getString("status"),
                         resultSet.getString("hold_status"),
-                        resultSet.getString("external_report_id")
+                        resultSet.getString("external_report_id"),
+                        resultSet.getInt("fee_rate_bps")
                 ))
                 .stream()
                 .findFirst();

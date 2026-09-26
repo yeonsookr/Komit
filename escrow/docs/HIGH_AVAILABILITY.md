@@ -50,6 +50,10 @@ DISPATCHING(dispatched_by, dispatched_at)
 - `REQUESTED → DISPATCHING` 조건부 갱신이 1행 성공한 Pod만 금융망을 호출한다.
 - `dispatched_by`에는 Pod 이름처럼 실행 생명주기 동안 고유한 값을 저장한다.
 - 같은 거래·단계에는 미확정 시도를 하나만 허용하는 Unique 제약을 둔다.
+- 송금 단계(`DEPOSIT_TRANSFER`·`PAYOUT_TRANSFER`·`FEE_TRANSFER`·`REFUND_TRANSFER`)는 거절(FAILED)되지 않은 시도를 거래당 하나만 허용한다. (V4)
+- 송금 시도는 거래 행을 잠근 뒤 거래가 `PENDING`·`PROCESSING`일 때만 만든다. 송금 결과는 거래 행을 먼저 잠가 거래 상태와 시도 결과를 한 트랜잭션으로 기록한다. 다른 Pod가 송금을 끝낸 직후 들어온 요청은 잠금을 기다린 뒤 끝난 거래를 보고 멈춘다.
+- `COMPLETED`·`FAILED` 거래는 같은 멱등키로 다시 요청해도 송금하지 않는다. (`R-PAY-12`)
+- 정상 응답을 받은 이체의 본문을 해석하지 못하면 `FAILED`가 아니라 `UNKNOWN`으로 두고 조회로 확인한다.
 - 상태 변경과 멱등 결과는 하나의 DB 트랜잭션으로 확정한다.
 - 같은 `idempotencyKey`와 요청 지문은 어느 Pod가 받아도 동일한 결과를 반환한다.
 - 외부 호출을 DB 트랜잭션 안에서 오래 유지하지 않는다.
