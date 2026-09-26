@@ -37,6 +37,8 @@ export default defineConfig({
             '--use-fake-ui-for-media-stream',
             // 진짜 카메라·마이크 대신 만들어 낸 영상과 소리를 물립니다.
             '--use-fake-device-for-media-stream',
+            // 화면 고르는 창을 띄우지 않고 전체 화면을 고릅니다. 세션의 영상은 공유한 화면이 기본입니다.
+            '--auto-select-desktop-capture-source=Entire screen',
           ],
         },
       },

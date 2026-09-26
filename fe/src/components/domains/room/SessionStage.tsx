@@ -13,6 +13,7 @@ import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
 import { formatTime } from "@/lib/format";
 import { ROUTES } from "@/lib/routes";
+import { takeHeldScreen } from "@/lib/screenShare";
 import { SESSION_PENDING_CONSENT_STATUS } from "@/lib/session";
 import { uploadFromBrowser } from "@/lib/upload/browserUpload";
 import {
@@ -29,8 +30,8 @@ import type { ChatMessage } from "@/types/chat";
 
 /** 통화가 어디까지 왔는지 사람 말로. */
 const CALL_NOTICE: Record<string, string> = {
-  NEED_PERMISSION: "카메라와 마이크를 쓸 수 있게 해 주세요",
-  PERMISSION_DENIED: "카메라와 마이크가 막혀 있습니다",
+  NEED_PERMISSION: "마이크를 쓸 수 있게 해 주세요",
+  PERMISSION_DENIED: "마이크가 막혀 있습니다",
   WAITING_PEER: "상대를 기다리는 중입니다",
   CONNECTING: "연결하는 중입니다",
   PEER_AWAY: "상대 연결이 끊겼습니다. 잠시 기다리는 중입니다",
@@ -47,9 +48,11 @@ function stageNotice(
   call: CallStatus,
   realtime: RealtimeStatus,
   reason: string | undefined,
+  counterpartName: string,
 ): string {
   if (realtime === "FAILED") return reason ?? "연결할 수 없습니다";
   if (CALL_NOTICE[call]) return CALL_NOTICE[call];
+  if (call === "CONNECTED") return `${counterpartName}님이 화면을 공유하지 않았습니다`;
   return realtime === "RETRYING" ? "연결이 끊겨 다시 붙는 중입니다" : "연결하는 중입니다";
 }
 
@@ -85,6 +88,52 @@ const ENTRY_NOTICE: Record<Exclude<EntryState, "ENTERED">, { title: string; body
  * `srcObject` 는 속성으로 못 넘겨 element 를 직접 만져야 합니다. 내 화면은 스스로
  * 들으면 소리가 되울리므로 반드시 음소거합니다.
  */
+/**
+ * 이 스트림에 지금 그림이 흐르는지.
+ *
+ * 상대 스트림은 소리 때문에 늘 있지만, 상대가 화면을 공유하지 않으면 영상 트랙에 그림이
+ * 오지 않습니다. 그때는 트랙이 `muted` 가 되므로 그 신호로 안내 문구를 띄웁니다.
+ */
+function useHasVideo(stream: MediaStream | null): boolean {
+  const [hasVideo, setHasVideo] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!stream) {
+      setHasVideo(false);
+      return;
+    }
+    const check = () =>
+      setHasVideo(
+        stream.getVideoTracks().some((track) => track.readyState === "live" && !track.muted),
+      );
+    const watched = new Set<MediaStreamTrack>();
+    const watch = () => {
+      stream.getVideoTracks().forEach((track) => {
+        if (watched.has(track)) return;
+        watched.add(track);
+        track.addEventListener("mute", check);
+        track.addEventListener("unmute", check);
+        track.addEventListener("ended", check);
+      });
+      check();
+    };
+    watch();
+    stream.addEventListener("addtrack", watch);
+    stream.addEventListener("removetrack", check);
+    return () => {
+      stream.removeEventListener("addtrack", watch);
+      stream.removeEventListener("removetrack", check);
+      watched.forEach((track) => {
+        track.removeEventListener("mute", check);
+        track.removeEventListener("unmute", check);
+        track.removeEventListener("ended", check);
+      });
+    };
+  }, [stream]);
+
+  return hasVideo;
+}
+
 function VideoTile({
   stream,
   muted,
@@ -99,6 +148,7 @@ function VideoTile({
   className?: string;
 }>) {
   const ref = React.useRef<HTMLVideoElement>(null);
+  const hasVideo = useHasVideo(stream);
 
   React.useEffect(() => {
     if (ref.current) ref.current.srcObject = stream;
@@ -106,14 +156,18 @@ function VideoTile({
 
   return (
     <div className={`relative overflow-hidden rounded-xl bg-ink ${className ?? ""}`}>
+      {/*
+        그림이 없어도 요소는 둡니다. 상대 소리가 이 요소로 나옵니다. 화면은 잘리면 안 되므로
+        채우지 않고 맞춥니다.
+      */}
       <video
         ref={ref}
         autoPlay
         playsInline
         muted={muted}
-        className={stream ? "h-full w-full object-cover" : "hidden"}
+        className={hasVideo ? "h-full w-full object-contain" : "invisible absolute size-px"}
       />
-      {!stream && (
+      {!hasVideo && (
         <div className="flex h-full w-full items-center justify-center px-6 text-center">
           <p className="text-[13px] leading-6 text-on-ink/70">{placeholder}</p>
         </div>
@@ -305,15 +359,19 @@ export function SessionStage({
     return data.iceServers;
   }, [sessionId]);
 
+  /** 방에서 입장하며 연 화면 고르기. 새로고침했으면 없습니다. */
+  const initialScreen = React.useCallback(() => takeHeldScreen(sessionId), [sessionId]);
+
   /*
-    동의한 사람은 기다리는 동안에도 자기 카메라를 켭니다. 상대는 아직 통화가 없어 내
-    화면도 소리도 받지 못하므로 감출 것이 없고, 들어가기 전에 장치를 확인할 수 있습니다.
+    동의한 사람은 기다리는 동안에도 마이크를 열고 고른 화면을 띄웁니다. 상대는 아직 통화가
+    없어 내 화면도 소리도 받지 못하므로 감출 것이 없고, 들어가기 전에 확인할 수 있습니다.
   */
   const call = usePeerConnection({
     enabled: !failed && socketOpened,
     polite,
     send: realtime.send,
     loadIceServers,
+    initialScreen,
   });
 
   React.useEffect(() => {
@@ -466,17 +524,16 @@ export function SessionStage({
         </Callout>
 
         {/*
-          기다리는 동안 자기 모습을 미리 봅니다. 상대는 아직 통화가 없어 이 화면도 소리도
-          받지 못합니다. 들어가기 전에 카메라가 제대로 잡혔는지 확인할 수 있습니다.
-          녹음은 여기서 시작되지 않습니다 — 세션이 시작된 뒤입니다.
+          기다리는 동안 내가 보낼 화면을 미리 봅니다. 상대는 아직 통화가 없어 이 화면도 소리도
+          받지 못합니다. 녹음은 여기서 시작되지 않습니다 — 세션이 시작된 뒤입니다.
         */}
         {entry === "PENDING" && (
           <VideoTile
             className="mt-4 h-[200px] w-full max-w-[360px]"
-            stream={call.localStream}
+            stream={call.screenStream ?? call.cameraStream}
             label={`${myName} (나)`}
             muted
-            placeholder="카메라를 켜는 중입니다"
+            placeholder="화면을 공유하면 여기에 보입니다"
           />
         )}
       </>
@@ -491,21 +548,26 @@ export function SessionStage({
             className="min-h-[320px] lg:min-h-[480px]"
             stream={call.remoteStream}
             label={counterpartName}
-            placeholder={stageNotice(call.status, realtime.status, realtime.error?.message)}
+            placeholder={stageNotice(
+              call.status,
+              realtime.status,
+              realtime.error?.message,
+              counterpartName,
+            )}
           />
 
           <div className="flex items-center gap-3">
-            {/* 공유 중에는 내가 무엇을 보내고 있는지가 카메라보다 중요합니다. */}
+            {/* 내가 지금 보내는 화면이나 카메라입니다. */}
             <VideoTile
               className="h-[108px] w-[220px] max-w-[45%] shrink-0"
-              stream={call.screenStream ?? call.localStream}
+              stream={call.screenStream ?? call.cameraStream}
               muted
               label={call.screenStream ? `${myName} (화면 공유 중)` : `${myName} (나)`}
-              placeholder="카메라 꺼짐"
+              placeholder="보내는 화면이 없습니다"
             />
             {call.status === "PERMISSION_DENIED" && (
               <p className="text-[13px] leading-6 text-fg-muted">
-                브라우저 주소창의 자물쇠에서 카메라와 마이크를 허용한 뒤 새로고침해 주세요.
+                브라우저 주소창의 자물쇠에서 마이크를 허용한 뒤 새로고침해 주세요.
                 허용하지 않아도 대화는 쓸 수 있습니다.
               </p>
             )}
@@ -563,21 +625,27 @@ export function SessionStage({
           >
             {call.micOn ? "마이크 끄기" : "마이크 켜기"}
           </Button>
+          {call.screenStream ? (
+            <>
+              <Button variant="outline" onClick={() => void call.shareScreen()}>
+                공유 화면 바꾸기
+              </Button>
+              <Button variant="outline" onClick={() => void call.stopScreenShare()}>
+                공유 중지
+              </Button>
+            </>
+          ) : (
+            <Button disabled={!call.videoReady} onClick={() => void call.shareScreen()}>
+              화면 공유
+            </Button>
+          )}
           <Button
             variant="outline"
-            disabled={!call.localStream}
+            disabled={!call.videoReady}
             aria-pressed={!call.cameraOn}
-            onClick={call.toggleCamera}
+            onClick={() => void call.toggleCamera()}
           >
             {call.cameraOn ? "카메라 끄기" : "카메라 켜기"}
-          </Button>
-          <Button
-            variant="outline"
-            disabled={!call.localStream}
-            aria-pressed={Boolean(call.screenStream)}
-            onClick={() => void call.toggleScreenShare()}
-          >
-            {call.screenStream ? "화면 공유 중지" : "화면 공유"}
           </Button>
         </div>
 

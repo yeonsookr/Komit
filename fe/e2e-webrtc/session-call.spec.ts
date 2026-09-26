@@ -159,6 +159,20 @@ async function enterSession(page: Page): Promise<void> {
   await page.waitForURL(`**/sessions/${SESSION_ID}`, { timeout: CONNECT_TIMEOUT_MS });
 }
 
+/**
+ * 공유하고 있지 않으면 화면을 공유합니다.
+ *
+ * 입장 팝업에서 고른 화면은 세션 화면으로 넘어갑니다. 이미 동의해 팝업을 거치지 않았거나
+ * 새로고침했으면 넘길 것이 없어 세션 화면에서 고릅니다.
+ */
+async function shareScreen(page: Page): Promise<void> {
+  const share = page.getByRole('button', { name: '화면 공유', exact: true });
+  const sharing = page.getByRole('button', { name: '공유 중지' });
+  await expect(share.or(sharing)).toBeVisible({ timeout: CONNECT_TIMEOUT_MS });
+  if (await share.isVisible()) await share.click();
+  await expect(sharing).toBeVisible({ timeout: CONNECT_TIMEOUT_MS });
+}
+
 /** 그 자리에 실제로 그림이 흐르는지. 크기가 잡히면 트랙이 오고 있다는 뜻입니다. */
 async function hasMovingVideo(page: Page, index: number): Promise<boolean> {
   return page.evaluate((i) => {
@@ -192,8 +206,8 @@ test('먼저 동의한 사람은 미리보기만 보고, 둘 다 동의하면 �
       timeout: CONNECT_TIMEOUT_MS,
     });
 
-    // 자기 카메라는 켜진다. 기다리는 화면에는 미리보기 하나뿐이라 첫 자리가 내 화면이다.
-    // 상대는 아직 채널에 없어 이 화면을 받지 못한다.
+    // 입장하며 고른 화면이 미리보기에 뜬다. 기다리는 화면에는 미리보기 하나뿐이라 첫 자리가
+    // 내 화면이다. 상대는 아직 채널에 없어 이 화면을 받지 못한다.
     await expect
       .poll(() => hasMovingVideo(client.page, 0), { timeout: CONNECT_TIMEOUT_MS })
       .toBe(true);
@@ -208,6 +222,8 @@ test('먼저 동의한 사람은 미리보기만 보고, 둘 다 동의하면 �
       timeout: CONNECT_TIMEOUT_MS,
     });
 
+    await shareScreen(client.page);
+    await shareScreen(developer.page);
     await expectTwoWayVideo([client.page, developer.page]);
 
     // 먼저 온 쪽은 알림을 받고 한 번 더 물어야 들어가는데, 녹음은 그 차이와 상관없이 같이 켠다.
@@ -218,13 +234,15 @@ test('먼저 동의한 사람은 미리보기만 보고, 둘 다 동의하면 �
   }
 });
 
-test('마이크와 카메라를 껐다 켜도 통화는 끊기지 않는다', async ({ browser }) => {
+test('마이크를 끄고 카메라로 바꿨다 화면으로 돌아와도 통화는 끊기지 않는다', async ({ browser }) => {
   const client = await openAs(browser, requiredToken('E2E_TOKEN_CLIENT'), '의뢰인');
   const developer = await openAs(browser, requiredToken('E2E_TOKEN_DEVELOPER'), '개발자');
 
   try {
     await enterSession(client.page);
     await enterSession(developer.page);
+    await shareScreen(client.page);
+    await shareScreen(developer.page);
     await expectTwoWayVideo([client.page, developer.page]);
 
     const mic = client.page.getByRole('button', { name: /마이크/ });
@@ -235,16 +253,20 @@ test('마이크와 카메라를 껐다 켜도 통화는 끊기지 않는다', as
     await expect(mic).toHaveAttribute('aria-pressed', 'true');
     await expect(mic).toHaveText('마이크 켜기');
 
-    await camera.click();
-    await expect(camera).toHaveAttribute('aria-pressed', 'true');
+    // 카메라는 꺼진 채 시작합니다. 켜면 공유하던 화면 대신 카메라가 나갑니다.
     await expect(camera).toHaveText('카메라 켜기');
+    await camera.click();
+    await expect(camera).toHaveText('카메라 끄기');
+    await expect(client.page.getByRole('button', { name: '화면 공유', exact: true })).toBeVisible();
+    await expectTwoWayVideo([client.page, developer.page]);
 
     await mic.click();
-    await camera.click();
     await expect(mic).toHaveAttribute('aria-pressed', 'false');
-    await expect(camera).toHaveAttribute('aria-pressed', 'false');
 
-    // 끄고 켜는 동안 연결이 살아 있어야 합니다.
+    // 화면으로 돌아와도, 공유 화면을 바꿔도 다시 협상하지 않고 그림이 이어집니다.
+    await shareScreen(client.page);
+    await expect(camera).toHaveText('카메라 켜기');
+    await client.page.getByRole('button', { name: '공유 화면 바꾸기' }).click();
     await expectTwoWayVideo([client.page, developer.page]);
   } finally {
     await client.context.close();
@@ -259,6 +281,8 @@ test('한쪽이 새로고침해도 다시 붙는다', async ({ browser }) => {
   try {
     await enterSession(client.page);
     await enterSession(developer.page);
+    await shareScreen(client.page);
+    await shareScreen(developer.page);
     await expectTwoWayVideo([client.page, developer.page]);
 
     // 새로고침하면 표도 소켓도 통화도 처음부터 다시 만든다.
@@ -268,6 +292,8 @@ test('한쪽이 새로고침해도 다시 붙는다', async ({ browser }) => {
     await expect(client.page.getByText('상대방의 동의를 기다리고 있습니다')).toBeHidden({
       timeout: CONNECT_TIMEOUT_MS,
     });
+    // 새로고침하면 넘겨받은 화면이 없어 다시 고른다.
+    await shareScreen(client.page);
 
     // 남아 있던 쪽도 새 제안을 받아 다시 협상한다.
     await expectTwoWayVideo([client.page, developer.page]);
@@ -316,6 +342,8 @@ test('한쪽이 끝내면 양쪽 녹음이 각자 올라간다', async ({ browse
   try {
     await enterSession(client.page);
     await enterSession(developer.page);
+    await shareScreen(client.page);
+    await shareScreen(developer.page);
     await expectTwoWayVideo([client.page, developer.page]);
 
     // 담을 시간을 조금 준다. 조각 간격이 5초라 그보다 길게 기다린다.
