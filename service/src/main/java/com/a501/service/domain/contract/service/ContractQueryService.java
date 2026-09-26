@@ -3,6 +3,7 @@ package com.a501.service.domain.contract.service;
 import com.a501.service.domain.contract.dto.ConsultingPayoutTarget;
 import com.a501.service.domain.contract.dto.ContractParties;
 import com.a501.service.domain.contract.dto.ContractProgressView;
+import com.a501.service.domain.contract.dto.ReviewableContract;
 import com.a501.service.domain.contract.entity.ConsultingAgreement;
 import com.a501.service.domain.contract.entity.Contract;
 import com.a501.service.domain.contract.entity.DevelopmentContract;
@@ -42,6 +43,8 @@ public class ContractQueryService {
     static final String COMPLETED = "COMPLETED";
     /** 파기된 계약의 상태 코드값. 컨설팅 합의와 개발 계약이 각자 가집니다. */
     static final String TERMINATED = "TERMINATED";
+    /** 개발을 마치고 무상 수리 기간에 든 개발 계약. 끝난 거래로 봅니다. */
+    static final String AFTER_SERVICE = "AFTER_SERVICE";
 
     private final ConsultingAgreementRepository agreementRepository;
     private final ContractRepository contractRepository;
@@ -81,6 +84,26 @@ public class ContractQueryService {
                 .flatMap(contractRepository::findByIdAndDeletedFalse)
                 .map(Contract::isCancelled)
                 .orElse(false);
+    }
+
+    /**
+     * 리뷰를 받을 계약. 없거나 방의 당사자를 찾지 못하면 비어 있습니다.
+     *
+     * @param contractId 계약 id
+     */
+    public Optional<ReviewableContract> findReviewableContract(Integer contractId) {
+        return contractRepository.findByIdAndDeletedFalse(contractId).flatMap(contract -> toParties(contract)
+                .map(parties -> new ReviewableContract(
+                        parties,
+                        contract.getContractType(),
+                        contract.isCancelled(),
+                        agreementRepository.findByContractIdAndDeletedFalse(contractId)
+                                .map(ConsultingAgreement::getId)
+                                .orElse(null),
+                        developmentContractRepository.findByContractIdAndDeletedFalse(contractId)
+                                .map(DevelopmentContract::getStatus)
+                                .map(status -> COMPLETED.equals(status) || AFTER_SERVICE.equals(status))
+                                .orElse(false))));
     }
 
     /**
