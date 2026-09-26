@@ -7,6 +7,7 @@ import {
   isFullyChecked,
   isCancelled,
   isHandover,
+  isCompleted,
   isConsultingDraft,
   consultingPaymentStage,
   isDevelopmentDraft,
@@ -342,5 +343,42 @@ describe("developmentStageLabel", () => {
 
   it("계약서가 없으면 계약 전이다", () => {
     expect(developmentStageLabel(null)).toBe("계약 전");
+  });
+});
+
+describe("isCompleted", () => {
+  const consulting = (startedAt: string | null, endedAt: string | null) =>
+    contract({
+      contractType: "CONSULTING",
+      consulting: {
+        status: "SIGNED",
+        totalAmount: 50_000,
+        topic: "결제 실패 원인 확인",
+        detail: null,
+        sessions: [
+          {
+            sessionId: 80,
+            contractId: 130,
+            price: 50_000,
+            durationMinutes: 30,
+            reservation: { reservationId: 1, scheduledAt: "2026-08-29T14:00:00+09:00", status: "CONFIRMED" },
+            startedAt,
+            endedAt,
+            chatRefId: "room-93",
+          },
+        ],
+      } as unknown as Contract["consulting"],
+    });
+
+  it("양쪽이 들어와 시작한 세션이 끝나면 컨설팅은 끝난 거래다 (R-REV-02)", () => {
+    expect(isCompleted(consulting("2026-08-29T14:00:00+09:00", "2026-08-29T14:32:00+09:00"))).toBe(true);
+  });
+
+  it("시작하지 않고 종료만 눌린 세션은 끝난 거래가 아니다 (R-CON-12)", () => {
+    expect(isCompleted(consulting(null, "2026-08-29T14:30:00+09:00"))).toBe(false);
+  });
+
+  it("세션이 끝나기 전에는 끝난 거래가 아니다", () => {
+    expect(isCompleted(consulting("2026-08-29T14:00:00+09:00", null))).toBe(false);
   });
 });

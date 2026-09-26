@@ -68,9 +68,19 @@ export function isSignedByAnyone(contract: Contract): boolean {
 /**
  * 거래가 끝났는지. 컨설팅과 개발 둘 다 유료 거래라 어느 쪽이든 끝나면 참입니다.
  * 리뷰는 끝난 거래에만 달립니다 (R-REV-02).
+ *
+ * 컨설팅은 양쪽이 들어와 시작한 세션이 끝나면 끝난 것입니다. 대금 지급을 기다리지 않습니다.
+ * 아무도 들어오지 않고 종료만 눌린 세션은 끝난 것으로 보지 않습니다 (R-CON-12).
  */
 export function isCompleted(contract: Contract): boolean {
-  const status = contract.development?.status ?? contract.consulting?.status ?? null;
+  if (contract.consulting) {
+    const sessions = contract.consulting.sessions;
+    return (
+      sessions.length > 0 &&
+      sessions.every((session) => session.startedAt !== null && session.endedAt !== null)
+    );
+  }
+  const status = contract.development?.status ?? null;
   return status === "COMPLETED" || status === "AFTER_SERVICE";
 }
 

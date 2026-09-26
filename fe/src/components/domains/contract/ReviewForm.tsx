@@ -7,7 +7,6 @@ import { Field, RatingScale, StickyBar, Textarea } from "@/components/common";
 import { useToast } from "@/components/feedback";
 import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
-import { formatDateLabel } from "@/lib/format";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
 
@@ -21,8 +20,8 @@ const EXP_LABELS = ["못했음", "조금", "보통", "잘함", "완전"] as cons
 export interface ReviewFormProps {
   contractId: number;
   roomId: number;
-  /** 작업이 모두 끝난 시각. 머리말의 `개발 완료 …` 에 씁니다. 없으면 생략합니다. */
-  completedAt: string | null;
+  /** 머리말 한 줄. 예: `세션 완료 8월 29일 14:32`, `개발 완료 9월 4일 · 정산 완료` */
+  note: string;
 }
 
 /**
@@ -34,7 +33,7 @@ export interface ReviewFormProps {
 export function ReviewForm({
   contractId,
   roomId,
-  completedAt,
+  note,
 }: Readonly<ReviewFormProps>) {
   const router = useRouter();
   const showToast = useToast();
@@ -75,8 +74,7 @@ export function ReviewForm({
       <header>
         <h2 className="text-xl font-bold text-fg">리뷰 작성</h2>
         <p className="mt-1 text-[13px] text-fg-subtle">
-          {completedAt && <>개발 완료 {formatDateLabel(completedAt)} · </>}정산
-          완료
+          {note}
         </p>
       </header>
 

@@ -42,6 +42,19 @@ public class Review extends SoftDeleteEntity {
     @Column(name = "developer_id", nullable = false)
     private Integer developerId;
 
+    /** 끝난 거래의 의뢰인이 남기는 리뷰. 답글은 비어 있습니다. */
+    public static Review write(
+            Integer contractId, Integer clientId, Integer developerId, int devScore, int expScore, String content) {
+        Review review = new Review();
+        review.contractId = contractId;
+        review.clientId = clientId;
+        review.developerId = developerId;
+        review.devScore = devScore;
+        review.expScore = expScore;
+        review.content = content;
+        return review;
+    }
+
     /** 받은 리뷰에 답글을 남깁니다. 리뷰 하나에 답글은 하나뿐이라 다시 남기면 덮어씁니다. (R-REV-03) */
     public void reply(String reply) {
         this.reply = reply;

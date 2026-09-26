@@ -32,7 +32,7 @@ const LABEL: Record<RoomTab, string> = {
  */
 const TABS_BY_ROOM_TYPE: Record<RoomType, RoomTab[]> = {
   INQUIRY: [],
-  CONSULTING: ["chat", "contract", "summary"],
+  CONSULTING: ["chat", "contract", "summary", "review"],
   DEVELOPMENT: ["chat", "contract", "progress", "check", "review"],
 };
 

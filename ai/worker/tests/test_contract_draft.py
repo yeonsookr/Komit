@@ -67,14 +67,22 @@ class FakeClient:
         self.raw = raw
         self.messages = None
         self.max_tokens = None
+        self.json_object = None
 
-    def complete(self, messages, max_tokens=None):
+    def complete(self, messages, max_tokens=None, json_object=False):
         self.messages = messages
         self.max_tokens = max_tokens
+        self.json_object = json_object
         return self.raw
 
 
 class ContractDraftTest(unittest.TestCase):
+    def test_asks_the_model_for_a_json_object(self):
+        """지시문만으로는 끝에 `}` 를 더 붙인 응답이 섞여 나왔다."""
+        client = FakeClient(payload(CONSULTING_DRAFT))
+        draft_contract("CONSULTING", MESSAGES, client)
+        self.assertTrue(client.json_object)
+
     def test_consulting_draft_keeps_only_ai_fields(self):
         client = FakeClient(payload(CONSULTING_DRAFT))
         result = draft_contract("CONSULTING", MESSAGES, client)

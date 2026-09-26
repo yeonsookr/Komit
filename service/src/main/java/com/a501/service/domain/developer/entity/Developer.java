@@ -46,4 +46,16 @@ public class Developer extends SoftDeleteEntity {
         developer.userId = userId;
         return developer;
     }
+
+    /** 새 리뷰의 두 점수를 평균에 더합니다. 평점은 리뷰로만 바뀝니다. (R-REV-01, R-REV-02) */
+    public void addReview(int devScore, int expScore) {
+        devRating = average(devRating, devReviewCount, devScore);
+        devReviewCount += 1;
+        explanatoryRating = average(explanatoryRating, explanatoryReviewCount, expScore);
+        explanatoryReviewCount += 1;
+    }
+
+    private static double average(Double current, int count, int score) {
+        return current == null || count == 0 ? score : (current * count + score) / (count + 1);
+    }
 }
