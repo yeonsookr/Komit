@@ -86,6 +86,14 @@ class ContractQaSuggestionEndpointTest(unittest.TestCase):
             set(conflicts),
             {"NOT_DEVELOPMENT_ROOM", "CONTRACT_ALREADY_SIGNED", "CONTRACT_CANCELLED"},
         )
+        invalid_requests = operation["responses"]["422"]["content"]["application/json"][
+            "examples"
+        ]
+        self.assertEqual(
+            set(invalid_requests), {"INVALID_REQUEST_FIELDS", "INVALID_REQUEST_ISSUE"}
+        )
+        self.assertIn("errors", invalid_requests["INVALID_REQUEST_FIELDS"]["value"])
+        self.assertNotIn("errors", invalid_requests["INVALID_REQUEST_ISSUE"]["value"])
 
 
 class ContractQaSuggestionHttpTest(unittest.IsolatedAsyncioTestCase):

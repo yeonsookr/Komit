@@ -7844,8 +7844,31 @@ def write_development_contract(
             },
         },
         422: {
-            "model": ValidationErrorResponse,
+            "model": ErrorResponse | ValidationErrorResponse,
             "description": "요청 스키마 유효성 검증 실패 · 계약서에 넣을 수 없는 요구사항",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "INVALID_REQUEST_FIELDS": {
+                            "summary": "요청 필드 검증 실패",
+                            "value": {
+                                "code": INVALID_REQUEST[0],
+                                "message": INVALID_REQUEST[1],
+                                "errors": [
+                                    {"field": "title", "reason": "1자 이상이어야 합니다."}
+                                ],
+                            },
+                        },
+                        "INVALID_REQUEST_ISSUE": {
+                            "summary": "계약서에 넣을 수 없는 요구사항",
+                            "value": {
+                                "code": INVALID_REQUEST[0],
+                                "message": INVALID_REQUEST[1],
+                            },
+                        },
+                    }
+                }
+            },
         },
         502: {
             "model": ErrorResponse,
