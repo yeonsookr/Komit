@@ -83,7 +83,8 @@ class ContractQaSuggestionEndpointTest(unittest.TestCase):
             "examples"
         ]
         self.assertEqual(
-            set(conflicts), {"NOT_DEVELOPMENT_ROOM", "CONTRACT_ALREADY_SIGNED"}
+            set(conflicts),
+            {"NOT_DEVELOPMENT_ROOM", "CONTRACT_ALREADY_SIGNED", "CONTRACT_CANCELLED"},
         )
 
 

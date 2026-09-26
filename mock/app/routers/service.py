@@ -7814,7 +7814,7 @@ def write_development_contract(
         },
         409: {
             "model": ErrorResponse,
-            "description": "개발방이 아님 · 한쪽이라도 이미 서명함",
+            "description": "개발방이 아님 · 한쪽이라도 이미 서명함 · 취소된 계약",
             "content": {
                 "application/json": {
                     "examples": {
@@ -7830,6 +7830,13 @@ def write_development_contract(
                             "value": {
                                 "code": CONTRACT_ALREADY_SIGNED[0],
                                 "message": CONTRACT_ALREADY_SIGNED[1],
+                            },
+                        },
+                        "CONTRACT_CANCELLED": {
+                            "summary": "취소된 계약",
+                            "value": {
+                                "code": CONTRACT_CANCELLED[0],
+                                "message": CONTRACT_CANCELLED[1],
                             },
                         },
                     }
@@ -7887,13 +7894,14 @@ def write_development_contract(
         "아닌 사람이 부른 경우다\n"
         "- **409 / NOT_DEVELOPMENT_ROOM**: 개발방이 아닐 때\n"
         "- **409 / CONTRACT_ALREADY_SIGNED**: 한쪽이라도 이미 서명했을 때 (R-CON-02)\n"
+        "- **409 / CONTRACT_CANCELLED**: 취소된 계약일 때 (R-CON-21)\n"
         "- **422 / INVALID_REQUEST**: 요청 값이 형식에 맞지 않거나, 기존 `issueId`가 이 방의 "
         "요청서와 현재 계약서 어느 쪽에도 없을 때\n"
         "- **502 / AI_RESPONSE_INVALID**: 생성 결과의 개수·길이·형식이 계약에 맞지 않을 때\n"
         "- **503 / AI_SERVICE_UNAVAILABLE**: 생성 서비스에 연결할 수 없을 때\n"
         "- **500 / INTERNAL_ERROR**: 그 밖의 서버 오류가 발생했을 때\n\n"
-        "Mock은 고정된 200 응답만 반환한다. 권한·서명·502·503은 후속 Service 구현을 위한 "
-        "응답 계약 예시이며 Mock 전용 실패 트리거를 만들지 않는다."
+        "Mock은 고정된 200 응답만 반환한다. 권한·서명·취소·502·503은 후속 Service 구현을 "
+        "위한 응답 계약 예시이며 Mock 전용 실패 트리거를 만들지 않는다."
     ),
 )
 def suggest_contract_qa_criteria(
