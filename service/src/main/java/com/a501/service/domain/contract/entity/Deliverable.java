@@ -8,6 +8,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.LocalDateTime;
+import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
@@ -33,4 +34,17 @@ public class Deliverable extends SoftDeleteEntity {
 
     @Column(name = "file_id")
     private Integer fileId;
+
+    /** 넘겨받을 인계물 하나. 파일과 전달 시각은 개발자가 결과물을 올릴 때 채운다. */
+    public static Deliverable of(Integer developmentContractId, String title) {
+        Deliverable entity = new Deliverable();
+        entity.developmentContractId = Objects.requireNonNull(developmentContractId, "developmentContractId");
+        entity.title = Objects.requireNonNull(title, "title");
+        return entity;
+    }
+
+    /** 계약서를 다시 써서 빠진 인계물. */
+    public void removeFromContract(LocalDateTime removedAt) {
+        markDeleted(removedAt);
+    }
 }

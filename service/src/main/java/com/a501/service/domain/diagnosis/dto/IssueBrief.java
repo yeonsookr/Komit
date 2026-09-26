@@ -7,7 +7,8 @@ package com.a501.service.domain.diagnosis.dto;
  * 요구사항에 있어, 작업 쪽에서 이 값을 물어 갑니다. 식별자는 이 객체를 담는 map 의 키로 두므로
  * 여기에 다시 두지 않습니다.
  *
- * @param title 요구사항 제목. 작업 이름으로 쓰입니다
+ * @param title 요구사항 제목. 계약서에서 바꾸지 않았으면 작업 이름으로 쓰입니다
+ * @param detail 요구사항 설명. 계약서에서 바꾸지 않았으면 작업 설명으로 쓰입니다. 없으면 {@code null}
  * @param location 문제가 있는 위치. 없으면 {@code null}
  */
-public record IssueBrief(String title, String location) {}
+public record IssueBrief(String title, String detail, String location) {}

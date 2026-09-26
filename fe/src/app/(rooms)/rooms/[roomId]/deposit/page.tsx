@@ -5,6 +5,7 @@ import { EmptyState } from "@/components/feedback";
 import { DepositForm } from "@/components/domains/contract";
 import { RoomHeader } from "@/components/domains/room";
 import { getContract, getMe, getPaymentMethods, getRoom } from "@/lib/api/services";
+import { isDevelopmentDraft } from "@/lib/contract";
 import { isReceived } from "@/lib/rooms";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
@@ -52,7 +53,10 @@ export default async function RoomDepositPage({
   if (!Number.isInteger(id) || id <= 0) notFound();
 
   const { room, me, contract, paymentMethods } = await loadDeposit(id);
-  const development = contract?.development ?? null;
+  // AI version 1 은 개발자가 아직 보내지 않은 초안입니다. 금액이 모두 0 이라 작업을 그대로
+  // 그리면 인계 작업으로 읽히므로, 계약서 탭과 같이 작성 중이라고만 알립니다.
+  const draft = isDevelopmentDraft(contract);
+  const development = draft ? null : (contract?.development ?? null);
 
   /** 예치는 의뢰인이 합니다. 개발자가 부르면 백엔드도 403 으로 막습니다. */
   const canDeposit = !isReceived(room, me) && development !== null;
@@ -61,7 +65,16 @@ export default async function RoomDepositPage({
     <Container className="py-8 sm:py-10">
       <RoomHeader room={room} me={me} contract={contract} />
 
-      {canDeposit && contract ? (
+      {draft ? (
+        <EmptyState
+          title="계약서 초안을 작성하고 있습니다"
+          description={
+            isReceived(room, me)
+              ? "계약서를 보내고 의뢰인이 서명·예치하면 진행 탭에서 착수할 수 있습니다."
+              : "개발자가 금액과 일정을 채워 보내면 여기에서 서명하고 예치합니다."
+          }
+        />
+      ) : canDeposit && contract ? (
         <DepositForm
           contractId={contract.contractId}
           roomId={room.roomId}

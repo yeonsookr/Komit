@@ -12,4 +12,12 @@ public interface InspectionRepository extends JpaRepository<Inspection, Integer>
      */
     Optional<Inspection> findByDiagnosisIdAndDiagnosisVersionAndDeletedFalse(
             Integer diagnosisId, Short diagnosisVersion);
+
+    /**
+     * 진단에서 검사가 있는 가장 최근 회차. 계약서에서 새로 합의한 요구사항을 붙일 곳이다.
+     *
+     * <p>위 진단서 조회와 반대로 지난 회차로 내려간다. 의뢰인이 재진단을 열고 결과를 아직 올리지 않았어도
+     * 계약 협의는 멈추지 않아야 한다.
+     */
+    Optional<Inspection> findFirstByDiagnosisIdAndDeletedFalseOrderByDiagnosisVersionDesc(Integer diagnosisId);
 }

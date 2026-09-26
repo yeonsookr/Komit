@@ -96,6 +96,22 @@ class Requirement(Body):
     title: str
 
 
+class ContractRequirement(Body):
+    """요청서의 요구사항. 개발 계약 초안이 요청서와 채팅을 종합하려면 설명과 확인 문장도 봐야 한다."""
+
+    issueId: int
+    title: str
+    detail: str | None = None
+    qaCriteria: list[str] = []
+
+
+class RejectedRequirement(Body):
+    """진단 직후 의뢰인이 고르지 않은 요구사항. 초안의 참고 입력으로만 쓴다."""
+
+    issueId: int
+    title: str
+
+
 class ChatMessage(Body):
     """`docs/ai/chat-contract-draft.md`. 방 식별자가 섞였는지는 모듈이 본다."""
 
@@ -112,7 +128,8 @@ class QaSuggestionRequest(Body):
 class ContractDraftRequest(Body):
     targetType: str
     messages: list[ChatMessage]
-    issues: list[Requirement] | None = None
+    issues: list[ContractRequirement] | None = None
+    rejectedIssues: list[RejectedRequirement] | None = None
 
 
 class ConsultingSummaryRequest(Body):
@@ -189,7 +206,11 @@ def qa_suggestions(body: QaSuggestionRequest) -> dict:
 @app.post("/contract-draft")
 def contract_draft(body: ContractDraftRequest) -> dict:
     draft = draft_contract(
-        body.targetType, dump(body.messages), build_client(), dump(body.issues)
+        body.targetType,
+        dump(body.messages),
+        build_client(),
+        dump(body.issues),
+        dump(body.rejectedIssues),
     )
     return {"draft": draft}
 

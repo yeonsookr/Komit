@@ -14,69 +14,32 @@ import {
 import { useToast } from "@/components/feedback";
 import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
-import { isHandover } from "@/lib/contract";
+import { isDevelopmentDraft } from "@/lib/contract";
+import {
+  canSendMilestones,
+  emptyMilestone,
+  filledLines,
+  HANDOVER_TITLE,
+  isUnpriced,
+  toEditorState,
+  toWriteMilestones,
+  type EditorHandover,
+  type EditorMilestone,
+} from "@/lib/contractEditor";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
-import type { Contract, WriteMilestoneRequest } from "@/types/contract";
+import type { Contract } from "@/types/contract";
+import type { Issue } from "@/types/diagnosis";
 
-/** 편집 중인 작업 한 줄. 화면이 들고 있는 값이라 식별자가 없어도 됩니다. */
-interface DraftMilestone {
-  key: string;
-  title: string;
-  price: string;
-  workDate: string;
-  qaCriteria: string[];
-}
-
-/** 인계 작업의 이름. 가격이 0 원인 작업 하나로 계약서에 들어갑니다 (R-CON-04). */
-const HANDOVER_TITLE = "인계 · 소스 · 계정 · 설명서";
-
-let counter = 0;
-const nextKey = () => `draft-${(counter += 1)}`;
-
-const emptyDraft = (): DraftMilestone => ({
-  key: nextKey(),
-  title: "",
-  price: "",
-  workDate: "",
-  qaCriteria: [""],
-});
-
-/**
- * 이미 있는 계약서를 편집 상태로 풉니다.
- * 인계 작업은 따로 떼어 냅니다 — 가격도 기간도 없는 마지막 블록입니다.
- */
-function toDrafts(contract: Contract | null): {
-  billable: DraftMilestone[];
-  handover: string[];
-} {
-  const milestones = contract?.development?.milestones ?? [];
-  const billable = milestones
-    .filter((milestone) => !isHandover(milestone))
-    .map((milestone) => ({
-      key: nextKey(),
-      title: milestone.title,
-      price: String(milestone.price),
-      workDate: milestone.workDate === null ? "" : String(milestone.workDate),
-      qaCriteria: milestone.qaCriteria.map((qa) => qa.testCase ?? ""),
-    }));
-
-  const handoverMilestone = milestones.find(isHandover);
-
-  return {
-    billable: billable.length === 0 ? [emptyDraft()] : billable,
-    handover: handoverMilestone?.qaCriteria.map((qa) => qa.testCase ?? "") ?? [
-      "",
-    ],
-  };
-}
+/** 요청서가 없을 때 쓰는 빈 목록. 그릴 때마다 새 배열을 만들지 않습니다. */
+const NO_ISSUES: Issue[] = [];
 
 export interface ContractEditorProps {
   roomId: number;
-  /** 고칠 계약서. 새로 쓰는 것이면 null. */
+  /** 고칠 계약서. 개발자가 보낸 것이거나 AI version 1 입니다. 둘 다 없으면 null. */
   contract: Contract | null;
-  /** 이 계약에서 다룰 요구사항 식별자. 요청서에서 옵니다. */
-  issueIds: number[];
+  /** 계약서가 없을 때 작업으로 채울 요청서의 요구사항. AI 초안을 받지 못했을 때 씁니다. */
+  requested?: Issue[];
   counterpartName: string;
 }
 
@@ -88,22 +51,32 @@ export interface ContractEditorProps {
  *
  * 작업 가격의 합이 계약 금액이 됩니다. 인계 작업은 0 원이라 합계에서 빠지고
  * 맨 아래 한 블록으로만 나옵니다 (R-CON-04 · R-QA-04).
+ *
+ * AI version 1 은 요청서와 상담 대화로 만든 초안입니다. 작업 이름·설명·확인 문장을 채워 두고
+ * 금액·기간·일정은 비워 둡니다. 초안에서 온 작업도 모두 고칠 수 있습니다.
  */
 export function ContractEditor({
   roomId,
   contract,
-  issueIds,
+  requested = NO_ISSUES,
   counterpartName,
 }: Readonly<ContractEditorProps>) {
   const router = useRouter();
   const showToast = useToast();
 
-  const development = contract?.development ?? null;
-  const initial = React.useMemo(() => toDrafts(contract), [contract]);
-  const [drafts, setDrafts] = React.useState<DraftMilestone[]>(
-    initial.billable,
+  /** 개발자가 이미 보낸 계약서인지. AI 초안은 아직 보내지 않은 것이라 새로 쓰는 것과 같습니다. */
+  const sent = contract !== null && !isDevelopmentDraft(contract);
+  const development = sent ? (contract?.development ?? null) : null;
+  const initial = React.useMemo(
+    () => toEditorState(contract, requested),
+    [contract, requested],
   );
-  const [handover, setHandover] = React.useState<string[]>(initial.handover);
+  const [drafts, setDrafts] = React.useState<EditorMilestone[]>(
+    initial.milestones,
+  );
+  const [handover, setHandover] = React.useState<EditorHandover>(
+    initial.handover,
+  );
   const [startDate, setStartDate] = React.useState(
     development?.startDate ?? "",
   );
@@ -128,7 +101,7 @@ export function ContractEditor({
   /** 인계 작업까지 더한 수. 모두 통과해야 대금이 나갑니다. */
   const allCount = drafts.length + 1;
 
-  const patch = (key: string, next: Partial<DraftMilestone>) =>
+  const patch = (key: string, next: Partial<EditorMilestone>) =>
     setDrafts((prev) =>
       prev.map((d) => (d.key === key ? { ...d, ...next } : d)),
     );
@@ -150,55 +123,26 @@ export function ContractEditor({
   const comma = (digits: string) =>
     digits === "" ? "" : Number(digits).toLocaleString("ko-KR");
 
-  const filled = (lines: string[]) =>
-    lines.map((line) => line.trim()).filter((l) => l !== "");
-
+  const unpriced = drafts.some(isUnpriced);
   const canSend =
-    startDate !== "" &&
-    dueDate !== "" &&
-    drafts.length > 0 &&
-    filled(handover).length > 0 &&
-    drafts.every(
-      (d) =>
-        d.title.trim() !== "" &&
-        filled(d.qaCriteria).length > 0 &&
-        Number.isInteger(Number(d.price)),
-    );
+    startDate !== "" && dueDate !== "" && canSendMilestones(drafts, handover);
 
   const send = async () => {
     if (!canSend || saving) return;
     setSaving(true);
 
-    const milestones: WriteMilestoneRequest[] = drafts.map((d) => ({
-      title: d.title.trim(),
-      price: Number(d.price) || 0,
-      ...(d.workDate.trim() === "" ? {} : { workDate: Number(d.workDate) }),
-      qaCriteria: filled(d.qaCriteria),
-    }));
-
-    // 인계는 늘 마지막 작업입니다. 가격이 0 이라 합계에는 들어가지 않습니다.
-    milestones.push({
-      title: HANDOVER_TITLE,
-      price: 0,
-      qaCriteria: filled(handover),
-    });
-
     try {
       await clientApi.post(INTERNAL.DEVELOPMENT_CONTRACTS(roomId), {
-        issueIds,
         startDate,
         dueDate,
         freeRepairDays: Number(freeRepairDays) || 0,
-        milestones,
-        deliverableTitles: filled(deliverables),
+        milestones: toWriteMilestones(drafts, handover),
+        deliverableTitles: filledLines(deliverables),
         message: message.trim() === "" ? null : message.trim(),
       });
       showToast({
         tone: "success",
-        title:
-          contract === null
-            ? "계약서를 보냈습니다."
-            : "계약서를 다시 보냈습니다.",
+        title: sent ? "계약서를 다시 보냈습니다." : "계약서를 보냈습니다.",
         description: `${counterpartName}님이 확인하고 서명합니다.`,
       });
       router.push(ROUTES.roomContract(roomId));
@@ -215,12 +159,12 @@ export function ContractEditor({
     <section className="mt-8">
       <header>
         <h2 className="text-xl font-bold text-fg">
-          {contract === null ? "개발 계약서 작성" : "계약서 수정"}
+          {sent ? "계약서 수정" : "개발 계약서 작성"}
         </h2>
         <p className="mt-1.5 text-[13px] leading-6 text-fg-subtle">
-          {contract === null
-            ? `${counterpartName}님이 개발 계약으로 진행하기로 했습니다. 요구사항마다 금액과 기간을 정하고 계약 조건을 붙여 보냅니다.`
-            : `고치면 ${counterpartName}님에게 다시 보냅니다.`}
+          {sent
+            ? `고치면 ${counterpartName}님에게 다시 보냅니다.`
+            : `${counterpartName}님이 개발 계약으로 진행하기로 했습니다. 요구사항마다 금액과 기간을 정하고 계약 조건을 붙여 보냅니다.`}
         </p>
       </header>
 
@@ -294,6 +238,17 @@ export function ContractEditor({
                   </div>
                 </div>
 
+                <Textarea
+                  className="mt-2 min-h-[64px]"
+                  rows={2}
+                  maxLength={1000}
+                  value={draft.detail}
+                  placeholder="작업 설명 (선택)"
+                  onChange={(event) =>
+                    patch(draft.key, { detail: event.target.value })
+                  }
+                />
+
                 <ul className="mt-3 flex flex-col gap-2">
                   {draft.qaCriteria.map((qa, index) => (
                     <li key={index} className="flex items-center gap-2">
@@ -339,26 +294,28 @@ export function ContractEditor({
               <p className="text-sm font-semibold text-fg">{HANDOVER_TITLE}</p>
 
               <ul className="mt-3 flex flex-col gap-2">
-                {handover.map((line, index) => (
+                {handover.lines.map((line, index) => (
                   <li key={index} className="flex items-center gap-2">
                     <Input
                       className="min-w-0 flex-1"
                       value={line}
                       placeholder="확인 문장"
                       onChange={(event) =>
-                        setHandover((prev) =>
-                          prev.map((l, i) =>
+                        setHandover((prev) => ({
+                          ...prev,
+                          lines: prev.lines.map((l, i) =>
                             i === index ? event.target.value : l,
                           ),
-                        )
+                        }))
                       }
                     />
                     <IconButton
                       aria-label="인계 항목 삭제"
                       onClick={() =>
-                        setHandover((prev) =>
-                          prev.filter((_, i) => i !== index),
-                        )
+                        setHandover((prev) => ({
+                          ...prev,
+                          lines: prev.lines.filter((_, i) => i !== index),
+                        }))
                       }
                     >
                       ✕
@@ -371,7 +328,9 @@ export function ContractEditor({
                 variant="ghost"
                 size="sm"
                 className="mt-2"
-                onClick={() => setHandover((prev) => [...prev, ""])}
+                onClick={() =>
+                  setHandover((prev) => ({ ...prev, lines: [...prev.lines, ""] }))
+                }
               >
                 + 인계 항목 추가
               </Button>
@@ -383,7 +342,7 @@ export function ContractEditor({
           variant="outline"
           fullWidth
           className="mt-3"
-          onClick={() => setDrafts((prev) => [...prev, emptyDraft()])}
+          onClick={() => setDrafts((prev) => [...prev, emptyMilestone()])}
         >
           + 작업 추가
         </Button>
@@ -392,6 +351,11 @@ export function ContractEditor({
           작업 <span className="font-mono tabular-nums">{allCount}</span>건을
           모두 통과하면 대금이 한 번에 나갑니다.
         </p>
+        {unpriced && (
+          <p className="mt-1 text-[13px] text-fg-subtle">
+            금액을 정하지 않은 작업이 있습니다. 0원은 인계 작업에만 씁니다.
+          </p>
+        )}
       </div>
 
       <div className="mt-10">
@@ -499,7 +463,7 @@ export function ContractEditor({
           disabled={!canSend}
           onClick={send}
         >
-          {contract === null ? "계약서 보내기" : "계약서 다시 보내기"}
+          {sent ? "계약서 다시 보내기" : "계약서 보내기"}
         </Button>
       </div>
     </section>

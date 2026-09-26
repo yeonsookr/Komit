@@ -108,12 +108,44 @@ class ContractDetailServiceTest {
     void takesWorkTitleAndLocationFromTheIssueItIsAttachedTo() {
         givenOneMilestone(null);
         when(diagnosisQueryService.findBriefs(List.of(ISSUE_ID)))
-                .thenReturn(Map.of(ISSUE_ID, new IssueBrief("관리자 API에 인증 추가", "app/api/admin/*")));
+                .thenReturn(Map.of(ISSUE_ID, new IssueBrief("관리자 API에 인증 추가", "로그인 없이 열립니다", "app/api/admin/*")));
 
         MilestoneResponse milestone = firstMilestone(service.getContract(CLIENT_ID, CONTRACT_ID));
 
         assertThat(milestone.title()).isEqualTo("관리자 API에 인증 추가");
+        assertThat(milestone.detail()).isEqualTo("로그인 없이 열립니다");
         assertThat(milestone.location()).isEqualTo("app/api/admin/*");
+    }
+
+    @Test
+    void prefersTitleAndDetailChangedInTheContract() {
+        Milestone renamed = milestone(null);
+        ReflectionTestUtils.setField(renamed, "title", "관리자 인증 강화");
+        ReflectionTestUtils.setField(renamed, "detail", "토큰도 확인한다");
+        when(milestoneRepository.findAllByDevelopmentContractIdAndDeletedFalseOrderByIdAsc(DEVELOPMENT_ID))
+                .thenReturn(List.of(renamed));
+        when(milestoneQaResultRepository.findAllByMilestoneIdInAndDeletedFalseOrderByIdAsc(any()))
+                .thenReturn(List.of());
+        when(diagnosisQueryService.findBriefs(List.of(ISSUE_ID)))
+                .thenReturn(Map.of(ISSUE_ID, new IssueBrief("관리자 API에 인증 추가", "로그인 없이 열립니다", "app/api/admin/*")));
+
+        MilestoneResponse milestone = firstMilestone(service.getContract(CLIENT_ID, CONTRACT_ID));
+
+        // 요청서는 계약서가 건드리지 않는다. 바꾼 이름·설명은 작업에만 있고, 위치는 요구사항의 값이다.
+        assertThat(milestone.title()).isEqualTo("관리자 인증 강화");
+        assertThat(milestone.detail()).isEqualTo("토큰도 확인한다");
+        assertThat(milestone.location()).isEqualTo("app/api/admin/*");
+    }
+
+    @Test
+    void exposesTheIssueEachMilestoneIsAttachedTo() {
+        givenOneMilestone(null);
+        when(diagnosisQueryService.findBriefs(any())).thenReturn(Map.of());
+
+        MilestoneResponse milestone = firstMilestone(service.getContract(CLIENT_ID, CONTRACT_ID));
+
+        // 다시 쓸 때 이 값을 보내야 같은 요구사항에 붙는다. 없으면 새 작업으로 한 번 더 만들어진다.
+        assertThat(milestone.issueId()).isEqualTo(ISSUE_ID);
     }
 
     @Test
@@ -266,7 +298,7 @@ class ContractDetailServiceTest {
         DevelopmentContract development = BeanUtils.instantiateClass(DevelopmentContract.class);
         ReflectionTestUtils.setField(development, "id", DEVELOPMENT_ID);
         ReflectionTestUtils.setField(development, "contractId", CONTRACT_ID);
-        ReflectionTestUtils.setField(development, "status", "PRE_SIGNED");
+        ReflectionTestUtils.setField(development, "status", "SIGNED");
         ReflectionTestUtils.setField(development, "totalAmount", 650000);
         ReflectionTestUtils.setField(development, "freeRepairDays", 14);
         return development;

@@ -32,6 +32,21 @@ export function isConsultingDraft(contract: Contract | null): boolean {
 }
 
 /**
+ * 개발 계약의 AI version 1인지. 요청서와 상담 대화로 만든 초안이라 착수일이 비어 있습니다.
+ *
+ * 개발자가 보낸 계약서에는 착수일이 늘 있습니다. 작성 요청이 착수일을 반드시 받습니다.
+ * 초안은 작업 금액이 모두 0 이라 금액으로 인계 작업을 가리는 규칙(`isHandover`)을
+ * 쓰지 못합니다. 초안인지 먼저 가린 뒤에 씁니다.
+ */
+export function isDevelopmentDraft(contract: Contract | null): boolean {
+  return (
+    contract?.contractType === "DEVELOPMENT" &&
+    contract.development !== null &&
+    contract.development.startDate === null
+  );
+}
+
+/**
  * 양쪽이 서명했는지. 서명해야 계약이 성립하고 그 뒤에는 고칠 수 없습니다
  * (R-CON-01 · R-CON-02).
  */
@@ -171,14 +186,18 @@ export const AUTO_PASS_DAYS = 3;
  *
  * 화면이 계약 상태를 직접 분기하지 않도록 한 곳에서 이름을 붙입니다.
  * 개발 계약이 아니면 null 이고, 그때는 방 상태로 대신 적습니다.
+ *
+ * 개발 쪽 상태는 계약서를 처음 쓸 때부터 `SIGNED` 입니다. 양쪽이 서명했는지는 공통 계약
+ * 상태가 가지므로(R-CON-01) 그것부터 봅니다.
  */
 export function developmentStageLabel(contract: Contract | null): string | null {
   if (contract === null) return "계약 전";
   const status = contract.development?.status;
   if (status === undefined) return null;
+  if (contract.status === "CANCELLED") return "취소됨";
+  if (contract.status !== "SIGNED") return "계약 전";
 
   const labels: Record<DevelopmentStatus, string> = {
-    PRE_SIGNED: "계약 전",
     SIGNED: "예치 대기",
     DEPOSITED: "착수 전",
     IN_PROGRESS: "진행 중",

@@ -3,10 +3,12 @@ import {
   canCancel,
   checkedCount,
   confirmedAmount,
+  developmentStageLabel,
   isFullyChecked,
   isCancelled,
   isHandover,
   isConsultingDraft,
+  isDevelopmentDraft,
   isSignedByBoth,
   hasSigned,
   lastCounterpartMessage,
@@ -31,7 +33,9 @@ function qa(id: number, passed: boolean): ContractQaCriterion {
 function milestone(override: Partial<Milestone> = {}): Milestone {
   return {
     milestoneId: 1,
+    issueId: 312,
     title: "관리자 API에 인증 추가",
+    detail: null,
     location: "app/api/admin/* · 4개 라우트",
     workDate: 10,
     price: 400_000,
@@ -265,5 +269,44 @@ describe("canCancel", () => {
     const cancelled = contract({ status: "CANCELLED" });
     expect(isCancelled(cancelled)).toBe(true);
     expect(canCancel(cancelled, false)).toBe(false);
+  });
+});
+
+describe("isDevelopmentDraft", () => {
+  const development = (startDate: string | null) =>
+    ({ status: "SIGNED", startDate, milestones: [] }) as unknown as Contract["development"];
+
+  it("착수일이 비어 있는 개발 계약서는 AI version 1이다", () => {
+    expect(isDevelopmentDraft(contract({ development: development(null) }))).toBe(true);
+  });
+
+  it("개발자가 보낸 계약서는 착수일이 있어 초안이 아니다", () => {
+    expect(isDevelopmentDraft(contract({ development: development("2026-10-01") }))).toBe(false);
+  });
+
+  it("컨설팅 계약과 계약 없음은 개발 초안이 아니다", () => {
+    expect(isDevelopmentDraft(contract({ contractType: "CONSULTING" }))).toBe(false);
+    expect(isDevelopmentDraft(null)).toBe(false);
+  });
+});
+
+describe("developmentStageLabel", () => {
+  const development = { status: "SIGNED" } as Contract["development"];
+
+  it("개발 쪽이 SIGNED 여도 양쪽이 서명하기 전이면 계약 전이다 (R-CON-01)", () => {
+    expect(developmentStageLabel(contract({ status: "NEGOTIATING", development }))).toBe("계약 전");
+    expect(developmentStageLabel(contract({ status: "AGREED", development }))).toBe("계약 전");
+  });
+
+  it("양쪽이 서명하면 개발 쪽 상태로 단계를 적는다", () => {
+    expect(developmentStageLabel(contract({ status: "SIGNED", development }))).toBe("예치 대기");
+  });
+
+  it("취소된 계약은 취소됨이다", () => {
+    expect(developmentStageLabel(contract({ status: "CANCELLED", development }))).toBe("취소됨");
+  });
+
+  it("계약서가 없으면 계약 전이다", () => {
+    expect(developmentStageLabel(null)).toBe("계약 전");
   });
 });
