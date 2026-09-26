@@ -41,11 +41,12 @@ function parseBody(body: unknown): AmendConsultingContractRequest | null {
     if (!Number.isInteger(input.price) || (input.price as number) < 0) return null;
     amend.price = input.price as number;
   }
-  if (input.detail !== undefined) {
+  // null 은 안 보낸 것과 같습니다. 설명을 지우려면 빈 문자열을 보내고, 백엔드가 지웁니다.
+  if (input.detail !== undefined && input.detail !== null) {
     if (typeof input.detail !== "string") return null;
-    amend.detail = input.detail.trim() === "" ? null : input.detail.trim();
+    amend.detail = input.detail.trim();
   }
-  if (input.message !== undefined) {
+  if (input.message !== undefined && input.message !== null) {
     if (typeof input.message !== "string") return null;
     if (input.message.trim().length > MAX_MESSAGE_LENGTH) return null;
     amend.message = input.message.trim() === "" ? null : input.message.trim();

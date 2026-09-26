@@ -7,6 +7,12 @@ import { Card, CardHeader, Field, Input, NativeSelect, Textarea } from "@/compon
 import { useToast } from "@/components/feedback";
 import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
+import {
+  amendConsultingBody,
+  isPastSchedule,
+  toScheduledAt,
+  writeConsultingBody,
+} from "@/lib/consultingContract";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
 import type { Contract } from "@/types/contract";
@@ -18,8 +24,7 @@ const MAX_MESSAGE_LENGTH = 300;
 /** 세션 길이. 한 번 만나는 자리라 짧게 끊어 고르게 합니다. */
 const DURATIONS = [30, 45, 60, 90];
 
-/** 정각과 30분만 잡습니다. 5분 단위까지 열면 고르는 일만 번거로워집니다. */
-const MINUTES = ["00", "30"];
+const MINUTES = Array.from({ length: 60 }, (_, minute) => String(minute).padStart(2, "0"));
 
 const HOURS = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, "0"));
 
@@ -64,7 +69,7 @@ export function ConsultingContractForm({
   const [date, setDate] = React.useState(toDateValue(scheduled));
   const [hour, setHour] = React.useState(scheduled === null ? "" : pad(scheduled.getHours()));
   const [minute, setMinute] = React.useState(
-    scheduled === null ? "" : pad(scheduled.getMinutes() < 30 ? 0 : 30),
+    scheduled === null ? "" : pad(scheduled.getMinutes()),
   );
   const [durationMinutes, setDurationMinutes] = React.useState(
     session === null ? "" : String(session.durationMinutes),
@@ -88,22 +93,29 @@ export function ConsultingContractForm({
 
   const send = async () => {
     if (!canSend) return;
-    setSending(true);
 
-    /*
-      시각은 한국 기준으로 굳혀 보냅니다. 브라우저의 시간대를 그대로 따르면 해외에서
-      계약서를 쓴 개발자와 의뢰인이 서로 다른 시각을 보게 됩니다 — 세션은 두 사람이
-      같은 시각에 만나는 약속이라 어긋나면 안 됩니다.
-    */
-    const scheduledAt = `${date}T${hour}:${minute}:00+09:00`;
-    const body = {
-      topic: topic.trim(),
-      scheduledAt,
+    const fields = {
+      topic,
+      detail,
+      date,
+      hour,
+      minute,
       durationMinutes: Number(durationMinutes),
       price: priceValue,
-      detail: detail.trim() === "" ? null : detail.trim(),
-      message: message.trim() === "" ? null : message.trim(),
+      message,
     };
+    if (isPastSchedule(toScheduledAt(fields))) {
+      showToast({
+        tone: "danger",
+        title: "세션 일시가 지났습니다.",
+        description: "새 일시를 골라 주세요.",
+      });
+      return;
+    }
+    setSending(true);
+    const body = amending
+      ? amendConsultingBody(fields, session?.reservation.scheduledAt ?? null)
+      : writeConsultingBody(fields);
 
     try {
       if (amending) {
