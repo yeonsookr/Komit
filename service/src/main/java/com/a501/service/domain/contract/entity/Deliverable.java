@@ -58,6 +58,13 @@ public class Deliverable extends SoftDeleteEntity {
         return entity;
     }
 
+    /** 인계 자료를 등록했다. 넘긴 시각은 가장 최근에 등록한 자료의 시각이다. 모르는 시각은 적지 않는다. */
+    public void markDelivered(LocalDateTime deliveredAt) {
+        if (deliveredAt != null && (this.deliveredAt == null || deliveredAt.isAfter(this.deliveredAt))) {
+            this.deliveredAt = deliveredAt;
+        }
+    }
+
     /** 계약서를 다시 써서 빠진 인계물. */
     public void removeFromContract(LocalDateTime removedAt) {
         markDeleted(removedAt);

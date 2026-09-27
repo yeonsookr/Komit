@@ -88,6 +88,20 @@ class DeliverableControllerTest {
     }
 
     @Test
+    void rejectsUrlLongerThan2000CharactersLikeTheMock() throws Exception {
+        String base = "https://demo.example.com/";
+        String longUrl = base + "a".repeat(2001 - base.length());
+
+        send("/api/deliverables/401/urls", "{\"url\":\"" + longUrl + "\"}")
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors.length()").value(1))
+                .andExpect(jsonPath("$.errors[0].field").value("url"))
+                .andExpect(jsonPath("$.errors[0].reason").value("2000자 이하여야 합니다."));
+
+        verifyNoInteractions(deliverableMaterialService);
+    }
+
+    @Test
     void addsUrl() throws Exception {
         when(deliverableMaterialService.addUrl(eq(USER_ID), eq(401), any())).thenReturn(response());
 

@@ -98,6 +98,8 @@ export const BACKEND = {
   DELIVERABLE_FILE: (deliverableId: number) => `/api/deliverables/${deliverableId}/file`,
   DELIVERABLE_MATERIAL_FILE: (deliverableMaterialId: number) =>
     `/api/deliverable-materials/${deliverableMaterialId}/file`,
+  DELIVERABLE_URLS: (deliverableId: number) => `/api/deliverables/${deliverableId}/urls`,
+  CONTRACT_DELIVERABLES: (contractId: number) => `/api/contracts/${contractId}/deliverables`,
   REALTIME_TICKETS: "/api/realtime/tickets",
   PAYMENT_METHODS: "/api/payment-methods",
   UPLOADS: "/api/uploads",
@@ -206,6 +208,8 @@ export const INTERNAL = {
   DELIVERABLE_FILE: (deliverableId: number) => `/api/deliverables/${deliverableId}/file`,
   DELIVERABLE_MATERIAL_FILE: (deliverableMaterialId: number) =>
     `/api/deliverable-materials/${deliverableMaterialId}/file`,
+  DELIVERABLE_URLS: (deliverableId: number) => `/api/deliverables/${deliverableId}/urls`,
+  CONTRACT_DELIVERABLES: (contractId: number) => `/api/contracts/${contractId}/deliverables`,
   REALTIME_TICKETS: "/api/realtime/tickets",
   /**
    * 운영 콘솔. **누른 뒤에야 생기는 요청만 있습니다** — 목록·상세·본문은 서버

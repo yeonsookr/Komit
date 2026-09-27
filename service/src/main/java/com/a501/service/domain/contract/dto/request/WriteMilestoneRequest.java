@@ -46,4 +46,10 @@ public record WriteMilestoneRequest(
         @Schema(description = "이 작업의 확인 문장. 하나 이상이어야 하고 문장마다 500자까지 받는다.")
         @NotNull
         @Size(min = 1, message = "{komit.minItems}")
-        List<@NotNull @Size(min = 1, message = "{komit.minLength}") @Size(max = 500) String> qaCriteria) {}
+        List<@NotNull @Size(min = 1, message = "{komit.minLength}") @Size(max = 500) String> qaCriteria) {
+
+    /** 같은 작업을 인계 작업으로 표시한 것. */
+    WriteMilestoneRequest asHandover() {
+        return new WriteMilestoneRequest(issueId, title, detail, true, price, workDate, qaCriteria);
+    }
+}

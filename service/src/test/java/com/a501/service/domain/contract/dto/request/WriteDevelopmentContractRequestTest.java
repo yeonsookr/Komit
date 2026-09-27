@@ -286,6 +286,37 @@ class WriteDevelopmentContractRequestTest {
     }
 
     @Test
+    @DisplayName("한 릴리스 호환: 표시가 없는 옛 화면의 요청은 0원 작업 하나를 인계 작업으로 본다")
+    void treatsTheOnlyFreeWorkOfAnOldScreenAsHandover() {
+        String json = """
+                {"startDate":"2026-08-26","dueDate":"2026-09-16","freeRepairDays":14,
+                 "milestones":[
+                   {"issueId":312,"price":400000,"qaCriteria":["로그인 화면이 뜬다"]},
+                   {"title":"인계","price":0,"qaCriteria":["소스를 받았다"]}]}""";
+
+        WriteDevelopmentContractRequest request =
+                JsonMapper.builder().build().readValue(json, WriteDevelopmentContractRequest.class);
+
+        assertThat(request.milestones()).extracting(WriteMilestoneRequest::isHandover).containsExactly(null, true);
+        assertThat(request.milestones().get(1).title()).isEqualTo("인계");
+        assertThat(violations(request)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("한 릴리스 호환은 표시가 하나라도 있거나 0원 작업이 하나가 아니면 쓰지 않는다")
+    void appliesTheCompatibilityOnlyToAnUnmarkedSingleFreeWork() {
+        WriteMilestoneRequest free = new WriteMilestoneRequest(null, "인계", null, null, 0, null, List.of("소스를 받았다"));
+        WriteMilestoneRequest otherFree = new WriteMilestoneRequest(null, "설명서", null, null, 0, null, List.of("받았다"));
+        WriteMilestoneRequest unmarkedRegular = new WriteMilestoneRequest(312, null, null, null, 400000, null, List.of("a"));
+
+        assertThat(violations(dated(LocalDate.of(2026, 8, 26), LocalDate.of(2026, 9, 16), List.of(unmarkedRegular, free, otherFree))))
+                .contains("milestones=인계 작업은 하나여야 합니다.");
+        WriteMilestoneRequest markedRegular = new WriteMilestoneRequest(312, null, null, false, 400000, null, List.of("a"));
+        assertThat(violations(dated(LocalDate.of(2026, 8, 26), LocalDate.of(2026, 9, 16), List.of(markedRegular, free))))
+                .contains("milestones[1].price=일반 작업은 1원 이상이어야 합니다.");
+    }
+
+    @Test
     @DisplayName("작업 자리에 null 이 오면 거부한다")
     void rejectsNullMilestone() {
         assertThat(violations(request(Arrays.asList(existing(312), null))))

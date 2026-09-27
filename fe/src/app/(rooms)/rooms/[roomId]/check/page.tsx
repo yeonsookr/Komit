@@ -67,7 +67,7 @@ export default async function RoomCheckPage({
           title="계약서 초안을 작성하고 있습니다"
           description="계약서에 양쪽이 서명하고 개발자가 착수하면 여기에서 작업을 확인합니다."
         />
-      ) : development === null ? (
+      ) : development === null || contract === null ? (
         <EmptyState
           title="아직 확인할 작업이 없습니다"
           description="계약서에 양쪽이 서명하고 개발자가 착수하면 여기에서 작업을 확인합니다."
@@ -76,6 +76,7 @@ export default async function RoomCheckPage({
         // 통과 판정은 의뢰인이 합니다. 개발자는 확인 요청을 보내고 상태를 봅니다.
         <QaSubmitPanel
           roomId={room.roomId}
+          contractId={contract.contractId}
           development={development}
           counterpartName={room.counterpartName}
         />

@@ -34,6 +34,8 @@ import com.a501.service.domain.file.service.FileLookupService;
 import com.a501.service.domain.room.dto.RoomParties;
 import com.a501.service.domain.room.service.RoomQueryService;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -56,6 +58,7 @@ class DeliverableMaterialServiceTest {
     private static final int DELIVERABLE_ID = 401;
     private static final int OTHER_DELIVERABLE_ID = 402;
     private static final long FILE_ID = 3_000_000_001L;
+    private static final LocalDateTime REGISTERED_AT = LocalDateTime.of(2026, 9, 10, 6, 0);
 
     private final ContractRepository contractRepository = mock(ContractRepository.class);
     private final DevelopmentContractRepository developmentContractRepository = mock(DevelopmentContractRepository.class);
@@ -94,6 +97,8 @@ class DeliverableMaterialServiceTest {
         when(materialRepository.save(any())).thenAnswer(invocation -> {
             DeliverableMaterial material = invocation.getArgument(0);
             ReflectionTestUtils.setField(material, "id", 500 + stored.size());
+            // 저장할 때 JPA 감사가 채우는 등록 시각. 자료마다 1분씩 늦게 둔다.
+            ReflectionTestUtils.setField(material, "createdAt", REGISTERED_AT.plusMinutes(stored.size()));
             stored.add(material);
             return material;
         });
@@ -117,6 +122,17 @@ class DeliverableMaterialServiceTest {
                         tuple(FILE_ID, null));
         verify(fileLookupService).assertAttachableLong(DEVELOPER_ID, List.of(FILE_ID));
         verify(contractRepository).findWithLockByIdAndDeletedFalse(CONTRACT_ID);
+    }
+
+    @Test
+    @DisplayName("자료를 등록하면 인계물의 넘긴 시각은 가장 최근에 등록한 자료의 시각이다. 다시 보낸 같은 자료는 시각을 바꾸지 않는다")
+    void deliveredAtFollowsTheLatestMaterial() {
+        assertThat(attach(FILE_ID, DeliverableAccessStage.TEST).deliveredAt())
+                .isEqualTo(REGISTERED_AT.atOffset(ZoneOffset.UTC));
+        assertThat(addUrl("https://demo.example.com").deliveredAt())
+                .isEqualTo(REGISTERED_AT.plusMinutes(1).atOffset(ZoneOffset.UTC));
+        assertThat(attach(FILE_ID, DeliverableAccessStage.TEST).deliveredAt())
+                .isEqualTo(REGISTERED_AT.plusMinutes(1).atOffset(ZoneOffset.UTC));
     }
 
     @Test

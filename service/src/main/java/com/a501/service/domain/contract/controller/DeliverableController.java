@@ -72,7 +72,7 @@ public class DeliverableController {
                             + OPEN_CONDITIONS
                             + """
 
-                    - 422 INVALID_REQUEST: url 이 없거나 호스트가 있는 http·https 주소가 아닐 때""")
+                    - 422 INVALID_REQUEST: url 이 없거나 호스트가 있는 http·https 주소가 아니거나 2000자를 넘을 때""")
     @ResponseStatus(HttpStatus.CREATED)
     @PostMapping("/{deliverableId}/urls")
     DeliverableResponse addUrl(

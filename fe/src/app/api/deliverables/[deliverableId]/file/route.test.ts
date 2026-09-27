@@ -63,7 +63,7 @@ describe("GET /api/deliverables/[deliverableId]/file", () => {
   it("기존 단일 파일을 받아 한글 이름을 브라우저가 읽을 수 있게 싣는다", async () => {
     downloadDeliverable.mockResolvedValueOnce({
       body: new Uint8Array([7]).buffer,
-      fileName: "\uc18c\uc2a4.zip",
+      fileName: "소스.zip",
       contentType: "application/octet-stream",
     });
 

@@ -12,4 +12,4 @@ public record SaveQaResultsRequest(
                         + "없으므로 빼고 보내도 풀리지 않는다.", example = "[201]")
                 @NotNull
                 @Size(min = 1, message = "{komit.minItems}")
-                List<@NotNull Integer> qaCriterionIds) {}
+                List<@NotNull(message = "{komit.integer}") Integer> qaCriterionIds) {}

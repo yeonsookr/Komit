@@ -12,4 +12,4 @@ import java.util.List;
 public record ConfirmMilestoneRequest(
         @Schema(description = "체크한 확인 문장 식별자. 전부 체크해야 통과시킬 수 있다.", example = "[201, 202]")
                 @NotNull
-                List<@NotNull Integer> qaCriterionIds) {}
+                List<@NotNull(message = "{komit.integer}") Integer> qaCriterionIds) {}

@@ -87,6 +87,30 @@ export async function attachDeliverable(
   return data;
 }
 
+/**
+ * 인수 시험 URL 하나 더하기. URL 은 시험 중에 여는 자료라 열람 단계가 TEST 입니다.
+ * 같은 산출물의 다른 URL 과 파일은 그대로 남습니다 (R-QA-06).
+ */
+export async function addDeliverableUrl(deliverableId: number, url: string): Promise<Deliverable> {
+  const { data } = await authenticatedBackendApi().post<Deliverable>(
+    BACKEND.DELIVERABLE_URLS(deliverableId),
+    { url },
+  );
+  return data;
+}
+
+/**
+ * 계약이 성립한 뒤 산출물 항목 더하기. 서명한 계약서의 범위·금액·확인 문장은 바뀌지
+ * 않고, 응답의 `isContractual` 이 false 입니다 (R-QA-06).
+ */
+export async function addDeliverable(contractId: number, title: string): Promise<Deliverable> {
+  const { data } = await authenticatedBackendApi().post<Deliverable>(
+    BACKEND.CONTRACT_DELIVERABLES(contractId),
+    { title },
+  );
+  return data;
+}
+
 /** 내려받은 인계물. 파일 이름은 Content-Disposition 에 담겨 옵니다. */
 export interface DeliverableFile {
   body: ArrayBuffer;

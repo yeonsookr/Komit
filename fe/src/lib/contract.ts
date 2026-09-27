@@ -136,6 +136,15 @@ export function isConfirmed(milestone: Milestone): boolean {
   return milestone.status === "CONFIRMED";
 }
 
+/**
+ * 개발자가 확인을 요청해 의뢰인의 체크를 기다리는 작업. 의뢰인은 이때만 체크합니다.
+ * 요청 전 작업을 통과시키면 서버가 409 로 막고, 일부만 체크하면 작업이 개발자에게
+ * 돌아갑니다 (R-QA-02).
+ */
+export function isAwaitingCheck(milestone: Milestone): boolean {
+  return milestone.status === "SUBMITTED";
+}
+
 /** 의뢰인이 체크한 확인 문장 수. `2 / 3 확인` 의 앞 숫자입니다. */
 export function checkedCount(milestone: Milestone): number {
   return milestone.qaCriteria.filter((qa) => qa.status === "RESOLVED").length;

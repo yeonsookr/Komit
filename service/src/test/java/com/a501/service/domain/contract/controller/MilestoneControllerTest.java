@@ -78,6 +78,22 @@ class MilestoneControllerTest {
     }
 
     @Test
+    void rejectsNullIdLikeTheMock() throws Exception {
+        send(put("/api/milestones/302/qa-results"), """
+                {"qaCriterionIds":[201,null]}""")
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors[0].field").value("qaCriterionIds.1"))
+                .andExpect(jsonPath("$.errors[0].reason").value("정수여야 합니다."));
+        send(post("/api/milestones/302/confirmation"), """
+                {"qaCriterionIds":[null]}""")
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors[0].field").value("qaCriterionIds.0"))
+                .andExpect(jsonPath("$.errors[0].reason").value("정수여야 합니다."));
+
+        verifyNoInteractions(milestoneProgressService);
+    }
+
+    @Test
     void confirmationNeedsIdsButLeavesAnEmptyListToTheService() throws Exception {
         send(post("/api/milestones/302/confirmation"), "{}")
                 .andExpect(status().isUnprocessableEntity())

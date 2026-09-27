@@ -6,6 +6,7 @@ import {
   developmentStageLabel,
   isFullyChecked,
   isCancelled,
+  isAwaitingCheck,
   isHandover,
   isCompleted,
   isConsultingDraft,
@@ -383,5 +384,14 @@ describe("isCompleted", () => {
 
   it("세션이 끝나기 전에는 끝난 거래가 아니다", () => {
     expect(isCompleted(consulting("2026-08-29T14:00:00+09:00", null))).toBe(false);
+  });
+});
+
+describe("isAwaitingCheck", () => {
+  it("확인 요청을 받은 작업만 의뢰인이 체크한다", () => {
+    expect(isAwaitingCheck(milestone({ status: "SUBMITTED" }))).toBe(true);
+    for (const status of ["IN_PROGRESS", "SCHEDULED", "CONFIRMED", "PROPOSED"] as const) {
+      expect(isAwaitingCheck(milestone({ status }))).toBe(false);
+    }
   });
 });

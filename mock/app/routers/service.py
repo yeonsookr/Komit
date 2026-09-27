@@ -6845,7 +6845,8 @@ class AttachDeliverableUrlRequest(BaseModel):
 
     url: str = Field(
         min_length=1,
-        description="인수 시험 중 방문할 주소. 호스트가 있는 http·https 주소만 받는다. (R-QA-06)",
+        max_length=2000,
+        description="인수 시험 중 방문할 주소. 호스트가 있는 http·https 주소만 받고 2000자까지 받는다. (R-QA-06)",
         examples=["https://demo.komit.example.com"],
     )
 
@@ -6874,7 +6875,7 @@ class DeliverableResponse(BaseModel):
         examples=[None],
     )
     deliveredAt: str | None = Field(
-        description="넘긴 시각. 아직이면 null이다.",
+        description="넘긴 시각. 가장 최근에 인계 자료를 등록한 시각이고, 아직이면 null이다.",
         examples=[None],
     )
     isContractual: bool = Field(
@@ -8713,7 +8714,8 @@ def confirm_milestone(
         "형식과 크기는 `POST /uploads`에서 `purpose`가 `DELIVERABLE`일 때의 한도로 거른다. "
         "그래서 이 요청에는 용량 오류가 없다.\n\n"
         "- **201**: 붙였을 때. 같은 자료를 다시 보냈을 때도 201로 지금 상태를 돌려준다\n"
-        "- **400 / FILE_NOT_ATTACHABLE**: 없는 파일이거나 업로드를 마치지 않았거나 남의 파일일 때\n"
+        "- **400 / FILE_NOT_ATTACHABLE**: `fileId`가 400일 때. 없는 파일이거나 업로드를 마치지 않았거나 "
+        "남의 파일이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 계약의 개발자가 아닐 때\n"
         "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableId`가 404일 때. 없는 인계물이거나 이 "
@@ -8748,6 +8750,8 @@ def upload_deliverable(
     state_error = _handover_state_error(deliverableId)
     if state_error is not None:
         return state_error
+    if request.fileId == NOT_ATTACHABLE_FILE_ID:
+        return _error_response(400, FILE_NOT_ATTACHABLE_ERROR)
     existing = [material for material in DELIVERABLES[0]["materials"] if material["fileId"] == request.fileId]
     if any(material["accessStage"] != request.accessStage for material in existing):
         return _error_response(409, MATERIAL_STAGE_CONFLICT)
@@ -8800,7 +8804,7 @@ def upload_deliverable(
         "- **409 / HANDOVER_NOT_OPEN**: `deliverableId`가 407일 때\n"
         "- **409 / FINAL_ACCEPTANCE_PASSED**: `deliverableId`가 408일 때\n"
         "- **409 / HANDOVER_UNDER_REVIEW**: `deliverableId`가 406일 때\n"
-        "- **422 / INVALID_REQUEST**: `url`이 없거나 호스트가 있는 http·https 주소가 아닐 때"
+        "- **422 / INVALID_REQUEST**: `url`이 없거나 호스트가 있는 http·https 주소가 아니거나 2000자를 넘을 때"
     ),
 )
 def attach_deliverable_url(

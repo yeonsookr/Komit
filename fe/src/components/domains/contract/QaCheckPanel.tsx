@@ -22,6 +22,7 @@ import {
   checkedCount,
   confirmedAmount,
   confirmedCount,
+  isAwaitingCheck,
   isConfirmed,
   isHandover,
   nearestAutoPassAt,
@@ -65,10 +66,10 @@ export function QaCheckPanel({
   const toggle = (qaCriterionId: number) =>
     setPicked((prev) => ({ ...prev, [qaCriterionId]: !prev[qaCriterionId] }));
 
-  /** 이번에 체크한 문장이 있어 제출할 수 있는 작업. */
+  /** 이번에 체크한 문장이 있어 제출할 수 있는 작업. 확인 요청을 받은 작업만 체크합니다. */
   const pending = milestones.filter(
     (milestone) =>
-      !isConfirmed(milestone) &&
+      isAwaitingCheck(milestone) &&
       milestone.qaCriteria.some((qa) => picked[qa.qaCriterionId] === true),
   );
 
@@ -170,6 +171,7 @@ export function QaCheckPanel({
         <ul className="mt-3 flex flex-col gap-3">
           {milestones.map((milestone) => {
             const confirmed = isConfirmed(milestone);
+            const awaiting = isAwaitingCheck(milestone);
             const total = milestone.qaCriteria.length;
             const checked = checkedCount(milestone);
             const newly = milestone.qaCriteria.filter(
@@ -199,6 +201,7 @@ export function QaCheckPanel({
                     <DeliverableFiles
                       deliverables={development.deliverables}
                       received={false}
+                      paid={development.status === "COMPLETED"}
                     />
                   )}
 
@@ -214,8 +217,9 @@ export function QaCheckPanel({
                               passed || picked[qa.qaCriterionId] === true
                             }
                             // 통과한 문장은 되돌릴 수 없어 잠급니다 (R-QA-03).
+                            // 확인 요청을 받기 전에는 체크하지 않습니다.
                             locked={passed}
-                            disabled={passed || confirmed}
+                            disabled={passed || !awaiting}
                             onChange={() => toggle(qa.qaCriterionId)}
                           />
                         </li>
@@ -241,9 +245,11 @@ export function QaCheckPanel({
                         </>
                       ) : milestone.submittedAt ? (
                         `${formatShortDateTime(milestone.submittedAt)} 확인 요청 받음`
-                      ) : null}
+                      ) : (
+                        "확인 요청을 받으면 체크할 수 있습니다"
+                      )}
                     </span>
-                    {!confirmed && (
+                    {awaiting && (
                       <Button
                         size="sm"
                         disabled={newly === 0}

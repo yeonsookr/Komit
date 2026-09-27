@@ -166,6 +166,20 @@ class DevelopmentDeliveryMaterialsTest(unittest.TestCase):
 
         self.assertIn("COMPLETED는 대금 지급이 끝난 계약이다", description)
 
+    def test_attaching_unattachable_file_reproduces_400(self):
+        result = service.upload_deliverable(
+            401, service.AttachDeliverableRequest(fileId=service.NOT_ATTACHABLE_FILE_ID, accessStage="TEST")
+        )
+
+        self.assertEqual(result.status_code, 400)
+        self.assertIn(b"FILE_NOT_ATTACHABLE", result.body)
+
+    def test_url_is_limited_to_2000_characters(self):
+        long_url = "https://demo.example.com/" + "a" * (2000 - len("https://demo.example.com/"))
+        self.assertEqual(len(service.AttachDeliverableUrlRequest(url=long_url).url), 2000)
+        with self.assertRaises(ValueError):
+            service.AttachDeliverableUrlRequest(url=long_url + "a")
+
     def test_url_material_has_no_file_to_download(self):
         self.assertEqual(service.download_deliverable_material(503).status_code, 404)
 

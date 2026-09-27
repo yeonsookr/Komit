@@ -84,8 +84,9 @@ public class DeliverableMaterialService {
             if (otherStage) {
                 throw new BusinessException(ContractErrorCode.MATERIAL_STAGE_CONFLICT);
             }
-            materialRepository.save(
+            DeliverableMaterial saved = materialRepository.save(
                     DeliverableMaterial.ofFile(deliverableId, request.fileId(), request.accessStage()));
+            handover.deliverable().markDelivered(saved.getCreatedAt());
         }
         return response(handover.deliverable());
     }
@@ -102,7 +103,8 @@ public class DeliverableMaterialService {
                 .stream()
                 .anyMatch(material -> request.url().equals(material.getUrl()));
         if (!exists) {
-            materialRepository.save(DeliverableMaterial.ofUrl(deliverableId, request.url()));
+            DeliverableMaterial saved = materialRepository.save(DeliverableMaterial.ofUrl(deliverableId, request.url()));
+            handover.deliverable().markDelivered(saved.getCreatedAt());
         }
         return response(handover.deliverable());
     }

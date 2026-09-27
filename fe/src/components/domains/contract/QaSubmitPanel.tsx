@@ -39,6 +39,8 @@ import type {
 
 export interface QaSubmitPanelProps {
   roomId: number;
+  /** 계약 식별자. 계약 뒤 산출물 항목을 더할 때 씁니다. */
+  contractId: number;
   development: DevelopmentAgreement;
   /** 상대(의뢰인) 이름. 안내 문구에 씁니다. */
   counterpartName: string;
@@ -54,6 +56,7 @@ export interface QaSubmitPanelProps {
  */
 export function QaSubmitPanel({
   roomId,
+  contractId,
   development,
   counterpartName,
 }: Readonly<QaSubmitPanelProps>) {
@@ -109,6 +112,28 @@ export function QaSubmitPanel({
       showToast({
         tone: "danger",
         title: error instanceof ApiError ? error.message : "올리지 못했습니다.",
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /** 인수 시험 URL·산출물 항목을 더합니다. 주소 형식처럼 필드 오류면 그 사유를 보여 줍니다. */
+  const add = async (key: number, path: string, body: unknown, done: string) => {
+    if (busy !== null) return;
+    setBusy(key);
+
+    try {
+      await clientApi.post(path, body);
+      showToast({ tone: "success", title: done });
+      router.refresh();
+    } catch (error) {
+      showToast({
+        tone: "danger",
+        title:
+          error instanceof ApiError
+            ? (error.errors?.[0]?.reason ?? error.message)
+            : "더하지 못했습니다.",
       });
     } finally {
       setBusy(null);
@@ -175,6 +200,22 @@ export function QaSubmitPanel({
                       received
                       busy={busy !== null}
                       onPick={(deliverable, file, stage) => void upload(deliverable, file, stage)}
+                      onAddUrl={(deliverable, url) =>
+                        void add(
+                          deliverable.deliverableId,
+                          INTERNAL.DELIVERABLE_URLS(deliverable.deliverableId),
+                          { url },
+                          `‘${deliverable.title}’ 에 인수 시험 URL 을 더했습니다.`,
+                        )
+                      }
+                      onAddDeliverable={(title) =>
+                        void add(
+                          contractId,
+                          INTERNAL.CONTRACT_DELIVERABLES(contractId),
+                          { title },
+                          `산출물 ‘${title}’ 을 더했습니다.`,
+                        )
+                      }
                     />
                   )}
 
