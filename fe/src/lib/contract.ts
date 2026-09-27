@@ -1,6 +1,7 @@
 /**
  * 계약 화면의 표시 규칙. 화면에서 분기하지 않도록 순수 함수로 빼 둡니다.
  */
+import { ApiError } from "@/types/api";
 import type {
   Contract,
   ContractMessage,
@@ -145,6 +146,155 @@ export function isAwaitingCheck(milestone: Milestone): boolean {
   return milestone.status === "SUBMITTED";
 }
 
+/**
+ * 인계 자료를 지금 등록할 수 있는지. 닫혔으면 서버가 돌려줄 오류 코드와 같은 이름으로 까닭을 적습니다.
+ * 서버의 등록 검사와 같은 순서로 봅니다 (R-QA-06).
+ *
+ * 일반 작업이 하나라도 남았으면 아직 열리지 않았고, 인계 작업을 통과했으면 최종 인수 시험을 마친 것이며,
+ * 인계 작업의 확인을 요청했으면 의뢰인이 시험하는 중입니다. 의뢰인이 일부만 통과시켜 인계 작업이
+ * 돌아오면 다시 열립니다. 인계 작업이 여럿이어도 하나라도 통과했거나 요청 중이면 닫습니다(서버와 같음).
+ */
+export type HandoverRegistration =
+  | "OPEN"
+  | "HANDOVER_NOT_OPEN"
+  | "HANDOVER_UNDER_REVIEW"
+  | "FINAL_ACCEPTANCE_PASSED";
+
+export function handoverRegistration(milestones: Milestone[]): HandoverRegistration {
+  if (!billableMilestones(milestones).every(isConfirmed)) return "HANDOVER_NOT_OPEN";
+  const handovers = milestones.filter(isHandover);
+  if (handovers.some(isConfirmed)) return "FINAL_ACCEPTANCE_PASSED";
+  if (handovers.some(isAwaitingCheck)) return "HANDOVER_UNDER_REVIEW";
+  return "OPEN";
+}
+
+/**
+ * 의뢰인이 확인 문장 일부만 통과시켜 개발자에게 돌아온 작업인지. 서버는 이때 작업을 진행 중으로 되돌리고
+ * 요청 시각을 비웁니다. 통과한 문장이 남아 있는 것으로 요청하기 전 작업과 가립니다 (R-QA-02).
+ */
+export function isReturned(milestone: Milestone): boolean {
+  return !isConfirmed(milestone) && !isAwaitingCheck(milestone) && checkedCount(milestone) > 0;
+}
+
+/** 작업 진행 단계의 이름. 진행 탭과 작업 카드가 같은 말을 씁니다. */
+export function milestoneStageLabel(milestone: Milestone): string {
+  if (isConfirmed(milestone)) return "통과";
+  if (isAwaitingCheck(milestone)) return "확인 요청 중";
+  if (isReturned(milestone)) return "돌아옴";
+  if (milestone.status === "IN_PROGRESS") return "진행 중";
+  return "예정";
+}
+
+/**
+ * 최종 인수 시험(인계 작업의 확인)을 요청할 수 있는지 셋을 따로 봅니다. 서버가 요청을 받을 때 보는 조건과
+ * 같습니다 (R-QA-06). URL 은 언제나 TEST 라 시험 자료로 셉니다. 기존 단일 파일은 어느 쪽에도 들지 않습니다.
+ */
+export interface HandoverChecklist {
+  /** 일반 작업을 모두 통과했는지. */
+  regularDone: boolean;
+  /** 계약 전체에 인수 시험 자료(URL 또는 TEST 파일)가 하나 이상 있는지. */
+  testMaterial: boolean;
+  /** 계약 전체에 지급 후 해금 파일(PAID)이 하나 이상 있는지. */
+  paidFile: boolean;
+}
+
+export function handoverChecklist(development: DevelopmentAgreement): HandoverChecklist {
+  const materials = development.deliverables.flatMap((deliverable) => deliverable.materials);
+  return {
+    regularDone: billableMilestones(development.milestones).every(isConfirmed),
+    testMaterial: materials.some((material) => material.accessStage === "TEST"),
+    paidFile: materials.some((material) => material.accessStage === "PAID"),
+  };
+}
+
+/** 체크리스트를 모두 채웠는지. 채우기 전에는 인계 작업의 확인 요청을 막습니다. */
+export function isHandoverReady(checklist: HandoverChecklist): boolean {
+  return checklist.regularDone && checklist.testMaterial && checklist.paidFile;
+}
+
+/**
+ * 최종 인수 시험을 통과했지만 지급이 아직 확정되지 않았는지. 인계 작업이 통과되면 계약 총액 지급을 요청하고,
+ * 지급액과 수수료가 확정돼야 계약이 완료됩니다 (R-PAY-01). 그 사이 계약은 진행 중으로 남습니다.
+ * 지급이 실패했는지·보류됐는지는 이 값으로 알 수 없습니다.
+ */
+export function isPayoutPending(development: DevelopmentAgreement): boolean {
+  return (
+    development.status === "IN_PROGRESS" &&
+    development.milestones.some((milestone) => isHandover(milestone) && isConfirmed(milestone))
+  );
+}
+
+/** 최종 인수 시험을 통과하고 지급을 기다리는 동안 확인 탭·방 머리·진행 탭이 함께 쓰는 이름. */
+export const PAYOUT_PENDING_LABEL = "최종 인수 시험 통과 · 지급 처리 중";
+
+/** R-QA-06: 인수 시험 URL 길이 상한. */
+export const DELIVERABLE_URL_MAX_LENGTH = 2000;
+
+/** R-QA-06: 산출물 이름 길이 상한. 계약서의 항목과 계약 뒤 더한 항목이 같습니다. */
+export const DELIVERABLE_TITLE_MAX_LENGTH = 100;
+
+/** 스킴 뒤 `//` 부터 경로·질의·조각 앞까지가 주소 부분입니다. 서버 `HttpUrlValidator` 와 같은 식입니다. */
+const URL_PATTERN = /^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^/?#]*)/;
+
+/**
+ * 인수 시험 URL 로 받는 주소인지. 호스트가 있는 http·https 주소만 받습니다 (R-QA-06).
+ * 보내기 전에 걸러 사유를 바로 보여 주려는 것이고, 판정은 서버가 다시 합니다. 서버와 같은 식으로 봐서
+ * 여기서 통과한 주소를 서버가 형식 때문에 거부하지 않습니다.
+ */
+export function isHttpUrl(value: string): boolean {
+  const match = URL_PATTERN.exec(value);
+  if (match === null) return false;
+
+  const [, scheme, authority] = match;
+  // 사용자 정보와 포트를 떼어 낸 호스트. `https://:8080` 처럼 호스트가 비면 거부합니다.
+  const hostAndPort = authority.slice(authority.lastIndexOf("@") + 1);
+  let host: string;
+  if (hostAndPort.startsWith("[")) {
+    const end = hostAndPort.indexOf("]");
+    host = end < 0 ? "" : hostAndPort.slice(1, end);
+  } else {
+    const colon = hostAndPort.indexOf(":");
+    host = colon < 0 ? hostAndPort : hostAndPort.slice(0, colon);
+  }
+  const lower = scheme.toLowerCase();
+  return (lower === "http" || lower === "https") && host !== "";
+}
+
+/** 인계 자료 등록이 실패했을 때 화면이 할 일. */
+export interface RegistrationFailure {
+  /** 알림에 적을 문구. 필드 오류면 그 사유, 아니면 서버 문구입니다. */
+  title: string;
+  /**
+   * 화면을 다시 읽을지. 409 는 그 사이 계약이 바뀐 것입니다 — 다른 탭에서 확인을 요청했거나 의뢰인이
+   * 통과시켰습니다. 다시 읽어야 닫힌 까닭이 화면에 나옵니다.
+   */
+  refresh: boolean;
+  /** 같은 요청을 다시 보내 볼 만한지. 응답이 오지 않았거나 서버 오류일 때입니다. */
+  retry: boolean;
+}
+
+export function registrationFailure(error: unknown, fallback: string): RegistrationFailure {
+  if (!(error instanceof ApiError)) return { title: fallback, refresh: false, retry: true };
+  return {
+    title: error.errors?.[0]?.reason ?? error.message,
+    refresh: error.status === 409,
+    retry: error.status === 0 || error.status >= 500,
+  };
+}
+
+/**
+ * 확인 요청·확인 결과 저장·통과시키기가 거부됐을 때 화면이 할 일. 409 는 그 사이 작업 상태가 바뀐 것이고
+ * (다른 탭, 자동 통과, 상대의 처리), `QA_NOT_ALL_CHECKED` 는 화면이 본 체크와 서버가 다른 것이라 둘 다
+ * 다시 읽습니다.
+ */
+export function milestoneActionFailure(error: unknown, fallback: string): { title: string; refresh: boolean } {
+  if (!(error instanceof ApiError)) return { title: fallback, refresh: false };
+  return {
+    title: error.errors?.[0]?.reason ?? error.message,
+    refresh: error.status === 409 || error.code === "QA_NOT_ALL_CHECKED",
+  };
+}
+
 /** 의뢰인이 체크한 확인 문장 수. `2 / 3 확인` 의 앞 숫자입니다. */
 export function checkedCount(milestone: Milestone): number {
   return milestone.qaCriteria.filter((qa) => qa.status === "RESOLVED").length;
@@ -252,6 +402,7 @@ export function developmentStageLabel(contract: Contract | null): string | null 
   if (status === undefined) return null;
   if (contract.status === "CANCELLED") return "취소됨";
   if (contract.status !== "SIGNED") return "계약 전";
+  if (contract.development !== null && isPayoutPending(contract.development)) return PAYOUT_PENDING_LABEL;
 
   const labels: Record<DevelopmentStatus, string> = {
     SIGNED: "예치 대기",

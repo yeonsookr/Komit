@@ -4,25 +4,43 @@ import {
   checkedCount,
   confirmedAmount,
   developmentStageLabel,
+  handoverChecklist,
+  handoverRegistration,
   isFullyChecked,
   isCancelled,
   isAwaitingCheck,
   isHandover,
+  isHandoverReady,
+  isPayoutPending,
+  isReturned,
   isCompleted,
   isConsultingDraft,
   consultingPaymentStage,
   isDevelopmentDraft,
+  isHttpUrl,
   isSignedByAnyone,
   isSignedByBoth,
   hasSigned,
   lastCounterpartMessage,
+  milestoneActionFailure,
+  milestoneStageLabel,
   nearestAutoPassAt,
+  PAYOUT_PENDING_LABEL,
   periodDays,
+  registrationFailure,
   remainingAmount,
   remainingCount,
   totalAmount,
 } from "./contract";
-import type { Contract, ContractQaCriterion, Milestone } from "@/types/contract";
+import { ApiError } from "@/types/api";
+import type {
+  Contract,
+  ContractQaCriterion,
+  Deliverable,
+  DeliverableMaterial,
+  DevelopmentAgreement,
+  Milestone,
+} from "@/types/contract";
 
 function qa(id: number, passed: boolean): ContractQaCriterion {
   return {
@@ -50,6 +68,21 @@ function milestone(override: Partial<Milestone> = {}): Milestone {
     confirmedAt: null,
     autoPassAt: null,
     qaCriteria: [],
+    ...override,
+  };
+}
+
+/** 착수한 개발 계약. 작업과 산출물은 각 테스트가 채웁니다. */
+function agreement(override: Partial<DevelopmentAgreement> = {}): DevelopmentAgreement {
+  return {
+    status: "IN_PROGRESS",
+    totalAmount: 400_000,
+    issueIds: [312],
+    startDate: "2026-09-01",
+    dueDate: "2026-09-21",
+    freeRepairDays: 30,
+    milestones: [],
+    deliverables: [],
     ...override,
   };
 }
@@ -348,6 +381,29 @@ describe("developmentStageLabel", () => {
   it("계약서가 없으면 계약 전이다", () => {
     expect(developmentStageLabel(null)).toBe("계약 전");
   });
+
+  it("인계 작업을 통과하고 지급이 확정되기 전이면 지급 처리 중이다 (R-PAY-01)", () => {
+    const milestones = [
+      milestone({ milestoneId: 1, status: "CONFIRMED" }),
+      milestone({ milestoneId: 2, isHandover: true, price: 0, status: "CONFIRMED" }),
+    ];
+    const signed = (status: DevelopmentAgreement["status"]) =>
+      contract({ status: "SIGNED", development: agreement({ status, milestones }) });
+
+    expect(developmentStageLabel(signed("IN_PROGRESS"))).toBe(PAYOUT_PENDING_LABEL);
+    expect(developmentStageLabel(signed("COMPLETED"))).toBe("완료");
+  });
+
+  it("인계 작업을 통과하기 전에는 진행 중이다", () => {
+    const milestones = [
+      milestone({ milestoneId: 1, status: "CONFIRMED" }),
+      milestone({ milestoneId: 2, isHandover: true, price: 0, status: "SUBMITTED" }),
+    ];
+
+    expect(developmentStageLabel(contract({ status: "SIGNED", development: agreement({ milestones }) }))).toBe(
+      "진행 중",
+    );
+  });
 });
 
 describe("isCompleted", () => {
@@ -393,5 +449,347 @@ describe("isAwaitingCheck", () => {
     for (const status of ["IN_PROGRESS", "SCHEDULED", "CONFIRMED", "PROPOSED"] as const) {
       expect(isAwaitingCheck(milestone({ status }))).toBe(false);
     }
+  });
+});
+
+describe("handoverRegistration", () => {
+  const regular = (status: Milestone["status"]) => milestone({ milestoneId: 1, status });
+  const handover = (status: Milestone["status"], milestoneId = 2) =>
+    milestone({ milestoneId, isHandover: true, price: 0, status });
+
+  it("일반 작업이 하나라도 남았으면 아직 열리지 않는다", () => {
+    expect(handoverRegistration([regular("CONFIRMED"), regular("SUBMITTED"), handover("SCHEDULED")])).toBe(
+      "HANDOVER_NOT_OPEN",
+    );
+  });
+
+  it("일반 작업을 모두 통과하면 인계 작업의 확인을 요청하기 전까지 열린다", () => {
+    expect(handoverRegistration([regular("CONFIRMED"), handover("IN_PROGRESS")])).toBe("OPEN");
+  });
+
+  it("인계 작업의 확인을 요청하면 시험 중이라 닫힌다", () => {
+    expect(handoverRegistration([regular("CONFIRMED"), handover("SUBMITTED")])).toBe("HANDOVER_UNDER_REVIEW");
+  });
+
+  it("인계 작업을 통과하면 최종 인수 시험을 마쳐 닫힌다", () => {
+    expect(handoverRegistration([regular("CONFIRMED"), handover("CONFIRMED")])).toBe("FINAL_ACCEPTANCE_PASSED");
+  });
+
+  it("일부 통과로 인계 작업이 돌아오면 다시 열린다", () => {
+    // 서버는 일부만 체크하면 작업을 IN_PROGRESS 로 되돌리고 요청 시각을 비운다.
+    const returned = milestone({
+      milestoneId: 2,
+      isHandover: true,
+      price: 0,
+      status: "IN_PROGRESS",
+      submittedAt: null,
+      qaCriteria: [qa(1, true), qa(2, false)],
+    });
+    expect(handoverRegistration([regular("CONFIRMED"), returned])).toBe("OPEN");
+  });
+
+  it("인계 작업이 여럿이면 하나라도 통과했거나 요청 중일 때 닫는다", () => {
+    expect(handoverRegistration([regular("CONFIRMED"), handover("IN_PROGRESS"), handover("CONFIRMED", 3)])).toBe(
+      "FINAL_ACCEPTANCE_PASSED",
+    );
+    expect(handoverRegistration([regular("CONFIRMED"), handover("IN_PROGRESS"), handover("SUBMITTED", 3)])).toBe(
+      "HANDOVER_UNDER_REVIEW",
+    );
+  });
+});
+
+describe("isReturned", () => {
+  it("일부만 통과해 돌아온 작업은 통과한 문장이 남아 있다 (R-QA-02)", () => {
+    // 서버는 일부만 체크하면 작업을 IN_PROGRESS 로 되돌리고 요청 시각을 비운다.
+    const returned = milestone({ status: "IN_PROGRESS", submittedAt: null, qaCriteria: [qa(1, true), qa(2, false)] });
+    expect(isReturned(returned)).toBe(true);
+  });
+
+  it("요청하기 전 작업, 확인 요청 중 작업, 통과한 작업은 돌아온 것이 아니다", () => {
+    expect(isReturned(milestone({ status: "IN_PROGRESS", qaCriteria: [qa(1, false), qa(2, false)] }))).toBe(false);
+    expect(
+      isReturned(
+        milestone({
+          status: "SUBMITTED",
+          submittedAt: "2026-09-10T10:00:00+09:00",
+          qaCriteria: [qa(1, true), qa(2, false)],
+        }),
+      ),
+    ).toBe(false);
+    expect(isReturned(milestone({ status: "CONFIRMED", qaCriteria: [qa(1, true), qa(2, true)] }))).toBe(false);
+  });
+});
+
+describe("milestoneStageLabel", () => {
+  it("작업 단계를 예정·진행 중·확인 요청 중·돌아옴·통과로 나눈다", () => {
+    const submitted = milestone({
+      status: "SUBMITTED",
+      submittedAt: "2026-09-10T10:00:00+09:00",
+      qaCriteria: [qa(1, true), qa(2, false)],
+    });
+    const returned = milestone({ status: "IN_PROGRESS", submittedAt: null, qaCriteria: [qa(1, true), qa(2, false)] });
+
+    expect(milestoneStageLabel(milestone({ status: "SCHEDULED", qaCriteria: [qa(1, false)] }))).toBe("예정");
+    expect(milestoneStageLabel(milestone({ status: "IN_PROGRESS", qaCriteria: [qa(1, false)] }))).toBe("진행 중");
+    expect(milestoneStageLabel(submitted)).toBe("확인 요청 중");
+    expect(milestoneStageLabel(returned)).toBe("돌아옴");
+    expect(milestoneStageLabel(milestone({ status: "CONFIRMED", qaCriteria: [qa(1, true)] }))).toBe("통과");
+  });
+
+  it("같은 진행 중이어도 통과한 문장이 있어야 돌아옴이다", () => {
+    const inProgress = milestone({ status: "IN_PROGRESS", submittedAt: null, qaCriteria: [qa(1, false), qa(2, false)] });
+    const returned = milestone({ status: "IN_PROGRESS", submittedAt: null, qaCriteria: [qa(1, true), qa(2, false)] });
+
+    expect(milestoneStageLabel(inProgress)).toBe("진행 중");
+    expect(milestoneStageLabel(returned)).toBe("돌아옴");
+  });
+});
+
+describe("handoverChecklist", () => {
+  type Kind = "URL" | "TEST" | "PAID";
+
+  const regular = (status: Milestone["status"]) => milestone({ milestoneId: 1, status });
+  const handover = milestone({ milestoneId: 2, isHandover: true, price: 0, status: "IN_PROGRESS" });
+
+  function material(kind: Kind, id: number): DeliverableMaterial {
+    return {
+      deliverableMaterialId: id,
+      fileId: kind === "URL" ? null : id + 100,
+      url: kind === "URL" ? "https://demo.example.com" : null,
+      // URL 자료는 언제나 TEST 다.
+      accessStage: kind === "PAID" ? "PAID" : "TEST",
+      deliveredAt: "2026-09-10T06:00:00Z",
+    };
+  }
+
+  function deliverableOf(
+    materials: DeliverableMaterial[],
+    deliverableId = 401,
+    fileId: number | null = null,
+  ): Deliverable {
+    return {
+      deliverableId,
+      title: `산출물 ${deliverableId}`,
+      fileId,
+      deliveredAt: null,
+      isContractual: true,
+      materials,
+    };
+  }
+
+  /** 한 산출물에 모두 담은 계약. */
+  const together = (kinds: Kind[]) =>
+    agreement({
+      milestones: [regular("CONFIRMED"), handover],
+      deliverables: [deliverableOf(kinds.map((kind, index) => material(kind, 501 + index)))],
+    });
+
+  /** 자료마다 다른 산출물에 나눠 담은 계약. 자료 없는 산출물도 하나 둡니다. */
+  const spread = (kinds: Kind[]) =>
+    agreement({
+      milestones: [regular("CONFIRMED"), handover],
+      deliverables: [
+        ...kinds.map((kind, index) => deliverableOf([material(kind, 501 + index)], 401 + index)),
+        deliverableOf([], 499),
+      ],
+    });
+
+  // 계획 7절 자료 표. URL 과 TEST 가 함께 있어도 거부하지 않는다 (R-QA-06).
+  const table: { kinds: Kind[]; testMaterial: boolean; paidFile: boolean }[] = [
+    { kinds: [], testMaterial: false, paidFile: false },
+    { kinds: ["URL"], testMaterial: true, paidFile: false },
+    { kinds: ["TEST"], testMaterial: true, paidFile: false },
+    { kinds: ["PAID"], testMaterial: false, paidFile: true },
+    { kinds: ["URL", "TEST"], testMaterial: true, paidFile: false },
+    { kinds: ["URL", "PAID"], testMaterial: true, paidFile: true },
+    { kinds: ["TEST", "PAID"], testMaterial: true, paidFile: true },
+    { kinds: ["URL", "TEST", "PAID"], testMaterial: true, paidFile: true },
+  ];
+
+  it.each(table)(
+    "한 산출물에 $kinds 가 있으면 시험 자료 $testMaterial · 해금 파일 $paidFile",
+    ({ kinds, testMaterial, paidFile }) => {
+      const checklist = handoverChecklist(together(kinds));
+
+      expect(checklist).toEqual({ regularDone: true, testMaterial, paidFile });
+      expect(isHandoverReady(checklist)).toBe(testMaterial && paidFile);
+    },
+  );
+
+  it.each(table)(
+    "여러 산출물에 $kinds 가 나뉘어 있으면 시험 자료 $testMaterial · 해금 파일 $paidFile",
+    ({ kinds, testMaterial, paidFile }) => {
+      const checklist = handoverChecklist(spread(kinds));
+
+      expect(checklist).toEqual({ regularDone: true, testMaterial, paidFile });
+      expect(isHandoverReady(checklist)).toBe(testMaterial && paidFile);
+    },
+  );
+
+  it("기존 단일 파일만 있으면 어느 조건도 채우지 않는다", () => {
+    const checklist = handoverChecklist(
+      agreement({ milestones: [regular("CONFIRMED"), handover], deliverables: [deliverableOf([], 401, 88)] }),
+    );
+
+    expect(checklist).toEqual({ regularDone: true, testMaterial: false, paidFile: false });
+    expect(isHandoverReady(checklist)).toBe(false);
+  });
+
+  it("일반 작업이 하나라도 남았으면 자료가 모두 있어도 요청할 수 없다", () => {
+    const checklist = handoverChecklist(
+      agreement({
+        milestones: [regular("CONFIRMED"), milestone({ milestoneId: 3, status: "SUBMITTED" }), handover],
+        deliverables: [deliverableOf([material("URL", 501), material("PAID", 502)])],
+      }),
+    );
+
+    expect(checklist).toEqual({ regularDone: false, testMaterial: true, paidFile: true });
+    expect(isHandoverReady(checklist)).toBe(false);
+  });
+
+  it("인계 작업은 일반 작업 통과에 세지 않는다", () => {
+    expect(handoverChecklist(agreement({ milestones: [regular("CONFIRMED"), handover] })).regularDone).toBe(true);
+  });
+});
+
+describe("isPayoutPending", () => {
+  const regular = milestone({ milestoneId: 1, status: "CONFIRMED" });
+  const handover = (status: Milestone["status"]) =>
+    milestone({ milestoneId: 2, isHandover: true, price: 0, status });
+
+  it("인계 작업을 통과했고 계약이 아직 진행 중이면 지급 처리 중이다 (R-PAY-01)", () => {
+    expect(isPayoutPending(agreement({ status: "IN_PROGRESS", milestones: [regular, handover("CONFIRMED")] }))).toBe(
+      true,
+    );
+  });
+
+  it("지급이 확정돼 계약이 완료되면 지급 처리 중이 아니다", () => {
+    expect(isPayoutPending(agreement({ status: "COMPLETED", milestones: [regular, handover("CONFIRMED")] }))).toBe(
+      false,
+    );
+  });
+
+  it("하자보수나 중단으로 넘어간 계약은 지급 처리 중으로 보지 않는다", () => {
+    for (const status of ["AFTER_SERVICE", "TERMINATED"] as const) {
+      expect(isPayoutPending(agreement({ status, milestones: [regular, handover("CONFIRMED")] }))).toBe(false);
+    }
+  });
+
+  it("인계 작업을 통과하기 전에는 지급 처리 중이 아니다", () => {
+    for (const status of ["IN_PROGRESS", "SUBMITTED"] as const) {
+      expect(isPayoutPending(agreement({ status: "IN_PROGRESS", milestones: [regular, handover(status)] }))).toBe(
+        false,
+      );
+    }
+  });
+});
+
+describe("milestoneActionFailure", () => {
+  it("409 는 그 사이 작업 상태가 바뀐 것이라 다시 읽는다", () => {
+    expect(
+      milestoneActionFailure(
+        new ApiError(409, "MILESTONE_STATE_CONFLICT", "작업 상태가 바뀌었습니다."),
+        "통과시키지 못했습니다.",
+      ),
+    ).toEqual({ title: "작업 상태가 바뀌었습니다.", refresh: true });
+    expect(
+      milestoneActionFailure(
+        new ApiError(
+          409,
+          "HANDOVER_MATERIALS_MISSING",
+          "인수 시험 자료와 해금 파일을 등록한 뒤에 확인을 요청할 수 있습니다.",
+        ),
+        "요청하지 못했습니다.",
+      ),
+    ).toEqual({ title: "인수 시험 자료와 해금 파일을 등록한 뒤에 확인을 요청할 수 있습니다.", refresh: true });
+  });
+
+  it("QA_NOT_ALL_CHECKED 는 400 이어도 화면이 본 체크와 서버가 달라 다시 읽는다", () => {
+    expect(
+      milestoneActionFailure(
+        new ApiError(400, "QA_NOT_ALL_CHECKED", "확인 문장을 모두 통과해야 합니다."),
+        "통과시키지 못했습니다.",
+      ),
+    ).toEqual({ title: "확인 문장을 모두 통과해야 합니다.", refresh: true });
+  });
+
+  it("400 필드 오류면 그 사유를 알리고 다시 읽지 않는다", () => {
+    expect(
+      milestoneActionFailure(
+        new ApiError(400, "INVALID_INPUT", "입력값이 올바르지 않습니다.", [
+          { field: "qaResults", reason: "확인 문장 결과가 비어 있습니다." },
+        ]),
+        "저장하지 못했습니다.",
+      ),
+    ).toEqual({ title: "확인 문장 결과가 비어 있습니다.", refresh: false });
+  });
+
+  it("ApiError 가 아니면 화면이 준 문구를 쓴다", () => {
+    expect(milestoneActionFailure(new Error("boom"), "요청하지 못했습니다.")).toEqual({
+      title: "요청하지 못했습니다.",
+      refresh: false,
+    });
+  });
+});
+
+describe("isHttpUrl", () => {
+  // 서버 HttpUrlValidatorTest 와 같은 예시.
+  it.each([
+    "http://localhost:3000",
+    "https://demo.example.com/path?q=1",
+    "HTTPS://Demo.Example.com",
+    "https://user@demo.example.com:8443/a b",
+    "https://[::1]:8080/",
+  ])("호스트가 있는 http·https 주소는 받는다: %s", (value) => {
+    expect(isHttpUrl(value)).toBe(true);
+  });
+
+  it.each([
+    "ftp://demo.example.com",
+    "javascript:alert(1)",
+    "demo.example.com",
+    "https://",
+    "https://:8080",
+    "https:demo.example.com",
+    // 서버 식에서도 대괄호 안이 비어 호스트가 없다.
+    "https://[]:8080",
+  ])("다른 스킴이나 호스트가 없는 주소는 거부한다: %s", (value) => {
+    expect(isHttpUrl(value)).toBe(false);
+  });
+});
+
+describe("registrationFailure", () => {
+  it("409 는 그 사이 계약이 바뀐 것이라 다시 읽는다", () => {
+    const failure = registrationFailure(
+      new ApiError(409, "HANDOVER_UNDER_REVIEW", "최종 인수 시험 중에는 인계 자료를 바꿀 수 없습니다."),
+      "더하지 못했습니다.",
+    );
+
+    expect(failure).toEqual({
+      title: "최종 인수 시험 중에는 인계 자료를 바꿀 수 없습니다.",
+      refresh: true,
+      retry: false,
+    });
+  });
+
+  it("필드 오류면 그 사유를 알리고 다시 읽지 않는다", () => {
+    const failure = registrationFailure(
+      new ApiError(400, "INVALID_INPUT", "입력값이 올바르지 않습니다.", [
+        { field: "url", reason: "http 또는 https 주소여야 합니다." },
+      ]),
+      "더하지 못했습니다.",
+    );
+
+    expect(failure).toEqual({ title: "http 또는 https 주소여야 합니다.", refresh: false, retry: false });
+  });
+
+  it("응답이 오지 않았거나 서버 오류면 다시 보내 볼 수 있다", () => {
+    expect(registrationFailure(new ApiError(0, "NETWORK_ERROR", "연결 실패"), "x").retry).toBe(true);
+    expect(registrationFailure(new ApiError(502, "UNKNOWN_ERROR", "실패"), "x").retry).toBe(true);
+    expect(registrationFailure(new Error("boom"), "올리지 못했습니다.")).toEqual({
+      title: "올리지 못했습니다.",
+      refresh: false,
+      retry: true,
+    });
   });
 });
