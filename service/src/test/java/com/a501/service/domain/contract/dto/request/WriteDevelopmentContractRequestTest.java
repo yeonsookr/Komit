@@ -47,14 +47,18 @@ class WriteDevelopmentContractRequestTest {
                 {"startDate":"2026-08-26","dueDate":"2026-09-16","freeRepairDays":14,
                  "milestones":[
                    {"issueId":312,"title":"관리자 인증 강화","price":400000,"workDate":10,"qaCriteria":["로그인 화면이 뜬다"]},
-                   {"title":"관리자 화면에 검색 추가","detail":"회원을 찾을 수 있다","price":0,"qaCriteria":["검색이 된다"]}],
+                   {"title":"관리자 화면에 검색 추가","detail":"회원을 찾을 수 있다","price":200000,"qaCriteria":["검색이 된다"]},
+                   {"title":"인계","price":0,"isHandover":true,"qaCriteria":["소스를 받았다"]}],
                  "deliverableTitles":["소스 파일 전체"],"message":"잘 부탁드립니다."}""";
 
         WriteDevelopmentContractRequest request =
                 JsonMapper.builder().build().readValue(json, WriteDevelopmentContractRequest.class);
 
         assertThat(request.startDate()).isEqualTo(LocalDate.of(2026, 8, 26));
-        assertThat(request.milestones()).extracting(WriteMilestoneRequest::issueId).containsExactly(312, null);
+        assertThat(request.milestones()).extracting(WriteMilestoneRequest::issueId).containsExactly(312, null, null);
+        // isHandover 를 보내지 않은 작업은 일반 작업이다.
+        assertThat(request.milestones()).extracting(milestone -> Boolean.TRUE.equals(milestone.isHandover()))
+                .containsExactly(false, false, true);
         assertThat(request.milestones().get(0).title()).isEqualTo("관리자 인증 강화");
         assertThat(request.milestones().get(1).detail()).isEqualTo("회원을 찾을 수 있다");
         assertThat(violations(request)).isEmpty();
@@ -65,7 +69,7 @@ class WriteDevelopmentContractRequestTest {
     void acceptsOmittedOptionalFields() {
         WriteDevelopmentContractRequest request = new WriteDevelopmentContractRequest(
                 LocalDate.of(2026, 8, 26), LocalDate.of(2026, 9, 16), 0,
-                List.of(new WriteMilestoneRequest(312, null, null, 0, null, List.of("로그인 화면이 뜬다"))),
+                List.of(new WriteMilestoneRequest(312, null, null, false, 400000, null, List.of("로그인 화면이 뜬다")), handover()),
                 null, null);
 
         assertThat(violations(request)).isEmpty();
@@ -85,14 +89,17 @@ class WriteDevelopmentContractRequestTest {
     @Test
     @DisplayName("작업이 하나도 없으면 거부한다")
     void rejectsEmptyMilestones() {
-        assertThat(violations(request(List.of()))).containsExactly("milestones=1개 이상이어야 합니다.");
+        WriteDevelopmentContractRequest request = new WriteDevelopmentContractRequest(
+                LocalDate.of(2026, 8, 26), LocalDate.of(2026, 9, 16), 14, List.of(), null, null);
+
+        assertThat(violations(request)).containsExactly("milestones=1개 이상이어야 합니다.");
     }
 
     @Test
     @DisplayName("새 작업에 이름이 없으면 거부한다")
     void rejectsNewWorkWithoutTitle() {
         assertThat(violations(request(List.of(
-                        new WriteMilestoneRequest(null, null, "설명만 있다", 1000, null, List.of("검색이 된다"))))))
+                        new WriteMilestoneRequest(null, null, "설명만 있다", false, 1000, null, List.of("검색이 된다"))))))
                 .containsExactly("milestones[0].title=필수 항목입니다.");
     }
 
@@ -100,10 +107,10 @@ class WriteDevelopmentContractRequestTest {
     @DisplayName("이름·설명은 빈 문자열일 수 없다. 공백만 있는 이름은 목처럼 받는다")
     void rejectsEmptyTitleButNotBlankOne() {
         assertThat(violations(request(List.of(
-                        new WriteMilestoneRequest(312, "", null, 1000, null, List.of("로그인 화면이 뜬다")),
-                        new WriteMilestoneRequest(null, "", null, 1000, null, List.of("검색이 된다")),
-                        new WriteMilestoneRequest(null, "   ", null, 1000, null, List.of("검색이 된다")),
-                        new WriteMilestoneRequest(313, null, "", 1000, null, List.of("로그인 화면이 뜬다"))))))
+                        new WriteMilestoneRequest(312, "", null, false, 1000, null, List.of("로그인 화면이 뜬다")),
+                        new WriteMilestoneRequest(null, "", null, false, 1000, null, List.of("검색이 된다")),
+                        new WriteMilestoneRequest(null, "   ", null, false, 1000, null, List.of("검색이 된다")),
+                        new WriteMilestoneRequest(313, null, "", false, 1000, null, List.of("로그인 화면이 뜬다"))))))
                 .containsExactlyInAnyOrder(
                         "milestones[0].title=1자 이상이어야 합니다.",
                         "milestones[1].title=1자 이상이어야 합니다.",
@@ -114,7 +121,7 @@ class WriteDevelopmentContractRequestTest {
     @DisplayName("기존 요구사항 작업은 계약서에서 바꾼 이름과 설명을 함께 보낼 수 있다")
     void acceptsRenamedExistingIssue() {
         assertThat(violations(request(List.of(
-                        new WriteMilestoneRequest(312, "관리자 인증 강화", "토큰도 확인한다", 1000, null, List.of("로그인 화면이 뜬다"))))))
+                        new WriteMilestoneRequest(312, "관리자 인증 강화", "토큰도 확인한다", false, 1000, null, List.of("로그인 화면이 뜬다"))))))
                 .isEmpty();
     }
 
@@ -136,7 +143,7 @@ class WriteDevelopmentContractRequestTest {
     void rejectsNegativeNumbers() {
         WriteDevelopmentContractRequest request = new WriteDevelopmentContractRequest(
                 LocalDate.of(2026, 8, 26), LocalDate.of(2026, 9, 16), -1,
-                List.of(new WriteMilestoneRequest(312, null, null, -1, -1, List.of("로그인 화면이 뜬다"))),
+                List.of(new WriteMilestoneRequest(312, null, null, false, -1, -1, List.of("로그인 화면이 뜬다")), handover()),
                 null, null);
 
         assertThat(violations(request)).containsExactlyInAnyOrder(
@@ -149,7 +156,7 @@ class WriteDevelopmentContractRequestTest {
     @DisplayName("작업 금액이 없으면 거부한다")
     void rejectsMissingPrice() {
         assertThat(violations(request(List.of(
-                        new WriteMilestoneRequest(312, null, null, null, null, List.of("로그인 화면이 뜬다"))))))
+                        new WriteMilestoneRequest(312, null, null, false, null, null, List.of("로그인 화면이 뜬다"))))))
                 .containsExactly("milestones[0].price=필수 항목입니다.");
     }
 
@@ -160,11 +167,11 @@ class WriteDevelopmentContractRequestTest {
         withNull.add(null);
 
         assertThat(violations(request(List.of(
-                        new WriteMilestoneRequest(311, null, null, 1000, null, null),
-                        new WriteMilestoneRequest(312, null, null, 1000, null, List.of()),
-                        new WriteMilestoneRequest(313, null, null, 1000, null, List.of("")),
-                        new WriteMilestoneRequest(314, null, null, 1000, null, List.of("가".repeat(501))),
-                        new WriteMilestoneRequest(315, null, null, 1000, null, withNull)))))
+                        new WriteMilestoneRequest(311, null, null, false, 1000, null, null),
+                        new WriteMilestoneRequest(312, null, null, false, 1000, null, List.of()),
+                        new WriteMilestoneRequest(313, null, null, false, 1000, null, List.of("")),
+                        new WriteMilestoneRequest(314, null, null, false, 1000, null, List.of("가".repeat(501))),
+                        new WriteMilestoneRequest(315, null, null, false, 1000, null, withNull)))))
                 .containsExactlyInAnyOrder(
                         "milestones[0].qaCriteria=필수 항목입니다.",
                         "milestones[1].qaCriteria=1개 이상이어야 합니다.",
@@ -179,7 +186,7 @@ class WriteDevelopmentContractRequestTest {
         WriteDevelopmentContractRequest request = new WriteDevelopmentContractRequest(
                 LocalDate.of(2026, 8, 26), LocalDate.of(2026, 9, 16), 14,
                 List.of(new WriteMilestoneRequest(
-                        null, "가".repeat(201), "가".repeat(1001), 1000, null, List.of("검색이 된다"))),
+                        null, "가".repeat(201), "가".repeat(1001), false, 1000, null, List.of("검색이 된다")), handover()),
                 List.of("가".repeat(101), ""),
                 "가".repeat(301));
 
@@ -197,11 +204,85 @@ class WriteDevelopmentContractRequestTest {
         WriteDevelopmentContractRequest request = new WriteDevelopmentContractRequest(
                 LocalDate.of(2026, 8, 26), LocalDate.of(2026, 9, 16), 14,
                 List.of(new WriteMilestoneRequest(
-                        null, "가".repeat(200), "가".repeat(1000), 1000, null, List.of("가".repeat(500)))),
+                        null, "가".repeat(200), "가".repeat(1000), false, 1000, null, List.of("가".repeat(500))),
+                        handover()),
                 List.of("가".repeat(100)),
                 "가".repeat(300));
 
         assertThat(violations(request)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("인계 작업이 0원이 아니면 금액 칸에서 거부한다")
+    void rejectsPricedHandover() {
+        WriteMilestoneRequest priced =
+                new WriteMilestoneRequest(null, "인계", null, true, 10000, null, List.of("소스를 받았다"));
+
+        assertThat(violations(dated(
+                        LocalDate.of(2026, 8, 26), LocalDate.of(2026, 9, 16), List.of(existing(312), priced))))
+                .containsExactly("milestones[1].price=인계 작업은 0원이어야 합니다.");
+    }
+
+    @Test
+    @DisplayName("음수 금액의 인계 작업은 0 이상 규칙 하나로만 거부한다. 목과 같다")
+    void rejectsNegativeHandoverOnce() {
+        WriteMilestoneRequest negative =
+                new WriteMilestoneRequest(null, "인계", null, true, -1, null, List.of("소스를 받았다"));
+
+        assertThat(violations(dated(
+                        LocalDate.of(2026, 8, 26), LocalDate.of(2026, 9, 16), List.of(existing(312), negative))))
+                .containsExactly("milestones[1].price=0 이상이어야 합니다.");
+    }
+
+    @Test
+    @DisplayName("인계 작업이 하나도 없으면 거부한다")
+    void rejectsContractWithoutHandover() {
+        WriteDevelopmentContractRequest request = new WriteDevelopmentContractRequest(
+                LocalDate.of(2026, 8, 26), LocalDate.of(2026, 9, 16), 14,
+                List.of(existing(312), newWork()), null, null);
+
+        assertThat(violations(request)).containsExactly("milestones=인계 작업은 하나여야 합니다.");
+    }
+
+    @Test
+    @DisplayName("인계 작업이 둘 이상이면 거부한다. 여러 개는 아직 다루지 않는다")
+    void rejectsTwoHandovers() {
+        assertThat(violations(request(List.of(existing(312), handover()))))
+                .containsExactly("milestones=인계 작업은 하나여야 합니다.");
+    }
+
+    @Test
+    @DisplayName("작업 안의 오류와 목록 오류를 함께 낸다. 목도 같다")
+    void reportsItemAndListErrorsTogether() {
+        WriteMilestoneRequest untitled =
+                new WriteMilestoneRequest(null, null, null, false, 1000, null, List.of("검색이 된다"));
+
+        assertThat(violations(dated(LocalDate.of(2026, 8, 26), LocalDate.of(2026, 9, 16),
+                        List.of(untitled, existing(312), existing(312)))))
+                .containsExactlyInAnyOrder(
+                        "milestones[0].title=필수 항목입니다.",
+                        "milestones=같은 요구사항을 두 작업에 담을 수 없습니다.",
+                        "milestones=인계 작업은 하나여야 합니다.");
+    }
+
+    @Test
+    @DisplayName("0원 일반 작업은 금액 칸에서 거부한다")
+    void rejectsFreeRegularWork() {
+        WriteMilestoneRequest freeWork =
+                new WriteMilestoneRequest(312, null, null, false, 0, null, List.of("로그인 화면이 뜬다"));
+
+        assertThat(violations(request(List.of(freeWork))))
+                .containsExactly("milestones[0].price=일반 작업은 1원 이상이어야 합니다.");
+    }
+
+    @Test
+    @DisplayName("isHandover 를 보내지 않은 0원 작업도 일반 작업으로 보고 거부한다")
+    void treatsMissingMarkAsRegularWork() {
+        WriteMilestoneRequest unmarked =
+                new WriteMilestoneRequest(null, "인계", null, null, 0, null, List.of("소스를 받았다"));
+
+        assertThat(violations(request(List.of(unmarked))))
+                .containsExactly("milestones[0].price=일반 작업은 1원 이상이어야 합니다.");
     }
 
     @Test
@@ -222,26 +303,39 @@ class WriteDevelopmentContractRequestTest {
         assertThat(dated(LocalDate.of(2026, 9, 16), null).dueDateBeforeStart()).isFalse();
     }
 
+    /** 계약서에는 인계 작업이 하나 이상 있어야 해서(R-QA-06) 받은 작업 뒤에 인계 작업을 하나 붙인다. */
     private static WriteDevelopmentContractRequest request(List<WriteMilestoneRequest> milestones) {
+        List<WriteMilestoneRequest> withHandover = new ArrayList<>(milestones);
+        withHandover.add(handover());
         return new WriteDevelopmentContractRequest(
                 LocalDate.of(2026, 8, 26),
                 LocalDate.of(2026, 9, 16),
                 14,
-                milestones,
+                withHandover,
                 List.of("소스 파일 전체"),
                 "잘 부탁드립니다.");
     }
 
     private static WriteDevelopmentContractRequest dated(LocalDate startDate, LocalDate dueDate) {
-        return new WriteDevelopmentContractRequest(startDate, dueDate, 14, List.of(existing(312)), null, null);
+        return dated(startDate, dueDate, List.of(existing(312)));
+    }
+
+    /** 받은 작업을 그대로 담는다. 인계 작업을 붙이지 않는다. */
+    private static WriteDevelopmentContractRequest dated(
+            LocalDate startDate, LocalDate dueDate, List<WriteMilestoneRequest> milestones) {
+        return new WriteDevelopmentContractRequest(startDate, dueDate, 14, milestones, null, null);
     }
 
     private static WriteMilestoneRequest existing(int issueId) {
-        return new WriteMilestoneRequest(issueId, null, null, 400000, 10, List.of("로그인 화면이 뜬다"));
+        return new WriteMilestoneRequest(issueId, null, null, false, 400000, 10, List.of("로그인 화면이 뜬다"));
+    }
+
+    private static WriteMilestoneRequest handover() {
+        return new WriteMilestoneRequest(null, "인계 · 소스 · 계정 · 설명서", null, true, 0, null, List.of("소스를 받았다"));
     }
 
     private static WriteMilestoneRequest newWork() {
-        return new WriteMilestoneRequest(null, "관리자 화면에 검색 추가", null, 200000, null, List.of("검색이 된다"));
+        return new WriteMilestoneRequest(null, "관리자 화면에 검색 추가", null, false, 200000, null, List.of("검색이 된다"));
     }
 
     private static Set<String> violations(WriteDevelopmentContractRequest request) {

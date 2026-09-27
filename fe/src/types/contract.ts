@@ -81,6 +81,8 @@ export interface Milestone {
   workDate: number | null;
   /** 원 단위 정수. 인계 작업은 0 이며 화면에 가격을 보여주지 않습니다. */
   price: number;
+  /** 인계 작업인지. 금액이 아니라 이 값으로 인계 작업을 가립니다 (R-QA-06). */
+  isHandover: boolean;
   status: MilestoneStatus;
   /** 거부 사유. 거부되지 않았으면 null. */
   rejectMessage: string | null;
@@ -94,12 +96,30 @@ export interface Milestone {
 }
 
 /** 인계물 하나. 소스·계정·설명서처럼 마지막에 넘겨받는 것들입니다 (R-QA-04). */
+export type DeliverableAccessStage = "TEST" | "PAID";
+
+/** 산출물에 등록한 인계 자료 하나. 파일이거나 URL 이고 둘 중 하나만 있습니다. */
+export interface DeliverableMaterial {
+  deliverableMaterialId: number;
+  /** 파일 자료의 파일 식별자. URL 자료면 null. */
+  fileId: number | null;
+  /** URL 자료의 주소. 파일 자료면 null. */
+  url: string | null;
+  /** URL 자료는 언제나 TEST 입니다. */
+  accessStage: DeliverableAccessStage;
+  deliveredAt: string;
+}
+
 export interface Deliverable {
   deliverableId: number;
   title: string;
   /** 아직 안 올렸으면 null. */
   fileId: number | null;
   deliveredAt: string | null;
+  /** 서명된 계약서의 항목이면 true, 체결 뒤 개발자가 추가한 항목이면 false. */
+  isContractual: boolean;
+  /** URL·TEST 파일·PAID 파일을 함께, 각각 여러 개 등록할 수 있습니다. */
+  materials: DeliverableMaterial[];
 }
 
 /** 계약서에 남긴 서명 하나. */
@@ -242,6 +262,8 @@ export interface WriteMilestoneRequest {
   title?: string | null;
   /** 계약서에서 쓰는 설명. 1~1000자. 기존 요구사항에서 보내지 않으면 그 요구사항의 설명을 씁니다. */
   detail?: string | null;
+  /** 인계 작업이면 true. 인계 작업은 계약서마다 하나이고 0 원입니다. 일반 작업은 1 원 이상입니다 (R-QA-06). */
+  isHandover?: boolean;
   /** 인계 작업은 0 으로 보냅니다. */
   price: number;
   /** 이 작업에 잡은 기간(일). 정하지 않아도 됩니다. */

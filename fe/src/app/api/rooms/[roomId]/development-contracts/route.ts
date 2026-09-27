@@ -31,6 +31,8 @@ function parseMilestone(value: unknown): WriteMilestoneRequest | null {
   if (title === null || detail === null) return null;
   if (!Number.isInteger(issueId) && title === undefined) return null;
   if (!Number.isInteger(input.price) || (input.price as number) < 0) return null;
+  const isHandover = input.isHandover;
+  if (isHandover !== undefined && typeof isHandover !== "boolean") return null;
   if (!Array.isArray(input.qaCriteria) || input.qaCriteria.length === 0) return null;
   if (!input.qaCriteria.every((qa) => typeof qa === "string" && qa.trim() !== "")) return null;
 
@@ -41,6 +43,7 @@ function parseMilestone(value: unknown): WriteMilestoneRequest | null {
     ...(Number.isInteger(issueId) ? { issueId: issueId as number } : {}),
     ...(title === undefined ? {} : { title }),
     ...(detail === undefined ? {} : { detail }),
+    ...(isHandover === true ? { isHandover: true } : {}),
     price: input.price as number,
     ...(Number.isInteger(workDate) ? { workDate: workDate as number } : {}),
     qaCriteria: (input.qaCriteria as string[]).map((qa) => qa.trim()),

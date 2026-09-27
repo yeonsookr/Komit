@@ -49,6 +49,22 @@ public class FileLookupService {
         }
     }
 
+    /** BIGINT 파일 식별자를 축소하지 않고 인계 연결 가능 여부를 검사합니다. */
+    public void assertAttachableLong(Integer userId, Collection<Long> fileIds) {
+        Set<Long> wanted = longIds(fileIds);
+        if (wanted.isEmpty()) {
+            return;
+        }
+        long attachable = storedFileRepository.findByFileIdInAndDeletedFalse(wanted).stream()
+                .filter(file -> isAttachableBy(file, userId))
+                .map(StoredFile::getFileId)
+                .distinct()
+                .count();
+        if (attachable != wanted.size()) {
+            throw new BusinessException(FileErrorCode.FILE_NOT_ATTACHABLE);
+        }
+    }
+
     /** 파일 식별자별 원래 파일명. 없는 파일은 결과에 빠집니다. */
     public Map<Integer, String> findOriginalNames(Collection<Integer> fileIds) {
         Set<Long> wanted = ids(fileIds);
@@ -58,6 +74,17 @@ public class FileLookupService {
         }
         return storedFileRepository.findByFileIdInAndDeletedFalse(wanted).stream()
                 .collect(Collectors.toMap(file -> file.getFileId().intValue(), StoredFile::getOriginalName,
+                        (first, second) -> first));
+    }
+
+    /** BIGINT 파일 식별자를 축소하지 않고 원래 이름을 일괄 조회합니다. */
+    public Map<Long, String> findOriginalNamesLong(Collection<Long> fileIds) {
+        Set<Long> wanted = longIds(fileIds);
+        if (wanted.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return storedFileRepository.findByFileIdInAndDeletedFalse(wanted).stream()
+                .collect(Collectors.toMap(StoredFile::getFileId, StoredFile::getOriginalName,
                         (first, second) -> first));
     }
 
@@ -76,6 +103,18 @@ public class FileLookupService {
                         (first, second) -> first));
     }
 
+    /** BIGINT 파일 식별자를 축소하지 않고 임시 읽기 주소를 일괄 발급합니다. 호출자가 열람 권한을 먼저 검사해야 합니다. */
+    public Map<Long, String> findReadUrlsLong(Collection<Long> fileIds) {
+        Set<Long> wanted = longIds(fileIds);
+        if (wanted.isEmpty()) {
+            return Collections.emptyMap();
+        }
+        return storedFileRepository.findByFileIdInAndDeletedFalse(wanted).stream()
+                .filter(StoredFile::isCompleted)
+                .collect(Collectors.toMap(StoredFile::getFileId, objectStorageService::issueReadUrl,
+                        (first, second) -> first));
+    }
+
     private static boolean isAttachableBy(StoredFile file, Integer userId) {
         return file.isCompleted() && Objects.equals(file.getUserId(), userId);
     }
@@ -85,5 +124,12 @@ public class FileLookupService {
             return Set.of();
         }
         return fileIds.stream().filter(Objects::nonNull).map(Integer::longValue).collect(Collectors.toSet());
+    }
+
+    private static Set<Long> longIds(Collection<Long> fileIds) {
+        if (fileIds == null) {
+            return Set.of();
+        }
+        return fileIds.stream().filter(Objects::nonNull).collect(Collectors.toSet());
     }
 }

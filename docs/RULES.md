@@ -217,6 +217,7 @@ Komit의 **정책 값과 불변식**을 모아 놓은 단일 출처다.
 | `R-QA-03` | **통과 확정은 되돌릴 수 없다.** | 불가역 | API, 화면 |
 | `R-QA-04` | 인계(소스·계정·설명서)도 확인 항목으로 두고 인계 확인서를 남긴다. | — | API, 화면 |
 | `R-QA-05` | Komit은 확인 문장의 통과 여부만 확인한다. 작업의 좋고 나쁨은 판정하지 않는다. | — | 정책 |
+| `R-QA-06` | 개발 계약의 최종 인수 시험은 인계 작업의 확인이다. 인계 작업은 금액이 아니라 인계 작업 표시로 가리고, 계약서마다 하나 두며 언제나 0원이다. 일반 작업은 1원 이상이다. 일반 작업을 모두 확정한 뒤 인계 작업을 확정하면 최종 인수 시험 통과다. 무응답 자동 통과는 인계 작업에도 `R-QA-02`를 적용한다. 최종 인수 시험을 요청할 때 계약 전체에 인수 시험 자료(URL 또는 TEST 파일)가 하나 이상, 지급 후 해금되는 PAID 파일이 하나 이상 있어야 한다. URL과 두 용도의 파일은 한 산출물에 함께, 각각 여러 개 등록할 수 있고, 새 자료를 등록해도 기존 자료는 남는다. 파일의 TEST·PAID는 개발자가 등록할 때 정하고 URL은 TEST다. 인수 시험 URL은 호스트가 있는 `http`·`https` 주소만 받는다. TEST·PAID 구분이 없는 기존 `deliverables.file_id`의 파일은 지급 후 열람 대상으로 취급한다. 체결 후 추가한 산출물은 계약 범위·금액·QA 기준을 바꾸지 않는다. | 인계 작업 **1개**·**0원**, 일반 작업 **1원 이상**, 시험 자료 **1개 이상**, PAID 파일 **1개 이상** | Service, Mock API, 화면, ERD |
 
 ## 6. 지급과 예치금
 
@@ -320,7 +321,7 @@ Komit의 **정책 값과 불변식**을 모아 놓은 단일 출처다.
 | 번호 | 규칙 | 값 | 영향 범위 |
 | --- | --- | --- | --- |
 | `R-FILE-01` | 파일을 올리기 전에 용도·이름·형식·크기를 알리고 임시 업로드 주소를 받는다. 모든 용도의 파일 크기는 같은 상한을 적용한다. | 용도별 **30MiB** (`31,457,280`바이트) | Service, Mock API, 저장소, FE |
-| `R-FILE-02` | 용도별로 허용하는 파일 형식을 제한한다. `PROFILE_IMAGE`·`PORTFOLIO_IMAGE`는 PNG·JPEG·WebP, `CAREER_EVIDENCE`는 PDF·PNG·JPEG, `SIGNATURE`는 PNG, `DELIVERABLE`은 ZIP·PDF·일반 바이너리, `SESSION_RECORDING`은 WebM·MP4 오디오, `REPORT_EVIDENCE`는 PDF·PNG·JPEG·WebP만 받는다. | 아래 「용도별 허용 형식」 | Service, Mock API, FE |
+| `R-FILE-02` | 용도별로 허용하는 파일 형식을 제한한다. `PROFILE_IMAGE`·`PORTFOLIO_IMAGE`는 PNG·JPEG·WebP, `CAREER_EVIDENCE`는 PDF·PNG·JPEG, `SIGNATURE`는 PNG, `SESSION_RECORDING`은 WebM·MP4 오디오, `REPORT_EVIDENCE`는 PDF·PNG·JPEG·WebP만 받는다. `DELIVERABLE`은 파일 형식을 제한하지 않는다. 기존 크기·업로드 완료 검증은 유지한다. | 아래 「용도별 허용 형식」 | Service, Mock API, FE |
 | `R-FILE-03` | 업로드 주소와 읽기 주소는 짧게 만료되는 임시 주소로 발급한다. 주소에 접근 키를 직접 노출하지 않는다. | 업로드 **5분** / 읽기 **15분** | Service, 저장소, FE, 운영 |
 | `R-FILE-04` | 업로드 완료 요청에서는 저장소에 실제 객체가 있는지와 시작 때 알린 크기·형식이 같은지 확인한다. 다르면 객체를 지우고 실패로 남긴다. 완료 요청은 멱등하며, 완료된 파일은 기존 업로드 주소로 바꿀 수 없게 최종 객체로 확정한다. | 완료 전 첨부 불가 / 완료 후 불변 | Service, 저장소, API |
 
@@ -332,7 +333,7 @@ Komit의 **정책 값과 불변식**을 모아 놓은 단일 출처다.
 | `CAREER_EVIDENCE` | `application/pdf`, `image/png`, `image/jpeg` |
 | `PORTFOLIO_IMAGE` | `image/png`, `image/jpeg`, `image/webp` |
 | `SIGNATURE` | `image/png` |
-| `DELIVERABLE` | `application/zip`, `application/x-zip-compressed`, `application/pdf`, `application/octet-stream` |
+| `DELIVERABLE` | 제한 없음. `Content-Type`은 필수이며 업로드한 객체와 일치해야 함 |
 | `SESSION_RECORDING` | `audio/webm`, `audio/mp4` |
 | `REPORT_EVIDENCE` | `application/pdf`, `image/png`, `image/jpeg`, `image/webp` |
 

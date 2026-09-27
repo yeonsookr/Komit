@@ -42,6 +42,7 @@ function milestone(override: Partial<Milestone> = {}): Milestone {
     location: "app/api/admin/* · 4개 라우트",
     workDate: 10,
     price: 400_000,
+    isHandover: false,
     status: "SUBMITTED",
     rejectMessage: null,
     submittedAt: null,
@@ -201,9 +202,11 @@ describe("periodDays", () => {
 });
 
 describe("작업", () => {
-  it("인계 작업은 가격이 0 이다", () => {
-    expect(isHandover(milestone({ price: 0 }))).toBe(true);
+  it("인계 작업은 금액이 아니라 서버가 준 표시로 가린다", () => {
+    expect(isHandover(milestone({ price: 0, isHandover: true }))).toBe(true);
     expect(isHandover(milestone({ price: 400_000 }))).toBe(false);
+    // 표시가 없으면 금액이 0 이어도 인계 작업으로 읽지 않는다 (R-QA-06).
+    expect(isHandover(milestone({ price: 0, isHandover: false }))).toBe(false);
   });
 
   it("체크한 확인 문장을 센다", () => {

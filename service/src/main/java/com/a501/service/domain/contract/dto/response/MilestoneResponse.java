@@ -41,6 +41,9 @@ public record MilestoneResponse(
         @Schema(description = "작업 이름.", example = "1차 · 관리자 API에 인증 추가") String title,
         @Schema(description = "작업 설명. 없으면 null 이다.") String detail,
         @Schema(description = "작업 가격. 인계 작업은 0 이다.", example = "400000") Long price,
+        @Schema(description = "인계 작업이면 true 다. 인계 작업은 계약서마다 하나이고 0원이다. 금액이 아니라 이 값으로 인계 작업을 가린다. (R-QA-06)",
+                        example = "false")
+                boolean isHandover,
         @Schema(description = "문제가 있는 위치. 없으면 null 이다.", example = "/admin") String location,
         @Schema(description = "이 작업에 잡은 기간(일). 정하지 않았으면 null 이다.", example = "10")
                 Integer workDate,
@@ -71,6 +74,7 @@ public record MilestoneResponse(
                 entity.getTitle() != null ? entity.getTitle() : issue == null ? null : issue.title(),
                 entity.getDetail() != null ? entity.getDetail() : issue == null ? null : issue.detail(),
                 entity.getPrice() == null ? null : entity.getPrice().longValue(),
+                entity.isHandover(),
                 issue == null ? null : issue.location(),
                 entity.getWorkDate(),
                 entity.getStatus(),

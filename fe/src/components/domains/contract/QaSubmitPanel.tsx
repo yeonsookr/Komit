@@ -90,7 +90,7 @@ export function QaSubmitPanel({
     }
   };
 
-  const upload = async (deliverable: Deliverable, file: File) => {
+  const upload = async (deliverable: Deliverable, file: File, accessStage: "TEST" | "PAID") => {
     if (busy !== null) return;
     setBusy(deliverable.deliverableId);
 
@@ -98,6 +98,7 @@ export function QaSubmitPanel({
       const uploaded = await uploadFromBrowser(file, "DELIVERABLE");
       await clientApi.post(INTERNAL.DELIVERABLE_FILE(deliverable.deliverableId), {
         fileId: uploaded.fileId,
+        accessStage,
       });
       showToast({
         tone: "success",
@@ -173,7 +174,7 @@ export function QaSubmitPanel({
                       deliverables={development.deliverables}
                       received
                       busy={busy !== null}
-                      onPick={(deliverable, file) => void upload(deliverable, file)}
+                      onPick={(deliverable, file, stage) => void upload(deliverable, file, stage)}
                     />
                   )}
 

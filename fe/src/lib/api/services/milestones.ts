@@ -5,6 +5,7 @@ import { BACKEND } from "../endpoints";
 import type {
   ConfirmMilestoneRequest,
   Deliverable,
+  DeliverableAccessStage,
   Milestone,
   SaveQaResultsRequest,
   SubmitMilestoneRequest,
@@ -80,10 +81,11 @@ export async function confirmMilestone(
 export async function attachDeliverable(
   deliverableId: number,
   fileId: number,
+  accessStage: DeliverableAccessStage,
 ): Promise<Deliverable> {
   const { data } = await authenticatedBackendApi().post<Deliverable>(
     BACKEND.DELIVERABLE_FILE(deliverableId),
-    { fileId },
+    { fileId, accessStage },
   );
   return data;
 }
@@ -109,6 +111,21 @@ export async function downloadDeliverable(deliverableId: number): Promise<Delive
   const disposition = String(response.headers["content-disposition"] ?? "");
   const matched = /filename="?([^";]+)"?/.exec(disposition);
 
+  return {
+    body: response.data,
+    fileName: matched?.[1] ?? "deliverable",
+    contentType: String(response.headers["content-type"] ?? "application/octet-stream"),
+  };
+}
+
+/** 인계 자료 식별자로 고른 파일 하나를 내려받습니다. 서버가 자료별 권한을 검사합니다. */
+export async function downloadDeliverableMaterial(deliverableMaterialId: number): Promise<DeliverableFile> {
+  const response = await authenticatedBackendApi().get<ArrayBuffer>(
+    BACKEND.DELIVERABLE_MATERIAL_FILE(deliverableMaterialId),
+    { responseType: "arraybuffer" },
+  );
+  const disposition = String(response.headers["content-disposition"] ?? "");
+  const matched = /filename="?([^";]+)"?/.exec(disposition);
   return {
     body: response.data,
     fileName: matched?.[1] ?? "deliverable",

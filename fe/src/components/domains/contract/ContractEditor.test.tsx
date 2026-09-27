@@ -19,6 +19,7 @@ function milestone(override: Partial<Milestone>): Milestone {
     location: null,
     workDate: null,
     price: 0,
+    isHandover: false,
     status: "PROPOSED",
     rejectMessage: null,
     submittedAt: null,

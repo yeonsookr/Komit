@@ -161,7 +161,8 @@ public class DevelopmentContractWriteService {
                 newWork ? null : request.title(),
                 newWork ? null : request.detail(),
                 request.price(),
-                request.workDate()));
+                request.workDate(),
+                Boolean.TRUE.equals(request.isHandover())));
         contractRequirementService.writeCriteria(issueId, request.qaCriteria())
                 .forEach(qaCriterionId ->
                         milestoneQaResultRepository.save(MilestoneQaResult.of(milestone.getId(), qaCriterionId)));

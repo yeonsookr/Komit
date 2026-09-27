@@ -12,6 +12,7 @@ import java.util.Objects;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.ColumnDefault;
 
 @Getter
 @Entity
@@ -44,6 +45,14 @@ public class Milestone extends SoftDeleteEntity {
     @Column(name = "price", nullable = false)
     private Integer price;
 
+    /**
+     * 인계 작업이면 true. R-QA-06: 금액이 아니라 이 표시로 인계 작업을 가린다. 계약서마다 하나다. 일반 작업을 모두
+     * 확정한 뒤 인계 작업을 확정하면 최종 인수 시험 통과다.
+     */
+    @ColumnDefault("false")
+    @Column(name = "is_handover", nullable = false)
+    private boolean handover;
+
     @Column(name = "reject_message", length = 300)
     private String rejectMessage;
 
@@ -75,6 +84,22 @@ public class Milestone extends SoftDeleteEntity {
             String detail,
             Integer price,
             Integer workDate) {
+        return of(developmentContractId, issueId, title, detail, price, workDate, false);
+    }
+
+    /**
+     * 계약서에 담은 작업 하나. 인계 작업 여부를 함께 받는다.
+     *
+     * @param handover 인계 작업이면 {@code true}
+     */
+    public static Milestone of(
+            Integer developmentContractId,
+            Integer issueId,
+            String title,
+            String detail,
+            Integer price,
+            Integer workDate,
+            boolean handover) {
         Milestone entity = new Milestone();
         entity.developmentContractId = Objects.requireNonNull(developmentContractId, "developmentContractId");
         entity.issueId = Objects.requireNonNull(issueId, "issueId");
@@ -82,6 +107,7 @@ public class Milestone extends SoftDeleteEntity {
         entity.detail = detail;
         entity.price = Objects.requireNonNull(price, "price");
         entity.workDate = workDate;
+        entity.handover = handover;
         entity.status = "PROPOSED";
         entity.statusGroup = "MILESTONE_STATUS";
         return entity;

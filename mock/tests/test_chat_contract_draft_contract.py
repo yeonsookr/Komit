@@ -66,7 +66,7 @@ class ChatContractDraftContractTest(unittest.TestCase):
         )
         self.assertEqual(
             set(WriteMilestoneRequest.model_fields),
-            {"issueId", "title", "detail", "price", "workDate", "qaCriteria"},
+            {"issueId", "title", "detail", "isHandover", "price", "workDate", "qaCriteria"},
         )
 
 

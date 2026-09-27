@@ -14,12 +14,15 @@ import com.a501.service.domain.contract.dto.response.TempMessageResponse;
 import com.a501.service.domain.contract.entity.Contract;
 import com.a501.service.domain.contract.entity.ConsultingAgreement;
 import com.a501.service.domain.contract.entity.DevelopmentContract;
+import com.a501.service.domain.contract.entity.Deliverable;
+import com.a501.service.domain.contract.entity.DeliverableMaterial;
 import com.a501.service.domain.contract.entity.Milestone;
 import com.a501.service.domain.contract.entity.MilestoneQaResult;
 import com.a501.service.domain.contract.repository.ConsultingAgreementRepository;
 import com.a501.service.domain.contract.repository.ContractRepository;
 import com.a501.service.domain.contract.repository.ContractSignatureRepository;
 import com.a501.service.domain.contract.repository.DeliverableRepository;
+import com.a501.service.domain.contract.repository.DeliverableMaterialRepository;
 import com.a501.service.domain.contract.repository.DevelopmentContractRepository;
 import com.a501.service.domain.contract.repository.MilestoneQaResultRepository;
 import com.a501.service.domain.contract.repository.MilestoneRepository;
@@ -34,6 +37,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -56,6 +60,7 @@ public class ContractDetailService {
     private final MilestoneRepository milestoneRepository;
     private final MilestoneQaResultRepository milestoneQaResultRepository;
     private final DeliverableRepository deliverableRepository;
+    private final DeliverableMaterialRepository deliverableMaterialRepository;
     private final ContractSignatureRepository signatureRepository;
     private final TempMessageRepository tempMessageRepository;
     private final RoomQueryService roomQueryService;
@@ -120,13 +125,22 @@ public class ContractDetailService {
         List<Milestone> milestones =
                 milestoneRepository.findAllByDevelopmentContractIdAndDeletedFalseOrderByIdAsc(
                         development.getId());
-        List<DeliverableResponse> deliverables =
+        List<Deliverable> deliverableRows =
                 deliverableRepository
                         .findAllByDevelopmentContractIdAndDeletedFalseOrderByIdAsc(
-                                development.getId())
+                                development.getId());
+        // 산출물마다 따로 읽지 않고 한 번에 읽어 묶는다.
+        Map<Integer, List<DeliverableMaterial>> materialsByDeliverable = deliverableRows.isEmpty()
+                ? Map.of()
+                : deliverableMaterialRepository
+                        .findAllByDeliverableIdInAndDeletedFalseOrderByIdAsc(
+                                deliverableRows.stream().map(Deliverable::getId).toList())
                         .stream()
-                        .map(DeliverableResponse::from)
-                        .toList();
+                        .collect(Collectors.groupingBy(DeliverableMaterial::getDeliverableId));
+        List<DeliverableResponse> deliverables = deliverableRows.stream()
+                .map(row -> DeliverableResponse.from(
+                        row, materialsByDeliverable.getOrDefault(row.getId(), List.of())))
+                .toList();
         return DevelopmentAgreementResponse.of(
                 development, issueIdsOf(milestones), milestonesOf(milestones), deliverables);
     }

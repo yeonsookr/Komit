@@ -19,6 +19,7 @@ function milestone(override: Partial<Milestone> = {}): Milestone {
     location: null,
     workDate: null,
     price: 0,
+    isHandover: false,
     status: "PROPOSED",
     rejectMessage: null,
     submittedAt: null,
@@ -102,14 +103,20 @@ describe("toEditorState", () => {
     expect(state.handover).toEqual({ issueId: null, lines: [""] });
   });
 
-  it("보낸 계약서는 금액 0 인 작업을 인계 작업으로 떼고 그 요구사항을 들고 있는다", () => {
+  it("보낸 계약서는 인계 표시가 있는 작업을 인계 작업으로 떼고 그 요구사항을 들고 있는다", () => {
     const state = toEditorState(
       contract({
         startDate: "2026-10-01",
         dueDate: "2026-10-20",
         milestones: [
           milestone({ issueId: 312, price: 400_000 }),
-          milestone({ issueId: 330, title: HANDOVER_TITLE, price: 0, qaCriteria: [sentence("소스를 받았다")] }),
+          milestone({
+            issueId: 330,
+            title: HANDOVER_TITLE,
+            price: 0,
+            isHandover: true,
+            qaCriteria: [sentence("소스를 받았다")],
+          }),
         ],
       }),
     );
@@ -205,13 +212,18 @@ describe("toWriteMilestones", () => {
         qaCriteria: ["로그인 화면이 뜬다"],
       },
       { title: "회원 검색 추가", price: 200_000, qaCriteria: ["이름으로 찾는다"] },
-      { issueId: 330, title: HANDOVER_TITLE, price: 0, qaCriteria: ["소스를 받았다"] },
+      { issueId: 330, title: HANDOVER_TITLE, isHandover: true, price: 0, qaCriteria: ["소스를 받았다"] },
     ]);
   });
 
   it("처음 보내는 인계 작업은 요구사항 없이 보낸다", () => {
     const written = toWriteMilestones([row()], { issueId: null, lines: ["소스를 받았다"] });
 
-    expect(written.at(-1)).toEqual({ title: HANDOVER_TITLE, price: 0, qaCriteria: ["소스를 받았다"] });
+    expect(written.at(-1)).toEqual({
+      title: HANDOVER_TITLE,
+      isHandover: true,
+      price: 0,
+      qaCriteria: ["소스를 받았다"],
+    });
   });
 });

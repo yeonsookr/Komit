@@ -1,8 +1,9 @@
 "use client";
 
 import * as React from "react";
+import { NativeSelect } from "@/components/common";
 import { INTERNAL } from "@/lib/api/endpoints";
-import type { Deliverable } from "@/types/contract";
+import type { Deliverable, DeliverableAccessStage } from "@/types/contract";
 
 export interface DeliverableFilesProps {
   deliverables: Deliverable[];
@@ -12,9 +13,45 @@ export interface DeliverableFilesProps {
    */
   received: boolean;
   /** 파일을 골랐을 때. 개발자 화면에서만 씁니다. */
-  onPick?: (deliverable: Deliverable, file: File) => void;
+  onPick?: (deliverable: Deliverable, file: File, accessStage: DeliverableAccessStage) => void;
   /** 올리는 중이면 입력을 잠급니다. */
   busy?: boolean;
+}
+
+/** 아무 자료도 없는 산출물인지. 예전 단일 파일 칸(`fileId`)도 자료로 셉니다. */
+export function hasNoMaterial(deliverable: Deliverable): boolean {
+  return deliverable.materials.length === 0 && deliverable.fileId === null;
+}
+
+/**
+ * 산출물 하나에 등록한 자료. URL 과 파일을 모두 보여 주고, URL 이 있다고 파일을 숨기지 않습니다.
+ * 지급 전 PAID 파일을 막는 것은 서버입니다. 여기서는 링크 문구만 가릅니다.
+ */
+export function DeliverableResources({ deliverable }: Readonly<{ deliverable: Deliverable }>) {
+  return (
+    <>
+      {deliverable.materials.map((item) =>
+        item.url === null ? (
+          <a
+            key={item.deliverableMaterialId}
+            href={INTERNAL.DELIVERABLE_MATERIAL_FILE(item.deliverableMaterialId)}
+            className="rounded-sm text-[13px] font-semibold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            {item.accessStage === "PAID" ? "지급 완료 후 파일 받기" : "인수 시험 파일 받기"}
+          </a>
+        ) : (
+          <span key={item.deliverableMaterialId} className="break-all text-[13px] text-fg-secondary">
+            인수 시험 URL: {item.url}
+          </span>
+        ),
+      )}
+      {deliverable.materials.length === 0 && deliverable.fileId !== null && (
+        <a href={INTERNAL.DELIVERABLE_FILE(deliverable.deliverableId)}>
+          지급 완료 후 기존 파일 받기
+        </a>
+      )}
+    </>
+  );
 }
 
 /**
@@ -33,6 +70,7 @@ export function DeliverableFiles({
   busy,
 }: Readonly<DeliverableFilesProps>) {
   const [open, setOpen] = React.useState(false);
+  const [stages, setStages] = React.useState<Record<number, DeliverableAccessStage>>({});
 
   if (deliverables.length === 0) return null;
 
@@ -63,7 +101,7 @@ export function DeliverableFiles({
             >
               <span
                 className={
-                  deliverable.fileId === null
+                  hasNoMaterial(deliverable)
                     ? "min-w-0 truncate text-[13px] text-fg-subtle"
                     : "min-w-0 truncate text-[13px] text-fg"
                 }
@@ -71,32 +109,45 @@ export function DeliverableFiles({
                 {deliverable.title}
               </span>
 
-              {received ? (
-                <label className="shrink-0 cursor-pointer text-[13px] font-semibold text-primary hover:underline">
-                  {deliverable.fileId === null ? "파일 첨부" : "다시 올리기"}
-                  <input
-                    type="file"
-                    className="sr-only"
-                    disabled={busy}
-                    onChange={(event) => {
-                      const file = event.target.files?.[0];
-                      if (file) onPick?.(deliverable, file);
-                      event.target.value = "";
-                    }}
-                  />
-                </label>
-              ) : deliverable.fileId === null ? (
-                <span className="shrink-0 text-[13px] text-fg-subtle">
-                  아직 올라오지 않았습니다
-                </span>
-              ) : (
-                <a
-                  href={INTERNAL.DELIVERABLE_FILE(deliverable.deliverableId)}
-                  className="shrink-0 rounded-sm text-[13px] font-semibold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                >
-                  받기
-                </a>
-              )}
+              <div className="flex min-w-0 flex-wrap items-center gap-3">
+                <DeliverableResources deliverable={deliverable} />
+                {!received && hasNoMaterial(deliverable) && (
+                  <span className="text-[13px] text-fg-subtle">아직 올라오지 않았습니다</span>
+                )}
+                {received && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <NativeSelect
+                      aria-label={`${deliverable.title} 파일 용도`}
+                      placeholder="파일 용도 선택"
+                      disabled={busy}
+                      value={stages[deliverable.deliverableId] ?? ""}
+                      onChange={(event) => {
+                        const stage = event.target.value;
+                        if (stage === "TEST" || stage === "PAID") {
+                          setStages((previous) => ({ ...previous, [deliverable.deliverableId]: stage }));
+                        }
+                      }}
+                    >
+                      <option value="TEST">인수 시험용</option>
+                      <option value="PAID">지급 후 해금</option>
+                    </NativeSelect>
+                    <label className="cursor-pointer text-[13px] font-semibold text-primary hover:underline">
+                      파일 추가{" "}
+                      <input
+                        type="file"
+                        className="sr-only"
+                        disabled={busy || !stages[deliverable.deliverableId]}
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          const stage = stages[deliverable.deliverableId];
+                          if (file && stage) onPick?.(deliverable, file, stage);
+                          event.target.value = "";
+                        }}
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
             </li>
           ))}
         </ul>

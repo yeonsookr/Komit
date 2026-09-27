@@ -9,11 +9,7 @@ public enum UploadPurpose {
     CAREER_EVIDENCE(Set.of("application/pdf", "image/png", "image/jpeg")),
     PORTFOLIO_IMAGE(Set.of("image/png", "image/jpeg", "image/webp")),
     SIGNATURE(Set.of("image/png")),
-    DELIVERABLE(Set.of(
-            "application/zip",
-            "application/x-zip-compressed",
-            "application/pdf",
-            "application/octet-stream")),
+    DELIVERABLE(Set.of()),
     SESSION_RECORDING(Set.of("audio/webm", "audio/mp4")),
     REPORT_EVIDENCE(Set.of("application/pdf", "image/png", "image/jpeg", "image/webp"));
 
@@ -28,7 +24,7 @@ public enum UploadPurpose {
             return false;
         }
         String baseType = contentType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
-        return allowedContentTypes.contains(baseType);
+        return !baseType.isEmpty() && (this == DELIVERABLE || allowedContentTypes.contains(baseType));
     }
 
     public String keySegment() {

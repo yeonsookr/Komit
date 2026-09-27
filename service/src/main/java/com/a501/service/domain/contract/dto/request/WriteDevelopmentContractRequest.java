@@ -1,6 +1,7 @@
 package com.a501.service.domain.contract.dto.request;
 
 import com.a501.service.domain.contract.dto.request.validation.DistinctMilestoneIssues;
+import com.a501.service.domain.contract.dto.request.validation.SingleHandover;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -21,6 +22,7 @@ import java.util.List;
  */
 @Schema(description = "개발 계약서 작성 요청.")
 @DistinctMilestoneIssues
+@SingleHandover
 public record WriteDevelopmentContractRequest(
         @Schema(description = "착수일.", example = "2026-08-26") @NotNull LocalDate startDate,
         @Schema(description = "최종 납기일.", example = "2026-09-16") @NotNull LocalDate dueDate,

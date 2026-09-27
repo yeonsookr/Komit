@@ -12,16 +12,22 @@ import static org.mockito.Mockito.when;
 import com.a501.service.common.exception.BusinessException;
 import com.a501.service.domain.consulting.service.ConsultingSessionQueryService;
 import com.a501.service.domain.contract.dto.response.ContractResponse;
+import com.a501.service.domain.contract.dto.response.DeliverableMaterialResponse;
+import com.a501.service.domain.contract.dto.response.DeliverableResponse;
 import com.a501.service.domain.contract.dto.response.MilestoneResponse;
 import com.a501.service.domain.contract.entity.ConsultingAgreement;
 import com.a501.service.domain.contract.entity.Contract;
 import com.a501.service.domain.contract.entity.DevelopmentContract;
+import com.a501.service.domain.contract.entity.Deliverable;
+import com.a501.service.domain.contract.entity.DeliverableAccessStage;
+import com.a501.service.domain.contract.entity.DeliverableMaterial;
 import com.a501.service.domain.contract.entity.Milestone;
 import com.a501.service.domain.contract.entity.MilestoneQaResult;
 import com.a501.service.domain.contract.repository.ConsultingAgreementRepository;
 import com.a501.service.domain.contract.repository.ContractRepository;
 import com.a501.service.domain.contract.repository.ContractSignatureRepository;
 import com.a501.service.domain.contract.repository.DeliverableRepository;
+import com.a501.service.domain.contract.repository.DeliverableMaterialRepository;
 import com.a501.service.domain.contract.repository.DevelopmentContractRepository;
 import com.a501.service.domain.contract.repository.MilestoneQaResultRepository;
 import com.a501.service.domain.contract.repository.MilestoneRepository;
@@ -67,6 +73,8 @@ class ContractDetailServiceTest {
     private final MilestoneQaResultRepository milestoneQaResultRepository =
             mock(MilestoneQaResultRepository.class);
     private final DeliverableRepository deliverableRepository = mock(DeliverableRepository.class);
+    private final DeliverableMaterialRepository deliverableMaterialRepository =
+            mock(DeliverableMaterialRepository.class);
     private final ContractSignatureRepository signatureRepository =
             mock(ContractSignatureRepository.class);
     private final TempMessageRepository tempMessageRepository = mock(TempMessageRepository.class);
@@ -83,6 +91,7 @@ class ContractDetailServiceTest {
                     milestoneRepository,
                     milestoneQaResultRepository,
                     deliverableRepository,
+                    deliverableMaterialRepository,
                     signatureRepository,
                     tempMessageRepository,
                     roomQueryService,
@@ -219,6 +228,34 @@ class ContractDetailServiceTest {
         ContractResponse response = service.getContract(CLIENT_ID, CONTRACT_ID);
 
         assertThat(response.development().totalAmount()).isEqualTo(650000L);
+    }
+
+    @Test
+    void returnsEveryUrlAndFileOfOneDeliverableWithoutReplacingOneAnother() {
+        Deliverable deliverable = Deliverable.of(DEVELOPMENT_ID, "소스와 실행 주소");
+        ReflectionTestUtils.setField(deliverable, "id", 401);
+        DeliverableMaterial testFile = DeliverableMaterial.ofFile(401, 3_000_000_001L, DeliverableAccessStage.TEST);
+        DeliverableMaterial paidFile = DeliverableMaterial.ofFile(401, 3_000_000_002L, DeliverableAccessStage.PAID);
+        DeliverableMaterial firstUrl = DeliverableMaterial.ofUrl(401, "https://example.com/test");
+        DeliverableMaterial secondUrl = DeliverableMaterial.ofUrl(401, "https://staging.example.com");
+        ReflectionTestUtils.setField(testFile, "id", 501);
+        ReflectionTestUtils.setField(paidFile, "id", 502);
+        ReflectionTestUtils.setField(firstUrl, "id", 503);
+        ReflectionTestUtils.setField(secondUrl, "id", 504);
+        when(deliverableRepository.findAllByDevelopmentContractIdAndDeletedFalseOrderByIdAsc(DEVELOPMENT_ID))
+                .thenReturn(List.of(deliverable));
+        when(deliverableMaterialRepository.findAllByDeliverableIdInAndDeletedFalseOrderByIdAsc(List.of(401)))
+                .thenReturn(List.of(testFile, paidFile, firstUrl, secondUrl));
+
+        DeliverableResponse response = service.getContract(CLIENT_ID, CONTRACT_ID)
+                .development().deliverables().getFirst();
+
+        assertThat(response.materials()).extracting(DeliverableMaterialResponse::fileId)
+                .containsExactly(3_000_000_001L, 3_000_000_002L, null, null);
+        assertThat(response.materials()).extracting(DeliverableMaterialResponse::url)
+                .containsExactly(null, null, "https://example.com/test", "https://staging.example.com");
+        assertThat(response.materials()).extracting(DeliverableMaterialResponse::accessStage)
+                .containsExactly("TEST", "PAID", "TEST", "TEST");
     }
 
     @Test
