@@ -15,6 +15,7 @@ import type {
   WriteDevelopmentContractRequest,
   WriteReviewRequest,
 } from "@/types/contract";
+import type { Review } from "@/types/developer";
 
 /**
  * 계약서 조회.
@@ -172,6 +173,15 @@ export async function writeReview(
   body: WriteReviewRequest,
 ): Promise<void> {
   await authenticatedBackendApi().post(BACKEND.CONTRACT_REVIEW(contractId), body);
+}
+
+/**
+ * 이 계약에 남긴 리뷰. 의뢰인은 자기가 남긴 것을, 개발자는 받은 것을 봅니다.
+ * 아직 없으면 404(REVIEW_NOT_FOUND), 내 계약이 아니면 404(CONTRACT_NOT_FOUND) 입니다.
+ */
+export async function getContractReview(contractId: number): Promise<Review> {
+  const { data } = await authenticatedBackendApi().get<Review>(BACKEND.CONTRACT_REVIEW(contractId));
+  return data;
 }
 
 /**

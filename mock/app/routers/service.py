@@ -8541,6 +8541,69 @@ def write_review(
     )
 
 
+@router.get(
+    "/contracts/{contractId}/review",
+    response_model=ReviewResponse,
+    tags=[AREA5_TAG],
+    responses={
+        200: {"content": {"application/json": {"example": REVIEWS[0]}}},
+        404: {
+            "model": ErrorResponse,
+            "description": "계약이 없거나 당사자가 아님 · 아직 리뷰가 없음",
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "CONTRACT_NOT_FOUND": {
+                            "summary": "계약 없음",
+                            "value": {
+                                "code": CONTRACT_NOT_FOUND[0],
+                                "message": CONTRACT_NOT_FOUND[1],
+                            },
+                        },
+                        "REVIEW_NOT_FOUND": {
+                            "summary": "아직 리뷰가 없음",
+                            "value": {
+                                "code": "REVIEW_NOT_FOUND",
+                                "message": "리뷰를 찾을 수 없습니다.",
+                            },
+                        },
+                    }
+                }
+            },
+        },
+        **AREA1_UNAUTHORIZED,
+        500: AREA1_ERRORS[500],
+    },
+    summary="계약에 남긴 리뷰 조회",
+    description=(
+        "**화면 — `5_의뢰인_리뷰작성` · `4_의뢰인_리뷰작성` › 남긴 뒤**\n\n"
+        "이 계약에 남긴 리뷰를 돌려준다. 의뢰인은 자기가 남긴 리뷰를, 개발자는 받은 리뷰를 "
+        "본다. 계약 하나에 리뷰는 하나다. (`R-REV-02`)\n\n"
+        "- **200**: 리뷰가 있을 때\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때. 없는 계약이거나 이 계약의 "
+        "당사자가 아닌 사람이 부른 경우다\n"
+        "- **404 / REVIEW_NOT_FOUND**: 아직 리뷰를 남기지 않았을 때. 목에서는 "
+        "`contractId`가 400일 때다\n"
+        "- **500 / INTERNAL_ERROR**: 읽지 못했을 때"
+    ),
+)
+def get_contract_review(
+    contractId: Annotated[
+        int,
+        Path(
+            description="계약 식별자. 404는 없음, 400은 리뷰 없음 재현용 예약값이다.",
+            examples=[DEV_CONTRACT_ID],
+        ),
+    ],
+) -> ReviewResponse | JSONResponse:
+    if contractId == NOT_FOUND_CONTRACT_ID:
+        return _error_response(404, CONTRACT_NOT_FOUND)
+    if contractId == NOT_COMPLETED_CONTRACT_ID:
+        return _error_response(404, REVIEW_NOT_FOUND)
+    return ReviewResponse(**REVIEWS[0])
+
+
 # =========================================================================== #
 # 영역 6 — 문제 신고 · 이의 제기
 #

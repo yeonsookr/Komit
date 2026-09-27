@@ -1,6 +1,9 @@
 package com.a501.service.domain.review.service;
 
+import com.a501.service.common.exception.BusinessException;
+import com.a501.service.domain.contract.ContractErrorCode;
 import com.a501.service.domain.contract.service.ContractQueryService;
+import com.a501.service.domain.review.ReviewErrorCode;
 import com.a501.service.domain.review.dto.response.ReviewListResponse;
 import com.a501.service.domain.review.dto.response.ReviewResponse;
 import com.a501.service.domain.review.entity.Review;
@@ -48,6 +51,21 @@ public class ReviewQueryService {
 
     public int countByDeveloper(Integer developerId) {
         return Math.toIntExact(reviewRepository.countByDeveloperIdAndDeletedFalse(developerId));
+    }
+
+    /**
+     * 이 계약에 남긴 리뷰. 의뢰인은 자기가 남긴 것을, 개발자는 받은 것을 봅니다. 계약 하나에 리뷰는 하나입니다. (R-REV-02)
+     *
+     * @throws BusinessException {@link ContractErrorCode#CONTRACT_NOT_FOUND} 없거나 내 계약이 아닐 때,
+     *                           {@link ReviewErrorCode#REVIEW_NOT_FOUND} 아직 리뷰가 없을 때
+     */
+    public ReviewResponse findByContract(Integer userId, Integer contractId) {
+        contractQueryService.findReviewableContract(contractId)
+                .filter(contract -> contract.parties().includes(userId))
+                .orElseThrow(() -> new BusinessException(ContractErrorCode.CONTRACT_NOT_FOUND));
+        return reviewRepository.findByContractIdAndDeletedFalse(contractId)
+                .map(this::toResponse)
+                .orElseThrow(() -> new BusinessException(ReviewErrorCode.REVIEW_NOT_FOUND));
     }
 
     /** 리뷰 하나를 계약 응답으로. 답글을 단 직후처럼 엔티티를 들고 있을 때 씁니다. */
