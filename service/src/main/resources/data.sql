@@ -202,6 +202,12 @@ SELECT source.code_id, groups.group_id, source.code_name, source.sort_order, TRU
 FROM (VALUES
     (21, 'TECH_CATEGORY', 'Next.js', 1), (22, 'TECH_CATEGORY', 'Supabase', 2),
     (23, 'TECH_CATEGORY', 'TypeScript', 3), (24, 'TECH_CATEGORY', 'React', 4),
+    (25, 'TECH_CATEGORY', 'JavaScript', 5), (26, 'TECH_CATEGORY', 'Node.js', 6),
+    (27, 'TECH_CATEGORY', 'Express.js', 7), (28, 'TECH_CATEGORY', 'Python', 8),
+    (29, 'TECH_CATEGORY', 'FastAPI', 9), (30, 'TECH_CATEGORY', 'Java', 10),
+    (31, 'TECH_CATEGORY', 'Spring Boot', 11), (32, 'TECH_CATEGORY', 'PostgreSQL', 12),
+    (33, 'TECH_CATEGORY', 'MySQL', 13), (34, 'TECH_CATEGORY', 'Firebase', 14),
+    (35, 'TECH_CATEGORY', 'AWS', 15), (36, 'TECH_CATEGORY', 'Docker', 16),
     (41, 'DEV_FIELD', '인터넷에 올리기', 1), (42, 'DEV_FIELD', 'DB 연결', 2),
     (43, 'DEV_FIELD', '도메인 연결', 3), (44, 'DEV_FIELD', '로그인 붙이기', 4),
     (45, 'DEV_FIELD', '알림 보내기', 5), (46, 'DEV_FIELD', '비용 진단', 6),
