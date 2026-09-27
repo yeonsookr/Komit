@@ -246,7 +246,7 @@ export default function Preview() {
           </Row>
           <Card className="max-w-lg">
             <p className="mb-3 text-sm font-semibold">실력</p>
-            <RatingScale name="skill" value={rating} onChange={setRating} labels={["전혀", "조금", "보통", "잘됨", "완전"]} />
+            <RatingScale name="skill" value={rating} onChange={setRating} labels={["매우 아쉬움", "아쉬움", "보통", "좋음", "매우 좋음"]} />
           </Card>
         </Section>
 

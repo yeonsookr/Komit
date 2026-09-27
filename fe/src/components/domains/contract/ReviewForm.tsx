@@ -13,9 +13,8 @@ import { ApiError } from "@/types/api";
 /** 리뷰 본문 길이 상한. R-REV-04. */
 const MAX_CONTENT_LENGTH = 1000;
 
-/** 두 축의 눈금 문구. 화면에 적힌 것을 그대로 씁니다 (R-REV-01). */
-const DEV_LABELS = ["전혀", "조금", "보통", "잘됨", "완전"] as const;
-const EXP_LABELS = ["못했음", "조금", "보통", "잘함", "완전"] as const;
+/** 두 축이 같은 눈금 문구를 씁니다. 무엇을 매기는지는 「실력」·「설명력」 제목이 알려 줍니다 (R-REV-01). */
+const SCORE_LABELS = ["매우 아쉬움", "아쉬움", "보통", "좋음", "매우 좋음"] as const;
 
 export interface ReviewFormProps {
   contractId: number;
@@ -84,7 +83,7 @@ export function ReviewForm({
             name="devScore"
             value={devScore}
             onChange={setDevScore}
-            labels={[...DEV_LABELS]}
+            labels={[...SCORE_LABELS]}
           />
         </Field>
 
@@ -93,7 +92,7 @@ export function ReviewForm({
             name="expScore"
             value={expScore}
             onChange={setExpScore}
-            labels={[...EXP_LABELS]}
+            labels={[...SCORE_LABELS]}
           />
         </Field>
 
