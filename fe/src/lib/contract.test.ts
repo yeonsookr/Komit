@@ -4,6 +4,7 @@ import {
   checkedCount,
   confirmedAmount,
   developmentStageLabel,
+  handoverRegistration,
   isFullyChecked,
   isCancelled,
   isAwaitingCheck,
@@ -12,16 +13,19 @@ import {
   isConsultingDraft,
   consultingPaymentStage,
   isDevelopmentDraft,
+  isHttpUrl,
   isSignedByAnyone,
   isSignedByBoth,
   hasSigned,
   lastCounterpartMessage,
   nearestAutoPassAt,
   periodDays,
+  registrationFailure,
   remainingAmount,
   remainingCount,
   totalAmount,
 } from "./contract";
+import { ApiError } from "@/types/api";
 import type { Contract, ContractQaCriterion, Milestone } from "@/types/contract";
 
 function qa(id: number, passed: boolean): ContractQaCriterion {
@@ -393,5 +397,113 @@ describe("isAwaitingCheck", () => {
     for (const status of ["IN_PROGRESS", "SCHEDULED", "CONFIRMED", "PROPOSED"] as const) {
       expect(isAwaitingCheck(milestone({ status }))).toBe(false);
     }
+  });
+});
+
+describe("handoverRegistration", () => {
+  const regular = (status: Milestone["status"]) => milestone({ milestoneId: 1, status });
+  const handover = (status: Milestone["status"], milestoneId = 2) =>
+    milestone({ milestoneId, isHandover: true, price: 0, status });
+
+  it("일반 작업이 하나라도 남았으면 아직 열리지 않는다", () => {
+    expect(handoverRegistration([regular("CONFIRMED"), regular("SUBMITTED"), handover("SCHEDULED")])).toBe(
+      "HANDOVER_NOT_OPEN",
+    );
+  });
+
+  it("일반 작업을 모두 통과하면 인계 작업의 확인을 요청하기 전까지 열린다", () => {
+    expect(handoverRegistration([regular("CONFIRMED"), handover("IN_PROGRESS")])).toBe("OPEN");
+  });
+
+  it("인계 작업의 확인을 요청하면 시험 중이라 닫힌다", () => {
+    expect(handoverRegistration([regular("CONFIRMED"), handover("SUBMITTED")])).toBe("HANDOVER_UNDER_REVIEW");
+  });
+
+  it("인계 작업을 통과하면 최종 인수 시험을 마쳐 닫힌다", () => {
+    expect(handoverRegistration([regular("CONFIRMED"), handover("CONFIRMED")])).toBe("FINAL_ACCEPTANCE_PASSED");
+  });
+
+  it("일부 통과로 인계 작업이 돌아오면 다시 열린다", () => {
+    // 서버는 일부만 체크하면 작업을 IN_PROGRESS 로 되돌리고 요청 시각을 비운다.
+    const returned = milestone({
+      milestoneId: 2,
+      isHandover: true,
+      price: 0,
+      status: "IN_PROGRESS",
+      submittedAt: null,
+      qaCriteria: [qa(1, true), qa(2, false)],
+    });
+    expect(handoverRegistration([regular("CONFIRMED"), returned])).toBe("OPEN");
+  });
+
+  it("인계 작업이 여럿이면 하나라도 통과했거나 요청 중일 때 닫는다", () => {
+    expect(handoverRegistration([regular("CONFIRMED"), handover("IN_PROGRESS"), handover("CONFIRMED", 3)])).toBe(
+      "FINAL_ACCEPTANCE_PASSED",
+    );
+    expect(handoverRegistration([regular("CONFIRMED"), handover("IN_PROGRESS"), handover("SUBMITTED", 3)])).toBe(
+      "HANDOVER_UNDER_REVIEW",
+    );
+  });
+});
+
+describe("isHttpUrl", () => {
+  // 서버 HttpUrlValidatorTest 와 같은 예시.
+  it.each([
+    "http://localhost:3000",
+    "https://demo.example.com/path?q=1",
+    "HTTPS://Demo.Example.com",
+    "https://user@demo.example.com:8443/a b",
+    "https://[::1]:8080/",
+  ])("호스트가 있는 http·https 주소는 받는다: %s", (value) => {
+    expect(isHttpUrl(value)).toBe(true);
+  });
+
+  it.each([
+    "ftp://demo.example.com",
+    "javascript:alert(1)",
+    "demo.example.com",
+    "https://",
+    "https://:8080",
+    "https:demo.example.com",
+    // 서버 식에서도 대괄호 안이 비어 호스트가 없다.
+    "https://[]:8080",
+  ])("다른 스킴이나 호스트가 없는 주소는 거부한다: %s", (value) => {
+    expect(isHttpUrl(value)).toBe(false);
+  });
+});
+
+describe("registrationFailure", () => {
+  it("409 는 그 사이 계약이 바뀐 것이라 다시 읽는다", () => {
+    const failure = registrationFailure(
+      new ApiError(409, "HANDOVER_UNDER_REVIEW", "최종 인수 시험 중에는 인계 자료를 바꿀 수 없습니다."),
+      "더하지 못했습니다.",
+    );
+
+    expect(failure).toEqual({
+      title: "최종 인수 시험 중에는 인계 자료를 바꿀 수 없습니다.",
+      refresh: true,
+      retry: false,
+    });
+  });
+
+  it("필드 오류면 그 사유를 알리고 다시 읽지 않는다", () => {
+    const failure = registrationFailure(
+      new ApiError(400, "INVALID_INPUT", "입력값이 올바르지 않습니다.", [
+        { field: "url", reason: "http 또는 https 주소여야 합니다." },
+      ]),
+      "더하지 못했습니다.",
+    );
+
+    expect(failure).toEqual({ title: "http 또는 https 주소여야 합니다.", refresh: false, retry: false });
+  });
+
+  it("응답이 오지 않았거나 서버 오류면 다시 보내 볼 수 있다", () => {
+    expect(registrationFailure(new ApiError(0, "NETWORK_ERROR", "연결 실패"), "x").retry).toBe(true);
+    expect(registrationFailure(new ApiError(502, "UNKNOWN_ERROR", "실패"), "x").retry).toBe(true);
+    expect(registrationFailure(new Error("boom"), "올리지 못했습니다.")).toEqual({
+      title: "올리지 못했습니다.",
+      refresh: false,
+      retry: true,
+    });
   });
 });

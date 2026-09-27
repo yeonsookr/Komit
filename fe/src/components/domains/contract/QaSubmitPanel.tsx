@@ -13,7 +13,7 @@ import {
   StickyBar,
 } from "@/components/common";
 import { Callout, useToast } from "@/components/feedback";
-import { DeliverableFiles } from "./DeliverableFiles";
+import { busyKey, DeliverableFiles } from "./DeliverableFiles";
 import { clientApi } from "@/lib/api/client";
 import { uploadFromBrowser } from "@/lib/upload/browserUpload";
 import { INTERNAL } from "@/lib/api/endpoints";
@@ -22,20 +22,34 @@ import {
   checkedCount,
   confirmedAmount,
   confirmedCount,
+  handoverRegistration,
   isConfirmed,
   isHandover,
   nearestAutoPassAt,
+  registrationFailure,
   remainingAmount,
   remainingCount,
+  type RegistrationFailure,
 } from "@/lib/contract";
 import { formatDateLabel, formatShortDateTime } from "@/lib/format";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
 import type {
   Deliverable,
+  DeliverableAccessStage,
   DevelopmentAgreement,
   Milestone,
 } from "@/types/contract";
+
+/** 올렸지만 산출물에 붙이지 못한 파일. 다시 붙일 때 그대로 보냅니다. */
+interface UnattachedUpload {
+  deliverableId: number;
+  /** 산출물 이름. 알림에 씁니다. */
+  title: string;
+  fileId: number;
+  fileName: string;
+  accessStage: DeliverableAccessStage;
+}
 
 export interface QaSubmitPanelProps {
   roomId: number;
@@ -52,7 +66,8 @@ export interface QaSubmitPanelProps {
  * 의뢰인이 어디까지 확인했는지 보고, 끝난 작업마다 확인 요청을 보냅니다.
  * 통과 판정은 의뢰인이 하므로 여기서는 체크할 수 없습니다.
  *
- * 인계물은 파일을 올려야 의뢰인이 받아 확인할 수 있습니다 (R-QA-04).
+ * 인계물은 파일을 올려야 의뢰인이 받아 확인할 수 있습니다 (R-QA-04). 인계 자료는 일반 작업을 모두
+ * 통과한 뒤부터 인계 작업의 확인을 요청하기 전까지 등록합니다 (R-QA-06).
  */
 export function QaSubmitPanel({
   roomId,
@@ -62,15 +77,23 @@ export function QaSubmitPanel({
 }: Readonly<QaSubmitPanelProps>) {
   const router = useRouter();
   const showToast = useToast();
-  const [busy, setBusy] = React.useState<number | null>(null);
+  /** 진행 중인 요청의 열쇠(`busyKey`). 한 번에 하나만 보냅니다. */
+  const [busy, setBusy] = React.useState<string | null>(null);
+  const [unattached, setUnattached] = React.useState<UnattachedUpload | null>(null);
 
   const milestones = development.milestones;
   const autoPassAt = nearestAutoPassAt(milestones);
-  /** 인계 작업. 인계물을 다 올린 뒤 이 작업으로 확인 요청을 보냅니다. */
+  const registration = handoverRegistration(milestones);
+
+  /** 등록 실패를 알립니다. 409 면 그 사이 바뀐 계약을 다시 읽어 닫힌 까닭이 보이게 합니다. */
+  const notify = (failure: RegistrationFailure) => {
+    showToast({ tone: "danger", title: failure.title });
+    if (failure.refresh) router.refresh();
+  };
 
   const requestCheck = async (milestone: Milestone) => {
     if (busy !== null) return;
-    setBusy(milestone.milestoneId);
+    setBusy(busyKey.milestone(milestone.milestoneId));
 
     try {
       await clientApi.post(
@@ -93,48 +116,77 @@ export function QaSubmitPanel({
     }
   };
 
-  const upload = async (deliverable: Deliverable, file: File, accessStage: "TEST" | "PAID") => {
-    if (busy !== null) return;
-    setBusy(deliverable.deliverableId);
-
+  /**
+   * 올린 파일을 산출물에 붙입니다. 붙이기만 실패하고 다시 해 볼 만하면 파일 식별자를 두어, 파일을 다시
+   * 올리지 않고 붙이기만 다시 합니다. 서버는 같은 파일·용도를 다시 받으면 새로 만들지 않습니다.
+   */
+  const attach = async (target: UnattachedUpload) => {
     try {
-      const uploaded = await uploadFromBrowser(file, "DELIVERABLE");
-      await clientApi.post(INTERNAL.DELIVERABLE_FILE(deliverable.deliverableId), {
-        fileId: uploaded.fileId,
-        accessStage,
+      await clientApi.post(INTERNAL.DELIVERABLE_FILE(target.deliverableId), {
+        fileId: target.fileId,
+        accessStage: target.accessStage,
       });
+      setUnattached(null);
       showToast({
         tone: "success",
-        title: `‘${deliverable.title}’ 을 올렸습니다.`,
+        title: `‘${target.title}’ 에 파일을 붙였습니다.`,
       });
       router.refresh();
     } catch (error) {
-      showToast({
-        tone: "danger",
-        title: error instanceof ApiError ? error.message : "올리지 못했습니다.",
+      const failure = registrationFailure(error, "파일을 붙이지 못했습니다.");
+      setUnattached(failure.retry ? target : null);
+      notify(failure);
+    }
+  };
+
+  const upload = async (deliverable: Deliverable, file: File, accessStage: DeliverableAccessStage) => {
+    if (busy !== null) return;
+    setBusy(busyKey.file(deliverable.deliverableId));
+
+    try {
+      const uploaded = await uploadFromBrowser(file, "DELIVERABLE");
+      await attach({
+        deliverableId: deliverable.deliverableId,
+        title: deliverable.title,
+        fileId: uploaded.fileId,
+        fileName: file.name,
+        accessStage,
       });
+    } catch (error) {
+      // 올리기부터 실패했습니다. 붙일 파일이 없으니 다시 붙이기를 보이지 않습니다.
+      notify(registrationFailure(error, "올리지 못했습니다."));
     } finally {
       setBusy(null);
     }
   };
 
-  /** 인수 시험 URL·산출물 항목을 더합니다. 주소 형식처럼 필드 오류면 그 사유를 보여 줍니다. */
-  const add = async (key: number, path: string, body: unknown, done: string) => {
-    if (busy !== null) return;
+  const retryAttach = async () => {
+    if (busy !== null || unattached === null) return;
+    setBusy(busyKey.file(unattached.deliverableId));
+
+    try {
+      await attach(unattached);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  /**
+   * 인수 시험 URL·산출물 항목을 더합니다. 주소 형식처럼 필드 오류면 그 사유를 보여 줍니다.
+   * 성공했는지 돌려주어, 실패하면 적은 값을 칸에 남깁니다.
+   */
+  const add = async (key: string, path: string, body: unknown, done: string): Promise<boolean> => {
+    if (busy !== null) return false;
     setBusy(key);
 
     try {
       await clientApi.post(path, body);
       showToast({ tone: "success", title: done });
       router.refresh();
+      return true;
     } catch (error) {
-      showToast({
-        tone: "danger",
-        title:
-          error instanceof ApiError
-            ? (error.errors?.[0]?.reason ?? error.message)
-            : "더하지 못했습니다.",
-      });
+      notify(registrationFailure(error, "더하지 못했습니다."));
+      return false;
     } finally {
       setBusy(null);
     }
@@ -193,24 +245,29 @@ export function QaSubmitPanel({
                     </span>
                   </div>
 
-                  {/* 넘겨줄 파일. 확인 문장과 짝이 아니라 따로 셉니다. */}
+                  {/* 넘겨줄 자료. 확인 문장과 짝이 아니라 따로 셉니다. */}
                   {isHandover(milestone) && (
                     <DeliverableFiles
                       deliverables={development.deliverables}
                       received
-                      busy={busy !== null}
+                      paid={development.status === "COMPLETED"}
+                      registration={registration}
+                      busy={busy}
+                      contractId={contractId}
+                      unattached={unattached}
+                      onRetryAttach={() => void retryAttach()}
                       onPick={(deliverable, file, stage) => void upload(deliverable, file, stage)}
                       onAddUrl={(deliverable, url) =>
-                        void add(
-                          deliverable.deliverableId,
+                        add(
+                          busyKey.url(deliverable.deliverableId),
                           INTERNAL.DELIVERABLE_URLS(deliverable.deliverableId),
                           { url },
                           `‘${deliverable.title}’ 에 인수 시험 URL 을 더했습니다.`,
                         )
                       }
                       onAddDeliverable={(title) =>
-                        void add(
-                          contractId,
+                        add(
+                          busyKey.deliverable(contractId),
                           INTERNAL.CONTRACT_DELIVERABLES(contractId),
                           { title },
                           `산출물 ‘${title}’ 을 더했습니다.`,
@@ -258,7 +315,7 @@ export function QaSubmitPanel({
                       <Button
                         size="sm"
                         variant={milestone.submittedAt ? "outline" : "primary"}
-                        loading={busy === milestone.milestoneId}
+                        loading={busy === busyKey.milestone(milestone.milestoneId)}
                         onClick={() => requestCheck(milestone)}
                       >
                         {isHandover(milestone)

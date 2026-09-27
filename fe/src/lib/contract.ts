@@ -1,6 +1,7 @@
 /**
  * 계약 화면의 표시 규칙. 화면에서 분기하지 않도록 순수 함수로 빼 둡니다.
  */
+import { ApiError } from "@/types/api";
 import type {
   Contract,
   ContractMessage,
@@ -143,6 +144,83 @@ export function isConfirmed(milestone: Milestone): boolean {
  */
 export function isAwaitingCheck(milestone: Milestone): boolean {
   return milestone.status === "SUBMITTED";
+}
+
+/**
+ * 인계 자료를 지금 등록할 수 있는지. 닫혔으면 서버가 돌려줄 오류 코드와 같은 이름으로 까닭을 적습니다.
+ * 서버의 등록 검사와 같은 순서로 봅니다 (R-QA-06).
+ *
+ * 일반 작업이 하나라도 남았으면 아직 열리지 않았고, 인계 작업을 통과했으면 최종 인수 시험을 마친 것이며,
+ * 인계 작업의 확인을 요청했으면 의뢰인이 시험하는 중입니다. 의뢰인이 일부만 통과시켜 인계 작업이
+ * 돌아오면 다시 열립니다. 인계 작업이 여럿이어도 하나라도 통과했거나 요청 중이면 닫습니다(서버와 같음).
+ */
+export type HandoverRegistration =
+  | "OPEN"
+  | "HANDOVER_NOT_OPEN"
+  | "HANDOVER_UNDER_REVIEW"
+  | "FINAL_ACCEPTANCE_PASSED";
+
+export function handoverRegistration(milestones: Milestone[]): HandoverRegistration {
+  if (!billableMilestones(milestones).every(isConfirmed)) return "HANDOVER_NOT_OPEN";
+  const handovers = milestones.filter(isHandover);
+  if (handovers.some(isConfirmed)) return "FINAL_ACCEPTANCE_PASSED";
+  if (handovers.some(isAwaitingCheck)) return "HANDOVER_UNDER_REVIEW";
+  return "OPEN";
+}
+
+/** R-QA-06: 인수 시험 URL 길이 상한. */
+export const DELIVERABLE_URL_MAX_LENGTH = 2000;
+
+/** R-QA-06: 산출물 이름 길이 상한. 계약서의 항목과 계약 뒤 더한 항목이 같습니다. */
+export const DELIVERABLE_TITLE_MAX_LENGTH = 100;
+
+/** 스킴 뒤 `//` 부터 경로·질의·조각 앞까지가 주소 부분입니다. 서버 `HttpUrlValidator` 와 같은 식입니다. */
+const URL_PATTERN = /^([A-Za-z][A-Za-z0-9+.-]*):\/\/([^/?#]*)/;
+
+/**
+ * 인수 시험 URL 로 받는 주소인지. 호스트가 있는 http·https 주소만 받습니다 (R-QA-06).
+ * 보내기 전에 걸러 사유를 바로 보여 주려는 것이고, 판정은 서버가 다시 합니다. 서버와 같은 식으로 봐서
+ * 여기서 통과한 주소를 서버가 형식 때문에 거부하지 않습니다.
+ */
+export function isHttpUrl(value: string): boolean {
+  const match = URL_PATTERN.exec(value);
+  if (match === null) return false;
+
+  const [, scheme, authority] = match;
+  // 사용자 정보와 포트를 떼어 낸 호스트. `https://:8080` 처럼 호스트가 비면 거부합니다.
+  const hostAndPort = authority.slice(authority.lastIndexOf("@") + 1);
+  let host: string;
+  if (hostAndPort.startsWith("[")) {
+    const end = hostAndPort.indexOf("]");
+    host = end < 0 ? "" : hostAndPort.slice(1, end);
+  } else {
+    const colon = hostAndPort.indexOf(":");
+    host = colon < 0 ? hostAndPort : hostAndPort.slice(0, colon);
+  }
+  const lower = scheme.toLowerCase();
+  return (lower === "http" || lower === "https") && host !== "";
+}
+
+/** 인계 자료 등록이 실패했을 때 화면이 할 일. */
+export interface RegistrationFailure {
+  /** 알림에 적을 문구. 필드 오류면 그 사유, 아니면 서버 문구입니다. */
+  title: string;
+  /**
+   * 화면을 다시 읽을지. 409 는 그 사이 계약이 바뀐 것입니다 — 다른 탭에서 확인을 요청했거나 의뢰인이
+   * 통과시켰습니다. 다시 읽어야 닫힌 까닭이 화면에 나옵니다.
+   */
+  refresh: boolean;
+  /** 같은 요청을 다시 보내 볼 만한지. 응답이 오지 않았거나 서버 오류일 때입니다. */
+  retry: boolean;
+}
+
+export function registrationFailure(error: unknown, fallback: string): RegistrationFailure {
+  if (!(error instanceof ApiError)) return { title: fallback, refresh: false, retry: true };
+  return {
+    title: error.errors?.[0]?.reason ?? error.message,
+    refresh: error.status === 409,
+    retry: error.status === 0 || error.status >= 500,
+  };
 }
 
 /** 의뢰인이 체크한 확인 문장 수. `2 / 3 확인` 의 앞 숫자입니다. */

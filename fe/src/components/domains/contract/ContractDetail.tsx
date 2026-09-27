@@ -122,6 +122,9 @@ export function ContractDetail({
   const mine = hasSigned(contract, myUserId);
   const amount = development.totalAmount.toLocaleString("ko-KR");
   const note = lastCounterpartMessage(contract, received);
+  // 서명한 계약서의 항목과 체결 뒤 더한 항목을 나눠 적습니다.
+  const contractualDeliverables = development.deliverables.filter((item) => item.isContractual);
+  const addedDeliverables = development.deliverables.filter((item) => !item.isContractual);
 
   return (
     <section className="mt-8">
@@ -203,11 +206,11 @@ export function ContractDetail({
             <KeyValueRow
               label="인계물"
               value={
-                development.deliverables.length === 0 ? (
+                contractualDeliverables.length === 0 ? (
                   "없음"
                 ) : (
                   <span className="flex flex-col gap-1">
-                    {development.deliverables.map((item) => (
+                    {contractualDeliverables.map((item) => (
                       <span key={item.deliverableId}>{item.title}</span>
                     ))}
                   </span>
@@ -215,6 +218,23 @@ export function ContractDetail({
               }
               className="px-4 py-3.5 sm:px-5"
             />
+            {/* 체결 뒤 개발자가 더한 항목. 서명한 계약서의 범위·금액·확인 문장은 그대로입니다 (R-QA-06). */}
+            {addedDeliverables.length > 0 && (
+              <KeyValueRow
+                label="계약 뒤 추가한 인계물"
+                value={
+                  <span className="flex flex-col gap-1">
+                    {addedDeliverables.map((item) => (
+                      <span key={item.deliverableId}>{item.title}</span>
+                    ))}
+                    <span className="text-[13px] text-fg-subtle">
+                      계약 범위와 금액은 바뀌지 않습니다.
+                    </span>
+                  </span>
+                }
+                className="px-4 py-3.5 sm:px-5"
+              />
+            )}
             {/* 의뢰인은 아래 버튼에 금액이 적혀 있어 개발자에게만 적습니다. */}
             {received && (
               <KeyValueRow
