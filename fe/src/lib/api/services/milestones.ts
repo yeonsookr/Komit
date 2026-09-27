@@ -1,6 +1,7 @@
 import "server-only";
 
-import { authenticatedBackendApi } from "../server";
+import { Readable } from "node:stream";
+import { authenticatedBackendApi, authenticatedDownloadApi } from "../server";
 import { BACKEND } from "../endpoints";
 import { fileNameFrom } from "../download";
 import type {
@@ -114,11 +115,30 @@ export async function addDeliverable(contractId: number, title: string): Promise
   return data;
 }
 
-/** 내려받은 인계물. 파일 이름은 Content-Disposition 에 담겨 옵니다. */
+/**
+ * 내려받은 인계물. 파일 이름은 Content-Disposition 에 담겨 옵니다.
+ *
+ * 본문은 메모리에 모으지 않고 백엔드에서 받는 대로 흘려보냅니다.
+ */
 export interface DeliverableFile {
-  body: ArrayBuffer;
+  body: ReadableStream<Uint8Array>;
   fileName: string;
   contentType: string;
+  /** 백엔드가 알려 준 바이트 수. 없거나 숫자가 아니면 null 입니다. */
+  contentLength: string | null;
+}
+
+/** 파일 응답을 스트림 그대로 넘깁니다. 받는 쪽이 끊으면 백엔드 연결도 닫힙니다. */
+async function streamFile(url: string): Promise<DeliverableFile> {
+  const response = await authenticatedDownloadApi().get<Readable>(url, { responseType: "stream" });
+  const length = String(response.headers["content-length"] ?? "");
+
+  return {
+    body: Readable.toWeb(response.data) as ReadableStream<Uint8Array>,
+    fileName: fileNameFrom(String(response.headers["content-disposition"] ?? "")),
+    contentType: String(response.headers["content-type"] ?? "application/octet-stream"),
+    contentLength: /^\d+$/.test(length) ? length : null,
+  };
 }
 
 /**
@@ -127,27 +147,10 @@ export interface DeliverableFile {
  * 의뢰인이 넘겨받은 것을 확인할 때 씁니다. 이 계약의 당사자만 받을 수 있습니다.
  */
 export async function downloadDeliverable(deliverableId: number): Promise<DeliverableFile> {
-  const response = await authenticatedBackendApi().get<ArrayBuffer>(
-    BACKEND.DELIVERABLE_FILE(deliverableId),
-    { responseType: "arraybuffer" },
-  );
-
-  return {
-    body: response.data,
-    fileName: fileNameFrom(String(response.headers["content-disposition"] ?? "")),
-    contentType: String(response.headers["content-type"] ?? "application/octet-stream"),
-  };
+  return streamFile(BACKEND.DELIVERABLE_FILE(deliverableId));
 }
 
 /** 인계 자료 식별자로 고른 파일 하나를 내려받습니다. 서버가 자료별 권한을 검사합니다. */
 export async function downloadDeliverableMaterial(deliverableMaterialId: number): Promise<DeliverableFile> {
-  const response = await authenticatedBackendApi().get<ArrayBuffer>(
-    BACKEND.DELIVERABLE_MATERIAL_FILE(deliverableMaterialId),
-    { responseType: "arraybuffer" },
-  );
-  return {
-    body: response.data,
-    fileName: fileNameFrom(String(response.headers["content-disposition"] ?? "")),
-    contentType: String(response.headers["content-type"] ?? "application/octet-stream"),
-  };
+  return streamFile(BACKEND.DELIVERABLE_MATERIAL_FILE(deliverableMaterialId));
 }

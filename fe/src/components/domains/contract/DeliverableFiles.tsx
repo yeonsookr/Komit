@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Button } from "@/components/buttons";
 import { Badge, Input, NativeSelect } from "@/components/common";
+import { useToast } from "@/components/feedback";
 import { INTERNAL } from "@/lib/api/endpoints";
 import { appPath } from "@/lib/basePath";
 import {
@@ -11,6 +12,7 @@ import {
   isHttpUrl,
   type HandoverRegistration,
 } from "@/lib/contract";
+import { downloadFromBrowser, oneAtATime } from "@/lib/download/browserDownload";
 import type { Deliverable, DeliverableAccessStage, DeliverableMaterial } from "@/types/contract";
 
 /**
@@ -116,10 +118,47 @@ const STAGE_HELP: Record<DeliverableAccessStage | "NONE", string> = {
 };
 
 const LINK_CLASS =
-  "rounded-sm text-[13px] font-semibold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
+  "rounded-sm text-[13px] font-semibold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-wait disabled:text-fg-subtle disabled:no-underline";
 const LOCKED_CLASS = "text-[13px] text-fg-subtle";
 
-/** 파일 자료 하나. 지급 전 의뢰인에게는 링크 대신 등록 사실과 받을 수 있는 때만 보입니다. */
+/**
+ * 파일 받기 버튼. 링크 대신 요청으로 받아, 권한이 없거나 실패하면 서버가 준 사유를 알립니다.
+ * 받는 중에는 잠가 같은 파일을 두 번 받지 않습니다.
+ *
+ * 받을 주소는 `data-download` 에도 싣습니다. 하위 경로(`appPath`)를 붙인 그대로입니다.
+ */
+function DownloadButton({ path, label }: Readonly<{ path: string; label: string }>) {
+  const showToast = useToast();
+  const [loading, setLoading] = React.useState(false);
+  const url = appPath(path);
+  const download = React.useMemo(
+    () =>
+      oneAtATime(async () => {
+        setLoading(true);
+        try {
+          await downloadFromBrowser(url, (message) => showToast({ tone: "danger", title: message }));
+        } finally {
+          setLoading(false);
+        }
+      }),
+    [url, showToast],
+  );
+
+  return (
+    <button
+      type="button"
+      data-download={url}
+      className={LINK_CLASS}
+      disabled={loading}
+      aria-busy={loading || undefined}
+      onClick={() => void download()}
+    >
+      {label}
+    </button>
+  );
+}
+
+/** 파일 자료 하나. 지급 전 의뢰인에게는 받기 버튼 대신 등록 사실과 받을 수 있는 때만 보입니다. */
 function FileResource({
   item,
   name,
@@ -133,9 +172,7 @@ function FileResource({
   }
   return (
     <span className="flex flex-wrap items-baseline gap-x-2">
-      <a href={appPath(INTERNAL.DELIVERABLE_MATERIAL_FILE(item.deliverableMaterialId))} className={LINK_CLASS}>
-        {name} 받기
-      </a>
+      <DownloadButton path={INTERNAL.DELIVERABLE_MATERIAL_FILE(item.deliverableMaterialId)} label={`${name} 받기`} />
       {/* 올린 개발자는 언제든 받지만, 의뢰인은 아직 받지 못한다는 것을 함께 적습니다. */}
       {locked && <span className={LOCKED_CLASS}>의뢰인은 지급 완료 후 받습니다</span>}
     </span>
@@ -146,8 +183,8 @@ function FileResource({
  * 산출물 하나에 등록한 자료. URL·인수 시험 파일·해금 파일 순서로 묶어 보이고, URL 이 있다고 파일을
  * 숨기지 않습니다.
  *
- * 지급 전 PAID 파일은 의뢰인에게 링크 대신 받을 수 있는 때를 알립니다. 서버도 409 로 막지만,
- * 링크를 누르면 오류 본문만 담긴 창이 열리므로 여기서 먼저 가립니다 (R-QA-06).
+ * 지급 전 PAID 파일은 의뢰인에게 받기 버튼 대신 받을 수 있는 때를 알립니다. 서버도 409 로 막지만,
+ * 누른 뒤에야 막히지 않게 여기서 먼저 가립니다 (R-QA-06). URL 자료는 새 창 링크 그대로입니다.
  */
 export function DeliverableResources({
   deliverable,
@@ -190,9 +227,7 @@ export function DeliverableResources({
       {/* 예전 단일 파일은 TEST·PAID 구분이 없어 해금 파일로 다룹니다 (R-QA-06). */}
       {deliverable.materials.length === 0 && deliverable.fileId !== null && (
         received || paid ? (
-          <a href={appPath(INTERNAL.DELIVERABLE_FILE(deliverable.deliverableId))} className={LINK_CLASS}>
-            기존 파일 받기
-          </a>
+          <DownloadButton path={INTERNAL.DELIVERABLE_FILE(deliverable.deliverableId)} label="기존 파일 받기" />
         ) : (
           <span className={LOCKED_CLASS}>기존 파일은 지급 완료 후 받을 수 있습니다</span>
         )

@@ -12,6 +12,10 @@ import {
   submitInput,
 } from "./DeliverableFiles";
 
+vi.mock("@/components/feedback", () => ({
+  useToast: () => vi.fn(),
+}));
+
 function deliverable(
   materials: Deliverable["materials"],
   fileId: number | null = null,
@@ -52,6 +56,12 @@ function disabledCount(html: string): number {
 /** 이름표로 찾은 태그 하나. 속성 순서와 상관없이 봅니다. */
 function tag(html: string, element: string, label: string): string {
   return html.match(new RegExp(`<${element}[^>]*aria-label="${label}"[^>]*>`))?.[0] ?? "";
+}
+
+/** 글자로 찾은 받기 버튼이 받을 주소(`data-download`). 속성 순서와 상관없이 봅니다. 없으면 null. */
+function download(html: string, label: string): string | null {
+  const button = html.match(new RegExp(`<button[^>]*>${label}</button>`))?.[0];
+  return button?.match(/ data-download="([^"]*)"/)?.[1] ?? null;
 }
 
 /** 접힘 줄 버튼의 펼침 값. 이름표가 없는 버튼이라 `aria-expanded` 로 찾습니다. */
@@ -147,27 +157,57 @@ describe("DeliverableFiles", () => {
     expect(expanded(empty)).toBe("true");
   });
 
-  it("다운로드 링크는 FE 배포의 하위 경로를 붙인다", () => {
+  it("파일 자료는 링크가 아니라 요청으로 받는 버튼이고, URL 자료만 새 창 링크다", () => {
+    const html = renderToStaticMarkup(
+      <DeliverableResources deliverable={deliverable([url, testFile, paidFile])} paid />,
+    );
+    const legacy = renderToStaticMarkup(<DeliverableResources deliverable={deliverable([], 88)} paid />);
+
+    expect(download(html, "인수 시험 파일 받기")).toBe("/api/deliverable-materials/501/file");
+    expect(download(html, "해금 파일 받기")).toBe("/api/deliverable-materials/502/file");
+    expect(download(legacy, "기존 파일 받기")).toBe("/api/deliverables/401/file");
+    // 받기 버튼은 폼 제출이 되지 않고, 처음에는 잠겨 있지 않다.
+    const button = html.match(/<button[^>]*>인수 시험 파일 받기<\/button>/)?.[0] ?? "";
+    expect(button).toContain('type="button"');
+    expect(button).not.toContain(' disabled=""');
+    // 파일 다운로드 경로를 가리키는 링크는 남지 않는다.
+    expect(html + legacy).not.toMatch(/<a[^>]*href="[^"]*\/api\/deliverable/);
+    const link = html.match(/<a[^>]*href="https:\/\/demo\.example\.com"[^>]*>/)?.[0] ?? "";
+    expect(link).toContain('target="_blank"');
+    expect(link).toContain('rel="noopener noreferrer"');
+  });
+
+  it("지급 전 의뢰인에게는 해금 파일과 기존 파일의 받기 버튼을 만들지 않는다", () => {
+    const html = renderToStaticMarkup(<DeliverableResources deliverable={deliverable([testFile, paidFile])} />);
+    const legacy = renderToStaticMarkup(<DeliverableResources deliverable={deliverable([], 88)} />);
+
+    expect(download(html, "인수 시험 파일 받기")).toBe("/api/deliverable-materials/501/file");
+    expect(download(html, "해금 파일 받기")).toBeNull();
+    expect(legacy).not.toContain("<button");
+  });
+
+  it("받기 버튼이 받을 주소에는 FE 배포의 하위 경로를 붙인다", () => {
     vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/test");
     try {
       const html = renderToStaticMarkup(
         <DeliverableResources deliverable={deliverable([testFile, paidFile], 88)} paid />,
       );
 
-      expect(html).toContain('href="/test/api/deliverable-materials/501/file"');
-      expect(html).toContain('href="/test/api/deliverable-materials/502/file"');
+      expect(download(html, "인수 시험 파일 받기")).toBe("/test/api/deliverable-materials/501/file");
+      expect(download(html, "해금 파일 받기")).toBe("/test/api/deliverable-materials/502/file");
     } finally {
       vi.unstubAllEnvs();
     }
     const legacy = renderToStaticMarkup(<DeliverableResources deliverable={deliverable([], 88)} paid />);
     vi.stubEnv("NEXT_PUBLIC_BASE_PATH", "/test");
     try {
-      expect(renderToStaticMarkup(<DeliverableResources deliverable={deliverable([], 88)} paid />))
-        .toContain('href="/test/api/deliverables/401/file"');
+      expect(
+        download(renderToStaticMarkup(<DeliverableResources deliverable={deliverable([], 88)} paid />), "기존 파일 받기"),
+      ).toBe("/test/api/deliverables/401/file");
     } finally {
       vi.unstubAllEnvs();
     }
-    expect(legacy).toContain('href="/api/deliverables/401/file"');
+    expect(download(legacy, "기존 파일 받기")).toBe("/api/deliverables/401/file");
   });
 
   it("URL 만 있어도 자료가 있는 산출물이다", () => {
