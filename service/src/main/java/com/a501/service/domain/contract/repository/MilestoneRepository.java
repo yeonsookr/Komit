@@ -2,6 +2,7 @@ package com.a501.service.domain.contract.repository;
 
 import com.a501.service.domain.contract.entity.Milestone;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -13,6 +14,8 @@ public interface MilestoneRepository extends JpaRepository<Milestone, Integer> {
             Integer developmentContractId);
 
     Optional<Milestone> findByIdAndDeletedFalse(Integer id);
+
+    List<Milestone> findAllByDevelopmentContractIdInAndDeletedFalse(Collection<Integer> developmentContractIds);
 
     /**
      * 작업이 속한 계약 id. 작업을 읽기 전에 계약 행부터 잠그려고 id 만 가져온다.

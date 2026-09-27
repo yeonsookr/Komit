@@ -6902,9 +6902,12 @@ class DevelopmentAgreementResponse(BaseModel):
     ] = Field(
         description=(
             "개발 진행. 계약서를 처음 쓸 때부터 SIGNED다. AI가 만든 version 1도 같다. "
-            "예치가 끝나면 DEPOSITED, 착수하면 IN_PROGRESS가 된다. AFTER_SERVICE는 "
-            "하자보수, COMPLETED는 완료됨, TERMINATED는 파기됨이며 이 셋은 운영 "
-            "콘솔에서 다룬다.\n\n"
+            "예치가 끝나면 DEPOSITED, 착수하면 IN_PROGRESS가 된다. **COMPLETED는 "
+            "대금 지급이 끝난 계약이다.** 인계 작업을 통과시키면 서버가 계약 총액의 지급을 "
+            "Escrow에 부탁하고, 지급액과 수수료 이체가 모두 확정된 뒤에 COMPLETED로 바꾼다. "
+            "그 사이에는 IN_PROGRESS로 남는다. COMPLETED가 된 뒤에 리뷰를 남길 수 있고 의뢰인이 "
+            "PAID 파일을 받는다(R-PAY-07, R-QA-06). AFTER_SERVICE는 하자보수, TERMINATED는 "
+            "파기됨이며 이 둘은 운영 콘솔에서 다룬다.\n\n"
             "**체결 여부는 바깥 계약의 `status`로만 판단한다.** 이 값이 SIGNED여도 "
             "체결된 것이 아니다. 서명 두 개가 모두 찍혀야 계약이 성립한다. "
             "(`R-CON-01`)"
@@ -7803,6 +7806,11 @@ DELIVERABLE_ID_ERROR_EXAMPLE = {
     "code": "INVALID_REQUEST",
     "message": "요청 형식이 올바르지 않습니다.",
     "errors": [{"field": "deliverableId", "reason": "정수여야 합니다."}],
+}
+DELIVERABLE_MATERIAL_ID_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [{"field": "deliverableMaterialId", "reason": "정수여야 합니다."}],
 }
 
 STARTED_CONTRACT_ID = 409
@@ -8872,16 +8880,57 @@ def add_deliverable(
     "/deliverable-materials/{deliverableMaterialId}/file",
     response_class=Response,
     tags=[AREA5_TAG],
+    responses={
+        200: {
+            "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}},
+            "description": "파일 내용. 파일 이름은 `Content-Disposition`에 담긴다.",
+        },
+        404: {
+            "model": ErrorResponse,
+            "description": "자료 없음",
+            "content": {"application/json": {"example": DELIVERABLE_NOT_FOUND_EXAMPLE}},
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "지급 전 해금 파일",
+            "content": {"application/json": {"example": _example(DELIVERABLE_ACCESS_LOCKED)}},
+        },
+        **AREA1_UNAUTHORIZED,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": DELIVERABLE_MATERIAL_ID_ERROR_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
+    },
     summary="인계 자료 파일 내려받기",
     description=(
-        "계약 당사자가 고른 파일 자료 하나를 받는다. TEST는 인수 시험 중 열람할 수 있다. "
-        "PAID는 전액 지급 완료 전 의뢰인에게 제공하지 않는다. "
-        "목에서는 501이 TEST, 502가 지급 전 PAID, 506이 지급 완료된 PAID 사례다. "
-        "URL 자료(503)는 받을 파일이 없어 404다. 없는 자료나 제3자의 자료도 404로 숨긴다. (R-QA-06)"
+        "**화면 — `5_의뢰인_확인`·`5_개발자_확인` › 인계 자료 받기**\n\n"
+        "계약 당사자가 고른 파일 자료 하나를 받는다. 권한은 자료마다 따로 본다. TEST 파일은 "
+        "양쪽이 언제든 받는다. PAID 파일은 올린 개발자는 언제든, 의뢰인은 대금 지급이 끝나 "
+        "개발 계약의 `status`가 COMPLETED가 된 뒤에만 받는다. 같은 산출물에 URL이나 TEST "
+        "파일이 있어도 PAID를 열지 않는다. 형식은 언제나 `application/octet-stream`이다. "
+        "(R-QA-06)\n\n"
+        "목에서는 501이 TEST, 502가 지급 전 의뢰인이 받으려는 PAID, 그 밖의 값은 받을 수 있는 "
+        "사례다. 목은 부른 사람을 가리지 않는다.\n\n"
+        "- **200**: 내려받았을 때. 본문이 파일 내용이다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableMaterialId`가 404이거나 URL 자료(503)일 "
+        "때. 없는 자료, 이 계약의 당사자가 아닌 사람, 받을 파일이 없는 URL 자료를 같게 답한다\n"
+        "- **409 / DELIVERABLE_ACCESS_LOCKED**: `deliverableMaterialId`가 502일 때. 지급 전 "
+        "의뢰인이 PAID 파일을 받으려 했다\n"
+        "- **422 / INVALID_REQUEST**: `deliverableMaterialId`가 정수가 아닐 때\n"
+        "- **500 / INTERNAL_ERROR**: 내려주지 못했을 때"
     ),
 )
 def download_deliverable_material(
-    deliverableMaterialId: Annotated[int, Path(description="인계 자료 식별자.")],
+    deliverableMaterialId: Annotated[
+        int,
+        Path(
+            description="인계 자료 식별자. 404는 없음, 503은 URL 자료, 502는 지급 전 PAID 재현용 예약값이다.",
+            examples=[501],
+        ),
+    ],
 ) -> Response:
     if deliverableMaterialId in {404, 503}:
         return _error_response(404, DELIVERABLE_NOT_FOUND)
@@ -13356,7 +13405,8 @@ def download_scan_file(
         "**화면 — `5_의뢰인_확인` › 인계 · 소스 · 계정 · 설명서 › 받기**\n\n"
         "기존 `deliverables.file_id` 단일 파일만 대상으로 하는 호환 경로다. 새 TEST·PAID 파일은 "
         "`GET /deliverable-materials/{deliverableMaterialId}/file`을 사용한다. 기존 단일 파일은 지급 후 "
-        "열람 대상으로 취급해 지급 전 의뢰인 다운로드를 막는다. 목의 401은 지급 전, "
+        "열람 대상으로 취급해 지급 전 의뢰인 다운로드를 막는다. 올린 개발자는 언제든 받는다. "
+        "지급이 끝났는지는 개발 계약의 `status`가 COMPLETED인지로 본다. 목의 401은 지급 전, "
         "405는 지급 완료 사례다. 중간 마일스톤 검수 자료는 이 경로에 넣지 않는다. (R-QA-06)\n\n"
         "계약 당사자가 아닌 사람은 404를 받는다.\n\n"
         "- **200**: 내려받았을 때. 본문이 파일 내용이고 파일 이름은 "

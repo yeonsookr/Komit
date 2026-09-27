@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { POST } from "./route";
+import { GET, POST } from "./route";
 
 const { attachDeliverable, downloadDeliverable } = vi.hoisted(() => ({
   attachDeliverable: vi.fn(),
@@ -56,5 +56,21 @@ describe("POST /api/deliverables/[deliverableId]/file", () => {
       expect(response.status).toBe(422);
     }
     expect(attachDeliverable).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/deliverables/[deliverableId]/file", () => {
+  it("기존 단일 파일을 받아 한글 이름을 브라우저가 읽을 수 있게 싣는다", async () => {
+    downloadDeliverable.mockResolvedValueOnce({
+      body: new Uint8Array([7]).buffer,
+      fileName: "\uc18c\uc2a4.zip",
+      contentType: "application/octet-stream",
+    });
+
+    const response = await GET(new Request("http://localhost/api/deliverables/31/file"), { params });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Disposition")).toContain("filename*=UTF-8''%EC%86%8C%EC%8A%A4.zip");
+    expect(downloadDeliverable).toHaveBeenCalledWith(31);
   });
 });

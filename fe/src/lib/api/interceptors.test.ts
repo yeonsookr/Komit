@@ -63,4 +63,24 @@ describe('attachErrorNormalizer', () => {
     expect(error).toMatchObject({ status: 500, code: UNKNOWN_ERROR_CODE });
     expect((error as ApiError).message).not.toContain('NullPointerException');
   });
+
+  it('파일 요청의 실패 본문이 바이트로 와도 code·message 를 읽는다', async () => {
+    const bytes = new TextEncoder().encode(
+      JSON.stringify({ code: 'DELIVERABLE_ACCESS_LOCKED', message: '대금 지급이 완료된 뒤에 내려받을 수 있습니다.' }),
+    );
+
+    for (const data of [bytes.buffer, Buffer.from(bytes)]) {
+      await expect(instanceReturning(axiosErrorWith(409, data)).get('/file')).rejects.toMatchObject({
+        status: 409,
+        code: 'DELIVERABLE_ACCESS_LOCKED',
+        message: '대금 지급이 완료된 뒤에 내려받을 수 있습니다.',
+      });
+    }
+  });
+
+  it('JSON 이 아닌 바이트 본문은 고정 문구로 덮는다', async () => {
+    const api = instanceReturning(axiosErrorWith(502, new TextEncoder().encode('<html>bad gateway</html>').buffer));
+
+    await expect(api.get('/file')).rejects.toMatchObject({ status: 502, code: UNKNOWN_ERROR_CODE });
+  });
 });

@@ -3,6 +3,7 @@ package com.a501.service.domain.file.service;
 import com.a501.service.config.StorageProperties;
 import com.a501.service.domain.file.entity.StoredFile;
 import io.minio.CopyObjectArgs;
+import io.minio.GetObjectArgs;
 import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.Http;
 import io.minio.MinioClient;
@@ -11,6 +12,7 @@ import io.minio.SourceObject;
 import io.minio.StatObjectArgs;
 import io.minio.StatObjectResponse;
 import io.minio.errors.ErrorResponseException;
+import java.io.InputStream;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import lombok.extern.slf4j.Slf4j;
@@ -40,6 +42,18 @@ public class ObjectStorageService {
 
     public String issueReadUrl(StoredFile file) {
         return presignedUrl(Http.Method.GET, file, properties.readUrlTtl().toSeconds());
+    }
+
+    /** 저장된 객체를 읽습니다. 받은 스트림은 호출자가 닫습니다. 권한은 호출자가 먼저 검사합니다. */
+    public InputStream open(StoredFile file) {
+        try {
+            return internalClient.getObject(GetObjectArgs.builder()
+                    .bucket(file.getBucketName())
+                    .object(file.getStorageKey())
+                    .build());
+        } catch (Exception exception) {
+            throw storageFailure("파일을 읽지 못했습니다.", exception);
+        }
     }
 
     public Optional<StoredObjectMetadata> inspect(StoredFile file) {

@@ -4,6 +4,7 @@ import {
   downloadDeliverable,
 } from "@/lib/api/services";
 import { parseNumericParam, toErrorResponse } from "@/lib/api/route";
+import { attachmentDisposition } from "@/lib/api/download";
 
 const INVALID_REQUEST = { code: "INVALID_REQUEST", message: "파일을 첨부해 주세요." };
 const NOT_FOUND = { code: "DELIVERABLE_NOT_FOUND", message: "인계물을 찾을 수 없습니다." };
@@ -64,7 +65,7 @@ export async function GET(
     return new NextResponse(body, {
       headers: {
         "Content-Type": contentType,
-        "Content-Disposition": `attachment; filename="${encodeURIComponent(fileName)}"`,
+        "Content-Disposition": attachmentDisposition(fileName),
       },
     });
   } catch (error) {

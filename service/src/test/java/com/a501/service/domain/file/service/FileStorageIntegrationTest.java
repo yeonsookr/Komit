@@ -28,7 +28,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
-/** PostgreSQL과 실제 MinIO에 업로드하고, 완료 뒤 발급한 읽기 주소로 같은 바이트를 내려받습니다. */
+/** PostgreSQL과 실제 MinIO에 업로드하고, 완료 뒤 읽기 주소와 서버 직접 읽기로 같은 바이트를 내려받습니다. */
 @Testcontainers
 // MOCK 환경에는 ServerContainer가 없어 WebSocketConfig가 기동에 실패하므로 실제 서블릿 컨테이너를 띄웁니다.
 @SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
@@ -121,5 +121,12 @@ class FileStorageIntegrationTest {
 
         assertThat(download.statusCode()).isEqualTo(200);
         assertThat(download.body()).containsExactly(original);
+
+        // 서버가 직접 흘려보내는 경로도 최종 객체의 같은 바이트를 읽습니다.
+        var opened = fileLookupService.open(target.uploadId().longValue()).orElseThrow();
+        try (var body = opened.body()) {
+            assertThat(body.readAllBytes()).containsExactly(original);
+        }
+        assertThat(opened.originalName()).isEqualTo("portfolio.png");
     }
 }

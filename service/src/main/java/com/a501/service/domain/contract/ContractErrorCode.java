@@ -62,6 +62,11 @@ public enum ContractErrorCode implements ErrorCode {
             HttpStatus.CONFLICT,
             "HANDOVER_MATERIALS_MISSING",
             "인수 시험 자료와 해금 파일을 등록한 뒤에 확인을 요청할 수 있습니다."),
+    /** 지급 뒤 해금되는 파일은 대금 지급이 끝나기 전에는 의뢰인에게 주지 않는다. (`R-QA-06`) */
+    DELIVERABLE_ACCESS_LOCKED(
+            HttpStatus.CONFLICT, "DELIVERABLE_ACCESS_LOCKED", "대금 지급이 완료된 뒤에 내려받을 수 있습니다."),
+    /** 기존 단일 파일 칸에 올라온 파일이 없다. */
+    DELIVERABLE_NOT_UPLOADED(HttpStatus.CONFLICT, "DELIVERABLE_NOT_UPLOADED", "아직 올라온 파일이 없습니다."),
     /** 없는 작업이거나 그 계약의 당사자가 아니다. 존재를 알리지 않으려 둘을 같게 다룬다. */
     MILESTONE_NOT_FOUND(HttpStatus.NOT_FOUND, "MILESTONE_NOT_FOUND", "작업을 찾을 수 없습니다."),
     /** 착수 전이거나 이미 통과됐거나 확인 요청이 오기 전이다. */

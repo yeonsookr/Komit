@@ -95,6 +95,22 @@ public class DevelopmentContract extends SoftDeleteEntity {
         return "IN_PROGRESS".equals(status);
     }
 
+    /** 대금 지급까지 끝난 계약. 리뷰와 마친 계약 수, 지급 뒤 해금 파일 열람이 이 값을 본다. */
+    public boolean isCompleted() {
+        return "COMPLETED".equals(status);
+    }
+
+    /**
+     * Escrow 가 지급액과 수수료 이체를 모두 확정했다. 지급 기록의 원본은 Escrow 에 있고, 여기 남기는 것은 「더 볼 필요가
+     * 없다」는 표시다. (`R-PAY-05`, `R-PAY-07`)
+     */
+    public void complete() {
+        if (!isInProgress()) {
+            throw new IllegalStateException("진행 중인 개발 계약만 완료할 수 있습니다.");
+        }
+        this.status = "COMPLETED";
+    }
+
     /** 개발자가 착수했다. 착수일은 계약서 날짜 그대로 둔다. */
     public void start() {
         if (!isBeforeStart()) {

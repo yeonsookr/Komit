@@ -146,6 +146,26 @@ class DevelopmentDeliveryMaterialsTest(unittest.TestCase):
         self.assertIn(b"DELIVERABLE_ACCESS_LOCKED", paid.body)
         self.assertEqual(service.download_deliverable_material(506).status_code, 200)
 
+    def test_material_download_documents_every_failure(self):
+        from fastapi import FastAPI
+
+        app = FastAPI()
+        app.include_router(service.router)
+        responses = app.openapi()["paths"]["/api/deliverable-materials/{deliverableMaterialId}/file"]["get"]["responses"]
+
+        self.assertTrue({"200", "401", "404", "409", "422", "500"} <= set(responses))
+        self.assertEqual(
+            responses["409"]["content"]["application/json"]["example"]["code"], "DELIVERABLE_ACCESS_LOCKED"
+        )
+        self.assertEqual(
+            responses["422"]["content"]["application/json"]["example"]["errors"][0]["field"], "deliverableMaterialId"
+        )
+
+    def test_development_completed_means_payout_finished(self):
+        description = service.DevelopmentAgreementResponse.model_fields["status"].description
+
+        self.assertIn("COMPLETED는 대금 지급이 끝난 계약이다", description)
+
     def test_url_material_has_no_file_to_download(self):
         self.assertEqual(service.download_deliverable_material(503).status_code, 404)
 

@@ -8,6 +8,7 @@ import com.a501.service.domain.contract.entity.Milestone;
 import jakarta.persistence.EntityManager;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -72,6 +73,26 @@ class MilestoneRepositoryTest {
         entityManager.clear();
 
         assertThat(milestoneRepository.findSubmittedIdsBefore(CUTOFF)).containsExactly(atCutoff, before);
+    }
+
+    @Test
+    @DisplayName("지급할 계약을 고를 때 진행 중인 개발 계약과 그 작업을 지운 것 없이 한 번에 읽는다")
+    void findsInProgressDevelopmentsAndTheirWork() {
+        Integer started = development(132);
+        developmentContractRepository.findById(started).orElseThrow().start();
+        Integer notStarted = development(133);
+        developmentContractRepository.flush();
+        Integer kept = milestoneRepository.saveAndFlush(milestone(started, "CONFIRMED", null)).getId();
+        Milestone removed = milestone(started, "CONFIRMED", null);
+        removed.removeFromContract(CUTOFF);
+        milestoneRepository.saveAndFlush(removed);
+        Integer other = milestoneRepository.saveAndFlush(milestone(notStarted, "PROPOSED", null)).getId();
+        entityManager.clear();
+
+        assertThat(developmentContractRepository.findByStatusAndDeletedFalse("IN_PROGRESS"))
+                .extracting(DevelopmentContract::getId).containsExactly(started);
+        assertThat(milestoneRepository.findAllByDevelopmentContractIdInAndDeletedFalse(List.of(started, notStarted)))
+                .extracting(Milestone::getId).containsExactlyInAnyOrder(kept, other);
     }
 
     private Integer development(int contractId) {

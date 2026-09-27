@@ -1,6 +1,5 @@
 package com.a501.service.domain.settlement.service;
 
-import com.a501.service.common.exception.BusinessException;
 import com.a501.service.domain.account.dto.PayoutAccount;
 import com.a501.service.domain.account.service.AccountQueryService;
 import com.a501.service.domain.consulting.dto.SessionSchedule;
@@ -9,12 +8,7 @@ import com.a501.service.domain.contract.dto.ConsultingPayoutTarget;
 import com.a501.service.domain.contract.service.ContractQueryService;
 import com.a501.service.domain.contract.service.ContractSettlementService;
 import com.a501.service.domain.report.service.ReportQueryService;
-import com.a501.service.domain.settlement.SettlementErrorCode;
 import com.a501.service.domain.settlement.client.EscrowPayoutClient;
-import com.a501.service.domain.settlement.client.EscrowPayoutClient.EscrowLedger;
-import com.a501.service.domain.settlement.client.EscrowPayoutClient.LedgerEntry;
-import com.a501.service.domain.settlement.client.EscrowPayoutClient.PayoutRequest;
-import java.math.BigInteger;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -44,13 +38,6 @@ import org.springframework.stereotype.Service;
 public class ConsultingPayoutService {
     /** R-CON-10: 예약된 세션 종료 뒤 의뢰인이 이의를 낼 수 있는 기간. 지나면 자동 지급한다. */
     static final Duration OBJECTION_PERIOD = Duration.ofDays(3);
-
-    private static final String RELEASE = "RELEASE";
-    private static final String FEE = "FEE";
-    private static final String COMPLETED = "COMPLETED";
-    private static final String FAILED = "FAILED";
-    private static final String ACTIVE = "ACTIVE";
-    private static final List<String> IN_FLIGHT = List.of("PENDING", "PROCESSING");
 
     private final ContractQueryService contractQueryService;
     private final ContractSettlementService contractSettlementService;
@@ -131,86 +118,15 @@ public class ConsultingPayoutService {
     }
 
     private PayoutOutcome pay(ConsultingPayoutTarget target, PayoutAccount account) {
-        String referenceId = referenceIdOf(target.contractId());
-        try {
-            Optional<EscrowLedger> ledger = escrow.findByContract(String.valueOf(target.contractId()));
-            if (ledger.isEmpty()) {
-                return PayoutOutcome.NOT_DEPOSITED;
-            }
-            BigInteger amount = BigInteger.valueOf(target.amount());
-            PayoutOutcome decision = decide(ledger.get(), referenceId, amount);
-            if (decision == PayoutOutcome.PAID) {
-                contractSettlementService.completeConsultingPayout(target.consultingAgreementId());
-                return PayoutOutcome.PAID;
-            }
-            if (decision != PayoutOutcome.SENT) {
-                return decision;
-            }
-
-            String status = escrow.release(new PayoutRequest(
-                    ledger.get().escrowId(),
-                    referenceId,
-                    amount,
-                    account.bankCode(),
-                    account.accountNo(),
-                    account.holderName(),
-                    idempotencyKeyOf(target.contractId())));
-            if (COMPLETED.equals(status)) {
-                contractSettlementService.completeConsultingPayout(target.consultingAgreementId());
-                return PayoutOutcome.PAID;
-            }
-            return PayoutOutcome.SENT;
-        } catch (BusinessException exception) {
-            if (exception.getErrorCode() == SettlementErrorCode.ESCROW_HELD) {
-                return PayoutOutcome.HELD;
-            }
-            if (exception.getErrorCode() == SettlementErrorCode.PAYOUT_REJECTED) {
-                return PayoutOutcome.REJECTED;
-            }
-            return PayoutOutcome.UNKNOWN;
-        }
-    }
-
-    /**
-     * Escrow 원장을 보고 이번 회차에 할 일을 정한다.
-     *
-     * <ul>
-     *   <li>이 정산의 거래가 하나라도 {@code FAILED} 면 멈춘다. Escrow 는 실패한 정산을 같은 키로 다시 받으면
-     *       송금을 다시 시도하므로, 돈이 한 번 나갔을 수도 있는 건을 자동으로 되풀이하지 않는다.
-     *   <li>처리 중({@code PENDING}·{@code PROCESSING})이면 기다린다. 겹쳐 부르지 않는다.
-     *   <li>지급과 수수료가 모두 {@code COMPLETED} 면 끝났다.
-     *   <li>예치된 금액이 계약 금액과 다르면 멈춘다. 의뢰인 서명 뒤에만 예치하고 서명 뒤에는 계약서를 고칠 수 없어
-     *       원래 어긋나지 않는다(`R-CON-20`). 그래도 어긋났다면 그대로 부를 때 잔액 부족으로 거절되거나, 일부만 나가고
-     *       남은 돈이 묶인 채 완료로 보이므로 사람이 확인한다. (`R-PAY-01`)
-     *   <li>그 밖에(아직 없음, {@code UNKNOWN}) 동결되지 않은 {@code ACTIVE} 에스크로면 같은 멱등키로 부른다.
-     * </ul>
-     */
-    static PayoutOutcome decide(EscrowLedger ledger, String referenceId, BigInteger amount) {
-        List<LedgerEntry> mine = ledger.transactions().stream()
-                .filter(entry -> referenceId.equals(entry.referenceId()))
-                .filter(entry -> RELEASE.equals(entry.type()) || FEE.equals(entry.type()))
-                .toList();
-        if (mine.stream().anyMatch(entry -> FAILED.equals(entry.status()))) {
-            return PayoutOutcome.STOPPED;
-        }
-        if (mine.stream().anyMatch(entry -> IN_FLIGHT.contains(entry.status()))) {
-            return PayoutOutcome.IN_PROGRESS;
-        }
-        boolean released = mine.stream()
-                .anyMatch(entry -> RELEASE.equals(entry.type()) && COMPLETED.equals(entry.status()));
-        if (released && mine.stream().allMatch(entry -> COMPLETED.equals(entry.status()))) {
-            return PayoutOutcome.PAID;
-        }
-        if (!ACTIVE.equals(ledger.status())) {
-            return PayoutOutcome.NOT_PAYABLE;
-        }
-        if (ledger.held()) {
-            return PayoutOutcome.HELD;
-        }
-        if (!amount.equals(ledger.depositedAmount())) {
-            return PayoutOutcome.AMOUNT_MISMATCH;
-        }
-        return PayoutOutcome.SENT;
+        return EscrowRelease.pay(
+                escrow,
+                new EscrowRelease.Request(
+                        target.contractId(),
+                        referenceIdOf(target.contractId()),
+                        idempotencyKeyOf(target.contractId()),
+                        target.amount()),
+                account,
+                () -> contractSettlementService.completeConsultingPayout(target.consultingAgreementId()));
     }
 
     /** 계약마다 하나뿐인 정산 식별자. Escrow 가 {@code SETTLEMENT:} 로 시작하기를 요구한다. */

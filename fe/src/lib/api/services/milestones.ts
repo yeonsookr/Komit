@@ -2,6 +2,7 @@ import "server-only";
 
 import { authenticatedBackendApi } from "../server";
 import { BACKEND } from "../endpoints";
+import { fileNameFrom } from "../download";
 import type {
   ConfirmMilestoneRequest,
   Deliverable,
@@ -104,12 +105,9 @@ export async function downloadDeliverable(deliverableId: number): Promise<Delive
     { responseType: "arraybuffer" },
   );
 
-  const disposition = String(response.headers["content-disposition"] ?? "");
-  const matched = /filename="?([^";]+)"?/.exec(disposition);
-
   return {
     body: response.data,
-    fileName: matched?.[1] ?? "deliverable",
+    fileName: fileNameFrom(String(response.headers["content-disposition"] ?? "")),
     contentType: String(response.headers["content-type"] ?? "application/octet-stream"),
   };
 }
@@ -120,11 +118,9 @@ export async function downloadDeliverableMaterial(deliverableMaterialId: number)
     BACKEND.DELIVERABLE_MATERIAL_FILE(deliverableMaterialId),
     { responseType: "arraybuffer" },
   );
-  const disposition = String(response.headers["content-disposition"] ?? "");
-  const matched = /filename="?([^";]+)"?/.exec(disposition);
   return {
     body: response.data,
-    fileName: matched?.[1] ?? "deliverable",
+    fileName: fileNameFrom(String(response.headers["content-disposition"] ?? "")),
     contentType: String(response.headers["content-type"] ?? "application/octet-stream"),
   };
 }

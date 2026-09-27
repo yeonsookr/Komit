@@ -11,7 +11,7 @@ import java.util.List;
  * <p>{@code issueIds} 는 따로 저장하지 않습니다. 작업 하나가 요구사항 하나에 붙으므로 속한
  * 작업들이 가리키는 요구사항을 모은 것이 곧 이 계약에서 다루는 요구사항입니다.
  *
- * @param status 개발 진행 코드값
+ * @param status 개발 진행 코드값. {@code COMPLETED} 는 대금 지급이 끝난 계약
  * @param totalAmount 이 계약으로 오가는 전체 금액
  * @param issueIds 이 계약에서 다룰 요구사항
  * @param startDate 착수일. 정하기 전이면 {@code null}
@@ -22,7 +22,10 @@ import java.util.List;
  */
 @Schema(description = "개발 계약에만 있는 내용. 컨설팅 계약이면 이 자리가 null 이다.")
 public record DevelopmentAgreementResponse(
-        @Schema(description = "개발 진행.", example = "IN_PROGRESS") String status,
+        @Schema(description = "개발 진행. COMPLETED 는 대금 지급이 끝난 계약이다. 인계 작업을 통과시킨 뒤 지급액과 수수료 "
+                        + "이체가 모두 확정될 때까지는 IN_PROGRESS 로 남는다. (R-PAY-01)",
+                        example = "IN_PROGRESS")
+                String status,
         @Schema(description = "이 계약으로 오가는 전체 금액.", example = "650000") Long totalAmount,
         @Schema(description = "이 계약에서 다룰 요구사항 식별자.", example = "[312, 313]")
                 List<Integer> issueIds,

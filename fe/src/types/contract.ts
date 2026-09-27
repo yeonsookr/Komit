@@ -12,8 +12,9 @@ export type ContractStatus = "NEGOTIATING" | "AGREED" | "SIGNED" | "CANCELLED";
 
 /**
  * 개발 진행. 계약서를 처음 쓸 때부터 SIGNED 이고, 예치가 끝나면 DEPOSITED,
- * 착수하면 IN_PROGRESS 가 됩니다. AFTER_SERVICE · COMPLETED · TERMINATED 는
- * 운영 콘솔에서 다룹니다.
+ * 착수하면 IN_PROGRESS 가 됩니다. COMPLETED 는 대금 지급이 끝난 계약입니다. 인계 작업을
+ * 통과시킨 뒤 지급액과 수수료 이체가 모두 확정될 때까지는 IN_PROGRESS 로 남습니다 (R-PAY-01).
+ * AFTER_SERVICE · TERMINATED 는 운영 콘솔에서 다룹니다.
  *
  * SIGNED 여도 계약이 성립한 것은 아닙니다. 양쪽이 서명했는지는 `Contract.status` 로 봅니다 (R-CON-01).
  */

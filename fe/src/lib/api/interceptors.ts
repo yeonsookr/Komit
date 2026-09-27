@@ -15,6 +15,22 @@ function isApiErrorBody(body: unknown): body is ApiErrorBody {
 }
 
 /**
+ * 파일을 arraybuffer 로 받는 요청은 실패 본문도 바이트로 옵니다. JSON 이면 풀어 읽고,
+ * 아니면 받은 그대로 둡니다. 풀지 않으면 409 사유가 고정 문구로 덮입니다.
+ */
+function decodeBinaryBody(body: unknown): unknown {
+  let bytes: Uint8Array | null = null;
+  if (body instanceof ArrayBuffer) bytes = new Uint8Array(body);
+  else if (ArrayBuffer.isView(body)) bytes = new Uint8Array(body.buffer, body.byteOffset, body.byteLength);
+  if (bytes === null) return body;
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    return body;
+  }
+}
+
+/**
  * 모든 axios 에러를 ApiError 하나로 모읍니다.
  * 화면은 status 와 code 만 보면 되고 axios 의 내부 구조를 알 필요가 없습니다.
  */
@@ -46,13 +62,9 @@ export function attachErrorNormalizer(instance: AxiosInstance): AxiosInstance {
         );
       }
 
-      if (isApiErrorBody(response.data)) {
-        throw new ApiError(
-          response.status,
-          response.data.code,
-          response.data.message,
-          response.data.errors,
-        );
+      const body = decodeBinaryBody(response.data);
+      if (isApiErrorBody(body)) {
+        throw new ApiError(response.status, body.code, body.message, body.errors);
       }
 
       // 계약에 없는 모양이면 내부 정보를 그대로 흘리지 않고 고정 문구로 덮습니다.
