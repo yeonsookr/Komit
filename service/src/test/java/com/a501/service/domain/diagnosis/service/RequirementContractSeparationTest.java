@@ -1,9 +1,13 @@
 package com.a501.service.domain.diagnosis.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
 
 import com.a501.service.config.JpaConfig;
 import com.a501.service.domain.code.service.CodeQueryService;
+import com.a501.service.domain.diagnosis.IssueCategory;
 import com.a501.service.domain.diagnosis.IssueSeverity;
 import com.a501.service.domain.diagnosis.dto.request.WriteRequirementsRequest.WriteQaCriterion;
 import com.a501.service.domain.diagnosis.dto.request.WriteRequirementsRequest.WriteRequirement;
@@ -21,6 +25,7 @@ import com.a501.service.domain.diagnosis.repository.QaCriterionRepository;
 import com.a501.service.domain.project.service.ProjectService;
 import jakarta.persistence.EntityManager;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -39,6 +44,8 @@ import org.testcontainers.junit.jupiter.Testcontainers;
  *
  * <p>요청서 저장은 그 검사의 요구사항을 모두 읽어, 보낸 목록에 없는 것은 뺀 것으로 처리한다. 계약용이 거기 섞이면
  * 계약에 들어간 것을 빼려 한 것으로 보고 409 로 막고, 계약서 확인 문장은 「요청서에서 지운 문장」이 된다.
+ *
+ * <p>컨설팅 요약에서 고른 요구사항이 요청서에 더해지는 흐름도 같은 자리에서 본다.
  */
 @Testcontainers
 @DataJpaTest
@@ -132,6 +139,22 @@ class RequirementContractSeparationTest {
         assertThat(page.content().getFirst().qaCriteria())
                 .extracting(QaCriterionResponse::testCase)
                 .containsExactly("로그인 화면이 뜬다");
+    }
+
+    @Test
+    @DisplayName("컨설팅 요약에서 고른 요구사항은 현재 회차 요청서에 들어간다")
+    void summaryChangeJoinsRequest() {
+        when(codeQueryService.findCodeIdsByName(eq(IssueCategory.GROUP), anyCollection()))
+                .thenReturn(Map.of(IssueCategory.ETC.codeName(), 79));
+
+        Integer added = requirementService.addToRequest(8, "결제 실패 로그 수집", "재현 로그를 모읍니다.");
+
+        IssueListResponse page = issueQueryService.getIssues(diagnosisId, (short) 1, null, null, true, 1, 20);
+        assertThat(page.content()).extracting(IssueResponse::issueId).containsExactly(suggested.getId(), added);
+        Issue issue = issueRepository.findById(added).orElseThrow();
+        assertThat(issue.getStatus()).isEqualTo("SUGGESTED");
+        assertThat(issue.getCategoryCodeId()).isEqualTo(79);
+        assertThat(issue.getSeverity()).isEqualTo(IssueSeverity.MEDIUM.name());
     }
 
     private WriteRequirement keepSuggested() {

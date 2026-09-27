@@ -5,6 +5,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -16,15 +17,17 @@ import com.a501.service.domain.consulting.dto.SummaryContent;
 import com.a501.service.domain.consulting.dto.response.SessionSummaryResponse;
 import com.a501.service.domain.consulting.service.ConsultingSessionService;
 import com.a501.service.domain.consulting.service.SessionSummaryQueryService;
+import com.a501.service.domain.consulting.service.SummaryChangeService;
 import java.time.OffsetDateTime;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
-/** 세션 요약 조회. 본문은 목 명세의 예시 모양과 strict 로 맞춘다. (BACKEND_CONVENTIONS 19) */
+/** 세션 요약 조회와 변경 후보 반영. 본문은 목 명세의 예시 모양과 strict 로 맞춘다. (BACKEND_CONVENTIONS 19) */
 @WebMvcSecurityTest(ConsultingSessionController.class)
 class SessionSummaryControllerTest {
     @Autowired
@@ -35,6 +38,8 @@ class SessionSummaryControllerTest {
     private ConsultingSessionService sessionService;
     @MockitoBean
     private SessionSummaryQueryService summaryQueryService;
+    @MockitoBean
+    private SummaryChangeService summaryChangeService;
 
     @Test
     void 만들어진_요약을_목_명세_모양으로_준다() throws Exception {
@@ -86,6 +91,50 @@ class SessionSummaryControllerTest {
                 .andExpect(status().isUnauthorized());
 
         verify(summaryQueryService, never()).getSummary(any(), any());
+    }
+
+    @Test
+    void 고른_후보를_반영하면_201과_바뀐_요약을_준다() throws Exception {
+        when(summaryChangeService.apply(7, 55, List.of(1))).thenReturn(new SessionSummaryResponse(
+                55,
+                List.of(),
+                List.of(),
+                List.of(),
+                List.of(new SummaryContent.Change(
+                        1, SummaryContent.Kind.ADD, null, "결제 실패 로그 수집", null, true)),
+                OffsetDateTime.parse("2026-09-27T09:00:00Z")));
+
+        mockMvc.perform(post("/api/consulting-sessions/55/summary/applied-changes")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(7))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"changeIds\": [1]}"))
+                .andExpect(status().isCreated())
+                .andExpect(content().json("""
+                        {"sessionId": 55, "discussed": [], "decided": [], "nextActions": [],
+                         "changes": [{"changeId": 1, "kind": "ADD", "issueId": null, "title": "결제 실패 로그 수집",
+                                      "detail": null, "isApplied": true}],
+                         "updatedAt": "2026-09-27T09:00:00Z"}""", true));
+    }
+
+    @Test
+    void 고른_후보가_없으면_422() throws Exception {
+        mockMvc.perform(post("/api/consulting-sessions/55/summary/applied-changes")
+                        .header(HttpHeaders.AUTHORIZATION, bearer(7))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"changeIds\": []}"))
+                .andExpect(status().isUnprocessableEntity());
+
+        verify(summaryChangeService, never()).apply(any(), any(), any());
+    }
+
+    @Test
+    void 반영도_로그인하지_않으면_401() throws Exception {
+        mockMvc.perform(post("/api/consulting-sessions/55/summary/applied-changes")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"changeIds\": [1]}"))
+                .andExpect(status().isUnauthorized());
+
+        verify(summaryChangeService, never()).apply(any(), any(), any());
     }
 
     private String bearer(int userId) {

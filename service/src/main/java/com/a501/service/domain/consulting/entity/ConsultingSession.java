@@ -116,6 +116,14 @@ public class ConsultingSession extends SoftDeleteEntity {
         return true;
     }
 
+    /** 요청서에 반영한 후보를 표시한 요약으로 바꿉니다. 저장된 요약이 있을 때만 부릅니다. */
+    public void markChangesApplied(String summary) {
+        if (this.summary == null) {
+            throw new IllegalStateException("반영할 요약이 없습니다: " + id);
+        }
+        this.summary = Objects.requireNonNull(summary, "summary");
+    }
+
     private boolean awaitingTranscript() {
         return transcript == null && transcriptFailedAt == null;
     }

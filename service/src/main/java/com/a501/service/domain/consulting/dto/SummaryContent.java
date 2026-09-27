@@ -11,7 +11,7 @@ import java.util.List;
  *
  * @param discussed 논의한 것
  * @param decided 결정된 것
- * @param nextActions 다음에 할 것
+ * @param nextActions 진행할 것
  * @param changes 요청서에 반영할 수 있는 변경 후보
  */
 public record SummaryContent(
@@ -41,7 +41,12 @@ public record SummaryContent(
      * @param isApplied 이미 요청서에 반영했는지
      */
     public record Change(
-            Integer changeId, Kind kind, Integer issueId, String title, String detail, boolean isApplied) {}
+            Integer changeId, Kind kind, Integer issueId, String title, String detail, boolean isApplied) {
+
+        public Change applied() {
+            return new Change(changeId, kind, issueId, title, detail, true);
+        }
+    }
 
     public enum Kind {
         UPDATE,
