@@ -3653,7 +3653,7 @@ CONVERTED_ROOM_ID = 409
 # 코드 항목의 식별자는 분류마다 번호대를 나눠 쓴다. 값만 보고 어느 분류인지 알 수 있고,
 # 분류가 늘어도 이미 나간 번호와 겹치지 않는다. 새 분류는 비어 있는 번호대를 가져간다.
 #
-#   21~29  TECH_CATEGORY   기술
+#   21~36  TECH_CATEGORY   기술
 #   41~48  DEV_FIELD       분야
 #   51~58  BANK_CODE       은행
 #   61~68  CARD_COMPANY    카드사 (영역 8)
@@ -3664,6 +3664,19 @@ TECH_CODES = [
     {"codeId": 21, "codeName": "Next.js"},
     {"codeId": 22, "codeName": "Supabase"},
     {"codeId": 23, "codeName": "TypeScript"},
+    {"codeId": 24, "codeName": "React"},
+    {"codeId": 25, "codeName": "JavaScript"},
+    {"codeId": 26, "codeName": "Node.js"},
+    {"codeId": 27, "codeName": "Express.js"},
+    {"codeId": 28, "codeName": "Python"},
+    {"codeId": 29, "codeName": "FastAPI"},
+    {"codeId": 30, "codeName": "Java"},
+    {"codeId": 31, "codeName": "Spring Boot"},
+    {"codeId": 32, "codeName": "PostgreSQL"},
+    {"codeId": 33, "codeName": "MySQL"},
+    {"codeId": 34, "codeName": "Firebase"},
+    {"codeId": 35, "codeName": "AWS"},
+    {"codeId": 36, "codeName": "Docker"},
 ]
 
 # 계좌를 등록할 때 고르는 은행. 분야·기술과 같은 코드 항목이라 코드 API 가 함께 낸다.
