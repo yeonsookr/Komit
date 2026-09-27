@@ -69,7 +69,8 @@ export function ProgressPanel({
   const milestones = development.milestones;
   // 제목과 남은 작업 수는 금액이 붙는 작업만 셉니다. 인계는 0 원입니다.
   const billable = billableMilestones(milestones);
-  const deposited = deposit !== null && deposit.depositedAt !== null;
+  // 예치 시각은 아직 오지 않아 금액으로 봅니다. 착수 API 도 같은 기준입니다.
+  const deposited = deposit !== null && deposit.amount > 0;
   const autoPassAt = nearestAutoPassAt(milestones);
 
   const items: ProgressItem[] = [

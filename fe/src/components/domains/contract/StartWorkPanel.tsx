@@ -43,7 +43,8 @@ export function StartWorkPanel({
   const showToast = useToast();
   const [starting, setStarting] = React.useState(false);
 
-  const deposited = deposit?.depositedAt !== null && deposit !== null;
+  // 예치 시각은 아직 오지 않아 금액으로 봅니다. 착수 API 도 같은 기준입니다.
+  const deposited = deposit !== null && deposit.amount > 0;
 
   const start = async () => {
     if (!deposited || starting) return;
