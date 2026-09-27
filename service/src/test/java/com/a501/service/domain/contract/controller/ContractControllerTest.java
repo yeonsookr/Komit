@@ -29,6 +29,7 @@ import com.a501.service.domain.contract.service.ContractDepositService;
 import com.a501.service.domain.contract.service.ContractDetailService;
 import com.a501.service.domain.contract.service.ContractSignatureService;
 import com.a501.service.domain.contract.service.DeliverableMaterialService;
+import com.a501.service.domain.contract.service.DevelopmentStartService;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -61,6 +62,43 @@ class ContractControllerTest {
     private ContractCancellationService contractCancellationService;
     @MockitoBean
     private DeliverableMaterialService deliverableMaterialService;
+    @MockitoBean
+    private DevelopmentStartService developmentStartService;
+
+    @Test
+    void developerStartsDevelopment() throws Exception {
+        when(developmentStartService.start(CONTRACT_ID, USER_ID)).thenReturn(consultingContract());
+
+        mockMvc.perform(post("/api/contracts/{contractId}/start", CONTRACT_ID)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.contractId").value(CONTRACT_ID));
+    }
+
+    @Test
+    void startErrorsFollowTheMock() throws Exception {
+        when(developmentStartService.start(CONTRACT_ID, USER_ID))
+                .thenThrow(new BusinessException(ContractErrorCode.DEPOSIT_REQUIRED))
+                .thenThrow(new BusinessException(ContractErrorCode.ALREADY_STARTED));
+
+        mockMvc.perform(post("/api/contracts/{contractId}/start", CONTRACT_ID)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DEPOSIT_REQUIRED"))
+                .andExpect(jsonPath("$.message").value("예치가 끝나야 착수할 수 있습니다."));
+        mockMvc.perform(post("/api/contracts/{contractId}/start", CONTRACT_ID)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("이미 착수한 계약입니다."));
+    }
+
+    @Test
+    void startNeedsLogin() throws Exception {
+        mockMvc.perform(post("/api/contracts/{contractId}/start", CONTRACT_ID))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(developmentStartService);
+    }
 
     @Test
     void developerAddsDeliverableOutsideTheSignedContract() throws Exception {

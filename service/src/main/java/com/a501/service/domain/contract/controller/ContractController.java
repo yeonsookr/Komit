@@ -14,6 +14,7 @@ import com.a501.service.domain.contract.service.ContractDepositService;
 import com.a501.service.domain.contract.service.ContractDetailService;
 import com.a501.service.domain.contract.service.ContractSignatureService;
 import com.a501.service.domain.contract.service.DeliverableMaterialService;
+import com.a501.service.domain.contract.service.DevelopmentStartService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -40,6 +41,7 @@ public class ContractController {
     private final ContractDepositService contractDepositService;
     private final ContractCancellationService contractCancellationService;
     private final DeliverableMaterialService deliverableMaterialService;
+    private final DevelopmentStartService developmentStartService;
 
     @Operation(
             summary = "계약서 조회",
@@ -179,6 +181,31 @@ public class ContractController {
     DepositResponse getDeposit(
             @AuthenticationPrincipal AuthenticatedUser user, @PathVariable Integer contractId) {
         return contractDepositService.getDeposit(contractId, user.userId());
+    }
+
+    @Operation(
+            summary = "개발 착수",
+            description =
+                    """
+                    개발자가 일을 시작한다고 알린다. 개발 쪽 상태가 IN_PROGRESS 가 되고, 1차 작업이 \
+                    IN_PROGRESS, 나머지 작업은 SCHEDULED 가 된다. 착수일은 계약서 날짜를 그대로 쓴다.
+
+                    **양쪽이 서명하고 예치가 끝나야 착수할 수 있다.** 예치는 Escrow 에 물어 확인한다. 착수한 \
+                    뒤로는 이 요청으로 되돌리지 않는다. 컨설팅 계약에는 착수가 없다.
+
+                    - 200: 착수했을 때
+                    - 401 UNAUTHORIZED: 로그인하지 않았을 때
+                    - 403 FORBIDDEN: 이 계약의 개발자가 아닐 때
+                    - 404 CONTRACT_NOT_FOUND: 없는 계약이거나, 당사자가 아니거나, 개발 계약이 아닐 때
+                    - 409 CONTRACT_CANCELLED: 취소된 계약일 때
+                    - 409 CONTRACT_NOT_CONCLUDED: 양쪽이 서명하기 전일 때
+                    - 409 ALREADY_STARTED: 이미 착수했을 때
+                    - 409 DEPOSIT_REQUIRED: 예치가 끝나지 않았을 때
+                    - 500 INTERNAL_ERROR: 예치 여부를 확인하지 못했을 때""")
+    @PostMapping("/{contractId}/start")
+    ContractResponse startDevelopment(
+            @AuthenticationPrincipal AuthenticatedUser user, @PathVariable Integer contractId) {
+        return developmentStartService.start(contractId, user.userId());
     }
 
     @Operation(

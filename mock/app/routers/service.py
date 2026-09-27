@@ -7191,6 +7191,7 @@ class WriteReviewRequest(BaseModel):
 
 MILESTONE_NOT_FOUND = ("MILESTONE_NOT_FOUND", "작업을 찾을 수 없습니다.")
 DEPOSIT_REQUIRED = ("DEPOSIT_REQUIRED", "예치가 끝나야 착수할 수 있습니다.")
+CONTRACT_NOT_CONCLUDED = ("CONTRACT_NOT_CONCLUDED", "양쪽이 서명한 뒤에 착수할 수 있습니다.")
 ALREADY_DEPOSITED = ("ALREADY_DEPOSITED", "이미 예치가 끝났습니다.")
 CONTRACT_NOT_SIGNED = ("CONTRACT_NOT_SIGNED", "계약서에 서명한 뒤에 예치할 수 있습니다.")
 QA_NOT_ALL_CHECKED = (
@@ -7831,6 +7832,17 @@ STARTED_CONTRACT_ID = 409
                             "summary": "이미 착수함",
                             "value": ALREADY_STARTED_EXAMPLE,
                         },
+                        "not_concluded": {
+                            "summary": "양쪽이 서명하기 전",
+                            "value": {
+                                "code": CONTRACT_NOT_CONCLUDED[0],
+                                "message": CONTRACT_NOT_CONCLUDED[1],
+                            },
+                        },
+                        "cancelled": {
+                            "summary": "취소된 계약",
+                            "value": {"code": CONTRACT_CANCELLED[0], "message": CONTRACT_CANCELLED[1]},
+                        },
                     }
                 }
             },
@@ -7847,10 +7859,11 @@ STARTED_CONTRACT_ID = 409
     summary="개발 착수",
     description=(
         "**화면 — `5_개발자_착수전` › 착수하고 김미미님에게 알리기**\n\n"
-        "개발자가 일을 시작한다고 알린다. 계약이 `DEPOSITED`에서 `IN_PROGRESS`가 되고 "
-        "1차 작업이 `SCHEDULED`에서 `IN_PROGRESS`로 넘어간다. 의뢰인 화면에 착수 알림이 "
-        "가고 진행 기록에도 남는다.\n\n"
-        "**예치가 끝나야 착수할 수 있다.** 돈이 들어온 것을 확인하기 전에는 막는다. "
+        "개발자가 일을 시작한다고 알린다. 개발 쪽 상태(`development.status`)가 착수 전 `SIGNED`에서 "
+        "`IN_PROGRESS`가 되고, 1차 일반 작업이 `IN_PROGRESS`, 나머지 작업(인계 작업 포함)이 "
+        "`SCHEDULED`가 된다.\n\n"
+        "**양쪽이 서명하고 예치가 끝나야 착수할 수 있다.** 예치는 Escrow에 물어 확인하고, "
+        "돈이 들어온 것을 확인하기 전에는 막는다(R-CON-24). "
         "착수 전까지는 개발자가 계약을 물릴 수 있지만, 착수한 뒤로는 이 API로 되돌리지 "
         "않는다.\n\n"
         "착수일은 계약서에 적힌 날짜를 그대로 쓴다. 이 요청이 날짜를 바꾸지 않는다.\n\n"
@@ -7863,6 +7876,8 @@ STARTED_CONTRACT_ID = 409
         "- **409 / DEPOSIT_REQUIRED**: `contractId`가 402일 때. 예치가 끝나지 않아 아직 "
         "착수할 상태가 아니다\n"
         "- **409 / ALREADY_STARTED**: `contractId`가 409일 때\n"
+        f"- **409 / CONTRACT_NOT_CONCLUDED**: `contractId`가 {DRAFT_CLIENT_CONTRACT_ID}일 때. 양쪽이 서명하기 전이다\n"
+        f"- **409 / CONTRACT_CANCELLED**: `contractId`가 {CANCELLED_CONTRACT_ID}일 때. 취소된 계약이다\n"
         "- **422 / INVALID_REQUEST**: `contractId`가 정수가 아닐 때\n"
         "- **500 / INTERNAL_ERROR**: 착수를 처리하지 못했을 때"
     ),
@@ -7872,8 +7887,8 @@ def start_development(
         int,
         Path(
             description=(
-                "계약 식별자. 404는 없음, 402는 예치 전, 409는 이미 착수함 재현용 "
-                "예약값이다."
+                "계약 식별자. 404는 없음, 402는 예치 전, 409는 이미 착수함, "
+                f"{DRAFT_CLIENT_CONTRACT_ID}은 서명 전, {CANCELLED_CONTRACT_ID}은 취소됨 재현용 예약값이다."
             ),
             examples=[DEV_CONTRACT_ID],
         ),
@@ -7885,6 +7900,10 @@ def start_development(
         return _error_response(409, DEPOSIT_REQUIRED)
     if contractId == STARTED_CONTRACT_ID:
         return _error_response(409, ALREADY_STARTED)
+    if contractId == DRAFT_CLIENT_CONTRACT_ID:
+        return _error_response(409, CONTRACT_NOT_CONCLUDED)
+    if contractId == CANCELLED_CONTRACT_ID:
+        return _error_response(409, CONTRACT_CANCELLED)
     return ContractResponse(**STARTED_CONTRACT_EXAMPLE)
 
 

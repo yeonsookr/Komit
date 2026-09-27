@@ -113,6 +113,16 @@ public class Milestone extends SoftDeleteEntity {
         return entity;
     }
 
+    /** 착수할 때 바로 시작하는 작업. */
+    public void startWork() {
+        this.status = "IN_PROGRESS";
+    }
+
+    /** 착수할 때 뒤로 잡아 두는 작업. */
+    public void schedule() {
+        this.status = "SCHEDULED";
+    }
+
     /** 계약서를 다시 써서 빠진 작업. 서명 전이라 통과 기록이 없어 지워도 잃는 것이 없다. */
     public void removeFromContract(LocalDateTime removedAt) {
         markDeleted(removedAt);

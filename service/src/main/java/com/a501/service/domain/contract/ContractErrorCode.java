@@ -34,6 +34,13 @@ public enum ContractErrorCode implements ErrorCode {
             HttpStatus.SERVICE_UNAVAILABLE,
             "REFUND_PENDING",
             "계약을 취소했습니다. 환불을 확인하는 중이니 잠시 뒤 다시 눌러 주세요."),
+    /** 양쪽이 서명해 계약이 성립하기 전에는 착수하지 않는다. (`R-CON-01`) */
+    CONTRACT_NOT_CONCLUDED(
+            HttpStatus.CONFLICT, "CONTRACT_NOT_CONCLUDED", "양쪽이 서명한 뒤에 착수할 수 있습니다."),
+    /** 대금이 예치되기 전에는 착수하지 않는다. */
+    DEPOSIT_REQUIRED(HttpStatus.CONFLICT, "DEPOSIT_REQUIRED", "예치가 끝나야 착수할 수 있습니다."),
+    /** 착수는 한 번이다. 착수한 뒤로는 이 요청으로 되돌리지 않는다. */
+    ALREADY_STARTED(HttpStatus.CONFLICT, "ALREADY_STARTED", "이미 착수한 계약입니다."),
     /** 없는 인계물이거나 그 계약의 당사자가 아니다. 존재를 알리지 않으려 둘을 같게 다룬다. */
     DELIVERABLE_NOT_FOUND(HttpStatus.NOT_FOUND, "DELIVERABLE_NOT_FOUND", "인계물을 찾을 수 없습니다."),
     /** 양쪽이 서명하고 일반 작업을 모두 확정한 뒤에야 인계 자료를 올린다. (`R-QA-06`) */
