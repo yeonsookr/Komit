@@ -5465,6 +5465,65 @@ DELIVERABLE_ACCESS_LOCKED = (
     "DELIVERABLE_ACCESS_LOCKED",
     "대금 지급이 완료된 뒤에 내려받을 수 있습니다.",
 )
+HANDOVER_NOT_OPEN = (
+    "HANDOVER_NOT_OPEN",
+    "일반 작업을 모두 마친 뒤에 인계 자료를 등록할 수 있습니다.",
+)
+FINAL_ACCEPTANCE_PASSED = (
+    "FINAL_ACCEPTANCE_PASSED",
+    "최종 인수 시험을 통과한 뒤에는 인계 자료를 바꿀 수 없습니다.",
+)
+MATERIAL_STAGE_CONFLICT = (
+    "MATERIAL_STAGE_CONFLICT",
+    "같은 파일을 시험용과 해금용으로 함께 등록할 수 없습니다.",
+)
+FILE_NOT_ATTACHABLE_ERROR = ("FILE_NOT_ATTACHABLE", "쓸 수 없는 파일입니다.")
+
+
+def _example(error: tuple[str, str]) -> dict:
+    return {"code": error[0], "message": error[1]}
+
+
+def _handover_responses(*, file: bool) -> dict:
+    """인계 자료·산출물 등록 API가 함께 쓰는 실패 응답. 파일 등록만 파일 오류와 단계 충돌이 더 있다."""
+    conflicts = {
+        "cancelled": {"summary": "취소된 계약", "value": _example(CONTRACT_CANCELLED)},
+        "not_open": {"summary": "서명 전이거나 일반 작업이 덜 끝남", "value": _example(HANDOVER_NOT_OPEN)},
+        "passed": {"summary": "최종 인수 시험을 통과한 뒤", "value": _example(FINAL_ACCEPTANCE_PASSED)},
+    }
+    if file:
+        conflicts["stage_conflict"] = {
+            "summary": "같은 파일이 다른 열람 단계로 있음",
+            "value": _example(MATERIAL_STAGE_CONFLICT),
+        }
+    responses = {
+        403: {
+            "model": ErrorResponse,
+            "description": "이 계약의 개발자가 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "지금은 인계 자료를 바꿀 수 없음",
+            "content": {"application/json": {"examples": conflicts}},
+        },
+    }
+    if file:
+        responses[400] = {
+            "model": ErrorResponse,
+            "description": "붙일 수 없는 파일",
+            "content": {"application/json": {"example": _example(FILE_NOT_ATTACHABLE_ERROR)}},
+        }
+    return responses
+
+
+def _handover_state_error(identifier: int) -> JSONResponse | None:
+    """재현값이면 그 409를 돌려준다. 목은 상태를 저장하지 않아 값으로 경우를 가른다."""
+    if identifier == HANDOVER_NOT_OPEN_ID:
+        return _error_response(409, HANDOVER_NOT_OPEN)
+    if identifier == FINAL_ACCEPTANCE_PASSED_ID:
+        return _error_response(409, FINAL_ACCEPTANCE_PASSED)
+    return None
 DELIVERABLE_NOT_UPLOADED_EXAMPLE = {
     "code": DELIVERABLE_NOT_UPLOADED[0],
     "message": DELIVERABLE_NOT_UPLOADED[1],
@@ -5514,6 +5573,9 @@ SESSION_ID = 55
 NOT_FOUND_CONTRACT_ID = 404
 NOT_FOUND_DELIVERABLE_ID = 404
 NOT_UPLOADED_DELIVERABLE_ID = 409
+# 인계 자료 등록의 409 재현값. 산출물 식별자와 계약 식별자 모두 같은 뜻으로 쓴다. (R-QA-06)
+HANDOVER_NOT_OPEN_ID = 407
+FINAL_ACCEPTANCE_PASSED_ID = 408
 REVIEWED_CONTRACT_ID = 409
 NOT_COMPLETED_CONTRACT_ID = 400
 SIGNED_CONTRACT_ID = 409
@@ -8543,6 +8605,8 @@ def confirm_milestone(
             },
         },
         **AREA1_UNAUTHORIZED,
+        400: _handover_responses(file=True)[400],
+        409: _handover_responses(file=True)[409],
         422: {
             "model": ValidationErrorResponse,
             "description": "요청 스키마 유효성 검증 실패",
@@ -8559,15 +8623,26 @@ def confirm_milestone(
         "지나가지 않게 한다.\n\n"
         "등록할 때 개발자가 열람 단계를 TEST 또는 PAID로 정한다. 등록할 때마다 자료가 하나 "
         "늘고, 같은 산출물의 URL과 다른 파일은 그대로 남는다. TEST 파일은 인수 시험 중 확인하고 "
-        "PAID 파일은 전액 지급 완료 후 내려받는다. 최종 인수 시험 통과 뒤에는 등록할 수 없다. "
-        "(R-QA-06)\n\n"
+        "PAID 파일은 전액 지급 완료 후 내려받는다. (R-QA-06)\n\n"
+        "**일반 작업을 모두 확정한 뒤부터 인계 작업을 확정하기 전까지만 받는다.** 인계 작업을 "
+        "확정한 뒤 자료가 바뀌면 검수한 것과 지급 뒤 받는 것이 달라진다.\n\n"
+        "**같은 파일을 같은 단계로 다시 보내면 새로 만들지 않고 지금 상태를 돌려준다.** 같은 "
+        "계약 안에서 한 파일을 TEST와 PAID로 함께 두지 않는다. 목에서는 `fileId` 71을 TEST로 "
+        "보내면 이미 있는 자료를 그대로, 72를 TEST로 보내면 단계 충돌(이미 PAID)을 돌려준다.\n\n"
         "형식과 크기는 `POST /uploads`에서 `purpose`가 `DELIVERABLE`일 때의 한도로 거른다. "
         "그래서 이 요청에는 용량 오류가 없다.\n\n"
-        "- **201**: 붙였을 때\n"
+        "- **201**: 붙였을 때. 같은 자료를 다시 보냈을 때도 201로 지금 상태를 돌려준다\n"
+        "- **400 / FILE_NOT_ATTACHABLE**: 없는 파일이거나 업로드를 마치지 않았거나 남의 파일일 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 계약의 개발자가 아닐 때\n"
         "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableId`가 404일 때. 없는 인계물이거나 이 "
         "계약의 당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 준다\n"
+        "- **409 / CONTRACT_CANCELLED**: 취소된 계약일 때\n"
+        "- **409 / HANDOVER_NOT_OPEN**: `deliverableId`가 407일 때. 양쪽이 서명하기 전이거나 일반 "
+        "작업을 모두 확정하기 전이다\n"
+        "- **409 / FINAL_ACCEPTANCE_PASSED**: `deliverableId`가 408일 때. 인계 작업을 확정해 최종 "
+        "인수 시험을 통과한 뒤다\n"
+        "- **409 / MATERIAL_STAGE_CONFLICT**: 같은 계약에 같은 파일이 다른 열람 단계로 있을 때\n"
         "- **422 / INVALID_REQUEST**: `fileId` 또는 `accessStage`가 없거나 허용 단계가 아닐 때\n"
         "- **500 / INTERNAL_ERROR**: 붙이지 못했을 때"
     ),
@@ -8576,7 +8651,7 @@ def upload_deliverable(
     deliverableId: Annotated[
         int,
         Path(
-            description="인계물 식별자. 404는 없음 재현용 예약값이다.",
+            description="인계물 식별자. 404는 없음, 407은 아직 열리지 않음, 408은 최종 인수 시험 통과 뒤 재현용 예약값이다.",
             examples=[401],
         ),
     ],
@@ -8584,6 +8659,14 @@ def upload_deliverable(
 ) -> DeliverableResponse | JSONResponse:
     if deliverableId == NOT_FOUND_DELIVERABLE_ID:
         return _error_response(404, DELIVERABLE_NOT_FOUND)
+    state_error = _handover_state_error(deliverableId)
+    if state_error is not None:
+        return state_error
+    existing = [material for material in DELIVERABLES[0]["materials"] if material["fileId"] == request.fileId]
+    if any(material["accessStage"] != request.accessStage for material in existing):
+        return _error_response(409, MATERIAL_STAGE_CONFLICT)
+    if existing:
+        return DeliverableResponse(**{**DELIVERABLES[0], "deliverableId": deliverableId})
     return DeliverableResponse(
         **{
             **DELIVERABLES[0],
@@ -8608,13 +8691,28 @@ def upload_deliverable(
     response_model=DeliverableResponse,
     status_code=201,
     tags=[AREA5_TAG],
+    responses={
+        **_handover_responses(file=False),
+        404: {
+            "model": ErrorResponse,
+            "description": "인계물 없음",
+            "content": {"application/json": {"example": _example(DELIVERABLE_NOT_FOUND)}},
+        },
+        **AREA1_UNAUTHORIZED,
+        500: AREA1_ERRORS[500],
+    },
     summary="산출물 인수 시험 URL 추가",
     description=(
         "개발자가 인수 시험용 URL을 하나 추가한다. 등록할 때마다 URL 자료가 하나 늘고, 같은 "
-        "산출물의 다른 URL과 파일은 그대로 남는다. URL 자료의 열람 단계는 TEST다. 최종 인수 "
-        "시험 통과 뒤에는 추가할 수 없다. (R-QA-06)\n\n"
-        "- **201**: 추가했을 때\n"
-        "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableId`가 404일 때\n"
+        "산출물의 다른 URL과 파일은 그대로 남는다. URL 자료의 열람 단계는 TEST다. 받는 때는 파일 "
+        "붙이기와 같다. 같은 URL을 다시 보내면 새로 만들지 않고 지금 상태를 돌려준다. (R-QA-06)\n\n"
+        "- **201**: 추가했을 때. 같은 URL을 다시 보냈을 때도 201로 지금 상태를 돌려준다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **403 / FORBIDDEN**: 이 계약의 개발자가 아닐 때\n"
+        "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableId`가 404일 때. 없는 인계물이거나 당사자가 아닐 때\n"
+        "- **409 / CONTRACT_CANCELLED**: 취소된 계약일 때\n"
+        "- **409 / HANDOVER_NOT_OPEN**: `deliverableId`가 407일 때\n"
+        "- **409 / FINAL_ACCEPTANCE_PASSED**: `deliverableId`가 408일 때\n"
         "- **422 / INVALID_REQUEST**: `url`이 없거나 호스트가 있는 http·https 주소가 아닐 때"
     ),
 )
@@ -8624,6 +8722,11 @@ def attach_deliverable_url(
 ) -> DeliverableResponse | JSONResponse:
     if deliverableId == NOT_FOUND_DELIVERABLE_ID:
         return _error_response(404, DELIVERABLE_NOT_FOUND)
+    state_error = _handover_state_error(deliverableId)
+    if state_error is not None:
+        return state_error
+    if any(material["url"] == request.url for material in DELIVERABLES[0]["materials"]):
+        return DeliverableResponse(**{**DELIVERABLES[0], "deliverableId": deliverableId})
     return DeliverableResponse(**{
         **DELIVERABLES[0],
         "deliverableId": deliverableId,
@@ -8645,18 +8748,36 @@ def attach_deliverable_url(
     response_model=DeliverableResponse,
     status_code=201,
     tags=[AREA5_TAG],
+    responses={
+        **_handover_responses(file=False),
+        404: CONTRACT_ERRORS[404],
+        **AREA1_UNAUTHORIZED,
+        500: AREA1_ERRORS[500],
+    },
     summary="개발 계약의 추가 산출물 항목 생성",
     description=(
-        "개발자가 계약 체결 후 추가 산출물 항목을 만든다. 서명된 계약의 범위·금액·QA는 변경하지 않는다. "
-        "최종 인수 시험 통과 뒤에는 추가할 수 없다. (R-QA-06)"
+        "개발자가 계약 체결 후 추가 산출물 항목을 만든다. 서명된 계약의 범위·금액·QA는 변경하지 "
+        "않고, 응답의 `isContractual`이 false다. 받는 때는 인계 자료와 같다. (R-QA-06)\n\n"
+        "- **201**: 만들었을 때\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **403 / FORBIDDEN**: 이 계약의 개발자가 아닐 때\n"
+        "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때. 없는 계약이거나, 당사자가 아니거나, "
+        "개발 계약이 아닐 때\n"
+        "- **409 / CONTRACT_CANCELLED**: 취소된 계약일 때\n"
+        "- **409 / HANDOVER_NOT_OPEN**: `contractId`가 407일 때\n"
+        "- **409 / FINAL_ACCEPTANCE_PASSED**: `contractId`가 408일 때\n"
+        "- **422 / INVALID_REQUEST**: `title`이 없거나 비었거나 100자를 넘을 때"
     ),
 )
 def add_deliverable(
-    contractId: Annotated[int, Path(description="개발 계약 식별자.")],
+    contractId: Annotated[int, Path(description="계약 식별자.")],
     request: AddDeliverableRequest,
 ) -> DeliverableResponse | JSONResponse:
     if contractId == NOT_FOUND_CONTRACT_ID:
         return _error_response(404, CONTRACT_NOT_FOUND)
+    state_error = _handover_state_error(contractId)
+    if state_error is not None:
+        return state_error
     return DeliverableResponse(
         deliverableId=410,
         title=request.title,

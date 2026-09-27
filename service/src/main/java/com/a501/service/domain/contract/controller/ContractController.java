@@ -1,16 +1,19 @@
 package com.a501.service.domain.contract.controller;
 
 import com.a501.service.common.security.AuthenticatedUser;
+import com.a501.service.domain.contract.dto.request.AddDeliverableRequest;
 import com.a501.service.domain.contract.dto.request.AmendConsultingContractRequest;
 import com.a501.service.domain.contract.dto.request.DepositRequest;
 import com.a501.service.domain.contract.dto.request.SignContractRequest;
 import com.a501.service.domain.contract.dto.response.ContractResponse;
+import com.a501.service.domain.contract.dto.response.DeliverableResponse;
 import com.a501.service.domain.contract.dto.response.DepositResponse;
 import com.a501.service.domain.contract.service.ConsultingContractWriteService;
 import com.a501.service.domain.contract.service.ContractCancellationService;
 import com.a501.service.domain.contract.service.ContractDepositService;
 import com.a501.service.domain.contract.service.ContractDetailService;
 import com.a501.service.domain.contract.service.ContractSignatureService;
+import com.a501.service.domain.contract.service.DeliverableMaterialService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -36,6 +39,7 @@ public class ContractController {
     private final ContractSignatureService contractSignatureService;
     private final ContractDepositService contractDepositService;
     private final ContractCancellationService contractCancellationService;
+    private final DeliverableMaterialService deliverableMaterialService;
 
     @Operation(
             summary = "계약서 조회",
@@ -175,5 +179,30 @@ public class ContractController {
     DepositResponse getDeposit(
             @AuthenticationPrincipal AuthenticatedUser user, @PathVariable Integer contractId) {
         return contractDepositService.getDeposit(contractId, user.userId());
+    }
+
+    @Operation(
+            summary = "개발 계약의 추가 산출물 항목 생성",
+            description =
+                    """
+                    계약이 성립한 뒤 개발자가 산출물 항목을 더한다. 서명한 계약서의 범위·금액·확인 문장은 \
+                    바꾸지 않고, 응답의 isContractual 이 false 다. 인계 자료를 받는 때와 같이 일반 작업을 모두 \
+                    확정한 뒤부터 최종 인수 시험을 통과하기 전까지 더한다. (R-QA-06)
+
+                    - 201: 더했을 때
+                    - 401 UNAUTHORIZED: 로그인하지 않았을 때
+                    - 403 FORBIDDEN: 이 계약의 개발자가 아닐 때
+                    - 404 CONTRACT_NOT_FOUND: 없는 계약이거나, 당사자가 아니거나, 개발 계약이 아닐 때
+                    - 409 CONTRACT_CANCELLED: 취소된 계약일 때
+                    - 409 HANDOVER_NOT_OPEN: 양쪽이 서명하기 전이거나 일반 작업을 모두 확정하기 전일 때
+                    - 409 FINAL_ACCEPTANCE_PASSED: 인계 작업을 확정해 최종 인수 시험을 통과한 뒤일 때
+                    - 422 INVALID_REQUEST: title 이 없거나 비었거나 100자를 넘을 때""")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PostMapping("/{contractId}/deliverables")
+    DeliverableResponse addDeliverable(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable Integer contractId,
+            @Valid @RequestBody AddDeliverableRequest request) {
+        return deliverableMaterialService.addDeliverable(user.userId(), contractId, request);
     }
 }

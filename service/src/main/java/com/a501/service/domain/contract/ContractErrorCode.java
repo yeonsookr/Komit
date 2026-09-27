@@ -34,6 +34,19 @@ public enum ContractErrorCode implements ErrorCode {
             HttpStatus.SERVICE_UNAVAILABLE,
             "REFUND_PENDING",
             "계약을 취소했습니다. 환불을 확인하는 중이니 잠시 뒤 다시 눌러 주세요."),
+    /** 없는 인계물이거나 그 계약의 당사자가 아니다. 존재를 알리지 않으려 둘을 같게 다룬다. */
+    DELIVERABLE_NOT_FOUND(HttpStatus.NOT_FOUND, "DELIVERABLE_NOT_FOUND", "인계물을 찾을 수 없습니다."),
+    /** 양쪽이 서명하고 일반 작업을 모두 확정한 뒤에야 인계 자료를 올린다. (`R-QA-06`) */
+    HANDOVER_NOT_OPEN(
+            HttpStatus.CONFLICT, "HANDOVER_NOT_OPEN", "일반 작업을 모두 마친 뒤에 인계 자료를 등록할 수 있습니다."),
+    /** 인계 작업을 확정한 뒤에는 검수한 자료와 받을 자료가 달라지지 않게 막는다. (`R-QA-06`) */
+    FINAL_ACCEPTANCE_PASSED(
+            HttpStatus.CONFLICT,
+            "FINAL_ACCEPTANCE_PASSED",
+            "최종 인수 시험을 통과한 뒤에는 인계 자료를 바꿀 수 없습니다."),
+    /** 같은 계약에서 한 파일을 시험용과 해금용으로 함께 두면 시험용으로 지급 전에 받을 수 있다. (`R-QA-06`) */
+    MATERIAL_STAGE_CONFLICT(
+            HttpStatus.CONFLICT, "MATERIAL_STAGE_CONFLICT", "같은 파일을 시험용과 해금용으로 함께 등록할 수 없습니다."),
     /** 의뢰인이 계약서에 서명하기 전에는 돈을 맡기지 않는다. (`R-CON-20`) */
     CONTRACT_NOT_SIGNED(HttpStatus.CONFLICT, "CONTRACT_NOT_SIGNED", "계약서에 서명한 뒤에 예치할 수 있습니다."),
     /** AI가 컨설팅 계약 초안 형식에 맞는 결과를 만들지 못했다. */

@@ -78,6 +78,60 @@ class DevelopmentDeliveryMaterialsTest(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertEqual(service.AttachDeliverableUrlRequest(url=url).url, url)
 
+    def test_same_file_same_stage_returns_current_state(self):
+        result = service.upload_deliverable(401, service.AttachDeliverableRequest(fileId=71, accessStage="TEST"))
+
+        self.assertEqual(len(result.materials), len(service.DELIVERABLES[0]["materials"]))
+
+    def test_same_file_other_stage_conflicts(self):
+        result = service.upload_deliverable(401, service.AttachDeliverableRequest(fileId=72, accessStage="TEST"))
+
+        self.assertEqual(result.status_code, 409)
+        self.assertIn(b"MATERIAL_STAGE_CONFLICT", result.body)
+
+    def test_same_url_returns_current_state(self):
+        result = service.attach_deliverable_url(
+            401, service.AttachDeliverableUrlRequest(url="https://demo.komit.example.com")
+        )
+
+        self.assertEqual(len(result.materials), len(service.DELIVERABLES[0]["materials"]))
+
+    def test_registration_is_closed_before_regular_work_ends_and_after_final_pass(self):
+        file_request = service.AttachDeliverableRequest(fileId=73, accessStage="TEST")
+        url_request = service.AttachDeliverableUrlRequest(url="https://new.example.com")
+        title_request = service.AddDeliverableRequest(title="추가 설명서")
+        for identifier, code in [
+            (service.HANDOVER_NOT_OPEN_ID, b"HANDOVER_NOT_OPEN"),
+            (service.FINAL_ACCEPTANCE_PASSED_ID, b"FINAL_ACCEPTANCE_PASSED"),
+        ]:
+            for result in [
+                service.upload_deliverable(identifier, file_request),
+                service.attach_deliverable_url(identifier, url_request),
+                service.add_deliverable(identifier, title_request),
+            ]:
+                with self.subTest(identifier=identifier):
+                    self.assertEqual(result.status_code, 409)
+                    self.assertIn(code, result.body)
+
+    def test_registration_apis_document_every_failure(self):
+        from fastapi import FastAPI
+
+        app = FastAPI()
+        app.include_router(service.router)
+        paths = app.openapi()["paths"]
+        file_responses = paths["/api/deliverables/{deliverableId}/file"]["post"]["responses"]
+        url_responses = paths["/api/deliverables/{deliverableId}/urls"]["post"]["responses"]
+        add_responses = paths["/api/contracts/{contractId}/deliverables"]["post"]["responses"]
+
+        self.assertTrue({"400", "401", "403", "404", "409", "422"} <= set(file_responses))
+        self.assertTrue({"401", "403", "404", "409", "422"} <= set(url_responses))
+        self.assertTrue({"401", "403", "404", "409", "422"} <= set(add_responses))
+        conflicts = file_responses["409"]["content"]["application/json"]["examples"]
+        self.assertEqual(
+            {example["value"]["code"] for example in conflicts.values()},
+            {"CONTRACT_CANCELLED", "HANDOVER_NOT_OPEN", "FINAL_ACCEPTANCE_PASSED", "MATERIAL_STAGE_CONFLICT"},
+        )
+
     def test_material_download_does_not_unlock_paid_file(self):
         self.assertEqual(service.download_deliverable_material(501).status_code, 200)
         paid = service.download_deliverable_material(502)

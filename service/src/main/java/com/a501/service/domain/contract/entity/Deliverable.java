@@ -40,6 +40,16 @@ public class Deliverable extends SoftDeleteEntity {
     @Column(name = "is_contractual", nullable = false)
     private boolean contractual = true;
 
+    /**
+     * 계약이 성립한 뒤 개발자가 더한 산출물 항목. 서명한 계약서에 없던 것이라 계약 범위·금액·확인 문장을 바꾸지
+     * 않는다. (R-QA-06)
+     */
+    public static Deliverable addedAfterSigning(Integer developmentContractId, String title) {
+        Deliverable entity = of(developmentContractId, title);
+        entity.contractual = false;
+        return entity;
+    }
+
     /** 넘겨받을 인계물 하나. 파일과 전달 시각은 개발자가 결과물을 올릴 때 채운다. */
     public static Deliverable of(Integer developmentContractId, String title) {
         Deliverable entity = new Deliverable();
