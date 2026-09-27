@@ -3,19 +3,32 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import { PAYOUT_PENDING_LABEL } from "@/lib/contract";
 import type { Deliverable, DeliverableMaterial, DevelopmentAgreement, Milestone } from "@/types/contract";
-import { QaSubmitPanel } from "./QaSubmitPanel";
+import { QaSubmitPanel, settlementAccountNotice } from "./QaSubmitPanel";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 vi.mock("@/components/feedback", () => ({
   useToast: () => vi.fn(),
-  Callout: ({ title, children }: { title?: React.ReactNode; children: React.ReactNode }) => (
+  Callout: ({
+    title,
+    action,
+    children,
+  }: {
+    title?: React.ReactNode;
+    action?: React.ReactNode;
+    children: React.ReactNode;
+  }) => (
     <div>
       {title}
       {children}
+      {action}
     </div>
   ),
+}));
+// 다시 읽기는 브라우저에서만 돕니다. 그렸는지와 넘긴 값만 적는다.
+vi.mock("./PayoutRefresh", () => ({
+  PayoutRefresh: ({ active }: { active: boolean }) => <span data-payout-refresh={String(active)} />,
 }));
 // 실제 목록을 그리면서, 접힌 목록 안이라 보이지 않는 넘긴 값도 함께 적는다.
 vi.mock("./DeliverableFiles", async (importOriginal) => {
@@ -82,6 +95,7 @@ function render(
   milestones: Milestone[],
   deliverables: Deliverable[] = [deliverable],
   status: DevelopmentAgreement["status"] = "IN_PROGRESS",
+  hasSettlementAccount: boolean | null = true,
 ): string {
   const development: DevelopmentAgreement = {
     status,
@@ -94,7 +108,13 @@ function render(
     deliverables,
   };
   return renderToStaticMarkup(
-    <QaSubmitPanel roomId={93} contractId={130} development={development} counterpartName="김의뢰" />,
+    <QaSubmitPanel
+      roomId={93}
+      contractId={130}
+      development={development}
+      counterpartName="김의뢰"
+      hasSettlementAccount={hasSettlementAccount}
+    />,
   );
 }
 
@@ -157,6 +177,21 @@ const HANDOVER_RETURNED_NOTE = "인계 자료도 다시 등록할 수 있습니�
 /** 산출물 추가 칸. 속성 순서와 상관없이 찾습니다. */
 function titleInput(html: string): string {
   return html.match(/<input[^>]*aria-label="산출물 항목 이름"[^>]*>/)?.[0] ?? "";
+}
+
+const DELAY_NOTE = "지급이 늦어지면 Komit에 문의해 주십시오.";
+const PAID_NOTE = "지급액과 수수료가 확정돼 계약이 완료됐습니다.";
+const ACCOUNT_MISSING = "대금 받을 계좌를 등록해 주십시오";
+const ACCOUNT_UNKNOWN = "대금 받을 계좌를 확인해 주십시오";
+
+/** 다시 읽기 자리표시 태그. */
+function refreshTags(html: string): string[] {
+  return html.match(/<span[^>]*data-payout-refresh="[^"]*"[^>]*>/g) ?? [];
+}
+
+/** 계좌 등록 화면으로 가는 링크 태그. 없으면 빈 글자입니다. */
+function accountLink(html: string): string {
+  return html.match(/<a[^>]*href="\/mypage\/account"[^>]*>/)?.[0] ?? "";
 }
 
 const NOT_OPEN = "일반 작업을 모두 통과한 뒤에 인계 자료를 등록할 수 있습니다.";
@@ -384,6 +419,90 @@ describe("QaSubmitPanel", () => {
     it("지급이 확정돼 계약이 끝났거나 인계 작업 전이면 보이지 않는다", () => {
       expect(render([milestone({}), passed], [ready], "COMPLETED")).not.toContain(PAYOUT_PENDING_LABEL);
       expect(render([milestone({}), handover({})], [ready])).not.toContain(PAYOUT_PENDING_LABEL);
+    });
+  });
+
+  describe("지급 단계", () => {
+    const passed = handover({ status: "CONFIRMED", confirmedAt: "2026-09-12T02:00:00Z" });
+    const stages = {
+      before: () => render([milestone({}), handover({})], [ready]),
+      pending: () => render([milestone({}), passed], [ready]),
+      paid: () => render([milestone({}), passed], [ready], "COMPLETED"),
+    };
+
+    it("지급 처리 중에는 늦어지면 문의하라고 알리고 지급 완료는 말하지 않는다", () => {
+      const html = stages.pending();
+
+      expect(html).toContain(PAYOUT_PENDING_LABEL);
+      expect(html).toContain(DELAY_NOTE);
+      expect(html).not.toContain(PAID_NOTE);
+    });
+
+    it("계약이 완료되면 지급액과 수수료가 확정됐다고 알린다", () => {
+      const html = stages.paid();
+
+      expect(html).toContain("지급 완료");
+      expect(html).toContain(PAID_NOTE);
+      expect(html).not.toContain(DELAY_NOTE);
+    });
+
+    it("최종 인수 시험 전에는 지급 문구가 없다", () => {
+      const html = stages.before();
+
+      expect(html).not.toContain(PAID_NOTE);
+      expect(html).not.toContain(DELAY_NOTE);
+    });
+
+    it("지급 처리 중일 때만 화면을 다시 읽는다", () => {
+      expect(refreshTags(stages.pending())).toEqual(['<span data-payout-refresh="true">']);
+      expect(refreshTags(stages.before())).toEqual([]);
+      expect(refreshTags(stages.paid())).toEqual([]);
+    });
+  });
+
+  describe("대금 받을 계좌", () => {
+    const passed = handover({ status: "CONFIRMED", confirmedAt: "2026-09-12T02:00:00Z" });
+
+    it("지급 처리 중이고 계좌가 없으면 등록 안내와 등록 화면 링크를 보인다", () => {
+      const html = render([milestone({}), passed], [ready], "IN_PROGRESS", false);
+
+      expect(html).toContain(ACCOUNT_MISSING);
+      expect(accountLink(html)).not.toBe("");
+    });
+
+    it("계좌를 확인하지 못했으면 숨기지 않고 확인하라고 알린다", () => {
+      const html = render([milestone({}), passed], [ready], "IN_PROGRESS", null);
+
+      expect(html).toContain(ACCOUNT_UNKNOWN);
+      expect(html).not.toContain(ACCOUNT_MISSING);
+      expect(accountLink(html)).not.toBe("");
+    });
+
+    it("계좌가 있으면 안내하지 않고 지급된다고도 말하지 않는다", () => {
+      const html = render([milestone({}), passed], [ready], "IN_PROGRESS", true);
+
+      expect(html).not.toContain(ACCOUNT_MISSING);
+      expect(html).not.toContain(ACCOUNT_UNKNOWN);
+      expect(accountLink(html)).toBe("");
+    });
+
+    it("지급 처리 중이 아니면 계좌가 없어도 안내하지 않는다", () => {
+      for (const html of [
+        render([milestone({}), handover({})], [ready], "IN_PROGRESS", false),
+        render([milestone({}), passed], [ready], "COMPLETED", false),
+      ]) {
+        expect(html).not.toContain(ACCOUNT_MISSING);
+        expect(accountLink(html)).toBe("");
+      }
+    });
+
+    it("안내 판정은 지급 처리 중에만 계좌 유무를 본다", () => {
+      expect(settlementAccountNotice("PENDING", false)).toBe("MISSING");
+      expect(settlementAccountNotice("PENDING", null)).toBe("UNKNOWN");
+      expect(settlementAccountNotice("PENDING", true)).toBeNull();
+      for (const stage of ["BEFORE_ACCEPTANCE", "PAID"] as const) {
+        for (const has of [true, false, null]) expect(settlementAccountNotice(stage, has)).toBeNull();
+      }
     });
   });
 

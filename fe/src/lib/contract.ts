@@ -224,6 +224,18 @@ export function isPayoutPending(development: DevelopmentAgreement): boolean {
   );
 }
 
+/**
+ * 개발 계약의 지급 단계. 서버가 주는 근거는 계약 상태와 인계 작업뿐이라 셋만 가릅니다 — 최종 인수 시험
+ * 전, 지급 처리 중(인계 작업 통과, 아직 완료 아님), 지급 완료(`COMPLETED`). 지급액과 수수료가 모두 확정돼야
+ * 완료로 기록됩니다 (R-PAY-01). 지급 실패·보류는 이 값으로 가를 수 없습니다.
+ */
+export type PayoutStage = "BEFORE_ACCEPTANCE" | "PENDING" | "PAID";
+
+export function payoutStage(development: DevelopmentAgreement): PayoutStage {
+  if (development.status === "COMPLETED") return "PAID";
+  return isPayoutPending(development) ? "PENDING" : "BEFORE_ACCEPTANCE";
+}
+
 /** 최종 인수 시험을 통과하고 지급을 기다리는 동안 확인 탭·방 머리·진행 탭이 함께 쓰는 이름. */
 export const PAYOUT_PENDING_LABEL = "최종 인수 시험 통과 · 지급 처리 중";
 

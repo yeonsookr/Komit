@@ -16,6 +16,7 @@ import {
 } from "@/components/common";
 import { Callout, useToast } from "@/components/feedback";
 import { busyKey, DeliverableFiles } from "./DeliverableFiles";
+import { PayoutRefresh } from "./PayoutRefresh";
 import { clientApi } from "@/lib/api/client";
 import { uploadFromBrowser } from "@/lib/upload/browserUpload";
 import { INTERNAL } from "@/lib/api/endpoints";
@@ -30,16 +31,17 @@ import {
   isConfirmed,
   isHandover,
   isHandoverReady,
-  isPayoutPending,
   isReturned,
   milestoneActionFailure,
   milestoneStageLabel,
   nearestAutoPassAt,
   PAYOUT_PENDING_LABEL,
+  payoutStage,
   registrationFailure,
   remainingAmount,
   remainingCount,
   type HandoverChecklist,
+  type PayoutStage,
   type RegistrationFailure,
 } from "@/lib/contract";
 import { formatDateLabel, formatShortDateTime } from "@/lib/format";
@@ -68,6 +70,28 @@ export interface QaSubmitPanelProps {
   development: DevelopmentAgreement;
   /** 상대(의뢰인) 이름. 안내 문구에 씁니다. */
   counterpartName: string;
+  /**
+   * 마이페이지에 대금 받을 계좌를 등록했는지. 조회하지 못했으면 null 입니다.
+   * 지급 처리 중에만 계좌 안내에 씁니다 (R-PAY-14).
+   */
+  hasSettlementAccount: boolean | null;
+}
+
+/** 지급 처리 중 계좌 안내. 없으면 등록 안내, 조회하지 못했으면 확인 안내입니다. */
+export type SettlementAccountNotice = "MISSING" | "UNKNOWN";
+
+/**
+ * 계좌 안내를 보일지. 지급 처리 중일 때만 봅니다. 등록 계좌가 없으면 지급이 보류되므로
+ * 알리고 (R-PAY-14), 조회하지 못했으면 숨기지 않고 확인을 권합니다. 계좌가 있다고 지급이
+ * 된다는 뜻은 아니라 그때는 아무것도 보이지 않습니다.
+ */
+export function settlementAccountNotice(
+  stage: PayoutStage,
+  hasSettlementAccount: boolean | null,
+): SettlementAccountNotice | null {
+  if (stage !== "PENDING") return null;
+  if (hasSettlementAccount === null) return "UNKNOWN";
+  return hasSettlementAccount ? null : "MISSING";
 }
 
 /**
@@ -87,6 +111,7 @@ export function QaSubmitPanel({
   contractId,
   development,
   counterpartName,
+  hasSettlementAccount,
 }: Readonly<QaSubmitPanelProps>) {
   const router = useRouter();
   const showToast = useToast();
@@ -99,7 +124,8 @@ export function QaSubmitPanel({
   const registration = handoverRegistration(milestones);
   const checklist = handoverChecklist(development);
   const handoverReady = isHandoverReady(checklist);
-  const payoutPending = isPayoutPending(development);
+  const stage = payoutStage(development);
+  const accountNotice = settlementAccountNotice(stage, hasSettlementAccount);
 
   /** 실패를 알립니다. 그 사이 계약이 바뀌었으면 다시 읽어 바뀐 상태가 보이게 합니다. */
   const notify = (failure: Pick<RegistrationFailure, "title" | "refresh">) => {
@@ -217,10 +243,45 @@ export function QaSubmitPanel({
       </header>
 
       {/* 인계 작업이 통과됐어도 지급이 확정되기 전에는 계약이 끝나지 않습니다 (R-PAY-01). */}
-      {payoutPending && (
-        <Callout tone="success" title={PAYOUT_PENDING_LABEL} className="mt-4">
-          계약 총액 지급을 진행합니다. 지급액과 수수료가 확정되면 계약이
-          완료됩니다.
+      {stage === "PENDING" && (
+        <>
+          <PayoutRefresh active />
+          <Callout tone="success" title={PAYOUT_PENDING_LABEL} className="mt-4">
+            계약 총액 지급을 진행합니다. 지급액과 수수료가 확정되면 계약이
+            완료됩니다. 지급이 늦어지면 Komit에 문의해 주십시오.
+          </Callout>
+        </>
+      )}
+
+      {/* 등록 계좌가 없으면 지급이 보류됩니다 (R-PAY-14). 의뢰인 화면에는 없습니다. */}
+      {accountNotice !== null && (
+        <Callout
+          tone="warning"
+          title={
+            accountNotice === "MISSING"
+              ? "대금 받을 계좌를 등록해 주십시오"
+              : "대금 받을 계좌를 확인해 주십시오"
+          }
+          action={
+            <Link
+              href={ROUTES.accountRegister}
+              className={buttonClass({ variant: "outline", size: "sm" })}
+            >
+              {accountNotice === "MISSING" ? "계좌 등록" : "계좌 확인"}
+            </Link>
+          }
+          className="mt-3"
+        >
+          {accountNotice === "MISSING"
+            ? "마이페이지에 등록한 계좌로 대금을 보냅니다. 등록한 계좌가 없으면 지급이 진행되지 않습니다."
+            : "등록한 계좌를 확인하지 못했습니다. 마이페이지에 등록한 계좌로 대금을 보내므로, 계좌가 없으면 지급이 진행되지 않습니다."}
+        </Callout>
+      )}
+
+      {/* 지급액과 수수료가 모두 확정돼야 완료로 기록됩니다 (R-PAY-01, R-PAY-07). */}
+      {stage === "PAID" && (
+        <Callout tone="success" title="지급 완료" className="mt-4">
+          지급액과 수수료가 확정돼 계약이 완료됐습니다.
         </Callout>
       )}
 
@@ -289,7 +350,7 @@ export function QaSubmitPanel({
                     <DeliverableFiles
                       deliverables={development.deliverables}
                       received
-                      paid={development.status === "COMPLETED"}
+                      paid={stage === "PAID"}
                       registration={registration}
                       busy={busy}
                       contractId={contractId}

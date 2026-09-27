@@ -26,6 +26,7 @@ import {
   milestoneStageLabel,
   nearestAutoPassAt,
   PAYOUT_PENDING_LABEL,
+  payoutStage,
   periodDays,
   registrationFailure,
   remainingAmount,
@@ -406,6 +407,22 @@ describe("developmentStageLabel", () => {
   });
 });
 
+describe("isCompleted 개발 계약", () => {
+  const handover = milestone({ milestoneId: 2, isHandover: true, price: 0, status: "CONFIRMED" });
+
+  it("인계 작업을 통과했어도 지급이 확정되기 전에는 끝난 거래가 아니라 리뷰를 받지 않는다 (R-PAY-01)", () => {
+    expect(isCompleted(contract({ development: agreement({ status: "IN_PROGRESS", milestones: [handover] }) }))).toBe(
+      false,
+    );
+  });
+
+  it("지급이 확정돼 완료된 계약은 끝난 거래다", () => {
+    expect(isCompleted(contract({ development: agreement({ status: "COMPLETED", milestones: [handover] }) }))).toBe(
+      true,
+    );
+  });
+});
+
 describe("isCompleted", () => {
   const consulting = (startedAt: string | null, endedAt: string | null) =>
     contract({
@@ -680,6 +697,34 @@ describe("isPayoutPending", () => {
       expect(isPayoutPending(agreement({ status: "IN_PROGRESS", milestones: [regular, handover(status)] }))).toBe(
         false,
       );
+    }
+  });
+});
+
+describe("payoutStage", () => {
+  const regular = milestone({ milestoneId: 1, status: "CONFIRMED" });
+  const handover = (status: Milestone["status"]) =>
+    milestone({ milestoneId: 2, isHandover: true, price: 0, status });
+
+  it("인계 작업을 통과하기 전에는 최종 인수 시험 전이다", () => {
+    expect(payoutStage(agreement({ status: "IN_PROGRESS", milestones: [regular, handover("SUBMITTED")] }))).toBe(
+      "BEFORE_ACCEPTANCE",
+    );
+  });
+
+  it("인계 작업을 통과했고 계약이 진행 중이면 지급 처리 중이다", () => {
+    expect(payoutStage(agreement({ status: "IN_PROGRESS", milestones: [regular, handover("CONFIRMED")] }))).toBe(
+      "PENDING",
+    );
+  });
+
+  it("계약이 완료돼야 지급 완료다 (R-PAY-01)", () => {
+    expect(payoutStage(agreement({ status: "COMPLETED", milestones: [regular, handover("CONFIRMED")] }))).toBe("PAID");
+  });
+
+  it("하자보수나 중단 계약은 지급 완료로 보지 않는다", () => {
+    for (const status of ["AFTER_SERVICE", "TERMINATED"] as const) {
+      expect(payoutStage(agreement({ status, milestones: [regular, handover("CONFIRMED")] }))).not.toBe("PAID");
     }
   });
 });
