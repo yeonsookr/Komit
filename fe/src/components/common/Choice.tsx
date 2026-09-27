@@ -186,7 +186,7 @@ export interface RatingScaleProps {
   name: string;
   value?: number;
   onChange?: (v: number) => void;
-  /** 5개 라벨 (전혀 · 조금 · 보통 · 잘됨 · 완전) */
+  /** 5개 라벨 (매우 아쉬움 · 아쉬움 · 보통 · 좋음 · 매우 좋음) */
   labels?: [string, string, string, string, string];
   className?: string;
 }
@@ -213,7 +213,7 @@ export function RatingScale({ name, value, onChange, labels, className }: Rating
             >
               {n}
             </span>
-            {labels && <span className={cn("text-xs", active ? "font-semibold text-primary" : "text-fg-subtle")}>{labels[i]}</span>}
+            {labels && <span className={cn("whitespace-nowrap text-xs", active ? "font-semibold text-primary" : "text-fg-subtle")}>{labels[i]}</span>}
           </label>
         );
       })}
