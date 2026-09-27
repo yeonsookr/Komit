@@ -10,6 +10,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface ReviewRepository extends JpaRepository<Review, Integer> {
     boolean existsByContractIdAndDeletedFalse(Integer contractId);
 
+    Optional<Review> findByContractIdAndDeletedFalse(Integer contractId);
+
     /** 개발자가 받은 리뷰. 새로운 것이 먼저입니다. */
     List<Review> findByDeveloperIdAndDeletedFalseOrderByIdDesc(Integer developerId);
 

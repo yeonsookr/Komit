@@ -4,6 +4,7 @@ import com.a501.service.common.exception.ErrorResponse;
 import com.a501.service.common.security.AuthenticatedUser;
 import com.a501.service.domain.review.dto.request.WriteReviewRequest;
 import com.a501.service.domain.review.dto.response.ReviewResponse;
+import com.a501.service.domain.review.service.ReviewQueryService;
 import com.a501.service.domain.review.service.ReviewWriteService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -17,6 +18,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -31,6 +33,28 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class ContractReviewController {
     private final ReviewWriteService reviewWriteService;
+    private final ReviewQueryService reviewQueryService;
+
+    @Operation(
+            summary = "계약에 남긴 리뷰 조회",
+            description = "이 계약에 남긴 리뷰를 돌려준다. 의뢰인은 자기가 남긴 리뷰를, 개발자는 받은 리뷰를 본다. "
+                    + "계약 하나에 리뷰는 하나다. (R-REV-02)\n\n"
+                    + "- **200**: 리뷰가 있을 때\n"
+                    + "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+                    + "- **404 / CONTRACT_NOT_FOUND**: 없는 계약이거나 요청자가 그 계약의 당사자가 아닐 때\n"
+                    + "- **404 / REVIEW_NOT_FOUND**: 아직 리뷰를 남기지 않았을 때",
+            security = @SecurityRequirement(name = "bearerAuth"))
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "리뷰 있음"),
+            @ApiResponse(responseCode = "401", description = "인증 필요", content = @Content(schema = @Schema(implementation = ErrorResponse.class))),
+            @ApiResponse(responseCode = "404", description = "계약이나 리뷰를 찾지 못함", content = @Content(schema = @Schema(implementation = ErrorResponse.class)))
+    })
+    @GetMapping("/{contractId}/review")
+    ReviewResponse find(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @Parameter(description = "계약 식별자.", example = "130") @PathVariable Integer contractId) {
+        return reviewQueryService.findByContract(user.userId(), contractId);
+    }
 
     @Operation(
             summary = "리뷰 작성",

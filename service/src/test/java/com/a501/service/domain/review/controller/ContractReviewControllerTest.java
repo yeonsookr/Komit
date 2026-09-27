@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -13,9 +14,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.a501.service.common.exception.BusinessException;
 import com.a501.service.common.security.JwtTokenProvider;
 import com.a501.service.common.security.WebMvcSecurityTest;
+import com.a501.service.domain.contract.ContractErrorCode;
 import com.a501.service.domain.review.ReviewErrorCode;
 import com.a501.service.domain.review.dto.request.WriteReviewRequest;
 import com.a501.service.domain.review.dto.response.ReviewResponse;
+import com.a501.service.domain.review.service.ReviewQueryService;
 import com.a501.service.domain.review.service.ReviewWriteService;
 import java.time.OffsetDateTime;
 import org.junit.jupiter.api.DisplayName;
@@ -36,6 +39,41 @@ class ContractReviewControllerTest {
     private JwtTokenProvider tokenProvider;
     @MockitoBean
     private ReviewWriteService reviewWriteService;
+    @MockitoBean
+    private ReviewQueryService reviewQueryService;
+
+    @Test
+    @DisplayName("이 계약에 남긴 리뷰를 돌려준다")
+    void returnsTheReviewOfTheContract() throws Exception {
+        when(reviewQueryService.findByContract(12, 130)).thenReturn(new ReviewResponse(
+                88, "김O미", "CONSULTING", 5, 4, "말이 잘 통했습니다.", "감사합니다.",
+                OffsetDateTime.parse("2026-08-19T14:20:00+09:00")));
+
+        mockMvc.perform(authenticated(get("/api/contracts/130/review")))
+                .andExpect(status().isOk())
+                .andExpect(content().json("""
+                        {"reviewId":88,"clientName":"김O미","contractType":"CONSULTING","devScore":5,"expScore":4,
+                         "content":"말이 잘 통했습니다.","reply":"감사합니다.","createdAt":"2026-08-19T14:20:00+09:00"}
+                        """, true));
+    }
+
+    @Test
+    @DisplayName("리뷰가 아직 없으면 REVIEW_NOT_FOUND, 내 계약이 아니면 CONTRACT_NOT_FOUND 로 404 다")
+    void notFoundCases() throws Exception {
+        when(reviewQueryService.findByContract(12, 131))
+                .thenThrow(new BusinessException(ReviewErrorCode.REVIEW_NOT_FOUND));
+        when(reviewQueryService.findByContract(12, 132))
+                .thenThrow(new BusinessException(ContractErrorCode.CONTRACT_NOT_FOUND));
+
+        mockMvc.perform(authenticated(get("/api/contracts/131/review")))
+                .andExpect(status().isNotFound())
+                .andExpect(content().json("""
+                        {"code":"REVIEW_NOT_FOUND","message":"리뷰를 찾을 수 없습니다."}
+                        """, true));
+        mockMvc.perform(authenticated(get("/api/contracts/132/review")))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.code").value("CONTRACT_NOT_FOUND"));
+    }
 
     @Test
     @DisplayName("남기면 201 과 리뷰 한 건을 돌려준다")
