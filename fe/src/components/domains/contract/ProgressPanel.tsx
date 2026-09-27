@@ -14,7 +14,10 @@ import {
   billableMilestones,
   isConfirmed,
   isHandover,
+  isPayoutPending,
+  milestoneStageLabel,
   nearestAutoPassAt,
+  PAYOUT_PENDING_LABEL,
   remainingAmount,
   remainingCount,
 } from "@/lib/contract";
@@ -26,12 +29,19 @@ import type {
   Milestone,
 } from "@/types/contract";
 
-/** 작업 한 줄. 통과한 것은 대금이 확정됐다는 표시를 함께 답니다. */
+/**
+ * 작업 한 줄. 이름 뒤에 진행 단계를 붙이고, 통과한 것은 대금이 확정됐다는 표시를 함께 답니다.
+ * 예정인 작업은 흐리게 두고, 통과 전의 다른 단계는 진행 표시로 둡니다.
+ */
 function milestoneItem(milestone: Milestone): ProgressItem {
   const confirmed = isConfirmed(milestone);
+  const stage = milestoneStageLabel(milestone);
+  let status: ProgressItem["status"] = "active";
+  if (confirmed) status = "done";
+  else if (stage === "예정") status = "pending";
 
   return {
-    label: `${milestone.title} · ${confirmed ? "통과" : "확인 대기"}`,
+    label: `${milestone.title} · ${stage}`,
     right: isHandover(milestone) ? undefined : confirmed ? (
       <span className="text-fg">
         <Money value={milestone.price} /> 통과 확정
@@ -39,7 +49,7 @@ function milestoneItem(milestone: Milestone): ProgressItem {
     ) : (
       <Money value={milestone.price} className="text-fg-subtle" />
     ),
-    status: confirmed ? "done" : "active",
+    status,
   };
 }
 
@@ -57,7 +67,8 @@ export interface ProgressPanelProps {
  * ProgressPanel — 진행 탭.
  *
  * 예치부터 지급까지를 한 줄씩 늘어놓습니다. 대금은 작업마다 나가지 않고 전부
- * 통과한 뒤 한 번에 나갑니다 (R-PAY-01 · R-PAY-03).
+ * 통과한 뒤 한 번에 나갑니다 (R-PAY-01 · R-PAY-03). 인계 작업을 통과하면 지급을 요청하고,
+ * 지급이 확정돼야 계약이 끝납니다. 그 사이 마지막 줄은 지급 처리 중으로 둡니다.
  */
 export function ProgressPanel({
   roomId,
@@ -71,6 +82,7 @@ export function ProgressPanel({
   const billable = billableMilestones(milestones);
   const deposited = deposit !== null && deposit.depositedAt !== null;
   const autoPassAt = nearestAutoPassAt(milestones);
+  const payoutPending = isPayoutPending(development);
 
   const items: ProgressItem[] = [
     {
@@ -80,9 +92,9 @@ export function ProgressPanel({
     },
     ...milestones.map(milestoneItem),
     {
-      label: "계약 완료 후 지급",
+      label: payoutPending ? PAYOUT_PENDING_LABEL : "계약 완료 후 지급",
       right: <Money value={development.totalAmount} />,
-      status: "pending",
+      status: payoutPending ? "active" : "pending",
     },
   ];
 
@@ -97,7 +109,8 @@ export function ProgressPanel({
           {received
             ? "끝나는 작업마다 확인 요청을 보내면 됩니다."
             : `${counterpartName} 개발자가 작업 중입니다. 끝나는 작업마다 확인 요청이 옵니다.`}{" "}
-          대금은 {milestones.length}건을 모두 확인한 뒤 한 번에 나갑니다.
+          대금은 {milestones.length}건을 모두 확인하면 한 번에 지급을 요청하고, 지급이 확정되면
+          계약이 끝납니다.
         </p>
       </header>
 

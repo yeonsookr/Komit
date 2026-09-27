@@ -168,6 +168,65 @@ export function handoverRegistration(milestones: Milestone[]): HandoverRegistrat
   return "OPEN";
 }
 
+/**
+ * 의뢰인이 확인 문장 일부만 통과시켜 개발자에게 돌아온 작업인지. 서버는 이때 작업을 진행 중으로 되돌리고
+ * 요청 시각을 비웁니다. 통과한 문장이 남아 있는 것으로 요청하기 전 작업과 가립니다 (R-QA-02).
+ */
+export function isReturned(milestone: Milestone): boolean {
+  return !isConfirmed(milestone) && !isAwaitingCheck(milestone) && checkedCount(milestone) > 0;
+}
+
+/** 작업 진행 단계의 이름. 진행 탭과 작업 카드가 같은 말을 씁니다. */
+export function milestoneStageLabel(milestone: Milestone): string {
+  if (isConfirmed(milestone)) return "통과";
+  if (isAwaitingCheck(milestone)) return "확인 요청 중";
+  if (isReturned(milestone)) return "돌아옴";
+  if (milestone.status === "IN_PROGRESS") return "진행 중";
+  return "예정";
+}
+
+/**
+ * 최종 인수 시험(인계 작업의 확인)을 요청할 수 있는지 셋을 따로 봅니다. 서버가 요청을 받을 때 보는 조건과
+ * 같습니다 (R-QA-06). URL 은 언제나 TEST 라 시험 자료로 셉니다. 기존 단일 파일은 어느 쪽에도 들지 않습니다.
+ */
+export interface HandoverChecklist {
+  /** 일반 작업을 모두 통과했는지. */
+  regularDone: boolean;
+  /** 계약 전체에 인수 시험 자료(URL 또는 TEST 파일)가 하나 이상 있는지. */
+  testMaterial: boolean;
+  /** 계약 전체에 지급 후 해금 파일(PAID)이 하나 이상 있는지. */
+  paidFile: boolean;
+}
+
+export function handoverChecklist(development: DevelopmentAgreement): HandoverChecklist {
+  const materials = development.deliverables.flatMap((deliverable) => deliverable.materials);
+  return {
+    regularDone: billableMilestones(development.milestones).every(isConfirmed),
+    testMaterial: materials.some((material) => material.accessStage === "TEST"),
+    paidFile: materials.some((material) => material.accessStage === "PAID"),
+  };
+}
+
+/** 체크리스트를 모두 채웠는지. 채우기 전에는 인계 작업의 확인 요청을 막습니다. */
+export function isHandoverReady(checklist: HandoverChecklist): boolean {
+  return checklist.regularDone && checklist.testMaterial && checklist.paidFile;
+}
+
+/**
+ * 최종 인수 시험을 통과했지만 지급이 아직 확정되지 않았는지. 인계 작업이 통과되면 계약 총액 지급을 요청하고,
+ * 지급액과 수수료가 확정돼야 계약이 완료됩니다 (R-PAY-01). 그 사이 계약은 진행 중으로 남습니다.
+ * 지급이 실패했는지·보류됐는지는 이 값으로 알 수 없습니다.
+ */
+export function isPayoutPending(development: DevelopmentAgreement): boolean {
+  return (
+    development.status === "IN_PROGRESS" &&
+    development.milestones.some((milestone) => isHandover(milestone) && isConfirmed(milestone))
+  );
+}
+
+/** 최종 인수 시험을 통과하고 지급을 기다리는 동안 확인 탭·방 머리·진행 탭이 함께 쓰는 이름. */
+export const PAYOUT_PENDING_LABEL = "최종 인수 시험 통과 · 지급 처리 중";
+
 /** R-QA-06: 인수 시험 URL 길이 상한. */
 export const DELIVERABLE_URL_MAX_LENGTH = 2000;
 
@@ -220,6 +279,19 @@ export function registrationFailure(error: unknown, fallback: string): Registrat
     title: error.errors?.[0]?.reason ?? error.message,
     refresh: error.status === 409,
     retry: error.status === 0 || error.status >= 500,
+  };
+}
+
+/**
+ * 확인 요청·확인 결과 저장·통과시키기가 거부됐을 때 화면이 할 일. 409 는 그 사이 작업 상태가 바뀐 것이고
+ * (다른 탭, 자동 통과, 상대의 처리), `QA_NOT_ALL_CHECKED` 는 화면이 본 체크와 서버가 다른 것이라 둘 다
+ * 다시 읽습니다.
+ */
+export function milestoneActionFailure(error: unknown, fallback: string): { title: string; refresh: boolean } {
+  if (!(error instanceof ApiError)) return { title: fallback, refresh: false };
+  return {
+    title: error.errors?.[0]?.reason ?? error.message,
+    refresh: error.status === 409 || error.code === "QA_NOT_ALL_CHECKED",
   };
 }
 
@@ -330,6 +402,7 @@ export function developmentStageLabel(contract: Contract | null): string | null 
   if (status === undefined) return null;
   if (contract.status === "CANCELLED") return "취소됨";
   if (contract.status !== "SIGNED") return "계약 전";
+  if (contract.development !== null && isPayoutPending(contract.development)) return PAYOUT_PENDING_LABEL;
 
   const labels: Record<DevelopmentStatus, string> = {
     SIGNED: "예치 대기",

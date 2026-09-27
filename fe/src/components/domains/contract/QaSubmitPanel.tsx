@@ -6,11 +6,13 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/buttons";
 import { buttonClass } from "@/components/buttons/buttonStyles";
 import {
+  Badge,
   Card,
   CardHeader,
   KeyValueRow,
   Money,
   StickyBar,
+  type BadgeTone,
 } from "@/components/common";
 import { Callout, useToast } from "@/components/feedback";
 import { busyKey, DeliverableFiles } from "./DeliverableFiles";
@@ -22,18 +24,26 @@ import {
   checkedCount,
   confirmedAmount,
   confirmedCount,
+  handoverChecklist,
   handoverRegistration,
+  isAwaitingCheck,
   isConfirmed,
   isHandover,
+  isHandoverReady,
+  isPayoutPending,
+  isReturned,
+  milestoneActionFailure,
+  milestoneStageLabel,
   nearestAutoPassAt,
+  PAYOUT_PENDING_LABEL,
   registrationFailure,
   remainingAmount,
   remainingCount,
+  type HandoverChecklist,
   type RegistrationFailure,
 } from "@/lib/contract";
 import { formatDateLabel, formatShortDateTime } from "@/lib/format";
 import { ROUTES } from "@/lib/routes";
-import { ApiError } from "@/types/api";
 import type {
   Deliverable,
   DeliverableAccessStage,
@@ -68,6 +78,9 @@ export interface QaSubmitPanelProps {
  *
  * 인계물은 파일을 올려야 의뢰인이 받아 확인할 수 있습니다 (R-QA-04). 인계 자료는 일반 작업을 모두
  * 통과한 뒤부터 인계 작업의 확인을 요청하기 전까지 등록합니다 (R-QA-06).
+ *
+ * 인계 작업의 확인이 최종 인수 시험입니다. 요청 조건을 모두 갖춰야 요청할 수 있고 (R-QA-06), 통과되면
+ * 계약 총액 지급을 요청합니다 (R-PAY-01).
  */
 export function QaSubmitPanel({
   roomId,
@@ -84,9 +97,12 @@ export function QaSubmitPanel({
   const milestones = development.milestones;
   const autoPassAt = nearestAutoPassAt(milestones);
   const registration = handoverRegistration(milestones);
+  const checklist = handoverChecklist(development);
+  const handoverReady = isHandoverReady(checklist);
+  const payoutPending = isPayoutPending(development);
 
-  /** 등록 실패를 알립니다. 409 면 그 사이 바뀐 계약을 다시 읽어 닫힌 까닭이 보이게 합니다. */
-  const notify = (failure: RegistrationFailure) => {
+  /** 실패를 알립니다. 그 사이 계약이 바뀌었으면 다시 읽어 바뀐 상태가 보이게 합니다. */
+  const notify = (failure: Pick<RegistrationFailure, "title" | "refresh">) => {
     showToast({ tone: "danger", title: failure.title });
     if (failure.refresh) router.refresh();
   };
@@ -107,10 +123,7 @@ export function QaSubmitPanel({
       });
       router.refresh();
     } catch (error) {
-      showToast({
-        tone: "danger",
-        title: error instanceof ApiError ? error.message : "보내지 못했습니다.",
-      });
+      notify(milestoneActionFailure(error, "보내지 못했습니다."));
     } finally {
       setBusy(null);
     }
@@ -197,10 +210,19 @@ export function QaSubmitPanel({
       <header>
         <h2 className="text-xl font-bold text-fg">작업 확인</h2>
         <p className="mt-1.5 text-[13px] leading-6 text-fg-subtle">
-          계약할 때 정한 확인 문장이 완료 조건입니다. {milestones.length}건을
-          모두 통과시키면 대금이 한 번에 나갑니다.
+          계약할 때 정한 확인 문장이 완료 조건입니다. 마지막 인계 작업까지
+          통과되면 계약 총액 지급을 한 번에 요청하고, 지급이 확정되면 계약이
+          끝납니다.
         </p>
       </header>
+
+      {/* 인계 작업이 통과됐어도 지급이 확정되기 전에는 계약이 끝나지 않습니다 (R-PAY-01). */}
+      {payoutPending && (
+        <Callout tone="success" title={PAYOUT_PENDING_LABEL} className="mt-4">
+          계약 총액 지급을 진행합니다. 지급액과 수수료가 확정되면 계약이
+          완료됩니다.
+        </Callout>
+      )}
 
       <div className="mt-6">
         <CardHeader
@@ -225,15 +247,22 @@ export function QaSubmitPanel({
         <ul className="mt-3 flex flex-col gap-3">
           {milestones.map((milestone) => {
             const confirmed = isConfirmed(milestone);
+            const awaiting = isAwaitingCheck(milestone);
+            const handover = isHandover(milestone);
+            // 인계 작업은 요청 조건을 모두 갖춰야 보냅니다. 다시 보낼 때도 같은 조건을 봅니다 (R-QA-06).
+            const locked = handover && !handoverReady;
 
             return (
               <li key={milestone.milestoneId}>
                 <Card padding="none">
                   <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 px-4 pt-4 sm:px-5">
+                    <Badge size="sm" tone={stageTone(milestone)}>
+                      {milestoneStageLabel(milestone)}
+                    </Badge>
                     <p className="min-w-0 flex-1 text-sm font-semibold text-fg">
                       {milestone.title}
                     </p>
-                    {!isHandover(milestone) && (
+                    {!handover && (
                       <Money
                         value={milestone.price}
                         className="text-sm text-fg-secondary"
@@ -245,8 +274,18 @@ export function QaSubmitPanel({
                     </span>
                   </div>
 
+                  {/* 일부만 통과돼 돌아오면 자동 통과가 멈춥니다. 다시 요청하면 기한을 새로 셉니다 (R-QA-02). */}
+                  {isReturned(milestone) && (
+                    <Callout tone="warning" size="sm" className="mx-4 mt-3 sm:mx-5">
+                      {counterpartName}님이 확인 문장 일부만 통과시켜 작업이
+                      돌아왔습니다. 남은 문장에 맞게 고쳐 다시 확인을 요청하면
+                      자동 통과 기한을 새로 셉니다.
+                      {handover && " 인계 자료도 다시 등록할 수 있습니다."}
+                    </Callout>
+                  )}
+
                   {/* 넘겨줄 자료. 확인 문장과 짝이 아니라 따로 셉니다. */}
-                  {isHandover(milestone) && (
+                  {handover && (
                     <DeliverableFiles
                       deliverables={development.deliverables}
                       received
@@ -291,37 +330,55 @@ export function QaSubmitPanel({
                     ))}
                   </ul>
 
+                  {handover && !confirmed && <HandoverChecklistView checklist={checklist} />}
+
                   <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-line-subtle px-4 py-3 sm:px-5">
-                    <span className="font-mono text-[13px] text-fg-subtle tabular-nums">
-                      {confirmed && milestone.confirmedAt ? (
-                        <>
-                          {formatShortDateTime(milestone.confirmedAt)} 통과
-                          {!isHandover(milestone) && (
-                            <>
-                              {" · "}
-                              <Money
-                                value={milestone.price}
-                                className="text-fg-subtle"
-                              />{" "}
-                              확정
-                            </>
-                          )}
-                        </>
-                      ) : milestone.submittedAt ? (
-                        `${formatShortDateTime(milestone.submittedAt)} 확인 요청 보냄`
-                      ) : null}
-                    </span>
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      <span className="font-mono text-[13px] text-fg-subtle tabular-nums">
+                        {confirmed && milestone.confirmedAt ? (
+                          <>
+                            {formatShortDateTime(milestone.confirmedAt)} 통과
+                            {!handover && (
+                              <>
+                                {" · "}
+                                <Money
+                                  value={milestone.price}
+                                  className="text-fg-subtle"
+                                />{" "}
+                                확정
+                              </>
+                            )}
+                          </>
+                        ) : milestone.submittedAt ? (
+                          <>
+                            {formatShortDateTime(milestone.submittedAt)} 확인 요청 보냄
+                            {awaiting && milestone.autoPassAt && (
+                              <>
+                                {" · "}
+                                {formatShortDateTime(milestone.autoPassAt)} 자동 통과
+                              </>
+                            )}
+                          </>
+                        ) : null}
+                      </span>
+                      {awaiting && (
+                        <span className="text-xs leading-5 text-fg-subtle">
+                          다시 보내면 자동 통과 기한을 새로 셉니다.
+                        </span>
+                      )}
+                    </div>
                     {!confirmed && (
                       <Button
                         size="sm"
-                        variant={milestone.submittedAt ? "outline" : "primary"}
+                        variant={awaiting ? "outline" : "primary"}
+                        disabled={locked}
                         loading={busy === busyKey.milestone(milestone.milestoneId)}
                         onClick={() => requestCheck(milestone)}
                       >
-                        {isHandover(milestone)
-                          ? "인계하고 확인 요청 보내기"
-                          : milestone.submittedAt
-                            ? "확인 요청 다시 보내기"
+                        {awaiting
+                          ? "확인 요청 다시 보내기"
+                          : handover
+                            ? "인계하고 확인 요청 보내기"
                             : "확인 요청 보내기"}
                       </Button>
                     )}
@@ -342,7 +399,7 @@ export function QaSubmitPanel({
                 <span className="font-mono tabular-nums">
                   {milestones.length}
                 </span>
-                건 모두 통과하면 한 번에 지급
+                건 모두 통과하면 한 번에 지급 요청
               </span>
               <Link
                 href={ROUTES.settlements}
@@ -441,5 +498,60 @@ export function QaSubmitPanel({
         )}
       </StickyBar>
     </section>
+  );
+}
+
+/** 작업 단계 배지의 색. 이름은 `milestoneStageLabel` 이 정합니다. */
+function stageTone(milestone: Milestone): BadgeTone {
+  if (isConfirmed(milestone)) return "success";
+  if (isAwaitingCheck(milestone)) return "warning";
+  if (isReturned(milestone)) return "danger";
+  return milestone.status === "IN_PROGRESS" ? "brand" : "neutral";
+}
+
+/**
+ * 최종 인수 시험 요청 조건. 채운 줄과 못 채운 줄을 나눠 보입니다. 서버가 요청을 받을 때 보는 조건과
+ * 같습니다 (R-QA-06).
+ */
+const CHECKLIST_TITLE_ID = "handover-checklist-title";
+
+function HandoverChecklistView({ checklist }: Readonly<{ checklist: HandoverChecklist }>) {
+  const rows = [
+    { label: "일반 작업 모두 통과", done: checklist.regularDone },
+    { label: "인수 시험 자료(URL 또는 인수 시험 파일) 등록", done: checklist.testMaterial },
+    { label: "지급 후 해금 파일 등록", done: checklist.paidFile },
+  ];
+
+  return (
+    <div className="mt-4 px-4 sm:px-5">
+      <p id={CHECKLIST_TITLE_ID} className="text-[13px] font-semibold text-fg-secondary">
+        최종 인수 시험 요청 조건
+      </p>
+      <ul aria-labelledby={CHECKLIST_TITLE_ID} className="mt-1.5 flex flex-col gap-1">
+        {rows.map((row) => (
+          <li
+            key={row.label}
+            className={
+              row.done
+                ? "flex items-baseline gap-2 text-[13px] leading-6 text-fg-subtle"
+                : "flex items-baseline gap-2 text-[13px] leading-6 text-fg"
+            }
+          >
+            <span aria-hidden className={row.done ? "text-success" : "text-fg-disabled"}>
+              {row.done ? "✓" : "○"}
+            </span>
+            <span>
+              {row.label}
+              <span className="sr-only">{row.done ? " · 갖춤" : " · 아직 안 됨"}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {!isHandoverReady(checklist) && (
+        <p className="mt-1.5 text-xs leading-5 text-fg-subtle">
+          조건을 모두 갖추면 확인을 요청할 수 있습니다.
+        </p>
+      )}
+    </div>
   );
 }

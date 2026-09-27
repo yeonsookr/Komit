@@ -60,6 +60,8 @@ export interface DeliverableFilesProps {
   busy?: string | null;
   /** 계약 식별자. 산출물 추가 버튼의 로딩 열쇠에 씁니다. */
   contractId?: number;
+  /** 처음에 펼쳐 둘지. 주지 않으면 산출물이 없을 때만 펼칩니다. */
+  defaultOpen?: boolean;
 }
 
 /** 아무 자료도 없는 산출물인지. 예전 단일 파일 칸(`fileId`)도 자료로 셉니다. */
@@ -471,9 +473,10 @@ export function DeliverableFiles({
   onRetryAttach,
   busy = null,
   contractId,
+  defaultOpen,
 }: Readonly<DeliverableFilesProps>) {
   const canAddDeliverable = received && onAddDeliverable !== undefined;
-  const [open, setOpen] = React.useState(deliverables.length === 0);
+  const [open, setOpen] = React.useState(defaultOpen ?? deliverables.length === 0);
   const [stages, setStages] = React.useState<Record<number, DeliverableAccessStage>>({});
 
   if (deliverables.length === 0 && !canAddDeliverable) return null;

@@ -54,6 +54,11 @@ function tag(html: string, element: string, label: string): string {
   return html.match(new RegExp(`<${element}[^>]*aria-label="${label}"[^>]*>`))?.[0] ?? "";
 }
 
+/** 접힘 줄 버튼의 펼침 값. 이름표가 없는 버튼이라 `aria-expanded` 로 찾습니다. */
+function expanded(html: string): string | null {
+  return html.match(/<button[^>]*aria-expanded="(true|false)"[^>]*>/)?.[1] ?? null;
+}
+
 const FILE_BUTTON = "완성된 웹사이트 파일 추가";
 const TITLE_INPUT = "산출물 항목 이름";
 
@@ -123,6 +128,23 @@ describe("DeliverableFiles", () => {
     expect(developer).toContain("산출물 추가");
     expect(developer).toContain('aria-expanded="true"');
     expect(client).toBe("");
+  });
+
+  it("defaultOpen 을 주면 산출물이 있어도 펼쳐 두고, 주지 않으면 산출물이 있을 때 접는다", () => {
+    const list = [deliverable([testFile])];
+    const opened = renderToStaticMarkup(<DeliverableFiles deliverables={list} received={false} defaultOpen />);
+    const collapsed = renderToStaticMarkup(<DeliverableFiles deliverables={list} received={false} />);
+
+    expect(expanded(opened)).toBe("true");
+    expect(opened).toContain("/api/deliverable-materials/501/file");
+    expect(expanded(collapsed)).toBe("false");
+    expect(collapsed).not.toContain("/api/deliverable-materials/501/file");
+  });
+
+  it("defaultOpen 을 주지 않으면 산출물이 없을 때만 펼친다", () => {
+    const empty = renderToStaticMarkup(<DeliverableFiles deliverables={[]} received onAddDeliverable={async () => true} />);
+
+    expect(expanded(empty)).toBe("true");
   });
 
   it("다운로드 링크는 FE 배포의 하위 경로를 붙인다", () => {
