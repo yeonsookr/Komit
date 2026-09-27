@@ -1,7 +1,11 @@
 package com.a501.service.domain.diagnosis.service;
 
 import com.a501.service.common.exception.BusinessException;
+import com.a501.service.common.exception.CommonErrorCode;
+import com.a501.service.domain.code.service.CodeQueryService;
 import com.a501.service.domain.diagnosis.DiagnosisErrorCode;
+import com.a501.service.domain.diagnosis.IssueCategory;
+import com.a501.service.domain.diagnosis.IssueSeverity;
 import com.a501.service.domain.diagnosis.dto.request.CreateIssueRequest;
 import com.a501.service.domain.diagnosis.dto.request.WriteRequirementsRequest.WriteQaCriterion;
 import com.a501.service.domain.diagnosis.dto.request.WriteRequirementsRequest.WriteRequirement;
@@ -10,6 +14,7 @@ import com.a501.service.domain.diagnosis.dto.response.IssueResponse;
 import com.a501.service.domain.diagnosis.entity.Inspection;
 import com.a501.service.domain.diagnosis.entity.Issue;
 import com.a501.service.domain.diagnosis.entity.QaCriterion;
+import com.a501.service.domain.diagnosis.repository.DiagnosisRepository;
 import com.a501.service.domain.diagnosis.repository.InspectionRepository;
 import com.a501.service.domain.diagnosis.repository.IssueRepository;
 import com.a501.service.domain.diagnosis.repository.QaCriterionRepository;
@@ -21,6 +26,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,10 +35,13 @@ import org.springframework.transaction.annotation.Transactional;
  *
  * <p>요청서는 따로 저장되는 문서가 아니라 이 회차의 요구사항을 모아 부르는 이름이다. 저장하면 그 자리에서 최신 내용이 되고 따로 보내는 절차가 없다.
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class RequirementService {
+    private final DiagnosisRepository diagnosisRepository;
+    private final CodeQueryService codeQueryService;
     private final InspectionRepository inspectionRepository;
     private final IssueRepository issueRepository;
     private final QaCriterionRepository qaCriterionRepository;
@@ -50,6 +59,28 @@ public class RequirementService {
                 request.categoryCodeId(),
                 request.severity().name()));
         return issueQueryService.toResponses(List.of(saved)).getFirst();
+    }
+
+    /**
+     * 프로젝트 요청서에 요구사항을 하나 더한다. 컨설팅 요약에서 의뢰인이 고른 새 요구사항이 쓴다.
+     *
+     * <p>진단의 현재 회차에 붙인다. 요청서가 그 회차를 읽기 때문이다. 요청에 분류와 심각도가 없어 「기타」와
+     * `보통`으로 둔다.
+     *
+     * @return 만든 요구사항 id
+     * @throws BusinessException {@link DiagnosisErrorCode#INSPECTION_NOT_DONE} 현재 회차에 검사가 없을 때
+     */
+    @Transactional
+    public Integer addToRequest(Integer projectId, String title, String detail) {
+        Inspection inspection = diagnosisRepository
+                .findByProjectIdAndDeletedFalse(projectId)
+                .flatMap(diagnosis -> inspectionRepository.findByDiagnosisIdAndDiagnosisVersionAndDeletedFalse(
+                        diagnosis.getId(), diagnosis.getVersion()))
+                .orElseThrow(() -> new BusinessException(DiagnosisErrorCode.INSPECTION_NOT_DONE));
+        Issue issue = Issue.writtenBySelf(
+                inspection.getId(), title, detail, etcCategoryId(), IssueSeverity.MEDIUM.name());
+        issue.putIntoRequirements();
+        return issueRepository.save(issue).getId();
     }
 
     /**
@@ -146,5 +177,16 @@ public class RequirementService {
                 .findByDiagnosisIdAndDiagnosisVersionAndDeletedFalse(diagnosisId, diagnosisVersion)
                 // 검사 전에는 요구사항을 붙일 검사가 없다. 화면은 검사 뒤에만 이 자리에 온다.
                 .orElseThrow(() -> new BusinessException(DiagnosisErrorCode.INSPECTION_NOT_DONE));
+    }
+
+    /** 「기타」는 시드가 넣는 코드다. 없으면 서버 설정이 잘못된 것이라 요청 탓으로 돌리지 않는다. */
+    private Integer etcCategoryId() {
+        String etc = IssueCategory.ETC.codeName();
+        Integer id = codeQueryService.findCodeIdsByName(IssueCategory.GROUP, List.of(etc)).get(etc);
+        if (id == null) {
+            log.error("요구사항 분류 코드에 {} 가 없다. 시드(data.sql)를 확인한다", etc);
+            throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
+        }
+        return id;
     }
 }

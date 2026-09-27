@@ -34,7 +34,7 @@ function changesNote(total: number, pending: number): string | undefined {
 /**
  * SessionSummaryView — 컨설팅 세션 요약 (`4_의뢰인_요약`).
  *
- * 네 칸입니다 — 논의한 것 · 결정된 것 · 요청서 변경 후보 · 다음에 할 것.
+ * 네 칸입니다 — 논의한 것 · 결정된 것 · 요청서 변경 후보 · 진행할 것.
  *
  * **와이어프레임과 한 군데 다릅니다.** 그림에서는 「결정된 것」 카드마다 그에 딸린
  * 변경 후보가 붙어 있지만, 응답의 `decided` 와 `changes` 는 서로를 가리키는 값이
@@ -175,7 +175,7 @@ export function SessionSummaryView({
         )}
       </Block>
 
-      <Block title="다음에 할 것" count={summary.nextActions.length}>
+      <Block title="진행할 것" count={summary.nextActions.length}>
         <ItemCards items={summary.nextActions} />
       </Block>
     </div>

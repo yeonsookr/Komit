@@ -10,6 +10,7 @@ import com.a501.service.domain.contract.entity.DevelopmentContract;
 import com.a501.service.domain.contract.repository.ConsultingAgreementRepository;
 import com.a501.service.domain.contract.repository.ContractRepository;
 import com.a501.service.domain.contract.repository.DevelopmentContractRepository;
+import com.a501.service.domain.room.dto.ContractRoomView;
 import com.a501.service.domain.room.dto.RoomParties;
 import com.a501.service.domain.room.service.RoomQueryService;
 import java.util.Collection;
@@ -68,6 +69,20 @@ public class ContractQueryService {
                 .map(ConsultingAgreement::getContractId)
                 .flatMap(contractRepository::findByIdAndDeletedFalse)
                 .flatMap(this::toParties);
+    }
+
+    /**
+     * 컨설팅 합의가 달린 계약의 방이 속한 프로젝트. 합의나 계약, 방이 없으면 비어 있습니다.
+     *
+     * @param consultingAgreementId 컨설팅 합의 id
+     */
+    public Optional<Integer> findProjectIdByConsultingAgreementId(Integer consultingAgreementId) {
+        return agreementRepository
+                .findByIdAndDeletedFalse(consultingAgreementId)
+                .map(ConsultingAgreement::getContractId)
+                .flatMap(contractRepository::findByIdAndDeletedFalse)
+                .flatMap(contract -> roomQueryService.findContractRoom(contract.getRoomId()))
+                .map(ContractRoomView::projectId);
     }
 
     /**

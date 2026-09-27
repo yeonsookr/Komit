@@ -5435,7 +5435,7 @@ class SessionSummaryResponse(BaseModel):
         description="논의한 것. 요청서에는 반영되지 않는다.",
     )
     decided: list[SummaryItemResponse] = Field(description="결정된 것.")
-    nextActions: list[SummaryItemResponse] = Field(description="다음에 할 것.")
+    nextActions: list[SummaryItemResponse] = Field(description="진행할 것.")
     changes: list[SummaryChangeResponse] = Field(
         description="요청서에 반영할 수 있는 변경 후보.",
     )
@@ -6444,7 +6444,7 @@ def end_consulting_session(
     },
     summary="세션 요약 조회",
     description=(
-        "**화면 — `4_의뢰인_요약` › 논의한 것 · 결정된 것 · 다음에 할 것 · 변경 후보**\n\n"
+        "**화면 — `4_의뢰인_요약` › 논의한 것 · 결정된 것 · 진행할 것 · 변경 후보**\n\n"
         "세션이 끝난 뒤 만들어진 요약을 내려준다. 녹음을 글로 옮겨 정리한 뒤 개발자가 "
         "검토한 결과다.\n\n"
         "`changes`는 요청서에 반영할 수 있는 후보다. 화면의 'N건 요청서에 반영' 버튼이 "
@@ -6482,19 +6482,38 @@ def get_session_summary(
     tags=[AREA4_TAG],
     responses={
         201: {"content": {"application/json": {"example": SESSION_SUMMARY_EXAMPLE}}},
+        403: {
+            "model": ErrorResponse,
+            "description": "의뢰인이 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "요약을 아직 만드는 중",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "code": "SUMMARY_NOT_READY",
+                        "message": "요약을 아직 만드는 중입니다.",
+                    }
+                }
+            },
+        },
         **SESSION_ERRORS,
     },
     summary="변경 후보를 요청서에 반영",
     description=(
         "**화면 — `4_의뢰인_요약` › N건 요청서에 반영**\n\n"
-        "요약에서 고른 변경 후보를 요청서에 넣는다. `UPDATE`는 이미 있는 요구사항을 "
-        "고치고, `ADD`는 새 요구사항으로 넣는다. 반영한 뒤 개발 계약으로 이어갈 때 이 "
-        "요청서가 쓰인다.\n\n"
+        "요약에서 고른 변경 후보를 요청서에 새 요구사항으로 넣는다. 반영한 뒤 개발 계약으로 "
+        "이어갈 때 이 요청서가 쓰인다. 지금은 `ADD`만 반영한다.\n\n"
         "이미 반영한 후보를 다시 보내도 두 번 들어가지 않는다.\n\n"
         "- **201**: 반영했을 때. 반영된 후보는 `isApplied`가 참으로 바뀐다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **403 / FORBIDDEN**: 의뢰인이 아닐 때\n"
         "- **404 / SESSION_NOT_FOUND**: `sessionId`가 404일 때\n"
-        "- **422 / INVALID_REQUEST**: `changeIds`가 비었을 때\n"
+        "- **409 / SUMMARY_NOT_READY**: 요약이 아직 없을 때\n"
+        "- **409 / INSPECTION_NOT_DONE**: 진단 현재 회차에 검사가 없을 때\n"
+        "- **422 / INVALID_REQUEST**: `changeIds`가 비었거나 `UPDATE` 후보를 골랐을 때\n"
         "- **500 / INTERNAL_ERROR**: 반영하지 못했을 때"
     ),
 )
@@ -6517,6 +6536,11 @@ def apply_summary_changes(
             errors=[FieldError(field="changeIds", reason="한 건 이상 골라야 합니다.")],
         )
         return JSONResponse(status_code=422, content=jsonable_encoder(body))
+    if any(
+        c["kind"] == "UPDATE" and c["changeId"] in request.changeIds
+        for c in SESSION_SUMMARY_EXAMPLE["changes"]
+    ):
+        return _error_response(422, INVALID_REQUEST)
 
     applied = [
         {**c, "isApplied": c["changeId"] in request.changeIds}

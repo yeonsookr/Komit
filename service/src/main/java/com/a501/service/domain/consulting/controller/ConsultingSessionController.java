@@ -2,6 +2,7 @@ package com.a501.service.domain.consulting.controller;
 
 import com.a501.service.common.realtime.turn.dto.IceServersResponse;
 import com.a501.service.common.security.AuthenticatedUser;
+import com.a501.service.domain.consulting.dto.request.ApplySummaryChangesRequest;
 import com.a501.service.domain.consulting.dto.request.CreateSessionRecordingRequest;
 import com.a501.service.domain.consulting.dto.response.ConsultingSessionResponse;
 import com.a501.service.domain.consulting.dto.response.SessionParticipationResponse;
@@ -9,6 +10,7 @@ import com.a501.service.domain.consulting.dto.response.SessionRecordingResponse;
 import com.a501.service.domain.consulting.dto.response.SessionSummaryResponse;
 import com.a501.service.domain.consulting.service.ConsultingSessionService;
 import com.a501.service.domain.consulting.service.SessionSummaryQueryService;
+import com.a501.service.domain.consulting.service.SummaryChangeService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
@@ -32,6 +34,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ConsultingSessionController {
     private final ConsultingSessionService sessionService;
     private final SessionSummaryQueryService summaryQueryService;
+    private final SummaryChangeService summaryChangeService;
 
     @Operation(
             summary = "세션 조회",
@@ -66,6 +69,31 @@ public class ConsultingSessionController {
     SessionSummaryResponse getSummary(
             @AuthenticationPrincipal AuthenticatedUser user, @PathVariable Integer sessionId) {
         return summaryQueryService.getSummary(user.userId(), sessionId);
+    }
+
+    @Operation(
+            summary = "변경 후보를 요청서에 반영",
+            description =
+                    """
+                    요약에서 고른 변경 후보를 요청서에 새 요구사항으로 넣는다. 반영한 뒤 개발 계약으로 \
+                    이어갈 때 이 요청서가 쓰인다. 지금은 `ADD`만 반영한다.
+
+                    이미 반영한 후보를 다시 보내도 두 번 들어가지 않는다.
+
+                    - 201: 반영했을 때. 반영된 후보는 `isApplied`가 참으로 바뀐다
+                    - 401 UNAUTHORIZED: 로그인하지 않았을 때
+                    - 403 FORBIDDEN: 의뢰인이 아닐 때
+                    - 404 SESSION_NOT_FOUND: 없는 세션이거나 요청자가 그 세션의 당사자가 아닐 때
+                    - 409 SUMMARY_NOT_READY: 요약이 아직 없을 때
+                    - 409 INSPECTION_NOT_DONE: 진단 현재 회차에 검사가 없을 때
+                    - 422 INVALID_REQUEST: `changeIds`가 비었거나 `UPDATE` 후보를 골랐을 때""")
+    @PostMapping("/{sessionId}/summary/applied-changes")
+    @ResponseStatus(HttpStatus.CREATED)
+    SessionSummaryResponse applyChanges(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable Integer sessionId,
+            @Valid @RequestBody ApplySummaryChangesRequest request) {
+        return summaryChangeService.apply(user.userId(), sessionId, request.changeIds());
     }
 
     @Operation(
