@@ -1,8 +1,18 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { PAYOUT_PENDING_LABEL } from "@/lib/contract";
 import type { DevelopmentAgreement, DevelopmentStatus, Milestone } from "@/types/contract";
 import { ProgressPanel } from "./ProgressPanel";
+
+// 다시 읽기는 정적 렌더에 흔적이 없어 표시 태그로 바꿔 둡니다. 판단은 PayoutRefresh.test 에서 봅니다.
+vi.mock("./PayoutRefresh", () => ({
+  PayoutRefresh: ({ active }: { active: boolean }) => <i data-payout-refresh={String(active)} />,
+}));
+
+/** 다시 읽기 표시 태그의 active 값. 없으면 null. */
+function refreshMarker(html: string): string | null {
+  return /<i\b[^>]*\bdata-payout-refresh="([^"]*)"/.exec(html)?.[1] ?? null;
+}
 
 function milestone(override: Partial<Milestone>): Milestone {
   return {
@@ -140,6 +150,40 @@ describe("ProgressPanel", () => {
     expect(last?.text).toContain(PAYOUT_PENDING_LABEL);
     expect(last?.dot).toBe("active");
     expect(html).not.toContain("계약 완료 후 지급");
+    expect(refreshMarker(html)).toBe("true");
+  });
+
+  it("계약이 완료되면 마지막 줄을 지급 완료로 두고 예치금 문구를 바꾼다", () => {
+    const html = render(
+      development(
+        [
+          milestone({ milestoneId: 301, title: "1차", status: "CONFIRMED" }),
+          handover({ status: "CONFIRMED", confirmedAt: "2026-09-10T02:00:00Z" }),
+        ],
+        "COMPLETED",
+      ),
+    );
+
+    const last = rows(html).at(-1);
+    expect(last?.text).toContain("지급 완료");
+    expect(last?.dot).toBe("done");
+    expect(html).not.toContain(PAYOUT_PENDING_LABEL);
+    expect(html).not.toContain("계약 완료 후 지급");
+    expect(html).toContain("계약 대금 지급이 끝나 계약이 완료됐습니다.");
+    expect(html).not.toContain("계약이 끝날 때까지 예치금에 있습니다");
+    expect(refreshMarker(html)).toBeNull();
+  });
+
+  it("하자보수나 중단 계약은 인계 작업을 통과했어도 지급 완료로 적지 않는다", () => {
+    for (const status of ["AFTER_SERVICE", "TERMINATED"] as const) {
+      const html = render(
+        development([milestone({ milestoneId: 301, status: "CONFIRMED" }), handover({ status: "CONFIRMED" })], status),
+      );
+
+      expect(rows(html).at(-1)?.text).not.toContain("지급 완료");
+      expect(html).toContain("계약이 끝날 때까지 예치금에 있습니다");
+      expect(refreshMarker(html)).toBeNull();
+    }
   });
 
   it("인계 작업을 통과하기 전에는 마지막 줄이 계약 완료 후 지급으로 남는다", () => {
@@ -155,6 +199,8 @@ describe("ProgressPanel", () => {
     expect(last?.dot).toBe("pending");
     expect(html).not.toContain(PAYOUT_PENDING_LABEL);
     expect(rowOf(html, "인계").text).toContain("인계 · 확인 요청 중");
+    expect(html).toContain("계약이 끝날 때까지 예치금에 있습니다");
+    expect(refreshMarker(html)).toBeNull();
   });
 
   it("머리 문구는 모두 확인한 뒤 지급을 요청하고 지급이 확정돼야 계약이 끝난다고 적는다", () => {

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "@/types/api";
 import { GET, POST } from "./route";
 
 const { attachDeliverable, downloadDeliverable } = vi.hoisted(() => ({
@@ -11,6 +12,7 @@ vi.mock("@/lib/api/services", () => ({ attachDeliverable, downloadDeliverable })
 
 beforeEach(() => {
   attachDeliverable.mockReset();
+  downloadDeliverable.mockReset();
 });
 
 function requestWith(body: unknown) {
@@ -60,17 +62,37 @@ describe("POST /api/deliverables/[deliverableId]/file", () => {
 });
 
 describe("GET /api/deliverables/[deliverableId]/file", () => {
-  it("기존 단일 파일을 받아 한글 이름을 브라우저가 읽을 수 있게 싣는다", async () => {
+  const getRequest = () => new Request("http://localhost/api/deliverables/31/file");
+
+  it("기존 단일 파일을 스트림으로 받아 한글 이름과 크기를 싣는다", async () => {
     downloadDeliverable.mockResolvedValueOnce({
-      body: new Uint8Array([7]).buffer,
+      body: new Blob([new Uint8Array([7, 8])]).stream(),
       fileName: "소스.zip",
-      contentType: "application/octet-stream",
+      contentType: "application/zip",
+      contentLength: "2",
     });
 
-    const response = await GET(new Request("http://localhost/api/deliverables/31/file"), { params });
+    const response = await GET(getRequest(), { params });
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toBe("application/zip");
+    expect(response.headers.get("Content-Length")).toBe("2");
     expect(response.headers.get("Content-Disposition")).toContain("filename*=UTF-8''%EC%86%8C%EC%8A%A4.zip");
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([7, 8]));
     expect(downloadDeliverable).toHaveBeenCalledWith(31);
+  });
+
+  it("지급 전이면 백엔드의 409 사유를 같은 모양으로 전한다", async () => {
+    downloadDeliverable.mockRejectedValueOnce(
+      new ApiError(409, "DELIVERABLE_ACCESS_LOCKED", "대금 지급이 완료된 뒤에 내려받을 수 있습니다."),
+    );
+
+    const response = await GET(getRequest(), { params });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      code: "DELIVERABLE_ACCESS_LOCKED",
+      message: "대금 지급이 완료된 뒤에 내려받을 수 있습니다.",
+    });
   });
 });

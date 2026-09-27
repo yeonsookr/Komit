@@ -22,13 +22,17 @@ vi.mock("@/components/feedback", () => ({
   ModalHeader: ({ title }: { title: React.ReactNode }) => <h2>{title}</h2>,
   ModalFooter: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
+// 다시 읽기는 브라우저에서만 돕니다. 그렸는지와 넘긴 값만 적는다.
+vi.mock("./PayoutRefresh", () => ({
+  PayoutRefresh: ({ active }: { active: boolean }) => <span data-payout-refresh={String(active)} />,
+}));
 // 실제 목록을 그리면서, 처음에 펼쳐 두라고 넘긴 값도 함께 적는다.
 vi.mock("./DeliverableFiles", async (importOriginal) => {
   const original = await importOriginal<typeof import("./DeliverableFiles")>();
   return {
     ...original,
     DeliverableFiles: (props: React.ComponentProps<typeof original.DeliverableFiles>) => (
-      <div data-default-open={String(props.defaultOpen)}>
+      <div data-default-open={String(props.defaultOpen)} data-paid={String(props.paid)}>
         <original.DeliverableFiles {...props} />
       </div>
     ),
@@ -264,4 +268,81 @@ describe("QaCheckPanel", () => {
     expect(render(development([passed], { deliverables }))).toContain(PAYOUT_PENDING_LABEL);
     expect(render(development([passed], { deliverables, status: "COMPLETED" }))).not.toContain(PAYOUT_PENDING_LABEL);
   });
+
+  describe("지급 단계", () => {
+    const passed = handover({
+      status: "CONFIRMED",
+      confirmedAt: "2026-09-12T01:00:00Z",
+      autoPassAt: null,
+      qaCriteria: [
+        { qaCriterionId: 901, testCase: "시험 URL에서 로그인할 수 있다", condition: null, status: "RESOLVED", issueId: null },
+      ],
+    });
+    const stages = {
+      before: () => render(development([handover()], { deliverables })),
+      pending: () => render(development([passed], { deliverables })),
+      paid: () => render(development([passed], { deliverables, status: "COMPLETED" })),
+    };
+
+    it("해금 파일은 지급이 끝난 계약에서만 연다. 지급 처리 중·하자보수는 열지 않는다", () => {
+      expect(stages.pending()).toContain('data-paid="false"');
+      expect(stages.paid()).toContain('data-paid="true"');
+      expect(render(development([passed], { deliverables, status: "AFTER_SERVICE" }))).toContain('data-paid="false"');
+    });
+
+    it("지급 처리 중에는 늦어지면 문의하라고 알리고 지급 완료는 말하지 않는다", () => {
+      const html = stages.pending();
+
+      expect(html).toContain(DELAY_NOTE);
+      expect(html).not.toContain(PAID_NOTE);
+    });
+
+    it("계약이 완료되면 지급액과 수수료가 확정돼 해금 파일을 받을 수 있다고 알린다", () => {
+      const html = stages.paid();
+
+      expect(html).toContain(PAID_NOTE);
+      expect(html).toContain("이제 해금 파일을 받을");
+      expect(html).not.toContain(DELAY_NOTE);
+    });
+
+    it("최종 인수 시험 전에는 지급 문구가 없다", () => {
+      const html = stages.before();
+
+      expect(html).not.toContain(PAID_NOTE);
+      expect(html).not.toContain(DELAY_NOTE);
+    });
+
+    it("지급 처리 중일 때만 화면을 다시 읽는다", () => {
+      expect(refreshTags(stages.pending())).toEqual(['<span data-payout-refresh="true">']);
+      expect(refreshTags(stages.before())).toEqual([]);
+      expect(refreshTags(stages.paid())).toEqual([]);
+    });
+
+    it("지급이 끝나면 예치금 잔액 대신 지급된 돈으로 적는다", () => {
+      const paid = stages.paid();
+      expect(paid).not.toContain("예치금 잔액");
+      expect(paid).toContain("지급된 돈");
+      expect(paid).toContain("예치금에서 계약 총액이 지급됐습니다.");
+
+      for (const html of [stages.before(), stages.pending()]) {
+        expect(html).toContain("예치금 잔액");
+        expect(html).not.toContain("지급된 돈");
+      }
+    });
+
+    it("의뢰인 화면에는 계좌 등록 안내가 없다", () => {
+      for (const html of [stages.before(), stages.pending(), stages.paid()]) {
+        expect(html).not.toContain("대금 받을 계좌");
+        expect(html).not.toMatch(/<a[^>]*href="\/mypage\/account"/);
+      }
+    });
+  });
 });
+
+const DELAY_NOTE = "지급이 늦어지면 Komit에";
+const PAID_NOTE = "지급액과 수수료가 확정돼 계약이 완료됐습니다.";
+
+/** 다시 읽기 자리표시 태그. */
+function refreshTags(html: string): string[] {
+  return html.match(/<span[^>]*data-payout-refresh="[^"]*"[^>]*>/g) ?? [];
+}

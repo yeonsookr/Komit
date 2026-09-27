@@ -4,8 +4,8 @@ import { Container } from "@/components/layouts";
 import { EmptyState } from "@/components/feedback";
 import { QaCheckPanel, QaSubmitPanel } from "@/components/domains/contract";
 import { RoomHeader } from "@/components/domains/room";
-import { getContract, getMe, getRoom } from "@/lib/api/services";
-import { isDevelopmentDraft } from "@/lib/contract";
+import { getContract, getMe, getMyPage, getRoom } from "@/lib/api/services";
+import { isDevelopmentDraft, payoutStage } from "@/lib/contract";
 import { isReceived } from "@/lib/rooms";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
@@ -23,6 +23,19 @@ async function loadCheck(roomId: number) {
     if (error instanceof ApiError && error.status === 404) notFound();
     if (error instanceof ApiError && error.status === 401) redirect(ROUTES.login);
     throw error;
+  }
+}
+
+/**
+ * 대금 받을 계좌를 등록했는지. 지급 처리 중인 개발자 화면만 부릅니다 (R-PAY-14).
+ * 조회하지 못하면 null 로 두어 화면이 확인을 권합니다. 등록한 것으로 넘기지 않습니다.
+ */
+async function loadHasSettlementAccount(): Promise<boolean | null> {
+  try {
+    const page = await getMyPage();
+    return page.settlementAccount !== null;
+  } catch {
+    return null;
   }
 }
 
@@ -57,6 +70,12 @@ export default async function RoomCheckPage({
   // 그리면 인계 작업으로 읽히므로, 계약서 탭과 같이 작성 중이라고만 알립니다.
   const draft = isDevelopmentDraft(contract);
   const development = draft ? null : (contract?.development ?? null);
+  const received = isReceived(room, me);
+  // 계좌 안내는 개발자에게만, 지급 처리 중에만 보입니다. 그때만 마이페이지를 읽습니다.
+  const hasSettlementAccount =
+    received && development !== null && payoutStage(development) === "PENDING"
+      ? await loadHasSettlementAccount()
+      : null;
 
   return (
     <Container className="py-8 sm:py-10">
@@ -72,13 +91,14 @@ export default async function RoomCheckPage({
           title="아직 확인할 작업이 없습니다"
           description="계약서에 양쪽이 서명하고 개발자가 착수하면 여기에서 작업을 확인합니다."
         />
-      ) : isReceived(room, me) ? (
+      ) : received ? (
         // 통과 판정은 의뢰인이 합니다. 개발자는 확인 요청을 보내고 상태를 봅니다.
         <QaSubmitPanel
           roomId={room.roomId}
           contractId={contract.contractId}
           development={development}
           counterpartName={room.counterpartName}
+          hasSettlementAccount={hasSettlementAccount}
         />
       ) : (
         <QaCheckPanel roomId={room.roomId} development={development} />

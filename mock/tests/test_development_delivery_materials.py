@@ -219,5 +219,64 @@ class DevelopmentDeliveryMaterialsTest(unittest.TestCase):
         self.assertIn("image/png", service.UPLOAD_CONTENT_TYPES["PROFILE_IMAGE"])
 
 
+    def test_client_can_download_paid_file_of_completed_contract(self):
+        contract = service.get_contract(service.DONE_CONTRACT_ID)
+        self.assertEqual(contract.development.status, "COMPLETED")
+        materials = [material for deliverable in contract.development.deliverables for material in deliverable.materials]
+        paid = [material for material in materials if material.accessStage == "PAID"]
+        urls = [material for material in materials if material.url is not None]
+
+        self.assertTrue(paid)
+        for material in paid:
+            with self.subTest(material=material.deliverableMaterialId):
+                self.assertEqual(service.download_deliverable_material(material.deliverableMaterialId).status_code, 200)
+        for material in urls:
+            with self.subTest(material=material.deliverableMaterialId):
+                self.assertEqual(service.download_deliverable_material(material.deliverableMaterialId).status_code, 404)
+
+    def test_completed_contract_materials_do_not_share_ids_with_contract_in_progress(self):
+        def material_ids(contract_id):
+            contract = service.get_contract(contract_id)
+            return {
+                material.deliverableMaterialId
+                for deliverable in contract.development.deliverables
+                for material in deliverable.materials
+            }
+
+        self.assertFalse(material_ids(service.DONE_CONTRACT_ID) & material_ids(service.DEV_CONTRACT_ID))
+
+    def test_payout_pending_contract_passed_final_acceptance_but_is_not_completed(self):
+        contract = service.get_contract(service.PAYOUT_PENDING_CONTRACT_ID)
+
+        self.assertEqual(contract.contractId, service.PAYOUT_PENDING_CONTRACT_ID)
+        self.assertEqual(contract.development.status, "IN_PROGRESS")
+        handover = [milestone for milestone in contract.development.milestones if milestone.isHandover]
+        self.assertEqual([milestone.status for milestone in handover], ["CONFIRMED"])
+        self.assertTrue(all(milestone.status == "CONFIRMED" for milestone in contract.development.milestones))
+
+    def test_client_cannot_download_paid_file_while_payout_pending(self):
+        contract = service.get_contract(service.PAYOUT_PENDING_CONTRACT_ID)
+        paid = [
+            material
+            for deliverable in contract.development.deliverables
+            for material in deliverable.materials
+            if material.accessStage == "PAID"
+        ]
+
+        self.assertTrue(paid)
+        for material in paid:
+            with self.subTest(material=material.deliverableMaterialId):
+                result = service.download_deliverable_material(material.deliverableMaterialId)
+                self.assertEqual(result.status_code, 409)
+                self.assertIn(b"DELIVERABLE_ACCESS_LOCKED", result.body)
+
+    def test_payout_pending_room_leads_to_its_contract(self):
+        room = service._room(109)
+
+        self.assertEqual(room["type"], "DEVELOPMENT")
+        detail = service._room_detail(room)
+        self.assertEqual(detail["contractId"], service.PAYOUT_PENDING_CONTRACT_ID)
+        self.assertEqual(service.get_contract(detail["contractId"]).roomId, 109)
+
 if __name__ == "__main__":
     unittest.main()

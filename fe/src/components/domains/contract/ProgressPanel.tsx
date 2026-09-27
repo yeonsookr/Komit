@@ -14,10 +14,11 @@ import {
   billableMilestones,
   isConfirmed,
   isHandover,
-  isPayoutPending,
   milestoneStageLabel,
   nearestAutoPassAt,
   PAYOUT_PENDING_LABEL,
+  payoutStage,
+  type PayoutStage,
   remainingAmount,
   remainingCount,
 } from "@/lib/contract";
@@ -28,6 +29,14 @@ import type {
   EscrowDeposit,
   Milestone,
 } from "@/types/contract";
+import { PayoutRefresh } from "./PayoutRefresh";
+
+/** 마지막 지급 줄. 지급 단계는 `payoutStage` 한 곳에서 가릅니다. */
+const PAYOUT_ROW: Record<PayoutStage, { label: string; status: ProgressItem["status"] }> = {
+  BEFORE_ACCEPTANCE: { label: "계약 완료 후 지급", status: "pending" },
+  PENDING: { label: PAYOUT_PENDING_LABEL, status: "active" },
+  PAID: { label: "지급 완료", status: "done" },
+};
 
 /**
  * 작업 한 줄. 이름 뒤에 진행 단계를 붙이고, 통과한 것은 대금이 확정됐다는 표시를 함께 답니다.
@@ -68,7 +77,8 @@ export interface ProgressPanelProps {
  *
  * 예치부터 지급까지를 한 줄씩 늘어놓습니다. 대금은 작업마다 나가지 않고 전부
  * 통과한 뒤 한 번에 나갑니다 (R-PAY-01 · R-PAY-03). 인계 작업을 통과하면 지급을 요청하고,
- * 지급이 확정돼야 계약이 끝납니다. 그 사이 마지막 줄은 지급 처리 중으로 둡니다.
+ * 지급이 확정돼야 계약이 끝납니다. 그 사이 마지막 줄은 지급 처리 중으로 두고, 지급 완료가
+ * 새로고침 없이 보이도록 화면을 다시 읽습니다. 지급 완료는 계약 완료로만 압니다.
  */
 export function ProgressPanel({
   roomId,
@@ -83,7 +93,8 @@ export function ProgressPanel({
   // 예치 시각은 아직 오지 않아 금액으로 봅니다. 착수 API 도 같은 기준입니다.
   const deposited = deposit !== null && deposit.amount > 0;
   const autoPassAt = nearestAutoPassAt(milestones);
-  const payoutPending = isPayoutPending(development);
+  const stage = payoutStage(development);
+  const payoutRow = PAYOUT_ROW[stage];
 
   const items: ProgressItem[] = [
     {
@@ -93,14 +104,15 @@ export function ProgressPanel({
     },
     ...milestones.map(milestoneItem),
     {
-      label: payoutPending ? PAYOUT_PENDING_LABEL : "계약 완료 후 지급",
+      label: payoutRow.label,
       right: <Money value={development.totalAmount} />,
-      status: payoutPending ? "active" : "pending",
+      status: payoutRow.status,
     },
   ];
 
   return (
     <section className="mt-8">
+      {stage === "PENDING" && <PayoutRefresh active />}
       <header>
         <h2 className="text-xl font-bold text-fg">
           {billable[0]?.title ?? "진행"}
@@ -165,7 +177,9 @@ export function ProgressPanel({
           )}
         </span>
         <span className="text-[13px] text-fg-subtle">
-          통과한 작업의 대금도 계약이 끝날 때까지 예치금에 있습니다.
+          {stage === "PAID"
+            ? "계약 대금 지급이 끝나 계약이 완료됐습니다."
+            : "통과한 작업의 대금도 계약이 끝날 때까지 예치금에 있습니다."}
         </span>
       </StickyBar>
     </section>

@@ -21,6 +21,7 @@ import {
   useToast,
 } from "@/components/feedback";
 import { DeliverableFiles } from "./DeliverableFiles";
+import { PayoutRefresh } from "./PayoutRefresh";
 import { clientApi } from "@/lib/api/client";
 import { INTERNAL } from "@/lib/api/endpoints";
 import {
@@ -31,11 +32,11 @@ import {
   isAwaitingCheck,
   isConfirmed,
   isHandover,
-  isPayoutPending,
   isReturned,
   milestoneActionFailure,
   nearestAutoPassAt,
   PAYOUT_PENDING_LABEL,
+  payoutStage,
   remainingAmount,
   remainingCount,
 } from "@/lib/contract";
@@ -130,7 +131,7 @@ export function QaCheckPanel({
 
   const milestones = development.milestones;
   const autoPassAt = nearestAutoPassAt(milestones);
-  const payoutPending = isPayoutPending(development);
+  const stage = payoutStage(development);
 
   const toggle = (qaCriterionId: number) =>
     setPicked((prev) => ({ ...prev, [qaCriterionId]: !prev[qaCriterionId] }));
@@ -259,10 +260,22 @@ export function QaCheckPanel({
           }
         />
 
-        {payoutPending && (
-          <Callout tone="success" title={PAYOUT_PENDING_LABEL} className="mt-3">
-            계약 총액 지급을 진행합니다. 지급액과 수수료가 확정되면 계약이
-            완료되고 해금 파일을 받을 수 있습니다.
+        {stage === "PENDING" && (
+          <>
+            <PayoutRefresh active />
+            <Callout tone="success" title={PAYOUT_PENDING_LABEL} className="mt-3">
+              계약 총액 지급을 진행합니다. 지급액과 수수료가 확정되면 계약이
+              완료되고 해금 파일을 받을 수 있습니다. 지급이 늦어지면 Komit에
+              문의해 주십시오.
+            </Callout>
+          </>
+        )}
+
+        {/* 지급액과 수수료가 모두 확정돼야 완료로 기록되고 해금 파일이 열립니다 (R-PAY-01, R-PAY-07). */}
+        {stage === "PAID" && (
+          <Callout tone="success" title="지급 완료" className="mt-3">
+            지급액과 수수료가 확정돼 계약이 완료됐습니다. 이제 해금 파일을 받을
+            수 있습니다.
           </Callout>
         )}
 
@@ -306,7 +319,7 @@ export function QaCheckPanel({
                     <DeliverableFiles
                       deliverables={development.deliverables}
                       received={false}
-                      paid={development.status === "COMPLETED"}
+                      paid={stage === "PAID"}
                       defaultOpen={awaiting || undefined}
                     />
                   )}
@@ -436,17 +449,19 @@ export function QaCheckPanel({
               value={<Money value={remainingAmount(milestones)} />}
               className="px-4 py-3.5 sm:px-5"
             />
+            {/* 지급이 끝나면 예치금에서 계약 총액이 나갔으므로 잔액 대신 지급된 돈을 보입니다 (R-PAY-01). */}
             <KeyValueRow
               labelWidth={150}
-              label="예치금 잔액"
+              label={stage === "PAID" ? "지급된 돈" : "예치금 잔액"}
               value={<Money value={development.totalAmount} />}
               className="px-4 py-3.5 sm:px-5"
             />
           </div>
         </Card>
         <p className="mt-2 text-xs leading-5 text-fg-subtle">
-          예치금은 결제대행사 에스크로 계정에 있습니다. Komit은 이 돈을 갖고
-          있지 않습니다.
+          {stage === "PAID"
+            ? "예치금에서 계약 총액이 지급됐습니다. 예치금은 결제대행사 에스크로 계정에 있었고, Komit은 이 돈을 갖고 있지 않습니다."
+            : "예치금은 결제대행사 에스크로 계정에 있습니다. Komit은 이 돈을 갖고 있지 않습니다."}
         </p>
       </div>
 

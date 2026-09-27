@@ -4075,6 +4075,19 @@ ROOMS = [
         "chatRefId": "room-104-chat",
         "openedAt": "2026-08-10T09:00:00+09:00",
     },
+    # 최종 인수 시험을 통과하고 지급을 기다리는 개발 방. 지급 처리 중 화면이 이 방에서만 열린다.
+    {
+        "roomId": 109,
+        "recommendationItemId": None,
+        "type": "DEVELOPMENT",
+        "status": "OPEN",
+        "projectId": 8,
+        "projectName": "수제 비누 가게",
+        "developerId": 3,
+        "counterpartName": "이준",
+        "chatRefId": "room-109-chat",
+        "openedAt": "2026-08-12T09:00:00+09:00",
+    },
 ]
 
 # 상담 요청으로 열리는 방. 같은 개발자에게 다시 요청해도 같은 방을 돌려주도록 고정해 둔다.
@@ -4169,6 +4182,7 @@ def _room_detail(room: dict) -> dict:
         105: DRAFT_DEV_CONTRACT_ID,
         106: DRAFT_CLIENT_CONTRACT_ID,
         108: BEFORE_START_CONTRACT_ID,
+        109: PAYOUT_PENDING_CONTRACT_ID,
     }
     return {
         **room,
@@ -5876,6 +5890,7 @@ def write_consulting_contract(
         "체결 전에는 `contractText`가 null이다. 체결되는 순간 그때의 문구가 담기고 이후 "
         "바뀌지 않는다.\n\n"
         "**갈래는 `contractId`로 갈린다.** 목에서는 120이 컨설팅, 130이 개발 계약서다. "
+        "개발 계약서 가운데 135는 지급 처리 중, 140은 지급이 끝난 계약이다. "
         "방 상세의 `contractId`를 그대로 넣으면 그 방의 갈래에 맞는 계약서가 온다.\n\n"
         "- **200**: 계약서가 있고 내가 당사자일 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
@@ -5898,6 +5913,8 @@ def get_contract(
         return ContractResponse(**DEV_CONTRACT_EXAMPLE)
     if contractId == DONE_CONTRACT_ID:
         return ContractResponse(**DONE_CONTRACT_EXAMPLE)
+    if contractId == PAYOUT_PENDING_CONTRACT_ID:
+        return ContractResponse(**PAYOUT_PENDING_CONTRACT_EXAMPLE)
     if contractId == DRAFT_DEV_CONTRACT_ID:
         return ContractResponse(**DRAFT_DEV_CONTRACT_EXAMPLE)
     if contractId == DRAFT_CLIENT_CONTRACT_ID:
@@ -7289,6 +7306,8 @@ AREA5_TAG = "5 개발"
 
 DEV_CONTRACT_ID = 130
 DONE_CONTRACT_ID = 140
+# 최종 인수 시험은 통과했지만 지급이 아직 끝나지 않은 계약. (R-PAY-01, R-QA-06)
+PAYOUT_PENDING_CONTRACT_ID = 135
 # 아직 아무도 서명하지 않은 계약서. 서명판(5_서명판)이 열리는 시점이 이때뿐이라
 # 두 벌을 둔다 — 개발자 시점(105)과 의뢰인 시점(106)은 방이 달라 계약도 갈린다.
 DRAFT_DEV_CONTRACT_ID = 131
@@ -7510,6 +7529,13 @@ DONE_MILESTONES = [
     for milestone in MILESTONES
 ]
 
+# 지급이 끝난 계약의 인계 자료. 목은 자료 식별자로만 받을 수 있는지 가르므로, 진행 중
+# 계약의 자료(501~503)와 번호를 달리해 의뢰인도 PAID 파일(512)을 받게 한다. (R-QA-06)
+DONE_DELIVERABLES = copy.deepcopy(DELIVERABLES)
+for _material in DONE_DELIVERABLES[0]["materials"]:
+    _material["deliverableMaterialId"] += 10
+del _material
+
 DONE_CONTRACT_EXAMPLE = {
     **DEV_CONTRACT_EXAMPLE,
     "contractId": DONE_CONTRACT_ID,
@@ -7517,6 +7543,22 @@ DONE_CONTRACT_EXAMPLE = {
     "development": {
         **DEV_CONTRACT_EXAMPLE["development"],
         "status": "COMPLETED",
+        "milestones": DONE_MILESTONES,
+        "deliverables": DONE_DELIVERABLES,
+    },
+    "updatedAt": "2026-09-04T17:00:00+09:00",
+}
+
+# 지급 처리 중인 계약. 인계 작업까지 모두 통과 확정됐지만 지급이 끝나지 않아
+# `development.status`가 IN_PROGRESS로 남는다. 자료는 진행 중 계약과 같아 의뢰인은
+# PAID 파일(502)을 아직 받지 못한다. (R-PAY-01, R-QA-06)
+PAYOUT_PENDING_CONTRACT_EXAMPLE = {
+    **DEV_CONTRACT_EXAMPLE,
+    "contractId": PAYOUT_PENDING_CONTRACT_ID,
+    "roomId": 109,
+    "development": {
+        **DEV_CONTRACT_EXAMPLE["development"],
+        "status": "IN_PROGRESS",
         "milestones": DONE_MILESTONES,
     },
     "updatedAt": "2026-09-04T17:00:00+09:00",
@@ -8952,11 +8994,12 @@ def add_deliverable(
         "개발 계약의 `status`가 COMPLETED가 된 뒤에만 받는다. 같은 산출물에 URL이나 TEST "
         "파일이 있어도 PAID를 열지 않는다. 형식은 언제나 `application/octet-stream`이다. "
         "(R-QA-06)\n\n"
-        "목에서는 501이 TEST, 502가 지급 전 의뢰인이 받으려는 PAID, 그 밖의 값은 받을 수 있는 "
-        "사례다. 목은 부른 사람을 가리지 않는다.\n\n"
+        "목에서는 501이 TEST, 502가 지급 전 의뢰인이 받으려는 PAID, 512가 지급이 끝난 계약(140)의 "
+        "PAID, 503·513이 URL 자료이고 그 밖의 값은 받을 수 있는 사례다. 목은 부른 사람을 가리지 "
+        "않는다.\n\n"
         "- **200**: 내려받았을 때. 본문이 파일 내용이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
-        "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableMaterialId`가 404이거나 URL 자료(503)일 "
+        "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableMaterialId`가 404이거나 URL 자료(503·513)일 "
         "때. 없는 자료, 이 계약의 당사자가 아닌 사람, 받을 파일이 없는 URL 자료를 같게 답한다\n"
         "- **409 / DELIVERABLE_ACCESS_LOCKED**: `deliverableMaterialId`가 502일 때. 지급 전 "
         "의뢰인이 PAID 파일을 받으려 했다\n"
@@ -8968,12 +9011,15 @@ def download_deliverable_material(
     deliverableMaterialId: Annotated[
         int,
         Path(
-            description="인계 자료 식별자. 404는 없음, 503은 URL 자료, 502는 지급 전 PAID 재현용 예약값이다.",
+            description=(
+                "인계 자료 식별자. 404는 없음, 503·513은 URL 자료, 502는 지급 전 PAID, "
+                "512는 지급 뒤 PAID 재현용 예약값이다."
+            ),
             examples=[501],
         ),
     ],
 ) -> Response:
-    if deliverableMaterialId in {404, 503}:
+    if deliverableMaterialId in {404, 503, 513}:
         return _error_response(404, DELIVERABLE_NOT_FOUND)
     if deliverableMaterialId == 502:
         return _error_response(409, DELIVERABLE_ACCESS_LOCKED)
