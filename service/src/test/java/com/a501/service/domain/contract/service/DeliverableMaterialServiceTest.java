@@ -206,6 +206,44 @@ class DeliverableMaterialServiceTest {
     }
 
     @Test
+    @DisplayName("인계 작업의 확인을 요청한 뒤에는 자료와 산출물 항목을 바꿀 수 없다")
+    void submittedHandoverFreezesMaterials() {
+        givenMilestones(milestone(false, "CONFIRMED"), milestone(true, "SUBMITTED"));
+
+        assertCode(() -> attach(FILE_ID, DeliverableAccessStage.TEST), ContractErrorCode.HANDOVER_UNDER_REVIEW);
+        assertCode(() -> addUrl("https://demo.example.com"), ContractErrorCode.HANDOVER_UNDER_REVIEW);
+        assertCode(() -> service.addDeliverable(DEVELOPER_ID, CONTRACT_ID, new AddDeliverableRequest("추가")),
+                ContractErrorCode.HANDOVER_UNDER_REVIEW);
+        verify(materialRepository, never()).save(any());
+        verify(deliverableRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("최종 인수 시험은 계약 전체에 시험 자료(URL 또는 TEST)와 PAID 파일이 하나 이상씩 있어야 요청한다")
+    void finalAcceptanceNeedsTestMaterialAndPaidFile() {
+        DeliverableMaterial url = DeliverableMaterial.ofUrl(DELIVERABLE_ID, "https://demo.example.com");
+        DeliverableMaterial test = DeliverableMaterial.ofFile(DELIVERABLE_ID, FILE_ID, DeliverableAccessStage.TEST);
+        DeliverableMaterial paid = DeliverableMaterial.ofFile(DELIVERABLE_ID, FILE_ID + 1, DeliverableAccessStage.PAID);
+
+        assertThat(readyForFinalAcceptance()).isFalse();
+        assertThat(readyForFinalAcceptance(url)).isFalse();
+        assertThat(readyForFinalAcceptance(test)).isFalse();
+        assertThat(readyForFinalAcceptance(paid)).isFalse();
+        assertThat(readyForFinalAcceptance(url, test)).isFalse();
+        assertThat(readyForFinalAcceptance(url, paid)).isTrue();
+        assertThat(readyForFinalAcceptance(test, paid)).isTrue();
+        assertThat(readyForFinalAcceptance(url, test, paid)).isTrue();
+    }
+
+    @Test
+    @DisplayName("시험 자료와 PAID 파일이 서로 다른 산출물에 있어도 된다")
+    void finalAcceptanceMaterialsMaySpreadOverDeliverables() {
+        assertThat(readyForFinalAcceptance(
+                DeliverableMaterial.ofUrl(DELIVERABLE_ID, "https://demo.example.com"),
+                DeliverableMaterial.ofFile(OTHER_DELIVERABLE_ID, FILE_ID, DeliverableAccessStage.PAID))).isTrue();
+    }
+
+    @Test
     @DisplayName("URL은 TEST로 더하고, 같은 URL을 다시 보내면 새로 만들지 않는다")
     void addsUrlOnceAsTest() {
         addUrl("https://demo.example.com");
@@ -250,6 +288,19 @@ class DeliverableMaterialServiceTest {
 
     private static AttachDeliverableFileRequest request(long fileId, DeliverableAccessStage stage) {
         return new AttachDeliverableFileRequest(fileId, stage);
+    }
+
+    private boolean readyForFinalAcceptance(DeliverableMaterial... materials) {
+        stored.clear();
+        stored.addAll(List.of(materials));
+        DevelopmentContract development = developmentContractRepository.findByIdAndDeletedFalse(DEVELOPMENT_ID).orElseThrow();
+        try {
+            service.requireFinalAcceptanceMaterials(development);
+            return true;
+        } catch (BusinessException exception) {
+            assertThat(exception.getErrorCode()).isEqualTo(ContractErrorCode.HANDOVER_MATERIALS_MISSING);
+            return false;
+        }
     }
 
     private void givenMilestones(Milestone... milestones) {

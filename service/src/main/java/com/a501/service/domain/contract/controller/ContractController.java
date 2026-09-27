@@ -214,7 +214,7 @@ public class ContractController {
                     """
                     계약이 성립한 뒤 개발자가 산출물 항목을 더한다. 서명한 계약서의 범위·금액·확인 문장은 \
                     바꾸지 않고, 응답의 isContractual 이 false 다. 인계 자료를 받는 때와 같이 일반 작업을 모두 \
-                    확정한 뒤부터 최종 인수 시험을 통과하기 전까지 더한다. (R-QA-06)
+                    확정한 뒤부터 인계 작업의 확인을 요청하기 전까지 더한다. (R-QA-06)
 
                     - 201: 더했을 때
                     - 401 UNAUTHORIZED: 로그인하지 않았을 때
@@ -223,6 +223,7 @@ public class ContractController {
                     - 409 CONTRACT_CANCELLED: 취소된 계약일 때
                     - 409 HANDOVER_NOT_OPEN: 양쪽이 서명하기 전이거나 일반 작업을 모두 확정하기 전일 때
                     - 409 FINAL_ACCEPTANCE_PASSED: 인계 작업을 확정해 최종 인수 시험을 통과한 뒤일 때
+                    - 409 HANDOVER_UNDER_REVIEW: 인계 작업의 확인을 요청해 최종 인수 시험 중일 때
                     - 422 INVALID_REQUEST: title 이 없거나 비었거나 100자를 넘을 때""")
     @ResponseStatus(HttpStatus.CREATED)
     @PostMapping("/{contractId}/deliverables")

@@ -19,6 +19,9 @@ import org.hibernate.annotations.ColumnDefault;
 @Table(name = "milestones")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Milestone extends SoftDeleteEntity {
+    /** R-QA-02: 확인 요청 후 의뢰인이 답하지 않으면 이 기간 뒤 자동 통과된다. */
+    public static final int AUTO_PASS_DAYS = 3;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", nullable = false)
@@ -121,6 +124,56 @@ public class Milestone extends SoftDeleteEntity {
     /** 착수할 때 뒤로 잡아 두는 작업. */
     public void schedule() {
         this.status = "SCHEDULED";
+    }
+
+    /** 착수한 뒤 아직 통과하지 않은 작업. 순서와 관계없이 확인을 요청할 수 있다. */
+    public boolean isUnderway() {
+        return "IN_PROGRESS".equals(status) || "SCHEDULED".equals(status) || isSubmitted();
+    }
+
+    /** 확인을 요청하고 의뢰인의 답을 기다리는 중. */
+    public boolean isSubmitted() {
+        return "SUBMITTED".equals(status);
+    }
+
+    /** 통과했다. 되돌리지 않는다. (R-QA-03) */
+    public boolean isConfirmed() {
+        return "CONFIRMED".equals(status);
+    }
+
+    /** 개발자가 확인을 요청했다. 다시 요청하면 자동 통과 기한도 다시 센다. (R-QA-02) */
+    public void submit(LocalDateTime submittedAt) {
+        if (!isUnderway()) {
+            throw new IllegalStateException("확인을 요청할 수 없는 작업입니다.");
+        }
+        this.status = "SUBMITTED";
+        this.submittedAt = Objects.requireNonNull(submittedAt, "submittedAt");
+    }
+
+    /**
+     * 의뢰인이 확인 문장 일부만 통과시켰다. 남은 것을 고치도록 개발자에게 돌아가고 자동 통과를 멈춘다. 받은 확인
+     * 요청이 없어졌으니 요청 시각도 비운다.
+     */
+    public void returnToWork() {
+        if (!isSubmitted()) {
+            throw new IllegalStateException("확인 요청 중인 작업이 아닙니다.");
+        }
+        this.status = "IN_PROGRESS";
+        this.submittedAt = null;
+    }
+
+    /** 의뢰인이 통과시켰거나 기한이 지나 자동 통과됐다. (R-QA-02, R-QA-03) */
+    public void confirm(LocalDateTime confirmedAt) {
+        if (!isSubmitted()) {
+            throw new IllegalStateException("확인 요청 중인 작업이 아닙니다.");
+        }
+        this.status = "CONFIRMED";
+        this.confirmedAt = Objects.requireNonNull(confirmedAt, "confirmedAt");
+    }
+
+    /** 답이 없으면 자동 통과되는 시각. 확인 요청 중일 때만 있다. (R-QA-02) */
+    public LocalDateTime autoPassAt() {
+        return isSubmitted() && submittedAt != null ? submittedAt.plusDays(AUTO_PASS_DAYS) : null;
     }
 
     /** 계약서를 다시 써서 빠진 작업. 서명 전이라 통과 기록이 없어 지워도 잃는 것이 없다. */

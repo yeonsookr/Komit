@@ -103,7 +103,8 @@ class DeliverableControllerTest {
                 .thenThrow(new BusinessException(ContractErrorCode.HANDOVER_NOT_OPEN))
                 .thenThrow(new BusinessException(ContractErrorCode.MATERIAL_STAGE_CONFLICT))
                 .thenThrow(new BusinessException(FileErrorCode.FILE_NOT_ATTACHABLE))
-                .thenThrow(new BusinessException(ContractErrorCode.DELIVERABLE_NOT_FOUND));
+                .thenThrow(new BusinessException(ContractErrorCode.DELIVERABLE_NOT_FOUND))
+                .thenThrow(new BusinessException(ContractErrorCode.HANDOVER_UNDER_REVIEW));
         String body = """
                 {"fileId":71,"accessStage":"TEST"}""";
 
@@ -120,6 +121,10 @@ class DeliverableControllerTest {
         send("/api/deliverables/401/file", body)
                 .andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.message").value("인계물을 찾을 수 없습니다."));
+        send("/api/deliverables/401/file", body)
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("HANDOVER_UNDER_REVIEW"))
+                .andExpect(jsonPath("$.message").value("최종 인수 시험 중에는 인계 자료를 바꿀 수 없습니다."));
     }
 
     @Test

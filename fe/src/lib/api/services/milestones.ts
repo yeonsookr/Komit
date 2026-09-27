@@ -8,22 +8,18 @@ import type {
   DeliverableAccessStage,
   Milestone,
   SaveQaResultsRequest,
-  SubmitMilestoneRequest,
 } from "@/types/contract";
 
 /**
  * 작업 확인 요청.
  *
  * 개발자가 작업을 끝내고 의뢰인에게 확인을 부탁합니다. 보낸 시각부터 자동 통과
- * 기한을 셉니다 (R-QA-02). 다시 보내면 기한도 다시 셉니다.
+ * 기한을 셉니다 (R-QA-02). 다시 보내면 기한도 다시 셉니다. 바디는 없습니다.
+ * 인계 작업은 일반 작업을 모두 통과하고 인계 자료를 갖춘 뒤에 요청합니다 (R-QA-06).
  */
-export async function submitMilestone(
-  milestoneId: number,
-  body: SubmitMilestoneRequest = {},
-): Promise<Milestone> {
+export async function submitMilestone(milestoneId: number): Promise<Milestone> {
   const { data } = await authenticatedBackendApi().post<Milestone>(
     BACKEND.MILESTONE_SUBMISSION(milestoneId),
-    body,
   );
   return data;
 }

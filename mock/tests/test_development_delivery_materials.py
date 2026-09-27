@@ -96,13 +96,14 @@ class DevelopmentDeliveryMaterialsTest(unittest.TestCase):
 
         self.assertEqual(len(result.materials), len(service.DELIVERABLES[0]["materials"]))
 
-    def test_registration_is_closed_before_regular_work_ends_and_after_final_pass(self):
+    def test_registration_is_closed_before_regular_work_ends_and_after_final_request(self):
         file_request = service.AttachDeliverableRequest(fileId=73, accessStage="TEST")
         url_request = service.AttachDeliverableUrlRequest(url="https://new.example.com")
         title_request = service.AddDeliverableRequest(title="추가 설명서")
         for identifier, code in [
             (service.HANDOVER_NOT_OPEN_ID, b"HANDOVER_NOT_OPEN"),
             (service.FINAL_ACCEPTANCE_PASSED_ID, b"FINAL_ACCEPTANCE_PASSED"),
+            (service.HANDOVER_UNDER_REVIEW_ID, b"HANDOVER_UNDER_REVIEW"),
         ]:
             for result in [
                 service.upload_deliverable(identifier, file_request),
@@ -129,7 +130,13 @@ class DevelopmentDeliveryMaterialsTest(unittest.TestCase):
         conflicts = file_responses["409"]["content"]["application/json"]["examples"]
         self.assertEqual(
             {example["value"]["code"] for example in conflicts.values()},
-            {"CONTRACT_CANCELLED", "HANDOVER_NOT_OPEN", "FINAL_ACCEPTANCE_PASSED", "MATERIAL_STAGE_CONFLICT"},
+            {
+                "CONTRACT_CANCELLED",
+                "HANDOVER_NOT_OPEN",
+                "FINAL_ACCEPTANCE_PASSED",
+                "HANDOVER_UNDER_REVIEW",
+                "MATERIAL_STAGE_CONFLICT",
+            },
         )
 
     def test_material_download_does_not_unlock_paid_file(self):

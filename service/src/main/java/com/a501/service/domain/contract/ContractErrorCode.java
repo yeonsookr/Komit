@@ -54,6 +54,22 @@ public enum ContractErrorCode implements ErrorCode {
     /** 같은 계약에서 한 파일을 시험용과 해금용으로 함께 두면 시험용으로 지급 전에 받을 수 있다. (`R-QA-06`) */
     MATERIAL_STAGE_CONFLICT(
             HttpStatus.CONFLICT, "MATERIAL_STAGE_CONFLICT", "같은 파일을 시험용과 해금용으로 함께 등록할 수 없습니다."),
+    /** 인계 작업의 확인을 요청한 뒤에는 의뢰인이 시험하는 자료가 바뀌지 않게 막는다. (`R-QA-06`) */
+    HANDOVER_UNDER_REVIEW(
+            HttpStatus.CONFLICT, "HANDOVER_UNDER_REVIEW", "최종 인수 시험 중에는 인계 자료를 바꿀 수 없습니다."),
+    /** 인계 작업은 시험할 자료와 지급 뒤 받을 파일이 있어야 확인을 요청한다. (`R-QA-06`) */
+    HANDOVER_MATERIALS_MISSING(
+            HttpStatus.CONFLICT,
+            "HANDOVER_MATERIALS_MISSING",
+            "인수 시험 자료와 해금 파일을 등록한 뒤에 확인을 요청할 수 있습니다."),
+    /** 없는 작업이거나 그 계약의 당사자가 아니다. 존재를 알리지 않으려 둘을 같게 다룬다. */
+    MILESTONE_NOT_FOUND(HttpStatus.NOT_FOUND, "MILESTONE_NOT_FOUND", "작업을 찾을 수 없습니다."),
+    /** 착수 전이거나 이미 통과됐거나 확인 요청이 오기 전이다. */
+    MILESTONE_STATE_CONFLICT(
+            HttpStatus.CONFLICT, "MILESTONE_STATE_CONFLICT", "지금 상태에서는 처리할 수 없습니다."),
+    /** 확인 문장을 모두 통과한 작업만 완료한다. (`R-QA-01`) */
+    QA_NOT_ALL_CHECKED(
+            HttpStatus.BAD_REQUEST, "QA_NOT_ALL_CHECKED", "확인 문장을 모두 체크해야 통과시킬 수 있습니다."),
     /** 의뢰인이 계약서에 서명하기 전에는 돈을 맡기지 않는다. (`R-CON-20`) */
     CONTRACT_NOT_SIGNED(HttpStatus.CONFLICT, "CONTRACT_NOT_SIGNED", "계약서에 서명한 뒤에 예치할 수 있습니다."),
     /** AI가 컨설팅 계약 초안 형식에 맞는 결과를 만들지 못했다. */

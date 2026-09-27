@@ -351,12 +351,6 @@ export interface EscrowDeposit {
   depositedAt: string | null;
 }
 
-/** 작업 확인 요청. 개발자가 보냅니다. */
-export interface SubmitMilestoneRequest {
-  /** 의뢰인에게 함께 남길 말. 적지 않아도 됩니다. */
-  message?: string | null;
-}
-
 /**
  * 확인 결과 저장. 다 체크하지 않아도 보낼 수 있습니다.
  * 체크는 되돌릴 수 없으므로 이번에 체크한 것만 보내고 서버가 더합니다.

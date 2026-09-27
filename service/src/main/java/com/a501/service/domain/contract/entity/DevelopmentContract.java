@@ -90,6 +90,11 @@ public class DevelopmentContract extends SoftDeleteEntity {
         return "SIGNED".equals(status);
     }
 
+    /** 착수해 작업을 진행하는 중. 작업의 확인 요청·확인 결과·통과를 이때만 받는다. */
+    public boolean isInProgress() {
+        return "IN_PROGRESS".equals(status);
+    }
+
     /** 개발자가 착수했다. 착수일은 계약서 날짜 그대로 둔다. */
     public void start() {
         if (!isBeforeStart()) {

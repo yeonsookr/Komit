@@ -48,4 +48,9 @@ public class MilestoneQaResult extends CreatedSoftDeleteEntity {
         entity.qaCriterionId = Objects.requireNonNull(qaCriterionId, "qaCriterionId");
         return entity;
     }
+
+    /** 의뢰인이 통과를 체크했거나 작업이 자동 통과됐다. 체크는 되돌리지 않는다. */
+    public void pass() {
+        this.passed = true;
+    }
 }

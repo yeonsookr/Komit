@@ -212,12 +212,71 @@ class ContractDetailServiceTest {
         assertThat(firstMilestone(service.getContract(CLIENT_ID, CONTRACT_ID)).autoPassAt()).isNull();
 
         Milestone confirmed = milestone(LocalDateTime.of(2026, 8, 24, 10, 0));
+        ReflectionTestUtils.setField(confirmed, "status", "CONFIRMED");
         ReflectionTestUtils.setField(confirmed, "confirmedAt", LocalDateTime.of(2026, 8, 26, 16, 40));
         when(milestoneRepository.findAllByDevelopmentContractIdAndDeletedFalseOrderByIdAsc(
                         DEVELOPMENT_ID))
                 .thenReturn(List.of(confirmed));
 
         assertThat(firstMilestone(service.getContract(CLIENT_ID, CONTRACT_ID)).autoPassAt()).isNull();
+    }
+
+    /** 확인 요청 중이 아닌 작업은 요청 시각이 남아 있어도 자동 통과를 기다리지 않는다. */
+    @Test
+    void noAutoPassUnlessWaitingForAnswer() {
+        Milestone returned = milestone(LocalDateTime.of(2026, 8, 29, 11, 20));
+        ReflectionTestUtils.setField(returned, "status", "IN_PROGRESS");
+        when(milestoneRepository.findAllByDevelopmentContractIdAndDeletedFalseOrderByIdAsc(DEVELOPMENT_ID))
+                .thenReturn(List.of(returned));
+        when(milestoneQaResultRepository.findAllByMilestoneIdInAndDeletedFalseOrderByIdAsc(any()))
+                .thenReturn(List.of());
+        when(diagnosisQueryService.findBriefs(any())).thenReturn(Map.of());
+
+        MilestoneResponse milestone = firstMilestone(service.getContract(CLIENT_ID, CONTRACT_ID));
+
+        assertThat(milestone.submittedAt()).isNotNull();
+        assertThat(milestone.autoPassAt()).isNull();
+    }
+
+    /** 같은 문장이 요구사항에도 있어, 이 작업의 통과 여부는 문장 쪽이 아니라 이은 줄의 값을 쓴다. */
+    @Test
+    void takesQaStatusFromTheMilestoneResultNotTheCriterion() {
+        givenOneMilestone(null);
+        when(diagnosisQueryService.findBriefs(any())).thenReturn(Map.of());
+        MilestoneQaResult passed = qaLink();
+        passed.pass();
+        MilestoneQaResult open = qaLink();
+        ReflectionTestUtils.setField(open, "qaCriterionId", QA_CRITERION_ID + 1);
+        when(milestoneQaResultRepository.findAllByMilestoneIdInAndDeletedFalseOrderByIdAsc(List.of(MILESTONE_ID)))
+                .thenReturn(List.of(passed, open));
+        when(diagnosisQueryService.findQaCriteria(List.of(QA_CRITERION_ID, QA_CRITERION_ID + 1)))
+                .thenReturn(Map.of(
+                        QA_CRITERION_ID,
+                        new QaCriterionResponse(QA_CRITERION_ID, "로그인 화면이 뜬다", null, "UNRESOLVED", ISSUE_ID),
+                        QA_CRITERION_ID + 1,
+                        new QaCriterionResponse(QA_CRITERION_ID + 1, "토큰이 없으면 막힌다", null, "RESOLVED", ISSUE_ID)));
+
+        MilestoneResponse milestone = firstMilestone(service.getContract(CLIENT_ID, CONTRACT_ID));
+
+        assertThat(milestone.qaCriteria()).extracting(QaCriterionResponse::status)
+                .containsExactly("RESOLVED", "UNRESOLVED");
+        assertThat(milestone.qaCriteria()).extracting(QaCriterionResponse::testCase)
+                .containsExactly("로그인 화면이 뜬다", "토큰이 없으면 막힌다");
+    }
+
+    @Test
+    void describesOneMilestoneLikeTheContract() {
+        Milestone milestone = milestone(LocalDateTime.of(2026, 8, 29, 11, 20));
+        when(milestoneQaResultRepository.findAllByMilestoneIdInAndDeletedFalseOrderByIdAsc(List.of(MILESTONE_ID)))
+                .thenReturn(List.of());
+        when(diagnosisQueryService.findBriefs(List.of(ISSUE_ID)))
+                .thenReturn(Map.of(ISSUE_ID, new IssueBrief("관리자 API에 인증 추가", null, "app/api/admin/*")));
+
+        MilestoneResponse response = service.getMilestone(milestone);
+
+        assertThat(response.milestoneId()).isEqualTo(MILESTONE_ID);
+        assertThat(response.title()).isEqualTo("관리자 API에 인증 추가");
+        assertThat(response.autoPassAt()).isEqualTo(LocalDateTime.of(2026, 9, 1, 11, 20).atOffset(ZoneOffset.UTC));
     }
 
     @Test

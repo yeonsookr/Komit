@@ -73,6 +73,10 @@ app:
     # 한 계약의 지급을 한 서버만 하게 잡는 잠금의 수명. Escrow 호출 세 번(목록·상세·지급)의
     # 읽기 한도 합보다 길어야, 잡은 서버가 일하는 도중에 다른 서버가 끼어들지 않습니다.
     payout-lock-ttl: 3m
+  contract:
+    # 작업 자동 통과(R-QA-02)를 몇 분마다 볼지. 기한이 일 단위라 몇 분 늦어도 됩니다.
+    auto-pass-initial-delay: 1m
+    auto-pass-interval: 5m
   transcriber:
     # 전사를 받아 가는 노트북의 토큰. 비워 두면 전사 경로가 모두 401 로 닫힙니다.
     token: ${TRANSCRIBER_TOKEN:}
