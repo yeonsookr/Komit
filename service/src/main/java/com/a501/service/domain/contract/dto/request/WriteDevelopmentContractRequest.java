@@ -1,6 +1,7 @@
 package com.a501.service.domain.contract.dto.request;
 
 import com.a501.service.domain.contract.dto.request.validation.DistinctMilestoneIssues;
+import com.a501.service.domain.contract.dto.request.validation.SingleHandover;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -21,6 +22,7 @@ import java.util.List;
  */
 @Schema(description = "개발 계약서 작성 요청.")
 @DistinctMilestoneIssues
+@SingleHandover
 public record WriteDevelopmentContractRequest(
         @Schema(description = "착수일.", example = "2026-08-26") @NotNull LocalDate startDate,
         @Schema(description = "최종 납기일.", example = "2026-09-16") @NotNull LocalDate dueDate,
@@ -35,6 +37,29 @@ public record WriteDevelopmentContractRequest(
         List<@NotNull @Size(min = 1, message = "{komit.minLength}") @Size(max = 100) String> deliverableTitles,
         @Schema(description = "계약서와 함께 남길 전달 메시지. 300자까지 받는다.") @Size(max = 300)
         String message) {
+
+    public WriteDevelopmentContractRequest {
+        milestones = withImpliedHandover(milestones);
+    }
+
+    /**
+     * 한 릴리스 동안의 호환. 인계 작업 표시가 생기기 전 화면은 인계 작업을 표시 없이 0원 작업으로만 보낸다. 배포 중에 남은
+     * 옛 화면이나 새로고침하지 않은 탭에서 계약서를 보내도 막히지 않도록, 표시가 하나도 없고 표시를 보내지 않은 0원 작업이
+     * 정확히 하나면 그 작업을 인계 작업으로 본다. 모든 화면이 표시를 보내게 된 다음 릴리스에서 뺀다. (R-QA-06)
+     */
+    private static List<WriteMilestoneRequest> withImpliedHandover(List<WriteMilestoneRequest> milestones) {
+        if (milestones == null || milestones.stream().anyMatch(m -> m != null && m.isHandover() != null)) {
+            return milestones;
+        }
+        List<WriteMilestoneRequest> unpriced = milestones.stream()
+                .filter(m -> m != null && m.price() != null && m.price() == 0)
+                .toList();
+        if (unpriced.size() != 1) {
+            return milestones;
+        }
+        WriteMilestoneRequest handover = unpriced.getFirst();
+        return milestones.stream().map(m -> m == handover ? m.asHandover() : m).toList();
+    }
 
     /** 납기일이 착수일보다 이른지. 같은 날은 받는다. 목도 같은 날을 받는다. */
     public boolean dueDateBeforeStart() {

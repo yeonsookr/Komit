@@ -74,6 +74,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return error(exception.getErrorCode());
     }
 
+    @ExceptionHandler(InvalidFieldException.class)
+    ResponseEntity<Object> handleInvalidField(InvalidFieldException exception) {
+        return invalid(List.of(new FieldErrorResponse(exception.getField(), exception.getReason())));
+    }
+
     @ExceptionHandler(AccessDeniedException.class)
     ResponseEntity<Object> handleAccessDenied() {
         return error(CommonErrorCode.FORBIDDEN);

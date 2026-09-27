@@ -60,7 +60,7 @@ export async function uploadFromBrowser(
 ): Promise<UploadedFile> {
   const body: CreateUploadRequest = {
     originalName: file.name,
-    contentType: file.type,
+    contentType: purpose === "DELIVERABLE" && !file.type ? "application/octet-stream" : file.type,
     sizeBytes: file.size,
     purpose,
   };

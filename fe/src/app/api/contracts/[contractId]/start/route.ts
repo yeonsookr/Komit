@@ -19,7 +19,7 @@ export async function POST(
   if (id === null) return NextResponse.json(CONTRACT_NOT_FOUND, { status: 404 });
 
   try {
-    return NextResponse.json(await startContract(id), { status: 201 });
+    return NextResponse.json(await startContract(id));
   } catch (error) {
     return toErrorResponse(error);
   }

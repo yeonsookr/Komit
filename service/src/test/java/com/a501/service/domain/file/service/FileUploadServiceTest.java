@@ -30,6 +30,13 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class FileUploadServiceTest {
+    @Test
+    void deliverableAcceptsAnyNonEmptyMediaTypeWithoutChangingOtherPurposes() {
+        assertThat(UploadPurpose.DELIVERABLE.accepts("text/plain")).isTrue();
+        assertThat(UploadPurpose.DELIVERABLE.accepts("application/x-custom")).isTrue();
+        assertThat(UploadPurpose.DELIVERABLE.accepts(" ")).isFalse();
+        assertThat(UploadPurpose.PROFILE_IMAGE.accepts("text/plain")).isFalse();
+    }
     private static final Instant NOW = Instant.parse("2026-09-21T03:00:00Z");
     private static final StorageProperties PROPERTIES = new StorageProperties(
             "http://minio:9000",

@@ -57,8 +57,23 @@ describe("POST /api/rooms/[roomId]/development-contracts", () => {
     expect(response.status).toBe(201);
   });
 
+  it("인계 작업 표시를 그대로 보낸다. 표시가 없으면 일반 작업으로 보낸다", async () => {
+    writeDevelopmentContract.mockResolvedValueOnce({ contractId: 130 });
+
+    await call([
+      { issueId: 312, price: 400_000, isHandover: false, qaCriteria: ["로그인 화면이 뜬다"] },
+      { title: "인계", isHandover: true, price: 0, qaCriteria: ["소스를 받았다"] },
+    ]);
+
+    expect(writeDevelopmentContract.mock.calls[0][1].milestones).toEqual([
+      { issueId: 312, price: 400_000, qaCriteria: ["로그인 화면이 뜬다"] },
+      { title: "인계", isHandover: true, price: 0, qaCriteria: ["소스를 받았다"] },
+    ]);
+  });
+
   it("요구사항도 이름도 없는 작업, 빈 설명, 확인 문장 없는 작업은 백엔드를 부르지 않는다", async () => {
     const broken = [
+      { issueId: 312, price: 0, isHandover: "yes", qaCriteria: ["소스를 받았다"] },
       { price: 400_000, qaCriteria: ["로그인 화면이 뜬다"] },
       { issueId: 312, detail: " ", price: 400_000, qaCriteria: ["로그인 화면이 뜬다"] },
       { issueId: 312, price: 400_000, qaCriteria: [] },

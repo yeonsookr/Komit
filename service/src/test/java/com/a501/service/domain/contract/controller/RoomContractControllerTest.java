@@ -94,7 +94,8 @@ class RoomContractControllerTest {
             {"startDate":"2026-08-26","dueDate":"2026-09-16","freeRepairDays":14,
              "milestones":[
                {"issueId":312,"price":400000,"workDate":10,"qaCriteria":["로그인 화면이 뜬다"]},
-               {"title":"관리자 화면에 검색 추가","price":200000,"qaCriteria":["검색이 된다"]}],
+               {"title":"관리자 화면에 검색 추가","price":200000,"qaCriteria":["검색이 된다"]},
+               {"title":"인계","price":0,"isHandover":true,"qaCriteria":["소스를 받았다"]}],
              "deliverableTitles":["소스 파일 전체"],"message":"잘 부탁드립니다."}
             """;
 
@@ -118,14 +119,17 @@ class RoomContractControllerTest {
         verify(developmentContractWriteService).write(eq(93), eq(USER_ID), sent.capture());
         org.assertj.core.api.Assertions.assertThat(sent.getValue().milestones())
                 .extracting(milestone -> milestone.issueId())
-                .containsExactly(312, null);
+                .containsExactly(312, null, null);
+        org.assertj.core.api.Assertions.assertThat(sent.getValue().milestones())
+                .extracting(milestone -> milestone.isHandover())
+                .containsExactly(null, null, true);
     }
 
     @Test
     void rejectsNewWorkWithoutTitleAsFieldError() throws Exception {
         String body = """
                 {"startDate":"2026-08-26","dueDate":"2026-09-16","freeRepairDays":14,
-                 "milestones":[{"price":200000,"qaCriteria":["검색이 된다"]}]}
+                 "milestones":[{"price":200000,"qaCriteria":["검색이 된다"]},{"title":"인계","price":0,"isHandover":true,"qaCriteria":["소스를 받았다"]}]}
                 """;
 
         mockMvc.perform(post("/api/rooms/{roomId}/development-contracts", 93)
@@ -146,7 +150,8 @@ class RoomContractControllerTest {
                 {"startDate":"2026-08-26","dueDate":"2026-09-16","freeRepairDays":14,
                  "milestones":[
                    {"issueId":312,"price":1,"qaCriteria":["a"]},
-                   {"issueId":312,"price":1,"qaCriteria":["b"]}]}
+                   {"issueId":312,"price":1,"qaCriteria":["b"]},
+                   {"title":"인계","price":0,"isHandover":true,"qaCriteria":["소스를 받았다"]}]}
                 """;
 
         mockMvc.perform(post("/api/rooms/{roomId}/development-contracts", 93)
@@ -162,7 +167,7 @@ class RoomContractControllerTest {
     void rejectsEmptyQaCriterionWithListIndex() throws Exception {
         String body = """
                 {"startDate":"2026-08-26","dueDate":"2026-09-16","freeRepairDays":14,
-                 "milestones":[{"issueId":312,"price":1,"qaCriteria":[""]}]}
+                 "milestones":[{"issueId":312,"price":1,"qaCriteria":[""]},{"title":"인계","price":0,"isHandover":true,"qaCriteria":["소스를 받았다"]}]}
                 """;
 
         mockMvc.perform(post("/api/rooms/{roomId}/development-contracts", 93)
@@ -172,6 +177,44 @@ class RoomContractControllerTest {
                 .andExpect(status().isUnprocessableEntity())
                 .andExpect(jsonPath("$.errors[0].field").value("milestones.0.qaCriteria.0"))
                 .andExpect(jsonPath("$.errors[0].reason").value("1자 이상이어야 합니다."));
+    }
+
+    @Test
+    void rejectsContractWithoutHandoverAsFieldError() throws Exception {
+        String body = """
+                {"startDate":"2026-08-26","dueDate":"2026-09-16","freeRepairDays":14,
+                 "milestones":[{"issueId":312,"price":1,"qaCriteria":["a"]}]}
+                """;
+
+        mockMvc.perform(post("/api/rooms/{roomId}/development-contracts", 93)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors.length()").value(1))
+                .andExpect(jsonPath("$.errors[0].field").value("milestones"))
+                .andExpect(jsonPath("$.errors[0].reason").value("인계 작업은 하나여야 합니다."));
+
+        verifyNoInteractions(developmentContractWriteService);
+    }
+
+    @Test
+    void rejectsPricedHandoverOnThePriceField() throws Exception {
+        String body = """
+                {"startDate":"2026-08-26","dueDate":"2026-09-16","freeRepairDays":14,
+                 "milestones":[
+                   {"issueId":312,"price":1,"qaCriteria":["a"]},
+                   {"title":"인계","price":5000,"isHandover":true,"qaCriteria":["b"]}]}
+                """;
+
+        mockMvc.perform(post("/api/rooms/{roomId}/development-contracts", 93)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.errors.length()").value(1))
+                .andExpect(jsonPath("$.errors[0].field").value("milestones.1.price"))
+                .andExpect(jsonPath("$.errors[0].reason").value("인계 작업은 0원이어야 합니다."));
     }
 
     @Test

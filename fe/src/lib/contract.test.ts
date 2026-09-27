@@ -6,6 +6,7 @@ import {
   developmentStageLabel,
   isFullyChecked,
   isCancelled,
+  isAwaitingCheck,
   isHandover,
   isCompleted,
   isConsultingDraft,
@@ -42,6 +43,7 @@ function milestone(override: Partial<Milestone> = {}): Milestone {
     location: "app/api/admin/* · 4개 라우트",
     workDate: 10,
     price: 400_000,
+    isHandover: false,
     status: "SUBMITTED",
     rejectMessage: null,
     submittedAt: null,
@@ -201,9 +203,11 @@ describe("periodDays", () => {
 });
 
 describe("작업", () => {
-  it("인계 작업은 가격이 0 이다", () => {
-    expect(isHandover(milestone({ price: 0 }))).toBe(true);
+  it("인계 작업은 금액이 아니라 서버가 준 표시로 가린다", () => {
+    expect(isHandover(milestone({ price: 0, isHandover: true }))).toBe(true);
     expect(isHandover(milestone({ price: 400_000 }))).toBe(false);
+    // 표시가 없으면 금액이 0 이어도 인계 작업으로 읽지 않는다 (R-QA-06).
+    expect(isHandover(milestone({ price: 0, isHandover: false }))).toBe(false);
   });
 
   it("체크한 확인 문장을 센다", () => {
@@ -380,5 +384,14 @@ describe("isCompleted", () => {
 
   it("세션이 끝나기 전에는 끝난 거래가 아니다", () => {
     expect(isCompleted(consulting("2026-08-29T14:00:00+09:00", null))).toBe(false);
+  });
+});
+
+describe("isAwaitingCheck", () => {
+  it("확인 요청을 받은 작업만 의뢰인이 체크한다", () => {
+    expect(isAwaitingCheck(milestone({ status: "SUBMITTED" }))).toBe(true);
+    for (const status of ["IN_PROGRESS", "SCHEDULED", "CONFIRMED", "PROPOSED"] as const) {
+      expect(isAwaitingCheck(milestone({ status }))).toBe(false);
+    }
   });
 });

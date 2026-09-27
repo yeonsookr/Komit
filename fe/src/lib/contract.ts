@@ -35,8 +35,7 @@ export function isConsultingDraft(contract: Contract | null): boolean {
  * 개발 계약의 AI version 1인지. 요청서와 상담 대화로 만든 초안이라 착수일이 비어 있습니다.
  *
  * 개발자가 보낸 계약서에는 착수일이 늘 있습니다. 작성 요청이 착수일을 반드시 받습니다.
- * 초안은 작업 금액이 모두 0 이라 금액으로 인계 작업을 가리는 규칙(`isHandover`)을
- * 쓰지 못합니다. 초안인지 먼저 가린 뒤에 씁니다.
+ * 초안은 작업 금액이 모두 0 이고 인계 작업이 없습니다. 금액과 일정은 개발자가 채워 보냅니다.
  */
 export function isDevelopmentDraft(contract: Contract | null): boolean {
   return (
@@ -125,14 +124,25 @@ export function periodDays(development: DevelopmentAgreement): number | null {
 /**
  * 인계 작업인지. 소스·계정·설명서를 넘겨받았는지 확인하는 작업으로,
  * 가격이 0 이며 화면에 금액을 보여주지 않습니다.
+ *
+ * 금액이 아니라 서버가 준 표시로 가립니다 (R-QA-06).
  */
 export function isHandover(milestone: Milestone): boolean {
-  return milestone.price === 0;
+  return milestone.isHandover;
 }
 
 /** 통과 확정된 작업인지. 되돌릴 수 없습니다 (R-QA-03). */
 export function isConfirmed(milestone: Milestone): boolean {
   return milestone.status === "CONFIRMED";
+}
+
+/**
+ * 개발자가 확인을 요청해 의뢰인의 체크를 기다리는 작업. 의뢰인은 이때만 체크합니다.
+ * 요청 전 작업을 통과시키면 서버가 409 로 막고, 일부만 체크하면 작업이 개발자에게
+ * 돌아갑니다 (R-QA-02).
+ */
+export function isAwaitingCheck(milestone: Milestone): boolean {
+  return milestone.status === "SUBMITTED";
 }
 
 /** 의뢰인이 체크한 확인 문장 수. `2 / 3 확인` 의 앞 숫자입니다. */

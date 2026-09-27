@@ -24,7 +24,7 @@ export interface EditorHandover {
   lines: string[];
 }
 
-/** 인계 작업의 이름. 가격이 0 원인 작업 하나로 계약서에 들어갑니다 (R-CON-04). */
+/** 인계 작업의 이름. 인계 작업 표시를 단 0 원 작업으로 계약서에 들어갑니다 (R-CON-04, R-QA-06). */
 export const HANDOVER_TITLE = "인계 · 소스 · 계정 · 설명서";
 
 /**
@@ -149,7 +149,7 @@ export function isUnpriced(milestone: EditorMilestone): boolean {
 
 /**
  * 작업을 보낼 수 있는지. 작업마다 이름과 확인 문장, 1 원 이상의 금액이 있어야 합니다.
- * 금액 0 인 일반 작업을 받으면 계약서가 그 작업을 인계 작업으로 읽습니다.
+ * 금액 칸을 비워 둔 작업이 0 원으로 나가지 않게 막습니다.
  */
 export function canSendMilestones(
   milestones: EditorMilestone[],
@@ -189,6 +189,7 @@ export function toWriteMilestones(
   written.push({
     ...(handover.issueId === null ? {} : { issueId: handover.issueId }),
     title: HANDOVER_TITLE,
+    isHandover: true,
     price: 0,
     qaCriteria: filledLines(handover.lines),
   });

@@ -12,8 +12,9 @@ export type ContractStatus = "NEGOTIATING" | "AGREED" | "SIGNED" | "CANCELLED";
 
 /**
  * 개발 진행. 계약서를 처음 쓸 때부터 SIGNED 이고, 예치가 끝나면 DEPOSITED,
- * 착수하면 IN_PROGRESS 가 됩니다. AFTER_SERVICE · COMPLETED · TERMINATED 는
- * 운영 콘솔에서 다룹니다.
+ * 착수하면 IN_PROGRESS 가 됩니다. COMPLETED 는 대금 지급이 끝난 계약입니다. 인계 작업을
+ * 통과시킨 뒤 지급액과 수수료 이체가 모두 확정될 때까지는 IN_PROGRESS 로 남습니다 (R-PAY-01).
+ * AFTER_SERVICE · TERMINATED 는 운영 콘솔에서 다룹니다.
  *
  * SIGNED 여도 계약이 성립한 것은 아닙니다. 양쪽이 서명했는지는 `Contract.status` 로 봅니다 (R-CON-01).
  */
@@ -81,6 +82,8 @@ export interface Milestone {
   workDate: number | null;
   /** 원 단위 정수. 인계 작업은 0 이며 화면에 가격을 보여주지 않습니다. */
   price: number;
+  /** 인계 작업인지. 금액이 아니라 이 값으로 인계 작업을 가립니다 (R-QA-06). */
+  isHandover: boolean;
   status: MilestoneStatus;
   /** 거부 사유. 거부되지 않았으면 null. */
   rejectMessage: string | null;
@@ -94,12 +97,30 @@ export interface Milestone {
 }
 
 /** 인계물 하나. 소스·계정·설명서처럼 마지막에 넘겨받는 것들입니다 (R-QA-04). */
+export type DeliverableAccessStage = "TEST" | "PAID";
+
+/** 산출물에 등록한 인계 자료 하나. 파일이거나 URL 이고 둘 중 하나만 있습니다. */
+export interface DeliverableMaterial {
+  deliverableMaterialId: number;
+  /** 파일 자료의 파일 식별자. URL 자료면 null. */
+  fileId: number | null;
+  /** URL 자료의 주소. 파일 자료면 null. */
+  url: string | null;
+  /** URL 자료는 언제나 TEST 입니다. */
+  accessStage: DeliverableAccessStage;
+  deliveredAt: string;
+}
+
 export interface Deliverable {
   deliverableId: number;
   title: string;
   /** 아직 안 올렸으면 null. */
   fileId: number | null;
   deliveredAt: string | null;
+  /** 서명된 계약서의 항목이면 true, 체결 뒤 개발자가 추가한 항목이면 false. */
+  isContractual: boolean;
+  /** URL·TEST 파일·PAID 파일을 함께, 각각 여러 개 등록할 수 있습니다. */
+  materials: DeliverableMaterial[];
 }
 
 /** 계약서에 남긴 서명 하나. */
@@ -242,6 +263,8 @@ export interface WriteMilestoneRequest {
   title?: string | null;
   /** 계약서에서 쓰는 설명. 1~1000자. 기존 요구사항에서 보내지 않으면 그 요구사항의 설명을 씁니다. */
   detail?: string | null;
+  /** 인계 작업이면 true. 인계 작업은 계약서마다 하나이고 0 원입니다. 일반 작업은 1 원 이상입니다 (R-QA-06). */
+  isHandover?: boolean;
   /** 인계 작업은 0 으로 보냅니다. */
   price: number;
   /** 이 작업에 잡은 기간(일). 정하지 않아도 됩니다. */
@@ -327,12 +350,6 @@ export interface EscrowDeposit {
   amount: number;
   /** 예치가 확인된 시각. 확인 전이면 null. */
   depositedAt: string | null;
-}
-
-/** 작업 확인 요청. 개발자가 보냅니다. */
-export interface SubmitMilestoneRequest {
-  /** 의뢰인에게 함께 남길 말. 적지 않아도 됩니다. */
-  message?: string | null;
 }
 
 /**

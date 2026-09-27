@@ -84,4 +84,38 @@ public class DevelopmentContract extends SoftDeleteEntity {
     public void changeTotalAmount(int totalAmount) {
         this.totalAmount = totalAmount;
     }
+
+    /** 아직 착수하지 않았는지. 계약서를 쓸 때부터 착수 전까지 개발 쪽 상태는 {@code SIGNED} 다. */
+    public boolean isBeforeStart() {
+        return "SIGNED".equals(status);
+    }
+
+    /** 착수해 작업을 진행하는 중. 작업의 확인 요청·확인 결과·통과를 이때만 받는다. */
+    public boolean isInProgress() {
+        return "IN_PROGRESS".equals(status);
+    }
+
+    /** 대금 지급까지 끝난 계약. 리뷰와 마친 계약 수, 지급 뒤 해금 파일 열람이 이 값을 본다. */
+    public boolean isCompleted() {
+        return "COMPLETED".equals(status);
+    }
+
+    /**
+     * Escrow 가 지급액과 수수료 이체를 모두 확정했다. 지급 기록의 원본은 Escrow 에 있고, 여기 남기는 것은 「더 볼 필요가
+     * 없다」는 표시다. (`R-PAY-05`, `R-PAY-07`)
+     */
+    public void complete() {
+        if (!isInProgress()) {
+            throw new IllegalStateException("진행 중인 개발 계약만 완료할 수 있습니다.");
+        }
+        this.status = "COMPLETED";
+    }
+
+    /** 개발자가 착수했다. 착수일은 계약서 날짜 그대로 둔다. */
+    public void start() {
+        if (!isBeforeStart()) {
+            throw new IllegalStateException("이미 착수한 개발 계약입니다.");
+        }
+        this.status = "IN_PROGRESS";
+    }
 }

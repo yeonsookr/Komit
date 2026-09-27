@@ -1,6 +1,8 @@
 package com.a501.service.domain.contract.controller;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -18,6 +20,7 @@ import com.a501.service.common.security.WebMvcSecurityTest;
 import com.a501.service.domain.contract.ContractErrorCode;
 import com.a501.service.domain.contract.dto.response.ConsultingAgreementResponse;
 import com.a501.service.domain.contract.dto.response.ContractResponse;
+import com.a501.service.domain.contract.dto.response.DeliverableResponse;
 import com.a501.service.domain.contract.dto.response.SignatureResponse;
 import com.a501.service.domain.contract.dto.response.TempMessageResponse;
 import com.a501.service.domain.contract.service.ConsultingContractWriteService;
@@ -25,6 +28,8 @@ import com.a501.service.domain.contract.service.ContractCancellationService;
 import com.a501.service.domain.contract.service.ContractDepositService;
 import com.a501.service.domain.contract.service.ContractDetailService;
 import com.a501.service.domain.contract.service.ContractSignatureService;
+import com.a501.service.domain.contract.service.DeliverableMaterialService;
+import com.a501.service.domain.contract.service.DevelopmentStartService;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -55,6 +60,74 @@ class ContractControllerTest {
     private ContractDepositService contractDepositService;
     @MockitoBean
     private ContractCancellationService contractCancellationService;
+    @MockitoBean
+    private DeliverableMaterialService deliverableMaterialService;
+    @MockitoBean
+    private DevelopmentStartService developmentStartService;
+
+    @Test
+    void developerStartsDevelopment() throws Exception {
+        when(developmentStartService.start(CONTRACT_ID, USER_ID)).thenReturn(consultingContract());
+
+        mockMvc.perform(post("/api/contracts/{contractId}/start", CONTRACT_ID)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.contractId").value(CONTRACT_ID));
+    }
+
+    @Test
+    void startErrorsFollowTheMock() throws Exception {
+        when(developmentStartService.start(CONTRACT_ID, USER_ID))
+                .thenThrow(new BusinessException(ContractErrorCode.DEPOSIT_REQUIRED))
+                .thenThrow(new BusinessException(ContractErrorCode.ALREADY_STARTED));
+
+        mockMvc.perform(post("/api/contracts/{contractId}/start", CONTRACT_ID)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DEPOSIT_REQUIRED"))
+                .andExpect(jsonPath("$.message").value("예치가 끝나야 착수할 수 있습니다."));
+        mockMvc.perform(post("/api/contracts/{contractId}/start", CONTRACT_ID)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.message").value("이미 착수한 계약입니다."));
+    }
+
+    @Test
+    void startNeedsLogin() throws Exception {
+        mockMvc.perform(post("/api/contracts/{contractId}/start", CONTRACT_ID))
+                .andExpect(status().isUnauthorized());
+
+        verifyNoInteractions(developmentStartService);
+    }
+
+    @Test
+    void developerAddsDeliverableOutsideTheSignedContract() throws Exception {
+        when(deliverableMaterialService.addDeliverable(eq(USER_ID), eq(CONTRACT_ID), any()))
+                .thenReturn(new DeliverableResponse(410, "운영 설명서 보충", null, null, false, List.of()));
+
+        mockMvc.perform(post("/api/contracts/{contractId}/deliverables", CONTRACT_ID)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"운영 설명서 보충\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.deliverableId").value(410))
+                .andExpect(jsonPath("$.isContractual").value(false))
+                .andExpect(jsonPath("$.materials.length()").value(0));
+    }
+
+    @Test
+    void rejectsEmptyOrTooLongDeliverableTitle() throws Exception {
+        for (String body : List.of("{\"title\":\"\"}", "{\"title\":\"" + "가".repeat(101) + "\"}", "{}")) {
+            mockMvc.perform(post("/api/contracts/{contractId}/deliverables", CONTRACT_ID)
+                            .header(HttpHeaders.AUTHORIZATION, "Bearer " + tokenProvider.issue(USER_ID))
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.errors[0].field").value("title"));
+        }
+
+        verifyNoInteractions(deliverableMaterialService);
+    }
 
     @Test
     void returnsTheContractWithOnlyOneBranchFilled() throws Exception {

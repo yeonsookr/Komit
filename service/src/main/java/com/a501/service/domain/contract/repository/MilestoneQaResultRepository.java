@@ -8,4 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface MilestoneQaResultRepository extends JpaRepository<MilestoneQaResult, Integer> {
     List<MilestoneQaResult> findAllByMilestoneIdInAndDeletedFalseOrderByIdAsc(
             Collection<Integer> milestoneIds);
+
+    List<MilestoneQaResult> findAllByMilestoneIdAndDeletedFalseOrderByIdAsc(Integer milestoneId);
 }

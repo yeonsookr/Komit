@@ -15,6 +15,7 @@ import copy
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Annotated, Literal
+from urllib.parse import urlparse
 
 from fastapi import (
     APIRouter,
@@ -31,8 +32,8 @@ from fastapi.exception_handlers import (
 )
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
-from pydantic_core import PydanticCustomError
+from pydantic import BaseModel, Field, ValidationError, ValidationInfo, field_validator, model_validator
+from pydantic_core import InitErrorDetails, PydanticCustomError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from .. import scan_result
@@ -199,6 +200,14 @@ def _reason(error: dict) -> str:
         return CAREER_PERIOD_REASON
     if error_type == "duplicate_issue":
         return DUPLICATE_ISSUE_REASON
+    if error_type == "handover_price":
+        return HANDOVER_PRICE_REASON
+    if error_type == "work_price":
+        return WORK_PRICE_REASON
+    if error_type == "handover_count":
+        return HANDOVER_COUNT_REASON
+    if error_type == "material_url":
+        return MATERIAL_URL_REASON
     if error_type == "literal_error":
         expected = context.get("expected")
         return f"{expected} 중 하나여야 합니다." if expected else "허용되지 않는 값입니다."
@@ -5465,6 +5474,80 @@ DELIVERABLE_NOT_UPLOADED = (
     "DELIVERABLE_NOT_UPLOADED",
     "아직 올라온 파일이 없습니다.",
 )
+DELIVERABLE_ACCESS_LOCKED = (
+    "DELIVERABLE_ACCESS_LOCKED",
+    "대금 지급이 완료된 뒤에 내려받을 수 있습니다.",
+)
+HANDOVER_NOT_OPEN = (
+    "HANDOVER_NOT_OPEN",
+    "일반 작업을 모두 마친 뒤에 인계 자료를 등록할 수 있습니다.",
+)
+FINAL_ACCEPTANCE_PASSED = (
+    "FINAL_ACCEPTANCE_PASSED",
+    "최종 인수 시험을 통과한 뒤에는 인계 자료를 바꿀 수 없습니다.",
+)
+MATERIAL_STAGE_CONFLICT = (
+    "MATERIAL_STAGE_CONFLICT",
+    "같은 파일을 시험용과 해금용으로 함께 등록할 수 없습니다.",
+)
+HANDOVER_UNDER_REVIEW = (
+    "HANDOVER_UNDER_REVIEW",
+    "최종 인수 시험 중에는 인계 자료를 바꿀 수 없습니다.",
+)
+HANDOVER_MATERIALS_MISSING = (
+    "HANDOVER_MATERIALS_MISSING",
+    "인수 시험 자료와 해금 파일을 등록한 뒤에 확인을 요청할 수 있습니다.",
+)
+FILE_NOT_ATTACHABLE_ERROR = ("FILE_NOT_ATTACHABLE", "쓸 수 없는 파일입니다.")
+
+
+def _example(error: tuple[str, str]) -> dict:
+    return {"code": error[0], "message": error[1]}
+
+
+def _handover_responses(*, file: bool) -> dict:
+    """인계 자료·산출물 등록 API가 함께 쓰는 실패 응답. 파일 등록만 파일 오류와 단계 충돌이 더 있다."""
+    conflicts = {
+        "cancelled": {"summary": "취소된 계약", "value": _example(CONTRACT_CANCELLED)},
+        "not_open": {"summary": "서명 전이거나 일반 작업이 덜 끝남", "value": _example(HANDOVER_NOT_OPEN)},
+        "passed": {"summary": "최종 인수 시험을 통과한 뒤", "value": _example(FINAL_ACCEPTANCE_PASSED)},
+        "under_review": {"summary": "인계 작업의 확인을 요청한 뒤", "value": _example(HANDOVER_UNDER_REVIEW)},
+    }
+    if file:
+        conflicts["stage_conflict"] = {
+            "summary": "같은 파일이 다른 열람 단계로 있음",
+            "value": _example(MATERIAL_STAGE_CONFLICT),
+        }
+    responses = {
+        403: {
+            "model": ErrorResponse,
+            "description": "이 계약의 개발자가 아님",
+            "content": {"application/json": {"example": FORBIDDEN_EXAMPLE}},
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "지금은 인계 자료를 바꿀 수 없음",
+            "content": {"application/json": {"examples": conflicts}},
+        },
+    }
+    if file:
+        responses[400] = {
+            "model": ErrorResponse,
+            "description": "붙일 수 없는 파일",
+            "content": {"application/json": {"example": _example(FILE_NOT_ATTACHABLE_ERROR)}},
+        }
+    return responses
+
+
+def _handover_state_error(identifier: int) -> JSONResponse | None:
+    """재현값이면 그 409를 돌려준다. 목은 상태를 저장하지 않아 값으로 경우를 가른다."""
+    if identifier == HANDOVER_NOT_OPEN_ID:
+        return _error_response(409, HANDOVER_NOT_OPEN)
+    if identifier == FINAL_ACCEPTANCE_PASSED_ID:
+        return _error_response(409, FINAL_ACCEPTANCE_PASSED)
+    if identifier == HANDOVER_UNDER_REVIEW_ID:
+        return _error_response(409, HANDOVER_UNDER_REVIEW)
+    return None
 DELIVERABLE_NOT_UPLOADED_EXAMPLE = {
     "code": DELIVERABLE_NOT_UPLOADED[0],
     "message": DELIVERABLE_NOT_UPLOADED[1],
@@ -5514,6 +5597,11 @@ SESSION_ID = 55
 NOT_FOUND_CONTRACT_ID = 404
 NOT_FOUND_DELIVERABLE_ID = 404
 NOT_UPLOADED_DELIVERABLE_ID = 409
+# 인계 자료 등록의 409 재현값. 산출물 식별자와 계약 식별자 모두 같은 뜻으로 쓴다. (R-QA-06)
+# 407은 작업 확인 요청에서도 같은 뜻(일반 작업이 덜 끝난 인계 작업)이다.
+HANDOVER_NOT_OPEN_ID = 407
+FINAL_ACCEPTANCE_PASSED_ID = 408
+HANDOVER_UNDER_REVIEW_ID = 406
 REVIEWED_CONTRACT_ID = 409
 NOT_COMPLETED_CONTRACT_ID = 400
 SIGNED_CONTRACT_ID = 409
@@ -6695,6 +6783,14 @@ class MilestoneResponse(BaseModel):
         ),
         examples=[400000],
     )
+    isHandover: bool = Field(
+        default=False,
+        description=(
+            "인계 작업이면 true다. 계약서마다 하나이고 0원이다. 금액이 아니라 이 값으로 인계 "
+            "작업을 가린다. 일반 작업을 모두 확정한 뒤 인계 작업을 확정하면 최종 인수 시험 통과다. (R-QA-06)"
+        ),
+        examples=[False],
+    )
     location: str | None = Field(
         description=(
             "이 작업이 다루는 요구사항의 위치. 진단에서 나온 요구사항이면 채워지고, "
@@ -6726,7 +6822,7 @@ class MilestoneResponse(BaseModel):
     submittedAt: str | None = Field(
         description=(
             "개발자가 확인 요청을 보낸 시각. 자동 통과 기한 3일을 여기서부터 센다. "
-            "보내기 전이면 null이다."
+            "보내기 전이거나, 의뢰인이 일부만 통과시켜 개발자에게 돌아온 작업이면 null이다."
         ),
         examples=["2026-08-29T11:20:00+09:00"],
     )
@@ -6738,7 +6834,7 @@ class MilestoneResponse(BaseModel):
     )
     autoPassAt: str | None = Field(
         description=(
-            "답이 없을 때 자동으로 통과되는 시각. 확인 요청을 보낸 뒤에만 있다."
+            "답이 없을 때 자동으로 통과되는 시각. 확인 요청 중(SUBMITTED)일 때만 있다."
         ),
         examples=["2026-09-01T11:20:00+09:00"],
     )
@@ -6754,6 +6850,56 @@ class AttachDeliverableRequest(BaseModel):
         description="업로드 3콜을 마친 파일 식별자.",
         examples=[71],
     )
+    accessStage: Literal["TEST", "PAID"] = Field(
+        description="파일별 열람 단계. TEST는 인수 시험 중, PAID는 전액 지급 완료 뒤 열람한다.",
+        examples=["TEST"],
+    )
+
+
+class DeliverableMaterialResponse(BaseModel):
+    """산출물에 등록한 인계 자료 하나. 파일이거나 URL이다. 파일 내용은 기존 files가 보관한다."""
+
+    deliverableMaterialId: int = Field(description="인계 자료 식별자.", examples=[501])
+    fileId: int | None = Field(
+        description="파일 자료면 업로드 완료된 파일 식별자, URL 자료면 null이다.",
+        examples=[71],
+    )
+    url: str | None = Field(
+        description="URL 자료면 인수 시험 중 방문할 주소, 파일 자료면 null이다.",
+        examples=[None],
+    )
+    accessStage: Literal["TEST", "PAID"] = Field(
+        description=(
+            "열람 단계. TEST는 인수 시험 중, PAID는 전액 지급 완료 뒤 열람한다. "
+            "URL 자료는 언제나 TEST다."
+        ),
+    )
+    deliveredAt: str = Field(description="이 자료를 등록한 시각.")
+
+
+class AttachDeliverableUrlRequest(BaseModel):
+    """인수 시험용 URL 하나. 등록해도 같은 산출물의 다른 URL·파일은 그대로 남는다."""
+
+    url: str = Field(
+        min_length=1,
+        max_length=2000,
+        description="인수 시험 중 방문할 주소. 호스트가 있는 http·https 주소만 받고 2000자까지 받는다. (R-QA-06)",
+        examples=["https://demo.komit.example.com"],
+    )
+
+    @field_validator("url")
+    @classmethod
+    def validate_http_url(cls, value: str) -> str:
+        parsed = urlparse(value)
+        if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+            raise PydanticCustomError("material_url", "http or https url with host")
+        return value
+
+
+class AddDeliverableRequest(BaseModel):
+    """계약 체결 후 추가하는 산출물 항목."""
+
+    title: str = Field(min_length=1, max_length=100, description="추가 산출물 제목.")
 
 
 class DeliverableResponse(BaseModel):
@@ -6766,8 +6912,18 @@ class DeliverableResponse(BaseModel):
         examples=[None],
     )
     deliveredAt: str | None = Field(
-        description="넘긴 시각. 아직이면 null이다.",
+        description="넘긴 시각. 가장 최근에 인계 자료를 등록한 시각이고, 아직이면 null이다.",
         examples=[None],
+    )
+    isContractual: bool = Field(
+        default=True,
+        description="서명된 계약서에 포함된 산출물 항목이면 true, 체결 뒤 개발자가 추가한 항목이면 false다.",
+    )
+    materials: list[DeliverableMaterialResponse] = Field(
+        default_factory=list,
+        description=(
+            "이 산출물에 등록한 인계 자료. URL·TEST 파일·PAID 파일을 함께, 각각 여러 개 등록할 수 있다."
+        ),
     )
 
 
@@ -6784,9 +6940,12 @@ class DevelopmentAgreementResponse(BaseModel):
     ] = Field(
         description=(
             "개발 진행. 계약서를 처음 쓸 때부터 SIGNED다. AI가 만든 version 1도 같다. "
-            "예치가 끝나면 DEPOSITED, 착수하면 IN_PROGRESS가 된다. AFTER_SERVICE는 "
-            "하자보수, COMPLETED는 완료됨, TERMINATED는 파기됨이며 이 셋은 운영 "
-            "콘솔에서 다룬다.\n\n"
+            "예치가 끝나면 DEPOSITED, 착수하면 IN_PROGRESS가 된다. **COMPLETED는 "
+            "대금 지급이 끝난 계약이다.** 인계 작업을 통과시키면 서버가 계약 총액의 지급을 "
+            "Escrow에 부탁하고, 지급액과 수수료 이체가 모두 확정된 뒤에 COMPLETED로 바꾼다. "
+            "그 사이에는 IN_PROGRESS로 남는다. COMPLETED가 된 뒤에 리뷰를 남길 수 있고 의뢰인이 "
+            "PAID 파일을 받는다(R-PAY-07, R-QA-06). AFTER_SERVICE는 하자보수, TERMINATED는 "
+            "파기됨이며 이 둘은 운영 콘솔에서 다룬다.\n\n"
             "**체결 여부는 바깥 계약의 `status`로만 판단한다.** 이 값이 SIGNED여도 "
             "체결된 것이 아니다. 서명 두 개가 모두 찍혀야 계약이 성립한다. "
             "(`R-CON-01`)"
@@ -6827,6 +6986,11 @@ class DevelopmentAgreementResponse(BaseModel):
     )
 
 
+def _list_error(error_type: str, value) -> InitErrorDetails:
+    """작업 목록 전체에 붙는 오류 하나. 위치는 `milestones` 자체다."""
+    return InitErrorDetails(type=PydanticCustomError(error_type, error_type), loc=(), input=value)
+
+
 class WriteDevelopmentContractRequest(BaseModel):
     """개발 계약서 작성 요청.
 
@@ -6860,16 +7024,43 @@ class WriteDevelopmentContractRequest(BaseModel):
         examples=[None],
     )
 
-    @field_validator("milestones")
+    @field_validator("milestones", mode="wrap")
     @classmethod
-    def validate_distinct_issues(
-        cls, value: list["WriteMilestoneRequest"]
-    ) -> list["WriteMilestoneRequest"]:
-        # 새 작업은 아직 요구사항이 없어 겹칠 것이 없다.
-        issue_ids = [milestone.issueId for milestone in value if milestone.issueId is not None]
-        if len(issue_ids) != len(set(issue_ids)):
-            raise PydanticCustomError("duplicate_issue", "same issue in two milestones")
-        return value
+    def validate_milestone_list(cls, value, handler):
+        """작업 목록 전체를 보는 검사. 서버처럼 작업 안의 오류와 목록 오류를 함께 낸다.
+
+        서버의 클래스 검증은 작업 하나가 잘못돼도 목록 검사를 그대로 하므로, 여기서도 받은 값에서 직접
+        센다. 목록이 비었으면 개수 오류만 낸다.
+        """
+        errors = []
+        result = None
+        try:
+            result = handler(value)
+        except ValidationError as error:
+            errors = [
+                InitErrorDetails(
+                    type=PydanticCustomError(detail["type"], detail["msg"], detail.get("ctx")),
+                    loc=detail["loc"],
+                    input=detail["input"],
+                )
+                for detail in error.errors()
+            ]
+        items = [
+            item.model_dump() if isinstance(item, BaseModel) else item
+            for item in (value if isinstance(value, list) else [])
+            if isinstance(item, (dict, BaseModel))
+        ]
+        if items:
+            # 새 작업은 아직 요구사항이 없어 겹칠 것이 없다.
+            issue_ids = [item.get("issueId") for item in items if isinstance(item.get("issueId"), int)]
+            if len(issue_ids) != len(set(issue_ids)):
+                errors.append(_list_error("duplicate_issue", value))
+            # 최종 인수 시험은 인계 작업의 확인이다. 여러 개는 아직 다루지 않는다.
+            if sum(1 for item in items if item.get("isHandover") is True) != 1:
+                errors.append(_list_error("handover_count", value))
+        if errors:
+            raise ValidationError.from_exception_data("milestones", errors)
+        return result
 
 
 class WriteMilestoneRequest(BaseModel):
@@ -6909,9 +7100,17 @@ class WriteMilestoneRequest(BaseModel):
         ),
         examples=[None],
     )
+    isHandover: bool = Field(
+        default=False,
+        description=(
+            "인계 작업이면 true로 보낸다. 인계 작업은 0원이어야 하고 계약서마다 하나 "
+            "있어야 한다. 보내지 않으면 일반 작업이다. (R-QA-06)"
+        ),
+        examples=[False],
+    )
     price: int = Field(
         ge=0,
-        description="작업 가격. 인계 작업은 0으로 보낸다.",
+        description="작업 가격. 인계 작업은 0으로 보내고 일반 작업은 1원 이상이다.",
         examples=[400000],
     )
     workDate: int | None = Field(
@@ -6935,6 +7134,17 @@ class WriteMilestoneRequest(BaseModel):
         # 새 작업은 붙일 요구사항이 없어 이름을 여기서 받아야 한다.
         if value is None and info.data.get("issueId") is None:
             raise PydanticCustomError("missing", "title is required for new work")
+        return value
+
+    @field_validator("price")
+    @classmethod
+    def validate_price_by_kind(cls, value: int, info: ValidationInfo) -> int:
+        # 인계 작업은 대금을 따로 받지 않고, 일반 작업은 금액을 비워 0원으로 보내지 못한다.
+        handover = info.data.get("isHandover") is True
+        if handover and value != 0:
+            raise PydanticCustomError("handover_price", "handover must be free")
+        if not handover and value == 0:
+            raise PydanticCustomError("work_price", "regular work must be priced")
         return value
 
 
@@ -6972,17 +7182,6 @@ class DepositRequest(BaseModel):
             "같은 결제가 두 번 나가지 않게 하는 키. 재시도할 때 같은 값을 보낸다."
         ),
         examples=["dep-130-9f2c"],
-    )
-
-
-class SubmitMilestoneRequest(BaseModel):
-    """작업 확인 요청."""
-
-    message: str | None = Field(
-        default=None,
-        max_length=300,
-        description="의뢰인에게 함께 남길 말. 적지 않아도 된다. 300자까지 받는다.",
-        examples=[None],
     )
 
 
@@ -7035,6 +7234,7 @@ class WriteReviewRequest(BaseModel):
 
 MILESTONE_NOT_FOUND = ("MILESTONE_NOT_FOUND", "작업을 찾을 수 없습니다.")
 DEPOSIT_REQUIRED = ("DEPOSIT_REQUIRED", "예치가 끝나야 착수할 수 있습니다.")
+CONTRACT_NOT_CONCLUDED = ("CONTRACT_NOT_CONCLUDED", "양쪽이 서명한 뒤에 착수할 수 있습니다.")
 ALREADY_DEPOSITED = ("ALREADY_DEPOSITED", "이미 예치가 끝났습니다.")
 CONTRACT_NOT_SIGNED = ("CONTRACT_NOT_SIGNED", "계약서에 서명한 뒤에 예치할 수 있습니다.")
 QA_NOT_ALL_CHECKED = (
@@ -7045,6 +7245,8 @@ MILESTONE_STATE_CONFLICT = (
     "MILESTONE_STATE_CONFLICT",
     "지금 상태에서는 처리할 수 없습니다.",
 )
+# 확인 결과 저장과 통과시키기에 다른 작업의 확인 문장이 섞였을 때의 필드 오류 문구.
+NOT_THIS_MILESTONE_REASON = "이 작업의 확인 문장만 보낼 수 있습니다."
 REVIEW_ALREADY_WRITTEN = ("REVIEW_ALREADY_WRITTEN", "이미 리뷰를 남기셨습니다.")
 CONTRACT_NOT_COMPLETED = (
     "CONTRACT_NOT_COMPLETED",
@@ -7060,6 +7262,12 @@ DUE_DATE_BEFORE_START = (
 )
 # 같은 요구사항을 두 작업에 담았을 때. 어느 작업의 통과가 그 요구사항의 통과인지 가를 수 없다.
 DUPLICATE_ISSUE_REASON = "같은 요구사항을 두 작업에 담을 수 없습니다."
+# R-QA-06: 인계 작업은 계약서마다 하나이고 0원이다. 일반 작업은 1원 이상이다.
+HANDOVER_PRICE_REASON = "인계 작업은 0원이어야 합니다."
+WORK_PRICE_REASON = "일반 작업은 1원 이상이어야 합니다."
+HANDOVER_COUNT_REASON = "인계 작업은 하나여야 합니다."
+# R-QA-06: 인수 시험 URL은 호스트가 있는 http·https 주소만 받는다.
+MATERIAL_URL_REASON = "http 또는 https 주소여야 합니다."
 
 # 개발방이 아닌 곳에서 개발 계약서를 쓰려 했을 때. 화면에는 그런 길이 없어 API를 직접 부를 때만 난다.
 NOT_DEVELOPMENT_ROOM = (
@@ -7090,12 +7298,15 @@ BEFORE_START_CONTRACT_ID = 134
 MILESTONE_ID = 301
 NOT_FOUND_MILESTONE_ID = 404
 CONFLICT_MILESTONE_ID = 409
+# 일반 작업은 다 끝났지만 인수 시험 자료나 PAID 파일이 없는 인계 작업. (R-QA-06)
+MATERIALS_MISSING_MILESTONE_ID = 405
 NOT_DEPOSITED_CONTRACT_ID = 402
 DEPOSITED_CONTRACT_ID = 409
 
 MILESTONES = [
     {
         "milestoneId": 301,
+        "isHandover": False,
         "issueId": 312,
         "title": "1차 · 관리자 API에 인증 추가",
         "detail": "로그인하지 않아도 관리자 주소로 회원 목록이 열립니다.",
@@ -7126,6 +7337,7 @@ MILESTONES = [
     },
     {
         "milestoneId": 302,
+        "isHandover": False,
         "issueId": 313,
         "title": "2차 · 회원탈퇴 경로 구현",
         "detail": None,
@@ -7163,6 +7375,7 @@ MILESTONES = [
     },
     {
         "milestoneId": 303,
+        "isHandover": False,
         "issueId": 311,
         "title": "3차 · 결제 간헐 실패 수정",
         "detail": None,
@@ -7186,6 +7399,7 @@ MILESTONES = [
     },
     {
         "milestoneId": 304,
+        "isHandover": True,
         "issueId": 320,
         "title": "인계 · 소스 · 계정 · 설명서",
         "detail": None,
@@ -7224,7 +7438,21 @@ MILESTONES = [
 ]
 
 DELIVERABLES = [
-    {"deliverableId": 401, "title": "소스 파일 전체", "fileId": None, "deliveredAt": None},
+    {
+        "deliverableId": 401,
+        "title": "소스 파일 전체",
+        "fileId": None,
+        "deliveredAt": "2026-09-10T15:02:00+09:00",
+        "isContractual": True,
+        "materials": [
+            {"deliverableMaterialId": 501, "fileId": 71, "url": None, "accessStage": "TEST",
+             "deliveredAt": "2026-09-10T15:00:00+09:00"},
+            {"deliverableMaterialId": 502, "fileId": 72, "url": None, "accessStage": "PAID",
+             "deliveredAt": "2026-09-10T15:01:00+09:00"},
+            {"deliverableMaterialId": 503, "fileId": None, "url": "https://demo.komit.example.com",
+             "accessStage": "TEST", "deliveredAt": "2026-09-10T15:02:00+09:00"},
+        ],
+    },
     {
         "deliverableId": 402,
         "title": "관리자 계정과 비밀번호",
@@ -7572,11 +7800,11 @@ WRITE_CONTRACT_ERROR_EXAMPLE = {
     ],
 }
 
-# 확인 요청 바디는 message 하나뿐이고 300자 제한이 유일한 검증 조건이다.
-SUBMIT_MESSAGE_ERROR_EXAMPLE = {
+# 확인 요청은 바디가 없어 검증 실패는 경로 변수 milestoneId가 정수가 아닐 때만 난다. 착수와 같은 까닭으로 선언한다.
+MILESTONE_ID_ERROR_EXAMPLE = {
     "code": "INVALID_REQUEST",
     "message": "요청 형식이 올바르지 않습니다.",
-    "errors": [{"field": "message", "reason": "300자 이하여야 합니다."}],
+    "errors": [{"field": "milestoneId", "reason": "정수여야 합니다."}],
 }
 
 # 통과시키기 바디는 qaCriterionIds 하나뿐이고 필수다. 빈 배열은 422가 아니라 400(QA_NOT_ALL_CHECKED)이다.
@@ -7591,11 +7819,14 @@ CONFIRM_QA_ERROR_EXAMPLE = {
 FILE_TOO_LARGE = ("FILE_TOO_LARGE", "파일이 너무 큽니다.")
 FILE_TOO_LARGE_EXAMPLE = {"code": FILE_TOO_LARGE[0], "message": FILE_TOO_LARGE[1]}
 
-# 인계물 올리기는 multipart의 file 파트 하나만 받고, 그것이 필수다.
+# 인계 파일 연결 요청은 업로드 완료된 파일 ID와 열람 단계가 필수다.
 DELIVERABLE_FILE_ERROR_EXAMPLE = {
     "code": "INVALID_REQUEST",
     "message": "요청 형식이 올바르지 않습니다.",
-    "errors": [{"field": "fileId", "reason": "필수 항목입니다."}],
+    "errors": [
+        {"field": "fileId", "reason": "필수 항목입니다."},
+        {"field": "accessStage", "reason": "필수 항목입니다."},
+    ],
 }
 
 # 리뷰는 점수 1~5와 content 1000자가 검증 조건이다. 둘을 함께 어긴 경우를 예시로 든다.
@@ -7613,6 +7844,11 @@ DELIVERABLE_ID_ERROR_EXAMPLE = {
     "code": "INVALID_REQUEST",
     "message": "요청 형식이 올바르지 않습니다.",
     "errors": [{"field": "deliverableId", "reason": "정수여야 합니다."}],
+}
+DELIVERABLE_MATERIAL_ID_ERROR_EXAMPLE = {
+    "code": "INVALID_REQUEST",
+    "message": "요청 형식이 올바르지 않습니다.",
+    "errors": [{"field": "deliverableMaterialId", "reason": "정수여야 합니다."}],
 }
 
 STARTED_CONTRACT_ID = 409
@@ -7648,6 +7884,17 @@ STARTED_CONTRACT_ID = 409
                             "summary": "이미 착수함",
                             "value": ALREADY_STARTED_EXAMPLE,
                         },
+                        "not_concluded": {
+                            "summary": "양쪽이 서명하기 전",
+                            "value": {
+                                "code": CONTRACT_NOT_CONCLUDED[0],
+                                "message": CONTRACT_NOT_CONCLUDED[1],
+                            },
+                        },
+                        "cancelled": {
+                            "summary": "취소된 계약",
+                            "value": {"code": CONTRACT_CANCELLED[0], "message": CONTRACT_CANCELLED[1]},
+                        },
                     }
                 }
             },
@@ -7664,10 +7911,11 @@ STARTED_CONTRACT_ID = 409
     summary="개발 착수",
     description=(
         "**화면 — `5_개발자_착수전` › 착수하고 김미미님에게 알리기**\n\n"
-        "개발자가 일을 시작한다고 알린다. 계약이 `DEPOSITED`에서 `IN_PROGRESS`가 되고 "
-        "1차 작업이 `SCHEDULED`에서 `IN_PROGRESS`로 넘어간다. 의뢰인 화면에 착수 알림이 "
-        "가고 진행 기록에도 남는다.\n\n"
-        "**예치가 끝나야 착수할 수 있다.** 돈이 들어온 것을 확인하기 전에는 막는다. "
+        "개발자가 일을 시작한다고 알린다. 개발 쪽 상태(`development.status`)가 착수 전 `SIGNED`에서 "
+        "`IN_PROGRESS`가 되고, 1차 일반 작업이 `IN_PROGRESS`, 나머지 작업(인계 작업 포함)이 "
+        "`SCHEDULED`가 된다.\n\n"
+        "**양쪽이 서명하고 예치가 끝나야 착수할 수 있다.** 예치는 Escrow에 물어 확인하고, "
+        "돈이 들어온 것을 확인하기 전에는 막는다(R-CON-24). "
         "착수 전까지는 개발자가 계약을 물릴 수 있지만, 착수한 뒤로는 이 API로 되돌리지 "
         "않는다.\n\n"
         "착수일은 계약서에 적힌 날짜를 그대로 쓴다. 이 요청이 날짜를 바꾸지 않는다.\n\n"
@@ -7680,6 +7928,8 @@ STARTED_CONTRACT_ID = 409
         "- **409 / DEPOSIT_REQUIRED**: `contractId`가 402일 때. 예치가 끝나지 않아 아직 "
         "착수할 상태가 아니다\n"
         "- **409 / ALREADY_STARTED**: `contractId`가 409일 때\n"
+        f"- **409 / CONTRACT_NOT_CONCLUDED**: `contractId`가 {DRAFT_CLIENT_CONTRACT_ID}일 때. 양쪽이 서명하기 전이다\n"
+        f"- **409 / CONTRACT_CANCELLED**: `contractId`가 {CANCELLED_CONTRACT_ID}일 때. 취소된 계약이다\n"
         "- **422 / INVALID_REQUEST**: `contractId`가 정수가 아닐 때\n"
         "- **500 / INTERNAL_ERROR**: 착수를 처리하지 못했을 때"
     ),
@@ -7689,8 +7939,8 @@ def start_development(
         int,
         Path(
             description=(
-                "계약 식별자. 404는 없음, 402는 예치 전, 409는 이미 착수함 재현용 "
-                "예약값이다."
+                "계약 식별자. 404는 없음, 402는 예치 전, 409는 이미 착수함, "
+                f"{DRAFT_CLIENT_CONTRACT_ID}은 서명 전, {CANCELLED_CONTRACT_ID}은 취소됨 재현용 예약값이다."
             ),
             examples=[DEV_CONTRACT_ID],
         ),
@@ -7702,6 +7952,10 @@ def start_development(
         return _error_response(409, DEPOSIT_REQUIRED)
     if contractId == STARTED_CONTRACT_ID:
         return _error_response(409, ALREADY_STARTED)
+    if contractId == DRAFT_CLIENT_CONTRACT_ID:
+        return _error_response(409, CONTRACT_NOT_CONCLUDED)
+    if contractId == CANCELLED_CONTRACT_ID:
+        return _error_response(409, CONTRACT_CANCELLED)
     return ContractResponse(**STARTED_CONTRACT_EXAMPLE)
 
 
@@ -7787,8 +8041,9 @@ def start_development(
         "그때 새 계약서를 쓴다.\n\n"
         "**작업마다 따로 납기를 두지 않는다.** 최종 납기일 하나만 있고, 대금도 모든 작업이 "
         "통과된 뒤 한 번에 나간다.\n\n"
-        "인계물은 가격 0원짜리 작업 하나로 함께 들어간다. 0원인 작업은 화면에 가격을 "
-        "보여주지 않는다.\n\n"
+        "**인계 작업은 `isHandover`로 표시한다.** 계약서마다 하나이고 0원이다. 일반 작업은 "
+        "1원 이상이다. 금액이 아니라 이 표시로 인계 작업을 가린다. 일반 작업을 모두 확정한 뒤 "
+        "인계 작업을 확정하면 최종 인수 시험 통과다(R-QA-06).\n\n"
         "- **201**: 계약서를 보냈을 때. 협의 중인 계약서가 있었으면 그 내용이 이걸로 바뀐다\n"
         "- **400 / DUE_DATE_BEFORE_START**: `dueDate`가 `startDate`보다 이를 때\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
@@ -7800,7 +8055,8 @@ def start_development(
         "- **409 / CONTRACT_ALREADY_SIGNED**: 한쪽이라도 이미 서명했을 때 (R-CON-02)\n"
         "- **409 / CONTRACT_CANCELLED**: 취소된 계약일 때 (R-CON-21)\n"
         "- **422 / INVALID_REQUEST**: `milestones`가 비었거나, 작업의 `qaCriteria`가 비었거나, "
-        "새 작업에 `title`이 없거나, 같은 `issueId`를 두 작업에 담았거나, "
+        "새 작업에 `title`이 없거나, 같은 `issueId`를 두 작업에 담았거나, 인계 작업이 하나가 "
+        "아니거나, 인계 작업이 0원이 아니거나, 일반 작업이 0원이거나, "
         "`startDate`·`dueDate`·`freeRepairDays`·`milestones` 중 빠진 것이 있을 때. "
         "요청서에도 이 계약서에도 없는 요구사항을 넣었을 때도 422다\n"
         "- **500 / INTERNAL_ERROR**: 계약서를 만들지 못했을 때"
@@ -8134,12 +8390,22 @@ def get_deposit(
         },
         409: {
             "model": ErrorResponse,
-            "description": "지금 상태에서는 처리할 수 없음",
+            "description": "지금 상태에서는 확인을 요청할 수 없음",
             "content": {
                 "application/json": {
-                    "example": {
-                        "code": "MILESTONE_STATE_CONFLICT",
-                        "message": "지금 상태에서는 처리할 수 없습니다.",
+                    "examples": {
+                        "state": {
+                            "summary": "착수 전이거나 이미 통과한 작업",
+                            "value": _example(MILESTONE_STATE_CONFLICT),
+                        },
+                        "handover_not_open": {
+                            "summary": "일반 작업이 덜 끝난 인계 작업",
+                            "value": _example(HANDOVER_NOT_OPEN),
+                        },
+                        "materials_missing": {
+                            "summary": "인수 시험 자료나 PAID 파일이 없는 인계 작업",
+                            "value": _example(HANDOVER_MATERIALS_MISSING),
+                        },
                     }
                 }
             },
@@ -8149,16 +8415,19 @@ def get_deposit(
         422: {
             "model": ValidationErrorResponse,
             "description": "요청 스키마 유효성 검증 실패",
-            "content": {"application/json": {"example": SUBMIT_MESSAGE_ERROR_EXAMPLE}},
+            "content": {"application/json": {"example": MILESTONE_ID_ERROR_EXAMPLE}},
         },
         500: AREA1_ERRORS[500],
     },
     summary="작업 확인 요청",
     description=(
         "**화면 — `5_개발자_확인` › 확인 요청 보내기 · 확인 요청 다시 보내기**\n\n"
-        "착수한 작업을 마치고 의뢰인에게 확인을 요청한다. 이때부터 **3일**을 세고, "
-        "의뢰인이 답하지 않으면 자동으로 통과된다. 다시 보내면 기한도 다시 시작한다.\n\n"
-        "남길 말이 없으면 바디를 생략해도 된다. 빈 바디는 `{}`와 같게 처리한다.\n\n"
+        "착수한 작업을 마치고 의뢰인에게 확인을 요청한다. 통과하지 않은 작업은 순서와 관계없이 "
+        "요청할 수 있다. 이때부터 **3일**을 세고, 의뢰인이 답하지 않으면 자동으로 통과된다. "
+        "다시 보내면 기한도 다시 시작한다. 바디는 받지 않는다. 보내도 읽지 않는다.\n\n"
+        "**인계 작업은 일반 작업을 모두 통과한 뒤에 요청한다.** 계약 전체에 인수 시험 자료(URL "
+        "또는 TEST 파일)와 PAID 파일이 하나 이상씩 있어야 한다. 요청한 뒤로는 인계 자료를 바꿀 수 "
+        "없다. 인계 작업이 통과되면 최종 인수 시험 통과다(R-QA-06).\n\n"
         "응답의 `autoPassAt`이 자동 통과 시각이다. 화면은 이 값으로 '9월 1일 자동 통과'를 "
         "보여준다.\n\n"
         "- **201**: 확인 요청을 보냈을 때. 상태가 SUBMITTED가 되고 `submittedAt`이 채워진다\n"
@@ -8166,9 +8435,13 @@ def get_deposit(
         "- **403 / FORBIDDEN**: 이 계약의 개발자가 아닐 때. 확인 요청은 개발자만 보낸다\n"
         "- **404 / MILESTONE_NOT_FOUND**: `milestoneId`가 404일 때. 없는 작업이거나 이 계약의 "
         "당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 준다\n"
-        "- **409 / MILESTONE_STATE_CONFLICT**: `milestoneId`가 409일 때. 이미 통과된 "
-        "작업이다\n"
-        "- **422 / INVALID_REQUEST**: `message`가 300자를 넘을 때\n"
+        "- **409 / MILESTONE_STATE_CONFLICT**: `milestoneId`가 409일 때. 착수 전이거나 이미 "
+        "통과된 작업이다\n"
+        "- **409 / HANDOVER_NOT_OPEN**: `milestoneId`가 407일 때. 일반 작업을 모두 통과하기 전의 "
+        "인계 작업이다\n"
+        "- **409 / HANDOVER_MATERIALS_MISSING**: `milestoneId`가 405일 때. 인수 시험 자료나 PAID "
+        "파일이 없는 인계 작업이다\n"
+        "- **422 / INVALID_REQUEST**: `milestoneId`가 정수가 아닐 때\n"
         "- **500 / INTERNAL_ERROR**: 보내지 못했을 때"
     ),
 )
@@ -8177,18 +8450,21 @@ def submit_milestone(
         int,
         Path(
             description=(
-                "작업 식별자. 404는 없음, 409는 상태 충돌 재현용 예약값이다."
+                "작업 식별자. 404는 없음, 409는 상태 충돌, 407은 일반 작업이 덜 끝난 인계 작업, "
+                "405는 자료가 모자란 인계 작업 재현용 예약값이다."
             ),
             examples=[302],
         ),
     ],
-    # message가 선택이라 보낼 것이 없으면 바디를 생략할 수 있다. 빈 바디는 {}와 같게 본다.
-    request: SubmitMilestoneRequest | None = None,
 ) -> MilestoneResponse | JSONResponse:
     if milestoneId == NOT_FOUND_MILESTONE_ID:
         return _error_response(404, MILESTONE_NOT_FOUND)
     if milestoneId == CONFLICT_MILESTONE_ID:
         return _error_response(409, MILESTONE_STATE_CONFLICT)
+    if milestoneId == HANDOVER_NOT_OPEN_ID:
+        return _error_response(409, HANDOVER_NOT_OPEN)
+    if milestoneId == MATERIALS_MISSING_MILESTONE_ID:
+        return _error_response(409, HANDOVER_MATERIALS_MISSING)
     return MilestoneResponse(**MILESTONES[1])
 
 
@@ -8197,7 +8473,18 @@ def submit_milestone(
     response_model=MilestoneResponse,
     tags=[AREA5_TAG],
     responses={
-        200: {"content": {"application/json": {"example": MILESTONES[1]}}},
+        200: {
+            "content": {
+                "application/json": {
+                    "example": {
+                        **MILESTONES[1],
+                        "status": "IN_PROGRESS",
+                        "submittedAt": None,
+                        "autoPassAt": None,
+                    }
+                }
+            }
+        },
         403: {
             "model": ErrorResponse,
             "description": "이 계약의 의뢰인이 아님",
@@ -8223,9 +8510,14 @@ def submit_milestone(
         "의뢰인이 확인 문장을 직접 해보고 그 결과를 저장한다. **다 체크하지 않아도 "
         "보낼 수 있다.** 3줄 중 2줄만 됐다면 그대로 보내고, 개발자는 무엇이 남았는지 "
         "`5_개발자_확인`에서 본다. 고쳐서 다시 확인 요청을 보내는 흐름이다.\n\n"
-        "**작업 상태는 바뀌지 않는다.** 이 API는 완료 처리가 아니다. 확인 문장을 모두 "
-        "통과한 작업만 완료가 되며(R-QA-01) 그건 작업 통과시키기가 맡는다. 화면은 "
-        "전부 체크됐을 때 이 API 대신 통과시키기를 부른다.\n\n"
+        "**확인 요청 중에 체크하지 않은 문장이 남으면 작업이 개발자에게 돌아간다.** 남은 "
+        "문장은 아직 구현되지 않은 것으로 본다. 상태가 IN_PROGRESS가 되고 `submittedAt`·"
+        "`autoPassAt`이 비어 자동 통과를 멈춘다(R-QA-02). 개발자가 고쳐 다시 요청하면 기한을 "
+        "새로 센다. "
+        "확인 요청 전 작업에 남긴 결과는 상태를 바꾸지 않는다.\n\n"
+        "이 API는 완료 처리가 아니다. 확인 문장을 모두 통과한 작업만 완료가 되며(R-QA-01) "
+        "그건 작업 통과시키기가 맡는다. 화면은 전부 체크됐을 때 이 API 대신 통과시키기를 "
+        "부른다. 이 API로 전부 체크해도 상태는 그대로다.\n\n"
         "**체크는 되돌릴 수 없다.** 이번에 체크한 것을 보내면 이미 통과한 것에 더한다. "
         "빼고 보내도 풀리지 않고, 이미 통과한 값을 다시 보내도 결과가 같다.\n\n"
         "- **200**: 저장했을 때. 저장된 뒤의 작업 전체를 준다\n"
@@ -8234,8 +8526,8 @@ def submit_milestone(
         "- **404 / MILESTONE_NOT_FOUND**: `milestoneId`가 404일 때. 없는 작업이거나 이 "
         "계약의 당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 "
         "준다\n"
-        "- **409 / MILESTONE_STATE_CONFLICT**: `milestoneId`가 409일 때. 이미 통과된 "
-        "작업이라 결과를 바꿀 수 없다(R-QA-03)\n"
+        "- **409 / MILESTONE_STATE_CONFLICT**: `milestoneId`가 409일 때. 착수 전이거나 이미 "
+        "통과된 작업이라 결과를 바꿀 수 없다(R-QA-03)\n"
         "- **422 / INVALID_REQUEST**: `qaCriterionIds`가 비었거나 이 작업의 확인 "
         "문장이 아닌 값이 섞였을 때\n"
         "- **500 / INTERNAL_ERROR**: 저장하지 못했을 때"
@@ -8263,7 +8555,7 @@ def save_qa_results(
     )
     known = {qa["qaCriterionId"] for qa in target["qaCriteria"]}
     if not set(request.qaCriterionIds) <= known:
-        return _field_error("qaCriterionIds", "이 작업의 확인 문장만 보낼 수 있습니다.")
+        return _field_error("qaCriterionIds", NOT_THIS_MILESTONE_REASON)
 
     # 체크는 되돌릴 수 없으므로 이미 통과한 것에 더하기만 한다.
     passed = {
@@ -8281,6 +8573,12 @@ def save_qa_results(
             for qa in target["qaCriteria"]
         ],
     }
+    # 확인 요청 중에 남은 문장이 있으면 개발자에게 돌아가고 자동 통과를 멈춘다.
+    remaining = any(qa["status"] == "UNRESOLVED" for qa in milestone["qaCriteria"])
+    if target["status"] == "SUBMITTED" and remaining:
+        milestone["status"] = "IN_PROGRESS"
+        milestone["submittedAt"] = None
+        milestone["autoPassAt"] = None
     return MilestoneResponse(**milestone)
 
 
@@ -8337,7 +8635,8 @@ def save_qa_results(
         "**같은 버튼이 두 API로 갈린다.** 다 체크하지 않은 채로 누르면 확인 결과 저장이 "
         "개발자에게 거기까지의 결과를 알리고, 다 체크하고 누르면 이 API가 완료로 "
         "확정한다(R-QA-01·R-QA-03).\n\n"
-        "대금은 여기서 나가지 않는다. 모든 작업이 통과된 뒤 한 번에 지급된다.\n\n"
+        "인계 작업을 통과시키면 최종 인수 시험 통과다(R-QA-06). 대금은 여기서 나가지 "
+        "않는다. 모든 작업이 통과된 뒤 한 번에 지급된다.\n\n"
         "- **201**: 통과시켰을 때. 상태가 CONFIRMED가 되고 `confirmedAt`이 채워진다\n"
         "- **400 / QA_NOT_ALL_CHECKED**: `qaCriterionIds`에 이 작업의 확인 문장이 모두 들어 있지 "
         "않을 때. 목에서는 201·202가 빠지면 이 응답을 준다\n"
@@ -8347,7 +8646,8 @@ def save_qa_results(
         "당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 준다\n"
         "- **409 / MILESTONE_STATE_CONFLICT**: `milestoneId`가 409일 때. 이미 통과됐거나 "
         "아직 확인 요청이 오지 않은 작업이다\n"
-        "- **422 / INVALID_REQUEST**: `qaCriterionIds`가 없을 때. 빈 배열은 400이다\n"
+        "- **422 / INVALID_REQUEST**: `qaCriterionIds`가 없거나 이 작업의 확인 문장이 아닌 값이 "
+        "섞였을 때. 빈 배열은 400이다\n"
         "- **500 / INTERNAL_ERROR**: 통과시키지 못했을 때"
     ),
 )
@@ -8373,6 +8673,9 @@ def confirm_milestone(
         (row for row in MILESTONES if row["milestoneId"] == milestoneId), MILESTONES[0]
     )
     needed = {qa["qaCriterionId"] for qa in milestone["qaCriteria"]}
+    # 확인 결과 저장과 같이 다른 작업의 확인 문장은 받지 않는다.
+    if not set(request.qaCriterionIds) <= needed:
+        return _field_error("qaCriterionIds", NOT_THIS_MILESTONE_REASON)
     if not needed <= set(request.qaCriterionIds):
         return _error_response(400, QA_NOT_ALL_CHECKED)
 
@@ -8420,6 +8723,8 @@ def confirm_milestone(
             },
         },
         **AREA1_UNAUTHORIZED,
+        400: _handover_responses(file=True)[400],
+        409: _handover_responses(file=True)[409],
         422: {
             "model": ValidationErrorResponse,
             "description": "요청 스키마 유효성 검증 실패",
@@ -8434,17 +8739,33 @@ def confirm_milestone(
         "저장소로 `PUT` → `POST /uploads/{uploadId}/complete`)을 먼저 마치고, 거기서 받은 "
         "`fileId`를 이 요청에 담아 인계물에 붙인다. 소스 파일 묶음은 크기가 커서 이 서버를 "
         "지나가지 않게 한다.\n\n"
-        "붙인 시각이 인계 시각으로 남고, 의뢰인 화면에서는 '받기'로 내려받을 수 있게 된다.\n\n"
-        "이미 붙인 인계물에 다시 붙이면 새 파일로 바뀌고 `deliveredAt`도 그 시각으로 갱신된다. "
-        "재첨부를 막지 않으므로 409는 없다.\n\n"
+        "등록할 때 개발자가 열람 단계를 TEST 또는 PAID로 정한다. 등록할 때마다 자료가 하나 "
+        "늘고, 같은 산출물의 URL과 다른 파일은 그대로 남는다. TEST 파일은 인수 시험 중 확인하고 "
+        "PAID 파일은 전액 지급 완료 후 내려받는다. (R-QA-06)\n\n"
+        "**일반 작업을 모두 확정한 뒤부터 인계 작업의 확인을 요청하기 전까지만 받는다.** 요청한 "
+        "뒤 자료가 바뀌면 검수한 것과 지급 뒤 받는 것이 달라진다. 의뢰인이 확인 문장 일부만 "
+        "통과시켜 인계 작업이 개발자에게 돌아오면 다시 받는다.\n\n"
+        "**같은 파일을 같은 단계로 다시 보내면 새로 만들지 않고 지금 상태를 돌려준다.** 같은 "
+        "계약 안에서 한 파일을 TEST와 PAID로 함께 두지 않는다. 목에서는 `fileId` 71을 TEST로 "
+        "보내면 이미 있는 자료를 그대로, 72를 TEST로 보내면 단계 충돌(이미 PAID)을 돌려준다.\n\n"
         "형식과 크기는 `POST /uploads`에서 `purpose`가 `DELIVERABLE`일 때의 한도로 거른다. "
         "그래서 이 요청에는 용량 오류가 없다.\n\n"
-        "- **201**: 붙였을 때\n"
+        "- **201**: 붙였을 때. 같은 자료를 다시 보냈을 때도 201로 지금 상태를 돌려준다\n"
+        "- **400 / FILE_NOT_ATTACHABLE**: `fileId`가 400일 때. 없는 파일이거나 업로드를 마치지 않았거나 "
+        "남의 파일이다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **403 / FORBIDDEN**: 이 계약의 개발자가 아닐 때\n"
         "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableId`가 404일 때. 없는 인계물이거나 이 "
         "계약의 당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 403 대신 404를 준다\n"
-        "- **422 / INVALID_REQUEST**: `fileId`가 없을 때\n"
+        "- **409 / CONTRACT_CANCELLED**: 취소된 계약일 때\n"
+        "- **409 / HANDOVER_NOT_OPEN**: `deliverableId`가 407일 때. 양쪽이 서명하기 전이거나 일반 "
+        "작업을 모두 확정하기 전이다\n"
+        "- **409 / FINAL_ACCEPTANCE_PASSED**: `deliverableId`가 408일 때. 인계 작업을 확정해 최종 "
+        "인수 시험을 통과한 뒤다\n"
+        "- **409 / HANDOVER_UNDER_REVIEW**: `deliverableId`가 406일 때. 인계 작업의 확인을 요청해 "
+        "최종 인수 시험 중이다\n"
+        "- **409 / MATERIAL_STAGE_CONFLICT**: 같은 계약에 같은 파일이 다른 열람 단계로 있을 때\n"
+        "- **422 / INVALID_REQUEST**: `fileId` 또는 `accessStage`가 없거나 허용 단계가 아닐 때\n"
         "- **500 / INTERNAL_ERROR**: 붙이지 못했을 때"
     ),
 )
@@ -8452,7 +8773,10 @@ def upload_deliverable(
     deliverableId: Annotated[
         int,
         Path(
-            description="인계물 식별자. 404는 없음 재현용 예약값이다.",
+            description=(
+                "인계물 식별자. 404는 없음, 407은 아직 열리지 않음, 408은 최종 인수 시험 통과 뒤, "
+                "406은 최종 인수 시험 중 재현용 예약값이다."
+            ),
             examples=[401],
         ),
     ],
@@ -8460,13 +8784,203 @@ def upload_deliverable(
 ) -> DeliverableResponse | JSONResponse:
     if deliverableId == NOT_FOUND_DELIVERABLE_ID:
         return _error_response(404, DELIVERABLE_NOT_FOUND)
+    state_error = _handover_state_error(deliverableId)
+    if state_error is not None:
+        return state_error
+    if request.fileId == NOT_ATTACHABLE_FILE_ID:
+        return _error_response(400, FILE_NOT_ATTACHABLE_ERROR)
+    existing = [material for material in DELIVERABLES[0]["materials"] if material["fileId"] == request.fileId]
+    if any(material["accessStage"] != request.accessStage for material in existing):
+        return _error_response(409, MATERIAL_STAGE_CONFLICT)
+    if existing:
+        return DeliverableResponse(**{**DELIVERABLES[0], "deliverableId": deliverableId})
     return DeliverableResponse(
         **{
             **DELIVERABLES[0],
             "deliverableId": deliverableId,
-            "fileId": 71,
+            "materials": [
+                *DELIVERABLES[0]["materials"],
+                {
+                    "deliverableMaterialId": 504,
+                    "fileId": request.fileId,
+                    "url": None,
+                    "accessStage": request.accessStage,
+                    "deliveredAt": "2026-09-10T15:03:00+09:00",
+                },
+            ],
             "deliveredAt": "2026-09-10T15:00:00+09:00",
         }
+    )
+
+
+@router.post(
+    "/deliverables/{deliverableId}/urls",
+    response_model=DeliverableResponse,
+    status_code=201,
+    tags=[AREA5_TAG],
+    responses={
+        **_handover_responses(file=False),
+        404: {
+            "model": ErrorResponse,
+            "description": "인계물 없음",
+            "content": {"application/json": {"example": _example(DELIVERABLE_NOT_FOUND)}},
+        },
+        **AREA1_UNAUTHORIZED,
+        500: AREA1_ERRORS[500],
+    },
+    summary="산출물 인수 시험 URL 추가",
+    description=(
+        "개발자가 인수 시험용 URL을 하나 추가한다. 등록할 때마다 URL 자료가 하나 늘고, 같은 "
+        "산출물의 다른 URL과 파일은 그대로 남는다. URL 자료의 열람 단계는 TEST다. 받는 때는 파일 "
+        "붙이기와 같다. 같은 URL을 다시 보내면 새로 만들지 않고 지금 상태를 돌려준다. (R-QA-06)\n\n"
+        "- **201**: 추가했을 때. 같은 URL을 다시 보냈을 때도 201로 지금 상태를 돌려준다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **403 / FORBIDDEN**: 이 계약의 개발자가 아닐 때\n"
+        "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableId`가 404일 때. 없는 인계물이거나 당사자가 아닐 때\n"
+        "- **409 / CONTRACT_CANCELLED**: 취소된 계약일 때\n"
+        "- **409 / HANDOVER_NOT_OPEN**: `deliverableId`가 407일 때\n"
+        "- **409 / FINAL_ACCEPTANCE_PASSED**: `deliverableId`가 408일 때\n"
+        "- **409 / HANDOVER_UNDER_REVIEW**: `deliverableId`가 406일 때\n"
+        "- **422 / INVALID_REQUEST**: `url`이 없거나 호스트가 있는 http·https 주소가 아니거나 2000자를 넘을 때"
+    ),
+)
+def attach_deliverable_url(
+    deliverableId: Annotated[int, Path(description="산출물 식별자.")],
+    request: AttachDeliverableUrlRequest,
+) -> DeliverableResponse | JSONResponse:
+    if deliverableId == NOT_FOUND_DELIVERABLE_ID:
+        return _error_response(404, DELIVERABLE_NOT_FOUND)
+    state_error = _handover_state_error(deliverableId)
+    if state_error is not None:
+        return state_error
+    if any(material["url"] == request.url for material in DELIVERABLES[0]["materials"]):
+        return DeliverableResponse(**{**DELIVERABLES[0], "deliverableId": deliverableId})
+    return DeliverableResponse(**{
+        **DELIVERABLES[0],
+        "deliverableId": deliverableId,
+        "materials": [
+            *DELIVERABLES[0]["materials"],
+            {
+                "deliverableMaterialId": 505,
+                "fileId": None,
+                "url": request.url,
+                "accessStage": "TEST",
+                "deliveredAt": "2026-09-10T15:04:00+09:00",
+            },
+        ],
+    })
+
+
+@router.post(
+    "/contracts/{contractId}/deliverables",
+    response_model=DeliverableResponse,
+    status_code=201,
+    tags=[AREA5_TAG],
+    responses={
+        **_handover_responses(file=False),
+        404: CONTRACT_ERRORS[404],
+        **AREA1_UNAUTHORIZED,
+        500: AREA1_ERRORS[500],
+    },
+    summary="개발 계약의 추가 산출물 항목 생성",
+    description=(
+        "개발자가 계약 체결 후 추가 산출물 항목을 만든다. 서명된 계약의 범위·금액·QA는 변경하지 "
+        "않고, 응답의 `isContractual`이 false다. 받는 때는 인계 자료와 같다. (R-QA-06)\n\n"
+        "- **201**: 만들었을 때\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **403 / FORBIDDEN**: 이 계약의 개발자가 아닐 때\n"
+        "- **404 / CONTRACT_NOT_FOUND**: `contractId`가 404일 때. 없는 계약이거나, 당사자가 아니거나, "
+        "개발 계약이 아닐 때\n"
+        "- **409 / CONTRACT_CANCELLED**: 취소된 계약일 때\n"
+        "- **409 / HANDOVER_NOT_OPEN**: `contractId`가 407일 때\n"
+        "- **409 / FINAL_ACCEPTANCE_PASSED**: `contractId`가 408일 때\n"
+        "- **409 / HANDOVER_UNDER_REVIEW**: `contractId`가 406일 때\n"
+        "- **422 / INVALID_REQUEST**: `title`이 없거나 비었거나 100자를 넘을 때"
+    ),
+)
+def add_deliverable(
+    contractId: Annotated[int, Path(description="계약 식별자.")],
+    request: AddDeliverableRequest,
+) -> DeliverableResponse | JSONResponse:
+    if contractId == NOT_FOUND_CONTRACT_ID:
+        return _error_response(404, CONTRACT_NOT_FOUND)
+    state_error = _handover_state_error(contractId)
+    if state_error is not None:
+        return state_error
+    return DeliverableResponse(
+        deliverableId=410,
+        title=request.title,
+        fileId=None,
+        deliveredAt=None,
+        isContractual=False,
+        materials=[],
+    )
+
+
+@router.get(
+    "/deliverable-materials/{deliverableMaterialId}/file",
+    response_class=Response,
+    tags=[AREA5_TAG],
+    responses={
+        200: {
+            "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}},
+            "description": "파일 내용. 파일 이름은 `Content-Disposition`에 담긴다.",
+        },
+        404: {
+            "model": ErrorResponse,
+            "description": "자료 없음",
+            "content": {"application/json": {"example": DELIVERABLE_NOT_FOUND_EXAMPLE}},
+        },
+        409: {
+            "model": ErrorResponse,
+            "description": "지급 전 해금 파일",
+            "content": {"application/json": {"example": _example(DELIVERABLE_ACCESS_LOCKED)}},
+        },
+        **AREA1_UNAUTHORIZED,
+        422: {
+            "model": ValidationErrorResponse,
+            "description": "요청 스키마 유효성 검증 실패",
+            "content": {"application/json": {"example": DELIVERABLE_MATERIAL_ID_ERROR_EXAMPLE}},
+        },
+        500: AREA1_ERRORS[500],
+    },
+    summary="인계 자료 파일 내려받기",
+    description=(
+        "**화면 — `5_의뢰인_확인`·`5_개발자_확인` › 인계 자료 받기**\n\n"
+        "계약 당사자가 고른 파일 자료 하나를 받는다. 권한은 자료마다 따로 본다. TEST 파일은 "
+        "양쪽이 언제든 받는다. PAID 파일은 올린 개발자는 언제든, 의뢰인은 대금 지급이 끝나 "
+        "개발 계약의 `status`가 COMPLETED가 된 뒤에만 받는다. 같은 산출물에 URL이나 TEST "
+        "파일이 있어도 PAID를 열지 않는다. 형식은 언제나 `application/octet-stream`이다. "
+        "(R-QA-06)\n\n"
+        "목에서는 501이 TEST, 502가 지급 전 의뢰인이 받으려는 PAID, 그 밖의 값은 받을 수 있는 "
+        "사례다. 목은 부른 사람을 가리지 않는다.\n\n"
+        "- **200**: 내려받았을 때. 본문이 파일 내용이다\n"
+        "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
+        "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableMaterialId`가 404이거나 URL 자료(503)일 "
+        "때. 없는 자료, 이 계약의 당사자가 아닌 사람, 받을 파일이 없는 URL 자료를 같게 답한다\n"
+        "- **409 / DELIVERABLE_ACCESS_LOCKED**: `deliverableMaterialId`가 502일 때. 지급 전 "
+        "의뢰인이 PAID 파일을 받으려 했다\n"
+        "- **422 / INVALID_REQUEST**: `deliverableMaterialId`가 정수가 아닐 때\n"
+        "- **500 / INTERNAL_ERROR**: 내려주지 못했을 때"
+    ),
+)
+def download_deliverable_material(
+    deliverableMaterialId: Annotated[
+        int,
+        Path(
+            description="인계 자료 식별자. 404는 없음, 503은 URL 자료, 502는 지급 전 PAID 재현용 예약값이다.",
+            examples=[501],
+        ),
+    ],
+) -> Response:
+    if deliverableMaterialId in {404, 503}:
+        return _error_response(404, DELIVERABLE_NOT_FOUND)
+    if deliverableMaterialId == 502:
+        return _error_response(409, DELIVERABLE_ACCESS_LOCKED)
+    return Response(
+        content=DELIVERABLE_FILE_BODY,
+        media_type="application/octet-stream",
+        headers={"Content-Disposition": f'attachment; filename="{DELIVERABLE_FILE_NAME}"'},
     )
 
 
@@ -10541,12 +11055,7 @@ UPLOAD_CONTENT_TYPES = {
     "CAREER_EVIDENCE": {"application/pdf", "image/png", "image/jpeg"},
     "PORTFOLIO_IMAGE": {"image/png", "image/jpeg", "image/webp"},
     "SIGNATURE": {"image/png"},
-    "DELIVERABLE": {
-        "application/zip",
-        "application/x-zip-compressed",
-        "application/pdf",
-        "application/octet-stream",
-    },
+    "DELIVERABLE": None,
     "SESSION_RECORDING": {"audio/webm", "audio/mp4"},
     "REPORT_EVIDENCE": {"application/pdf", "image/png", "image/jpeg", "image/webp"},
 }
@@ -11557,7 +12066,8 @@ def create_upload(
     if request.sizeBytes > MAX_UPLOAD_BYTES:
         return _error_response(400, FILE_TOO_LARGE)
     base_content_type = request.contentType.partition(";")[0].strip().lower()
-    if base_content_type not in UPLOAD_CONTENT_TYPES[request.purpose]:
+    allowed_types = UPLOAD_CONTENT_TYPES[request.purpose]
+    if not base_content_type or (allowed_types is not None and base_content_type not in allowed_types):
         return _error_response(400, UNSUPPORTED_FILE_TYPE)
     upload_id = UPLOAD_TARGET_EXAMPLE["uploadId"]
     return UploadTargetResponse(
@@ -12973,9 +13483,17 @@ def download_scan_file(
         },
         409: {
             "model": ErrorResponse,
-            "description": "아직 인계되지 않음",
+            "description": "아직 인계되지 않았거나 지급 전 열람이 잠김",
             "content": {
-                "application/json": {"example": DELIVERABLE_NOT_UPLOADED_EXAMPLE}
+                "application/json": {
+                    "examples": {
+                        "notUploaded": {"value": DELIVERABLE_NOT_UPLOADED_EXAMPLE},
+                        "locked": {"value": {
+                            "code": DELIVERABLE_ACCESS_LOCKED[0],
+                            "message": DELIVERABLE_ACCESS_LOCKED[1],
+                        }},
+                    }
+                }
             },
         },
         **AREA1_UNAUTHORIZED,
@@ -12989,16 +13507,19 @@ def download_scan_file(
     summary="인계물 내려받기",
     description=(
         "**화면 — `5_의뢰인_확인` › 인계 · 소스 · 계정 · 설명서 › 받기**\n\n"
-        "개발자가 올린 인계물을 내려받는다. 받아본 뒤 확인 문장을 체크한다.\n\n"
-        "이 계약의 의뢰인과 개발자 모두 받을 수 있다. 역할 제한이 없어 403은 없고, 당사자가 "
-        "아닌 사람은 404를 받는다.\n\n"
+        "기존 `deliverables.file_id` 단일 파일만 대상으로 하는 호환 경로다. 새 TEST·PAID 파일은 "
+        "`GET /deliverable-materials/{deliverableMaterialId}/file`을 사용한다. 기존 단일 파일은 지급 후 "
+        "열람 대상으로 취급해 지급 전 의뢰인 다운로드를 막는다. 올린 개발자는 언제든 받는다. "
+        "지급이 끝났는지는 개발 계약의 `status`가 COMPLETED인지로 본다. 목의 401은 지급 전, "
+        "405는 지급 완료 사례다. 중간 마일스톤 검수 자료는 이 경로에 넣지 않는다. (R-QA-06)\n\n"
+        "계약 당사자가 아닌 사람은 404를 받는다.\n\n"
         "- **200**: 내려받았을 때. 본문이 파일 내용이고 파일 이름은 "
         "`Content-Disposition`에 담긴다\n"
         "- **401 / UNAUTHORIZED**: 로그인하지 않았을 때\n"
         "- **404 / DELIVERABLE_NOT_FOUND**: `deliverableId`가 404일 때. 없는 인계물이거나 이 "
         "계약의 당사자가 아닌 사람이 부른 경우다. 존재를 알리지 않기 위해 404를 준다\n"
-        "- **409 / DELIVERABLE_NOT_UPLOADED**: `deliverableId`가 409일 때. 개발자가 아직 "
-        "올리지 않아 받을 파일이 없다\n"
+        "- **409 / DELIVERABLE_NOT_UPLOADED**: `deliverableId`가 409일 때. 파일이 없다\n"
+        "- **409 / DELIVERABLE_ACCESS_LOCKED**: `deliverableId`가 401일 때. 아직 지급되지 않았다\n"
         "- **422 / INVALID_REQUEST**: `deliverableId`가 정수가 아닐 때\n"
         "- **500 / INTERNAL_ERROR**: 내려주지 못했을 때"
     ),
@@ -13008,7 +13529,7 @@ def download_deliverable(
         int,
         Path(
             description=(
-                "인계물 식별자. 404는 없음, 409는 미인계 재현용 예약값이다."
+                "인계물 식별자. 401은 지급 전, 405는 지급 완료, 404는 없음, 409는 미인계 재현용 예약값이다."
             ),
             examples=[401],
         ),
@@ -13018,6 +13539,8 @@ def download_deliverable(
         return _error_response(404, DELIVERABLE_NOT_FOUND)
     if deliverableId == NOT_UPLOADED_DELIVERABLE_ID:
         return _error_response(409, DELIVERABLE_NOT_UPLOADED)
+    if deliverableId != 405:
+        return _error_response(409, DELIVERABLE_ACCESS_LOCKED)
     return Response(
         content=DELIVERABLE_FILE_BODY,
         media_type="application/octet-stream",
@@ -13403,8 +13926,9 @@ SERVICE_TAGS = [
             "`5_의뢰인_확인` · `5_개발자_확인` · `5_의뢰인_리뷰작성`\n\n"
             "**일괄정산이다.** 작업마다 따로 납기를 두지 않고 최종 납기일 하나만 있으며, "
             "대금도 모든 작업이 통과된 뒤 한 번에 나간다.\n\n"
-            "**인계는 가격 0원짜리 작업 하나**로 다른 작업과 같은 구조에 들어간다. "
-            "제출·통과와 3일 자동 통과를 그대로 탄다.\n\n"
+            "**인계는 0원짜리 인계 작업**(`isHandover`) 하나로 다른 작업과 같은 구조에 들어간다. "
+            "제출·통과와 3일 자동 통과를 그대로 탄다. 일반 작업을 모두 확정한 뒤 인계 작업을 "
+            "확정하면 최종 인수 시험 통과다(R-QA-06).\n\n"
             "**돈의 원장은 Escrow 서버가 가진다.** 여기서는 예치를 걸고 상태를 확인만 한다.\n\n"
             "계약 파기와 하자보수는 운영 콘솔에서 다룬다.\n\n"
             "**함께 쓰는 API** 계약 조회·수정 제안·서명·전달 메시지·예치는 "

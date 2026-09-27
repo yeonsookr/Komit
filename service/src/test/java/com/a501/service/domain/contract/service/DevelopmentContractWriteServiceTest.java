@@ -151,7 +151,7 @@ class DevelopmentContractWriteServiceTest {
     @DisplayName("요청서의 요구사항은 그 번호에 붙이고, 계약서에서 바꾼 이름·설명은 작업에만 남긴다")
     void attachesExistingIssueWithRenamedTitle() {
         service.write(ROOM_ID, DEVELOPER_USER_ID, request(List.of(
-                new WriteMilestoneRequest(312, "관리자 인증 강화", "토큰도 확인한다", 400000, 10, List.of("로그인 화면이 뜬다")),
+                new WriteMilestoneRequest(312, "관리자 인증 강화", "토큰도 확인한다", false, 400000, 10, List.of("로그인 화면이 뜬다")),
                 existing(311))));
 
         assertThat(savedMilestones).extracting(Milestone::getIssueId).containsExactly(312, 311);
@@ -170,7 +170,7 @@ class DevelopmentContractWriteServiceTest {
     @DisplayName("새 작업은 계약용 요구사항을 먼저 만들어 붙이고, 이름·설명은 요구사항에 둔다")
     void createsIssueForNewWork() {
         service.write(ROOM_ID, DEVELOPER_USER_ID, request(List.of(
-                new WriteMilestoneRequest(null, "관리자 화면에 검색 추가", "회원을 찾는다", 200000, null, List.of("검색이 된다")))));
+                new WriteMilestoneRequest(null, "관리자 화면에 검색 추가", "회원을 찾는다", false, 200000, null, List.of("검색이 된다")))));
 
         verify(contractRequirementService).createIssue(PROJECT_ID, "관리자 화면에 검색 추가", "회원을 찾는다");
         assertThat(savedMilestones.getFirst().getIssueId()).isEqualTo(NEW_ISSUE_ID);
@@ -182,7 +182,7 @@ class DevelopmentContractWriteServiceTest {
     @DisplayName("확인 문장은 계약서 문장으로 저장하고 작업에 건다")
     void linksContractCriteriaToMilestones() {
         service.write(ROOM_ID, DEVELOPER_USER_ID, request(List.of(
-                new WriteMilestoneRequest(312, null, null, 400000, null, List.of("로그인 화면이 뜬다", "관리자만 들어간다")))));
+                new WriteMilestoneRequest(312, null, null, false, 400000, null, List.of("로그인 화면이 뜬다", "관리자만 들어간다")))));
 
         verify(contractRequirementService).writeCriteria(312, List.of("로그인 화면이 뜬다", "관리자만 들어간다"));
         assertThat(savedLinks).extracting(MilestoneQaResult::getQaCriterionId).containsExactly(3120, 3121);
@@ -194,11 +194,13 @@ class DevelopmentContractWriteServiceTest {
     @DisplayName("계약 금액은 작업 가격의 합이다 (R-CON-04)")
     void totalsMilestonePrices() {
         service.write(ROOM_ID, DEVELOPER_USER_ID, request(List.of(
-                new WriteMilestoneRequest(312, null, null, 400000, null, List.of("a")),
-                new WriteMilestoneRequest(311, null, null, 250000, null, List.of("b")),
-                new WriteMilestoneRequest(null, "인계 · 소스 · 계정 · 설명서", null, 0, null, List.of("c")))));
+                new WriteMilestoneRequest(312, null, null, false, 400000, null, List.of("a")),
+                new WriteMilestoneRequest(311, null, null, false, 250000, null, List.of("b")),
+                new WriteMilestoneRequest(null, "인계 · 소스 · 계정 · 설명서", null, true, 0, null, List.of("c")))));
 
         assertThat(savedDevelopment().getTotalAmount()).isEqualTo(650000);
+        // 인계 작업은 금액이 아니라 요청의 표시대로 저장한다. (R-QA-06)
+        assertThat(savedMilestones).extracting(Milestone::isHandover).containsExactly(false, false, true);
     }
 
     @Test
@@ -263,7 +265,7 @@ class DevelopmentContractWriteServiceTest {
                 .thenReturn(List.of(previousMilestone(701, NEW_ISSUE_ID)));
 
         service.write(ROOM_ID, DEVELOPER_USER_ID, request(List.of(
-                new WriteMilestoneRequest(NEW_ISSUE_ID, null, null, 0, null, List.of("소스를 받았다")))));
+                new WriteMilestoneRequest(NEW_ISSUE_ID, null, null, true, 0, null, List.of("소스를 받았다")))));
 
         assertThat(savedMilestones.getFirst().getIssueId()).isEqualTo(NEW_ISSUE_ID);
         verify(contractRequirementService, never()).createIssue(anyInt(), anyString(), any());
@@ -377,7 +379,7 @@ class DevelopmentContractWriteServiceTest {
     }
 
     private static WriteMilestoneRequest existing(int issueId) {
-        return new WriteMilestoneRequest(issueId, null, null, 400000, 10, List.of("로그인 화면이 뜬다"));
+        return new WriteMilestoneRequest(issueId, null, null, false, 400000, 10, List.of("로그인 화면이 뜬다"));
     }
 
     private static void assertCode(org.assertj.core.api.ThrowableAssert.ThrowingCallable call, ErrorCode code) {

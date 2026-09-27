@@ -4,10 +4,12 @@ import com.a501.service.common.exception.BusinessException;
 import com.a501.service.domain.file.FileErrorCode;
 import com.a501.service.domain.file.entity.StoredFile;
 import com.a501.service.domain.file.repository.StoredFileRepository;
+import java.io.InputStream;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
@@ -49,6 +51,22 @@ public class FileLookupService {
         }
     }
 
+    /** BIGINT 파일 식별자를 축소하지 않고 인계 연결 가능 여부를 검사합니다. */
+    public void assertAttachableLong(Integer userId, Collection<Long> fileIds) {
+        Set<Long> wanted = longIds(fileIds);
+        if (wanted.isEmpty()) {
+            return;
+        }
+        long attachable = storedFileRepository.findByFileIdInAndDeletedFalse(wanted).stream()
+                .filter(file -> isAttachableBy(file, userId))
+                .map(StoredFile::getFileId)
+                .distinct()
+                .count();
+        if (attachable != wanted.size()) {
+            throw new BusinessException(FileErrorCode.FILE_NOT_ATTACHABLE);
+        }
+    }
+
     /** 파일 식별자별 원래 파일명. 없는 파일은 결과에 빠집니다. */
     public Map<Integer, String> findOriginalNames(Collection<Integer> fileIds) {
         Set<Long> wanted = ids(fileIds);
@@ -60,6 +78,7 @@ public class FileLookupService {
                 .collect(Collectors.toMap(file -> file.getFileId().intValue(), StoredFile::getOriginalName,
                         (first, second) -> first));
     }
+
 
     /** 파일 식별자별 임시 읽기 주소. 없는 파일은 결과에 빠지며 저장소 주소는 한 번의 DB 조회 뒤 일괄 생성합니다. */
     public Map<Integer, String> findReadUrls(Collection<Integer> fileIds) {
@@ -76,6 +95,23 @@ public class FileLookupService {
                         (first, second) -> first));
     }
 
+    /**
+     * 파일 하나를 열어 내용과 이름을 돌려줍니다. 올리기를 마치지 않았거나 없는 파일이면 비어 있습니다. BIGINT 식별자를
+     * 축소하지 않습니다.
+     *
+     * <p><b>호출자가 열람 권한을 먼저 검사해야 합니다.</b> 파일 식별자를 안다는 것은 권한이 아닙니다. 받은 스트림은 호출자가
+     * 닫습니다.
+     */
+    public Optional<FileContent> open(Long fileId) {
+        if (fileId == null) {
+            return Optional.empty();
+        }
+        return storedFileRepository.findByFileIdInAndDeletedFalse(Set.of(fileId)).stream()
+                .filter(StoredFile::isCompleted)
+                .findFirst()
+                .map(file -> new FileContent(file.getOriginalName(), file.getSizeBytes(), objectStorageService.open(file)));
+    }
+
     private static boolean isAttachableBy(StoredFile file, Integer userId) {
         return file.isCompleted() && Objects.equals(file.getUserId(), userId);
     }
@@ -85,5 +121,22 @@ public class FileLookupService {
             return Set.of();
         }
         return fileIds.stream().filter(Objects::nonNull).map(Integer::longValue).collect(Collectors.toSet());
+    }
+
+    private static Set<Long> longIds(Collection<Long> fileIds) {
+        if (fileIds == null) {
+            return Set.of();
+        }
+        return fileIds.stream().filter(Objects::nonNull).collect(Collectors.toSet());
+    }
+
+    /**
+     * 연 파일 하나.
+     *
+     * @param originalName 올릴 때의 파일 이름
+     * @param sizeBytes 크기
+     * @param body 내용. 받은 쪽이 닫는다
+     */
+    public record FileContent(String originalName, Long sizeBytes, InputStream body) {
     }
 }

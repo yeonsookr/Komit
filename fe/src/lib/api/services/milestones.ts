@@ -2,27 +2,25 @@ import "server-only";
 
 import { authenticatedBackendApi } from "../server";
 import { BACKEND } from "../endpoints";
+import { fileNameFrom } from "../download";
 import type {
   ConfirmMilestoneRequest,
   Deliverable,
+  DeliverableAccessStage,
   Milestone,
   SaveQaResultsRequest,
-  SubmitMilestoneRequest,
 } from "@/types/contract";
 
 /**
  * 작업 확인 요청.
  *
  * 개발자가 작업을 끝내고 의뢰인에게 확인을 부탁합니다. 보낸 시각부터 자동 통과
- * 기한을 셉니다 (R-QA-02). 다시 보내면 기한도 다시 셉니다.
+ * 기한을 셉니다 (R-QA-02). 다시 보내면 기한도 다시 셉니다. 바디는 없습니다.
+ * 인계 작업은 일반 작업을 모두 통과하고 인계 자료를 갖춘 뒤에 요청합니다 (R-QA-06).
  */
-export async function submitMilestone(
-  milestoneId: number,
-  body: SubmitMilestoneRequest = {},
-): Promise<Milestone> {
+export async function submitMilestone(milestoneId: number): Promise<Milestone> {
   const { data } = await authenticatedBackendApi().post<Milestone>(
     BACKEND.MILESTONE_SUBMISSION(milestoneId),
-    body,
   );
   return data;
 }
@@ -80,10 +78,35 @@ export async function confirmMilestone(
 export async function attachDeliverable(
   deliverableId: number,
   fileId: number,
+  accessStage: DeliverableAccessStage,
 ): Promise<Deliverable> {
   const { data } = await authenticatedBackendApi().post<Deliverable>(
     BACKEND.DELIVERABLE_FILE(deliverableId),
-    { fileId },
+    { fileId, accessStage },
+  );
+  return data;
+}
+
+/**
+ * 인수 시험 URL 하나 더하기. URL 은 시험 중에 여는 자료라 열람 단계가 TEST 입니다.
+ * 같은 산출물의 다른 URL 과 파일은 그대로 남습니다 (R-QA-06).
+ */
+export async function addDeliverableUrl(deliverableId: number, url: string): Promise<Deliverable> {
+  const { data } = await authenticatedBackendApi().post<Deliverable>(
+    BACKEND.DELIVERABLE_URLS(deliverableId),
+    { url },
+  );
+  return data;
+}
+
+/**
+ * 계약이 성립한 뒤 산출물 항목 더하기. 서명한 계약서의 범위·금액·확인 문장은 바뀌지
+ * 않고, 응답의 `isContractual` 이 false 입니다 (R-QA-06).
+ */
+export async function addDeliverable(contractId: number, title: string): Promise<Deliverable> {
+  const { data } = await authenticatedBackendApi().post<Deliverable>(
+    BACKEND.CONTRACT_DELIVERABLES(contractId),
+    { title },
   );
   return data;
 }
@@ -106,12 +129,22 @@ export async function downloadDeliverable(deliverableId: number): Promise<Delive
     { responseType: "arraybuffer" },
   );
 
-  const disposition = String(response.headers["content-disposition"] ?? "");
-  const matched = /filename="?([^";]+)"?/.exec(disposition);
-
   return {
     body: response.data,
-    fileName: matched?.[1] ?? "deliverable",
+    fileName: fileNameFrom(String(response.headers["content-disposition"] ?? "")),
+    contentType: String(response.headers["content-type"] ?? "application/octet-stream"),
+  };
+}
+
+/** 인계 자료 식별자로 고른 파일 하나를 내려받습니다. 서버가 자료별 권한을 검사합니다. */
+export async function downloadDeliverableMaterial(deliverableMaterialId: number): Promise<DeliverableFile> {
+  const response = await authenticatedBackendApi().get<ArrayBuffer>(
+    BACKEND.DELIVERABLE_MATERIAL_FILE(deliverableMaterialId),
+    { responseType: "arraybuffer" },
+  );
+  return {
+    body: response.data,
+    fileName: fileNameFrom(String(response.headers["content-disposition"] ?? "")),
     contentType: String(response.headers["content-type"] ?? "application/octet-stream"),
   };
 }

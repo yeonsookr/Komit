@@ -4,6 +4,7 @@ import {
   downloadDeliverable,
 } from "@/lib/api/services";
 import { parseNumericParam, toErrorResponse } from "@/lib/api/route";
+import { attachmentDisposition } from "@/lib/api/download";
 
 const INVALID_REQUEST = { code: "INVALID_REQUEST", message: "파일을 첨부해 주세요." };
 const NOT_FOUND = { code: "DELIVERABLE_NOT_FOUND", message: "인계물을 찾을 수 없습니다." };
@@ -24,18 +25,20 @@ export async function POST(
 
   // 파일은 이 핸들러를 지나가지 않습니다. 브라우저가 저장소로 직접 보내고 fileId 만 옵니다.
   let fileId: unknown;
+  let accessStage: unknown;
   try {
-    ({ fileId } = (await request.json()) as { fileId?: unknown });
+    ({ fileId, accessStage } = (await request.json()) as { fileId?: unknown; accessStage?: unknown });
   } catch {
     return NextResponse.json(INVALID_REQUEST, { status: 422 });
   }
 
-  if (typeof fileId !== "number" || !Number.isInteger(fileId) || fileId <= 0) {
+  if (typeof fileId !== "number" || !Number.isSafeInteger(fileId) || fileId <= 0 ||
+      (accessStage !== "TEST" && accessStage !== "PAID")) {
     return NextResponse.json(INVALID_REQUEST, { status: 422 });
   }
 
   try {
-    const deliverable = await attachDeliverable(id, fileId);
+    const deliverable = await attachDeliverable(id, fileId, accessStage);
     return NextResponse.json(deliverable, { status: 201 });
   } catch (error) {
     return toErrorResponse(error);
@@ -43,10 +46,10 @@ export async function POST(
 }
 
 /**
- * GET /api/deliverables/{id}/file — 의뢰인이 인계물을 내려받습니다.
+ * GET /api/deliverables/{id}/file — 기존 단일 인계 파일을 내려받습니다.
  *
  * 본문이 파일 자체라 JSON 이 아닙니다. 파일 이름은 백엔드가 준 것을 그대로
- * 넘겨 브라우저가 저장할 때 쓰게 합니다.
+ * 넘겨 브라우저가 저장할 때 쓰게 합니다. 지급 전 열람 차단은 백엔드가 강제합니다.
  */
 export async function GET(
   _request: Request,
@@ -62,7 +65,7 @@ export async function GET(
     return new NextResponse(body, {
       headers: {
         "Content-Type": contentType,
-        "Content-Disposition": `attachment; filename="${encodeURIComponent(fileName)}"`,
+        "Content-Disposition": attachmentDisposition(fileName),
       },
     });
   } catch (error) {
