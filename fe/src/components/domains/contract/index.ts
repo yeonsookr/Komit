@@ -13,6 +13,7 @@ export * from "./ProgressPanel";
 export * from "./QaCheckPanel";
 export * from "./QaSubmitPanel";
 export * from "./ReviewForm";
+export * from "./WrittenReview";
 export * from "./SignContractButton";
 export * from "./SignaturePad";
 export * from "./StartWorkPanel";

@@ -2,29 +2,49 @@ import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { Container } from "@/components/layouts";
 import { EmptyState } from "@/components/feedback";
-import { ReviewForm } from "@/components/domains/contract";
+import { ReviewForm, WrittenReview } from "@/components/domains/contract";
 import { RoomHeader } from "@/components/domains/room";
-import { getContract, getMe, getRoom } from "@/lib/api/services";
+import { getContract, getContractReview, getMe, getRoom } from "@/lib/api/services";
 import { isCompleted } from "@/lib/contract";
 import { formatDateLabel, formatDateTimeLabel } from "@/lib/format";
 import { isReceived } from "@/lib/rooms";
 import { ROUTES } from "@/lib/routes";
 import { ApiError } from "@/types/api";
 import type { Contract } from "@/types/contract";
+import type { Review } from "@/types/developer";
 
-/** 방·내 정보·계약서를 함께 읽습니다. 없는 방이면 404 화면,
- * 로그인이 풀렸으면 로그인으로 보냅니다. */
-async function loadReview(roomId: number) {
+/** 이 계약에 남긴 리뷰. 아직 없으면 백엔드가 404 를 주고, 그때는 null 입니다. */
+async function readReview(contractId: number): Promise<Review | null> {
   try {
-    const [room, me] = await Promise.all([getRoom(roomId), getMe()]);
-    const contract: Contract | null =
-      room.contractId === null ? null : await getContract(room.contractId);
-    return { room, me, contract };
+    return await getContractReview(contractId);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+/** 없는 방이면 404 화면, 로그인이 풀렸으면 로그인으로 보냅니다. */
+async function load<T>(read: () => Promise<T>): Promise<T> {
+  try {
+    return await read();
   } catch (error) {
     if (error instanceof ApiError && error.status === 404) notFound();
     if (error instanceof ApiError && error.status === 401) redirect(ROUTES.login);
     throw error;
   }
+}
+
+/** 방·내 정보·계약서와 이 계약에 남긴 리뷰를 함께 읽습니다. */
+async function loadReview(roomId: number) {
+  return load(async () => {
+    const [room, me] = await Promise.all([getRoom(roomId), getMe()]);
+    const contract: Contract | null =
+      room.contractId === null ? null : await getContract(room.contractId);
+    // 끝난 거래에만 리뷰가 달리므로 그 전에는 묻지 않습니다.
+    const review =
+      contract !== null && isCompleted(contract) ? await readReview(contract.contractId) : null;
+    return { room, me, contract, review };
+  });
 }
 
 export async function generateMetadata({
@@ -36,7 +56,7 @@ export async function generateMetadata({
   const id = Number(roomId);
   if (!Number.isInteger(id)) return { title: "방을 찾을 수 없습니다 | Komit" };
 
-  const { room } = await loadReview(id);
+  const room = await load(() => getRoom(id));
 
   return {
     title: `리뷰 · ${room.projectName} | Komit`,
@@ -71,7 +91,7 @@ export default async function RoomReviewPage({
   const id = Number(roomId);
   if (!Number.isInteger(id) || id <= 0) notFound();
 
-  const { room, me, contract } = await loadReview(id);
+  const { room, me, contract, review } = await loadReview(id);
 
   /**
    * 리뷰는 유료 거래를 마친 의뢰인만 남깁니다 (R-REV-02). 컨설팅과 개발 둘 다
@@ -84,7 +104,9 @@ export default async function RoomReviewPage({
     <Container className="py-8 sm:py-10">
       <RoomHeader room={room} me={me} contract={contract} />
 
-      {canWrite && contract ? (
+      {review ? (
+        <WrittenReview review={review} received={isReceived(room, me)} />
+      ) : canWrite && contract ? (
         <ReviewForm
           contractId={contract.contractId}
           roomId={room.roomId}
