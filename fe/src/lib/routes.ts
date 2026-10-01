@@ -118,7 +118,6 @@ export const ROUTES = {
    */
   requests: "/rooms",
 
-  // ---- 아래는 아직 화면이 없는 임시 경로입니다. 화면이 생기면 값만 고칩니다. ----
   /**
    * 정산. 한 사람이 의뢰인이면서 개발자일 수 있어 소비와 소득을 함께 둡니다.
    * 기본 화면은 소비 내역이고, 달은 `?month=` 로 넘깁니다(`lib/settlement.ts`).
@@ -126,8 +125,6 @@ export const ROUTES = {
   settlements: "/settlements",
   settlementsIncome: "/settlements/income",
   settlementsDeposits: "/settlements/deposits",
-  /** 푸터 "정산 방식" 안내. */
-  settlementsGuide: "/settlements/guide",
   notifications: "/notifications",
   /** 계좌 등록·변경. 마이페이지 계좌 칸과 예치 화면이 옵니다. */
   accountRegister: "/mypage/account",
@@ -145,4 +142,8 @@ export const ROUTES = {
   adminContractTemplateNew: "/admin/contract-templates/new",
   adminContractTemplateEdit: (templateId: number) =>
     `/admin/contract-templates/${templateId}/edit`,
+
+  // ---- 아래는 아직 화면이 없는 임시 경로입니다. 화면이 생기면 값만 고칩니다. ----
+  /** 푸터 "정산 방식" 안내. (docs/FRONTEND_COMPONENTS.md 에 화면 없음으로 적혀 있습니다) */
+  settlementsGuide: "/settlements/guide",
 } as const;
