@@ -15,11 +15,6 @@ export async function fetchMe(): Promise<Me> {
   return data;
 }
 
-/** 토큰 재발급. 새 쿠키는 응답이 갈아 끼우므로 돌려줄 값이 없습니다. */
-export async function requestTokenRefresh(): Promise<void> {
-  await clientApi.post(INTERNAL.AUTH_REFRESH);
-}
-
 /** 로그아웃. 쿠키가 지워집니다. */
 export async function requestLogout(): Promise<void> {
   await clientApi.post(INTERNAL.AUTH_LOGOUT);
