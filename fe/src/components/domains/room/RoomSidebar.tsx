@@ -4,6 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/cn";
+import { ROUTES } from "@/lib/routes";
 import { Badge, SegmentedTabs } from "@/components/common";
 import {
   filterBySide,
@@ -154,7 +155,7 @@ function RoomLink({ room, active, preview }: Readonly<RoomLinkProps>) {
 
   return (
     <Link
-      href={`/rooms/${room.roomId}`}
+      href={ROUTES.room(room.roomId)}
       aria-current={active ? "page" : undefined}
       className={cn(
         "flex items-start gap-2.5 rounded-lg px-3 py-2.5 transition-colors",
