@@ -137,10 +137,7 @@ export const INTERNAL = {
   ROOMS: "/api/rooms",
   ROOM: (roomId: number) => `/api/rooms/${roomId}`,
   ROOM_MESSAGES: (roomId: number) => `/api/rooms/${roomId}/messages`,
-  SESSION_MESSAGES: (sessionId: number) => `/api/consulting-sessions/${sessionId}/messages`,
   ROOM_CONVERSION: (roomId: number) => `/api/rooms/${roomId}/conversion`,
-  DEVELOPERS: "/api/developers",
-  DEVELOPER: (developerId: number) => `/api/developers/${developerId}`,
   CONSULTATION_REQUESTS: (batchId: number) =>
     `/api/recommendations/${batchId}/consultation-requests`,
   DIAGNOSES: "/api/diagnoses",
@@ -184,7 +181,6 @@ export const INTERNAL = {
   /** 계약서 한 건. 컨설팅 계약서를 고칠 때 PATCH 로 부릅니다. */
   CONTRACT: (contractId: number) => `/api/contracts/${contractId}`,
   CONSULTING_CONTRACTS: (roomId: number) => `/api/rooms/${roomId}/consulting-contracts`,
-  CONSULTING_SESSION: (sessionId: number) => `/api/consulting-sessions/${sessionId}`,
   SESSION_PARTICIPATIONS: (sessionId: number) =>
     `/api/consulting-sessions/${sessionId}/participations`,
   SESSION_ICE_SERVERS: (sessionId: number) =>
@@ -192,7 +188,6 @@ export const INTERNAL = {
   SESSION_END: (sessionId: number) => `/api/consulting-sessions/${sessionId}/end`,
   SESSION_RECORDINGS: (sessionId: number) =>
     `/api/consulting-sessions/${sessionId}/recordings`,
-  SESSION_SUMMARY: (sessionId: number) => `/api/consulting-sessions/${sessionId}/summary`,
   /**
    * 파일 올리기 3콜 중 첫째와 셋째. 가운데 PUT 은 브라우저가 저장소로 직접 보내므로
    * 여기에 없습니다.

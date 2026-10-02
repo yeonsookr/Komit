@@ -97,19 +97,6 @@ export async function readRefreshToken(): Promise<string | null> {
 }
 
 /**
- * 토큰이 있으면 `Authorization` 을 붙이고, 없으면 빈 옵션을 돌려줍니다.
- *
- * 서버 컴포넌트가 화면 데이터를 읽을 때 씁니다. 로그인 여부 판단은 코밋 서버가
- * 합니다 — 토큰이 없거나 만료되었으면 서버가 401 을 주고, 화면은 그걸 받아
- * 로그인으로 보냅니다((rooms) 레이아웃). 목 서버는 토큰을 검사하지
- * 않아 빈 요청에도 200 을 주지만, 그건 목의 한계라 여기서 우회하지 않습니다.
- */
-export async function bearerHeaders(): Promise<{ headers?: { Authorization: string } }> {
-  const token = await readAccessToken();
-  return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
-}
-
-/**
  * 로그인이 필요한 요청에 붙이는 axios 옵션. 토큰이 없으면 서버를 부르지 않고 바로
  * 401 을 던집니다.
  *
