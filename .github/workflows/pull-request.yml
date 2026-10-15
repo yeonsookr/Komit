@@ -1,0 +1,288 @@
+# PR 검사
+# GitLab 파이프라인(.gitlab-ci.yml)의 convention·build·test 스테이지를 GitHub Actions로 옮긴 것입니다.
+# sonar·deploy 스테이지는 SonarQube 서버와 배포 서버가 회수되어 옮기지 않습니다.
+# 참고: docs/git_guide.md
+name: Pull request checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+
+# 같은 PR에 새 커밋이 오면 이전 실행을 취소합니다.
+concurrency:
+  group: pull-request-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  JIRA_KEY: "S15P21A201"                                        # Jira 프로젝트 키
+
+jobs:
+  ### 규칙 검사 ###
+  convention:
+    name: Convention
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # 브랜치 이름 검사
+      # 형식: S15P21A201-<이슈번호>/<파트>/<유형>/<설명>
+      # 예:   S15P21A201-123/be-api/feature/request-price-comparison
+      - name: branch-name
+        env:
+          BRANCH: ${{ github.head_ref }}
+        run: |
+          echo "검사 브랜치: $BRANCH"
+          if [ "$BRANCH" = "main" ] || [ "$BRANCH" = "develop" ]; then
+            echo "보호 브랜치 → 통과"; exit 0
+          fi
+          PARTS="fe|be-api|be-escrow|ai|infra|common"
+          TYPES="feature|fix|hotfix|docs"
+          PATTERN="^${JIRA_KEY}-[0-9]+/(${PARTS})/(${TYPES})/[A-Za-z0-9_-]+$"
+          if printf '%s' "$BRANCH" | grep -Eq "$PATTERN"; then
+            echo "OK: 브랜치 이름 규칙 통과"
+          else
+            echo "FAIL: 브랜치 이름 규칙 위반"
+            echo "  형식 : ${JIRA_KEY}-<이슈번호>/<파트>/<유형>/<설명>"
+            echo "  파트  : ${PARTS}"
+            echo "  유형  : ${TYPES}"
+            echo "  설명  : 영문·숫자와 하이픈(-)·언더스코어(_)"
+            echo "  예)   ${JIRA_KEY}-123/be-api/feature/request-price-comparison"
+            echo "  참고 : docs/git_guide.md 1. 브랜치 전략"
+            exit 1
+          fi
+
+      # 병합 대상 브랜치 검사 (main은 develop 또는 hotfix에서만 병합)
+      - name: target-branch
+        env:
+          SOURCE: ${{ github.head_ref }}
+          TARGET: ${{ github.base_ref }}
+        run: |
+          echo "$SOURCE -> $TARGET"
+          case "$TARGET" in
+            develop)
+              echo "OK: develop 통합 대상" ;;
+            main)
+              if [ "$SOURCE" = "develop" ] || printf '%s' "$SOURCE" | grep -Eq "/hotfix/"; then
+                echo "OK: main 병합 대상"
+              else
+                echo "FAIL: main에는 develop 또는 hotfix 브랜치만 병합할 수 있습니다."
+                echo "  참고 : docs/git_guide.md 1.3 유형 구분"
+                exit 1
+              fi ;;
+            *)
+              echo "OK: 작업 브랜치 간 병합" ;;
+          esac
+
+      # 커밋 메시지 검사
+      # 형식: <type>(<scope>): <subject> [Jira ID]
+      # 예:   feat(auth): 카카오 소셜 로그인 연동 기능 추가 [S15P21A201-234]
+      - name: commit-message
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          TYPES="feat|fix|docs|style|refactor|test|chore"
+          PATTERN="^(${TYPES})(\([A-Za-z0-9._/-]+\))?: .+"
+          if ! git log --no-merges --format=%s "${BASE_SHA}..${HEAD_SHA}" > /tmp/msgs.txt; then
+            echo "FAIL: 커밋 목록을 가져오지 못했습니다. (base=${BASE_SHA})"
+            exit 1
+          fi
+          if [ ! -s /tmp/msgs.txt ]; then
+            echo "FAIL: 검사할 커밋이 없습니다."
+            exit 1
+          fi
+          FAIL=0
+          while IFS= read -r MSG; do
+            [ -z "$MSG" ] && continue
+            if ! printf '%s' "$MSG" | grep -Eq "$PATTERN"; then
+              echo "FAIL: $MSG"; FAIL=1; continue
+            fi
+            # 대괄호 표기가 있으면 Jira ID 형식이어야 함
+            if printf '%s' "$MSG" | grep -q '\[' && \
+               ! printf '%s' "$MSG" | grep -Eq "\[${JIRA_KEY}-[0-9]+\]$"; then
+              echo "FAIL: $MSG  (Jira ID 표기 오류 → [${JIRA_KEY}-234])"; FAIL=1; continue
+            fi
+            echo "OK  : $MSG"
+          done < /tmp/msgs.txt
+          if [ "$FAIL" -ne 0 ]; then
+            echo "커밋 메시지 형식: <type>(<scope>): <subject> [Jira ID]"
+            echo "  타입 : ${TYPES}"
+            echo "  예)  feat(auth): 카카오 소셜 로그인 연동 기능 추가 [${JIRA_KEY}-234]"
+            echo "  참고 : docs/git_guide.md 2. 커밋 메시지 규칙"
+            exit 1
+          fi
+
+  ### 빌드·테스트 ###
+  # GitLab은 바뀐 모듈만 돌렸지만, 여기서는 필수 검사로 걸 수 있게 PR마다 모두 돌립니다.
+
+  # 서비스 서버 빌드 + 테스트 + JaCoCo 커버리지
+  # @SpringBootTest가 실제 DataSource를 요구하므로 PostgreSQL을 붙입니다.
+  # Redis 통합 테스트의 Testcontainers는 러너에 있는 Docker를 그대로 씁니다.
+  service:
+    name: Service build and test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_DB: komit
+          POSTGRES_USER: komit
+          POSTGRES_PASSWORD: komit-ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U komit -d komit"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DB_URL: jdbc:postgresql://localhost:5432/komit
+      DB_USERNAME: komit
+      DB_PASSWORD: komit-ci
+      APP_INSTANCE_ROLE: WRITER
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v6
+      - name: service-build
+        working-directory: service
+        run: |
+          chmod +x gradlew
+          ./gradlew clean assemble --no-daemon
+      - name: service-test
+        working-directory: service
+        run: ./gradlew test jacocoTestReport --no-daemon
+      - name: 테스트 리포트 업로드
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: service-test-reports
+          path: |
+            service/build/reports/tests/test/
+            service/build/reports/jacoco/test/jacocoTestReport.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # 에스크로 서버 빌드 + 테스트 + JaCoCo 커버리지
+  escrow:
+    name: Escrow build and test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        env:
+          POSTGRES_DB: komit
+          POSTGRES_USER: komit
+          POSTGRES_PASSWORD: komit-ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U komit -d komit"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DB_URL: jdbc:postgresql://localhost:5432/komit
+      DB_USERNAME: komit
+      DB_PASSWORD: komit-ci
+      APP_INSTANCE_ROLE: WRITER
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: gradle/actions/setup-gradle@v6
+      - name: escrow-build
+        working-directory: escrow
+        run: |
+          chmod +x gradlew
+          ./gradlew clean assemble --no-daemon
+      - name: escrow-test
+        working-directory: escrow
+        run: ./gradlew test jacocoTestReport --no-daemon
+      - name: 테스트 리포트 업로드
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: escrow-test-reports
+          path: |
+            escrow/build/reports/tests/test/
+            escrow/build/reports/jacoco/test/jacocoTestReport.xml
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # 프론트엔드 빌드 + 단위 테스트 + lcov 커버리지
+  # 서버 환경 변수는 빌드가 통과할 만큼의 자리값만 넣습니다. 실제 요청은 보내지 않습니다.
+  fe:
+    name: Frontend build and test
+    runs-on: ubuntu-latest
+    env:
+      BACKEND_API_BASE_URL: http://127.0.0.1:8080/service
+      KAKAO_CLIENT_ID: build-client-id
+      KAKAO_REDIRECT_URI: http://127.0.0.1:3000/api/auth/kakao/callback
+      NEXT_TELEMETRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: fe/package-lock.json
+      - name: 의존성 설치
+        working-directory: fe
+        run: npm ci
+      - name: fe-build
+        working-directory: fe
+        run: npm run build
+      - name: fe-test
+        working-directory: fe
+        run: npm run test:coverage
+      - name: 커버리지 업로드
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fe-coverage
+          path: fe/coverage/lcov.info
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # AI 서비스 테스트
+  # 파이썬이라 컴파일이 없어 빌드 단계를 두지 않고 의존성을 받아 바로 돌립니다.
+  # scripts/requirements.txt 까지 받는 것은 STT 비교 스크립트 테스트가 rapidfuzz 를 쓰기 때문입니다.
+  # 단위 테스트는 고정 응답을 써서 GMS 키 없이 돌고 외부 요청을 하지 않습니다.
+  ai:
+    name: AI test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            ai/worker/requirements.txt
+            ai/worker/scripts/requirements.txt
+      - name: ai-test
+        working-directory: ai/worker
+        run: |
+          pip install --no-cache-dir -r requirements.txt -r scripts/requirements.txt
+          python -m unittest discover -s tests -p "test_*.py"
