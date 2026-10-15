@@ -1,0 +1,212 @@
+{
+  "diagnosisId": 31,
+  "scanVersion": "0.1.0",
+  "scannedAt": "2026-08-17T09:12:00+09:00",
+  "readinessScore": 23,
+  "techCategories": ["Next.js", "Supabase"],
+
+  "issues": [
+    {
+      "title": "결제 응답을 기다리지 않고 화면을 넘깁니다",
+      "detail": "결제가 끝나기 전에 성공으로 처리해 실제로는 결제되지 않은 주문이 생길 수 있습니다",
+      "location": "app/api/checkout/route.ts:47",
+      "codeSnippet": {
+        "startLine": 46,
+        "lines": [
+          "const amount = req.body.amount",
+          "const res = pay(amount)",
+          "return Response.json(res)"
+        ],
+        "highlightLine": 47
+      },
+      "category": "PAYMENT",
+      "severity": "HIGH",
+      "isInput": true,
+      "fingerprint": "PAYMENT/no-await-approval/app/api/checkout"
+    },
+    {
+      "title": "결제 금액이 변조될 수 있습니다",
+      "detail": "1만원짜리를 100원에 결제할 수 있습니다",
+      "location": "app/api/checkout/route.ts:46",
+      "codeSnippet": {
+        "startLine": 45,
+        "lines": [
+          "export async function POST(req: Request) {",
+          "  const amount = req.body.amount",
+          "  const res = pay(amount)"
+        ],
+        "highlightLine": 46
+      },
+      "category": "PAYMENT",
+      "severity": "HIGH",
+      "isInput": false,
+      "fingerprint": "PAYMENT/client-amount-trusted/app/api/checkout"
+    },
+    {
+      "title": "관리자 API에 인증 추가",
+      "detail": "로그인 없이 관리자 주소로 들어가면 회원 목록이 그대로 열립니다",
+      "location": "app/api/admin/users/route.ts:12",
+      "codeSnippet": {
+        "startLine": 11,
+        "lines": [
+          "export async function GET() {",
+          "  const users = await db.from('users').select('*')",
+          "  return Response.json(users)"
+        ],
+        "highlightLine": 12
+      },
+      "category": "SECURITY",
+      "securityGroup": "ACCESS_CONTROL",
+      "severity": "HIGH",
+      "isInput": false,
+      "fingerprint": "SECURITY/ACCESS_CONTROL/missing-auth/app/api/admin"
+    },
+    {
+      "title": "누구나 회원정보를 볼 수 있습니다",
+      "detail": "로그인한 사람이면 남의 주문 내역까지 열람 가능합니다",
+      "location": "app/api/orders/[id]/route.ts:19",
+      "codeSnippet": {
+        "startLine": 18,
+        "lines": [
+          "const { id } = await params",
+          "const order = await db.from('orders').select('*').eq('id', id).single()",
+          "return Response.json(order)"
+        ],
+        "highlightLine": 19
+      },
+      "category": "SECURITY",
+      "securityGroup": "ACCESS_CONTROL",
+      "severity": "HIGH",
+      "isInput": false,
+      "fingerprint": "SECURITY/ACCESS_CONTROL/missing-ownership-check/app/api/orders"
+    },
+    {
+      "title": "설정 파일에서 열쇠 지우기",
+      "detail": "관리자 권한 열쇠가 브라우저로 내려가는 코드에 들어 있습니다",
+      "location": "lib/supabase.ts:4",
+      "codeSnippet": {
+        "startLine": 3,
+        "lines": [
+          "export const admin = createClient(",
+          "  process.env.NEXT_PUBLIC_SERVICE_ROLE_KEY!,",
+          ")"
+        ],
+        "highlightLine": 4
+      },
+      "category": "SECURITY",
+      "securityGroup": "SECRET",
+      "severity": "HIGH",
+      "isInput": false,
+      "fingerprint": "SECURITY/SECRET/service-key-on-client/lib/supabase"
+    },
+    {
+      "title": "개인정보처리방침 · 이용약관 페이지 추가",
+      "detail": "실제 사용자를 받는 순간부터 적용됩니다",
+      "location": "app/layout.tsx:31",
+      "category": "COMPLIANCE",
+      "severity": "MEDIUM",
+      "isInput": false,
+      "fingerprint": "COMPLIANCE/missing-privacy-policy/app"
+    },
+    {
+      "title": "회원탈퇴 경로 구현",
+      "detail": "가입은 되는데 탈퇴할 방법이 없습니다",
+      "location": "app/mypage/page.tsx:58",
+      "category": "COMPLIANCE",
+      "severity": "HIGH",
+      "isInput": false,
+      "fingerprint": "COMPLIANCE/missing-withdrawal/app/mypage"
+    },
+    {
+      "title": "주문 저장이 중간에 끊기면 데이터가 어긋납니다",
+      "detail": "주문과 재고를 따로 저장해 한쪽만 저장될 수 있습니다",
+      "location": "app/api/checkout/route.ts:52",
+      "category": "DATA",
+      "severity": "MEDIUM",
+      "isInput": false,
+      "fingerprint": "DATA/no-transaction/app/api/checkout"
+    },
+    {
+      "title": "실행 방법 문서 추가",
+      "detail": "받아 든 개발자가 어떤 환경변수를 넣어야 하는지 알 수 없습니다",
+      "location": "README.md:1",
+      "category": "HANDOVER",
+      "severity": "MEDIUM",
+      "isInput": false,
+      "fingerprint": "HANDOVER/no-setup-doc/README"
+    },
+    {
+      "title": "쓰이지 않는 결제 코드가 남아 있습니다",
+      "detail": "같은 결제 처리가 두 곳에 다르게 들어 있어 어느 쪽이 도는지 헷갈립니다",
+      "location": "lib/payment-old.ts:1",
+      "category": "AI_RESIDUE",
+      "severity": "LOW",
+      "isInput": false,
+      "fingerprint": "AI_RESIDUE/duplicate-impl/lib/payment"
+    },
+    {
+      "title": "모바일에서 레이아웃이 깨짐",
+      "detail": "좁은 화면에서 상품 목록이 화면 밖으로 밀려납니다",
+      "location": "app/products/page.tsx:24",
+      "category": "ETC",
+      "severity": "LOW",
+      "isInput": false,
+      "fingerprint": "ETC/responsive-break/app/products"
+    }
+  ],
+
+  "questions": [
+    {
+      "content": "실제 결제를 받을 계획인가요?",
+      "answerType": "SINGLE",
+      "options": ["네", "아니요"],
+      "reason": "결제 처리 코드를 찾았다. 실제 결제를 받는지에 따라 전자상거래법 적용 여부와 금액 검증의 중요도가 달라진다."
+    },
+    {
+      "content": "기존 회원 데이터를 유지해야 하나요?",
+      "answerType": "SINGLE",
+      "options": ["유지해야 합니다", "지워도 괜찮습니다"],
+      "reason": "회원 기능을 찾았으나 탈퇴 경로가 없다. 데이터를 남겨야 하는지에 따라 탈퇴 구현 방식이 달라진다."
+    },
+    {
+      "content": "지금 서비스에 실제 사용자가 들어오고 있나요?",
+      "answerType": "SINGLE",
+      "options": ["네, 사용 중입니다", "아직 저만 씁니다"],
+      "reason": "개인정보를 받는 화면을 찾았다. 실제 사용자를 받는 시점부터 개인정보처리방침이 필요하다."
+    },
+    {
+      "content": "데이터베이스의 행 수준 보안을 켜 두셨나요?",
+      "answerType": "SINGLE",
+      "options": ["켜 두었습니다", "모르겠습니다"],
+      "reason": "코드가 아니라 서비스 콘솔에 있는 설정이라 검사로 확인할 수 없다. 꺼져 있으면 열쇠만 있으면 표 전체를 읽을 수 있다."
+    }
+  ],
+
+  "scannedScope": [
+    "app/ 아래 라우트 42개와 화면 18개",
+    "환경변수 파일과 그 사용처",
+    "결제와 주문 처리 경로",
+    "데이터베이스 스키마 정의와 마이그레이션 파일",
+    "README와 패키지 정의"
+  ],
+
+  "unscannedScope": [
+    {
+      "scope": "데이터베이스의 행 수준 보안 설정",
+      "reason": "코드가 아니라 서비스 콘솔에 있는 설정이라 이 검사로는 볼 수 없다."
+    },
+    {
+      "scope": "배포 환경의 환경변수 실제 값",
+      "reason": "배포 서비스에 들어 있어 이 검사로는 볼 수 없다."
+    },
+    {
+      "scope": "실제 결제가 실패하는 상황",
+      "reason": "돌려 보아야 알 수 있는 동작이라 코드만으로는 확인할 수 없다."
+    }
+  ],
+
+  "dependencyAudit": {
+    "command": "npm audit --json",
+    "output": "{\"vulnerabilities\":{},\"metadata\":{\"vulnerabilities\":{\"info\":0,\"low\":0,\"moderate\":0,\"high\":0,\"critical\":0,\"total\":0}}}"
+  }
+}

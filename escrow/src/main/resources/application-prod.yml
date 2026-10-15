@@ -1,0 +1,26 @@
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+app:
+  datasource:
+    read-url: ${DB_READ_URL}
+
+server:
+  # nginx가 /escrow/ 접두사를 떼고 X-Forwarded-Prefix·Proto·Host로 알려 줍니다.
+  # 이 값을 반영해야 리다이렉트와 생성 URL이 https://komit.site/escrow/... 로 나옵니다.
+  # 헤더는 nginx가 덮어써서 보내므로 클라이언트가 위조한 값은 들어오지 않습니다.
+  forward-headers-strategy: framework
+  servlet:
+    session:
+      cookie:
+        name: ESCROWSESSION
+        path: /escrow
+
+springdoc:
+  swagger-ui:
+    enabled: false
+  api-docs:
+    enabled: false

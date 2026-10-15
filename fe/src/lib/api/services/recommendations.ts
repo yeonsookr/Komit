@@ -1,0 +1,71 @@
+import "server-only";
+
+import { authenticatedBackendApi } from "../server";
+import { BACKEND } from "../endpoints";
+import type {
+  CreateConsultationRequestBody,
+  CreateDirectConsultationRequestBody,
+  CreateRecommendationRequest,
+  RecommendationBatch,
+} from "@/types/recommendation";
+import type { RoomSummary } from "@/types/room";
+
+/** 추천 회차 결과. 없거나 남의 추천이면 404(RECOMMENDATION_NOT_FOUND). */
+export async function getRecommendationBatch(batchId: number): Promise<RecommendationBatch> {
+  const { data } = await authenticatedBackendApi().get<RecommendationBatch>(BACKEND.RECOMMENDATION(batchId));
+  return data;
+}
+
+/**
+ * 상담 요청 보내기.
+ *
+ * 고른 개발자마다 무료 상담방이 하나씩 열리고, 개발자의 수락을 기다리지 않습니다.
+ * **멱등합니다** — 이미 방이 있는 개발자는 그 방을 그대로 돌려주고 새로 만들지 않아,
+ * 같은 사람을 두 번 담아 보내거나 두 화면에서 동시에 눌러도 결과가 같습니다.
+ *
+ * 응답의 방은 보낸 순서가 아니라 `recommendationItemId` 로 맞춥니다.
+ */
+export async function createConsultationRequests(
+  batchId: number,
+  body: CreateConsultationRequestBody,
+): Promise<RoomSummary[]> {
+  const { data } = await authenticatedBackendApi().post<{ content: RoomSummary[] }>(
+    BACKEND.CONSULTATION_REQUESTS(batchId),
+    body,
+  );
+  return data.content;
+}
+
+/**
+ * 직접 찾은 개발자에게 상담 요청 보내기.
+ *
+ * 추천 회차를 거치지 않고 개발자마다 무료 상담방을 엽니다. 멱등합니다 — 이미 방이 있는
+ * 개발자는 그 방을 그대로 돌려줍니다. 프로젝트에 진단이 있으면 요청서가 방에 함께 걸립니다.
+ */
+export async function createDirectConsultationRequests(
+  projectId: number,
+  body: CreateDirectConsultationRequestBody,
+): Promise<RoomSummary[]> {
+  const { data } = await authenticatedBackendApi().post<{ content: RoomSummary[] }>(
+    BACKEND.DIRECT_CONSULTATION_REQUESTS(projectId),
+    body,
+  );
+  return data.content;
+}
+
+/**
+ * 개발자 추천 받기.
+ *
+ * 고른 요구사항을 근거로 맞는 개발자를 찾아 추천 회차를 만듭니다.
+ * 같은 프로젝트에서 다시 찾으면 회차 번호가 1 오릅니다.
+ */
+export async function createRecommendation(
+  projectId: number,
+  body: CreateRecommendationRequest,
+): Promise<RecommendationBatch> {
+  const { data } = await authenticatedBackendApi().post<RecommendationBatch>(
+    BACKEND.RECOMMENDATIONS(projectId),
+    body,
+  );
+  return data;
+}

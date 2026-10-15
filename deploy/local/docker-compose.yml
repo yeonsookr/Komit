@@ -1,0 +1,210 @@
+# 로컬 전체 구동. 서비스별 PostgreSQL·Redis·MongoDB와 service·escrow·fe를 한 번에 올립니다.
+# 앱 설정값은 각 서버의 application-local.yml 기본값과 같고, 컨테이너 사이 주소만 서비스 이름으로 바꿨습니다.
+# 카카오 키처럼 개인 값은 이 디렉터리의 .env 에서 읽습니다. (.env.example 참고)
+#
+#   docker compose -f deploy/local/docker-compose.yml up -d --build   # 첫 실행·코드 변경 후
+#   docker compose -f deploy/local/docker-compose.yml logs -f service
+#   docker compose -f deploy/local/docker-compose.yml down             # 데이터 유지
+#   docker compose -f deploy/local/docker-compose.yml down -v          # 데이터까지 삭제
+#
+#   fe       http://localhost:3000
+#   service  http://localhost:8080   (Swagger /docs)
+#   escrow   http://localhost:8081   (Swagger /docs)
+#   minio    http://localhost:9000   (console http://localhost:9001)
+#   postgres localhost:5432 (service/service, DB service)
+#   mongodb   localhost:27017 (service/service, DB service)
+
+name: komit-local
+
+services:
+  # Service와 Escrow는 별도 데이터베이스를 사용합니다. Escrow 스키마는 Flyway가 관리합니다.
+  postgres:
+    image: postgres:18.6-alpine
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: service
+      POSTGRES_USER: service
+      POSTGRES_PASSWORD: service
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U service -d service"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  escrow-postgres:
+    image: postgres:18.6-alpine
+    environment:
+      POSTGRES_DB: escrow
+      POSTGRES_USER: escrow
+      POSTGRES_PASSWORD: escrow
+    volumes:
+      - escrow-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U escrow -d escrow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mongodb:
+    image: mongo:8.0.30-noble
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_ROOT_PASSWORD:-root-local-only}
+      MONGODB_DATABASE: service
+      MONGODB_USERNAME: service
+      MONGODB_PASSWORD: ${MONGODB_PASSWORD:-service}
+    volumes:
+      - mongodb-data:/data/db
+      - ../mongodb/init-service-user.js:/docker-entrypoint-initdb.d/init-service-user.js:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --username root --password \"$$MONGO_INITDB_ROOT_PASSWORD\" --authenticationDatabase admin --eval 'quit(db.adminCommand({ ping: 1 }).ok ? 0 : 2)'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  minio:
+    # MinIO가 2026년 9월 quay.io·Docker Hub 공개 이미지를 내려 팀 Docker Hub 계정에 둔 사본을 씁니다. (deploy/k3s/base/minio.yaml과 같은 태그)
+    image: komit2026/minio:RELEASE.2025-09-07T16-13-09Z
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  minio-init:
+    image: komit2026/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >-
+      /bin/sh -c "mc alias set local http://minio:9000 minioadmin minioadmin &&
+      mc mb --ignore-existing local/komit"
+
+  # 통화 중계(TURN). 직접 연결이 안 되는 망에서만 실제로 쓰이지만, 로컬에도 띄워 두면
+  # 개발 중에 중계 경로가 계속 밟힌다. 안 밟히는 길은 썩는다. (R-CON-19)
+  coturn:
+    image: coturn/coturn:4.6
+    command: ["-c", "/etc/coturn/turnserver.conf"]
+    volumes:
+      - ./coturn/turnserver.conf:/etc/coturn/turnserver.conf:ro
+    ports:
+      - "3478:3478/udp"
+      - "3478:3478/tcp"
+      # 중계 포트. turnserver.conf 의 min-port~max-port 와 같아야 한다.
+      - "49160-49200:49160-49200/udp"
+
+  service:
+    build:
+      context: ../../service
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      DB_URL: jdbc:postgresql://postgres:5432/service
+      DB_USERNAME: service
+      DB_PASSWORD: service
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      MONGODB_HOST: mongodb
+      MONGODB_PORT: "27017"
+      MONGODB_DATABASE: service
+      MONGODB_USERNAME: service
+      MONGODB_PASSWORD: ${MONGODB_PASSWORD:-service}
+      APP_INSTANCE_ROLE: WRITER
+      APP_PUBLIC_BASE_URL: http://localhost:8080
+      STORAGE_INTERNAL_ENDPOINT: http://minio:9000
+      STORAGE_PUBLIC_ENDPOINT: http://host.docker.internal:9000
+      STORAGE_BUCKET: komit
+      STORAGE_ACCESS_KEY: minioadmin
+      STORAGE_SECRET_KEY: minioadmin
+      # 카카오 REST API 키·시크릿. .env 에 없으면 로그인만 실패하고 나머지는 동작합니다.
+      KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID:-kakao-client-id-dev-only}
+      KAKAO_CLIENT_SECRET: ${KAKAO_CLIENT_SECRET:-kakao-client-secret-dev-only}
+      # 로컬 개발 기본값은 Mock이며, 실제 Escrow 통합 시험 때만 셸/.env 값으로 덮어씁니다.
+      ESCROW_API_BASE_URL: ${ESCROW_API_BASE_URL:-https://komit.site/mock/escrow}
+      ESCROW_CLIENT_API_KEY: ${ESCROW_CLIENT_API_KEY:-komit-backend-client-api-key-dev-only}
+
+  escrow:
+    build:
+      context: ../../escrow
+    env_file:
+      - ../../escrow/.env
+    ports:
+      - "8081:8081"
+    depends_on:
+      escrow-postgres:
+        condition: service_healthy
+    environment:
+      SPRING_PROFILES_ACTIVE: local
+      DB_URL: jdbc:postgresql://escrow-postgres:5432/escrow
+      DB_USERNAME: escrow
+      DB_PASSWORD: escrow
+      APP_INSTANCE_ROLE: WRITER
+      APP_PUBLIC_BASE_URL: http://localhost:8081
+      ESCROW_BOOTSTRAP_CLIENT_API_KEY: ${ESCROW_CLIENT_API_KEY:-komit-backend-client-api-key-dev-only}
+      ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE: ${ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE:-KOMIT}
+      ESCROW_ADMIN_USERNAME: ${ESCROW_ADMIN_USERNAME:-admin}
+      # 로컬 전용 기본 계정(admin/admin). 운영은 GitLab의 BCrypt 해시를 사용합니다.
+      ESCROW_ADMIN_PASSWORD_HASH: "{noop}admin"
+
+  fe:
+    build:
+      context: ../../fe
+      # next build 가 랜딩을 정적 생성하며 이 주소에서 데이터를 읽습니다. 빌드 때는 service 컨테이너가 없으므로
+      # 계약 모양이 보장되는 목 서버를 쓰고, 실행 값은 아래 environment 가 덮습니다.
+      args:
+        BACKEND_API_BASE_URL: https://komit.site/mock/service
+    ports:
+      - "3000:3000"
+    depends_on:
+      - service
+      - escrow
+    environment:
+      BACKEND_API_BASE_URL: http://service:8080
+      ESCROW_API_BASE_URL: http://escrow:8081
+      KAKAO_CLIENT_ID: ${KAKAO_CLIENT_ID:-}
+      # 카카오 콘솔에 등록한 Redirect URI 와 글자까지 같아야 합니다.
+      KAKAO_REDIRECT_URI: http://localhost:3000/api/auth/kakao/callback
+      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+
+volumes:
+  postgres-data:
+  escrow-postgres-data:
+  redis-data:
+  mongodb-data:
+  minio-data:

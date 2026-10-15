@@ -1,0 +1,74 @@
+spring:
+  application:
+    name: escrow
+  profiles:
+    default: local
+  flyway:
+    # 기준본 V1 위에 V2(대사 스냅샷), V3(복식부기 원장)을 차례로 적용합니다. 적용된 파일은 고치지 않습니다.
+    enabled: true
+    locations: classpath:db/migration
+    validate-migration-naming: true
+
+server:
+  port: ${SERVER_PORT:8081}
+  shutdown: graceful
+  servlet:
+    session:
+      timeout: ${ESCROW_ADMIN_SESSION_TIMEOUT:30m}
+      cookie:
+        http-only: true
+        same-site: strict
+        secure: ${ESCROW_ADMIN_COOKIE_SECURE:true}
+
+app:
+  # WRITER | READER. 배포 환경 값으로만 주입하며 프로필과 섞지 않습니다.
+  instance-role: ${APP_INSTANCE_ROLE}
+  ledger:
+    # R-PAY-15: 잔액·정산 합계·대사 합계를 읽을 기록. TRANSACTIONS(완료 거래 합산) | LEDGER(복식부기 분개 합산).
+    # 기본은 LEDGER 입니다. 원장에 문제가 생기면 TRANSACTIONS 로 되돌립니다. 모든 파드에 같은 값을 줍니다.
+    read-source: ${LEDGER_READ_SOURCE:LEDGER}
+  # 이 서버가 밖에서 보이는 주소. nginx 뒤에서는 경로 접두사까지 포함합니다. (예: https://komit.site/escrow)
+  public-base-url: ${APP_PUBLIC_BASE_URL}
+  security:
+    client-api-key-hmac-secret: ${CLIENT_API_KEY_HMAC_SECRET}
+    sensitive-data-hmac-secret: ${SENSITIVE_DATA_HMAC_SECRET}
+    encryption-key-base64: ${FIELD_ENCRYPTION_KEY_BASE64}
+    encryption-key-version: ${FIELD_ENCRYPTION_KEY_VERSION:1}
+    operator-api-key: ${OPERATOR_CLIENT_API_KEY}
+    # Backend 호출용 원문 키는 시작 시 HMAC으로 변환해 service_clients에 등록하고 DB에는 저장하지 않습니다.
+    bootstrap-client-api-key: ${ESCROW_BOOTSTRAP_CLIENT_API_KEY:}
+    bootstrap-client-one-won-auth-message: ${ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE:}
+  finance:
+    enabled: ${SSAFY_FINANCE_ENABLED:true}
+    base-url: ${SSAFY_FINANCE_BASE_URL:https://finopenapi.ssafy.io/ssafy}
+    api-key: ${SSAFY_FINANCE_API_KEY}
+    time-zone: ${SSAFY_FINANCE_TIME_ZONE:Asia/Seoul}
+    # R-ACC-10: 사전에 등록하고 검증한 단일 원화 수시입출금 상품.
+    account-type-unique-no: ${SSAFY_DEMAND_DEPOSIT_PRODUCT_NO}
+    escrow-user-key: ${SSAFY_ESCROW_USER_KEY}
+    escrow-account-no: ${SSAFY_ESCROW_ACCOUNT_NO}
+    fee-account-no: ${SSAFY_FEE_ACCOUNT_NO}
+    virtual-account-validity-days: ${SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS}
+  admin:
+    username: ${ESCROW_ADMIN_USERNAME}
+    password-hash: ${ESCROW_ADMIN_PASSWORD_HASH}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health, info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+springdoc:
+  swagger-ui:
+    path: /docs
+  api-docs:
+    path: /v3/api-docs
+
+logging:
+  level:
+    com.a501: INFO

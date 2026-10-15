@@ -1,0 +1,91 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../../base
+  - mock-deployment.yaml
+  - mock-service.yaml
+patches:
+  - path: service-nodeport.yaml
+  - path: escrow-nodeport.yaml
+  - path: fe-nodeport.yaml
+  - path: fe-test-nodeport.yaml
+  # 파일 저장소. docker-compose가 30090을 호스트 9000으로 매핑합니다.
+  - path: minio-nodeport.yaml
+images:
+  - name: komit-service
+    newName: komit-service
+    newTag: local
+  - name: komit-escrow
+    newName: komit-escrow
+    newTag: local
+  - name: komit-fe
+    newName: komit-fe
+    newTag: local
+  - name: komit-fe-test
+    newName: komit-fe-test
+    newTag: local
+  - name: komit-ai
+    newName: komit-ai
+    newTag: local
+# 로컬 실습 전용 값입니다. 운영은 deploy.sh가 GitLab CI/CD 변수로 만듭니다.
+# 로컬에는 GMS 키가 없어 AI 서비스는 뜨기는 하지만 호출은 503으로 실패합니다.
+configMapGenerator:
+  - name: fe-config
+    namespace: komit
+    literals:
+      - BACKEND_API_BASE_URL=http://service.komit.svc.cluster.local:8080
+      - KAKAO_CLIENT_ID=local-kakao-client-id
+      - KAKAO_REDIRECT_URI=http://localhost:3000/api/auth/kakao/callback
+  - name: fe-test-config
+    namespace: komit
+    literals:
+      - BACKEND_API_BASE_URL=http://mock.komit.svc.cluster.local:8080/service
+      - KAKAO_CLIENT_ID=local-kakao-client-id
+      - KAKAO_REDIRECT_URI=http://localhost:3001/test/api/auth/kakao/callback
+  # docker-compose가 NodePort 30080/30081을 호스트 8080/8081에 매핑합니다.
+  - name: service-config
+    namespace: komit
+    literals:
+      - APP_PUBLIC_BASE_URL=http://localhost:8080
+      - ESCROW_API_BASE_URL=http://escrow.komit.svc.cluster.local:8081
+      # AI 서비스를 부르는 쪽은 service입니다. FE는 이 주소를 알지 못합니다.
+      - AI_API_BASE_URL=http://ai.komit.svc.cluster.local:8080
+      - STORAGE_INTERNAL_ENDPOINT=http://minio.komit.svc.cluster.local:9000
+      - STORAGE_PUBLIC_ENDPOINT=http://localhost:9000
+      - STORAGE_BUCKET=komit
+  - name: escrow-config
+    namespace: komit
+    literals:
+      - APP_PUBLIC_BASE_URL=http://localhost:8081
+      - ESCROW_ADMIN_USERNAME=admin
+      # 실제 Escrow 애플리케이션을 사용하되, 로컬 검증 중 외부 SSAFY 금융망 호출은 막습니다.
+      - SSAFY_FINANCE_ENABLED=false
+      - SSAFY_DEMAND_DEPOSIT_PRODUCT_NO=001-1-231ecb61d2554c
+      - SSAFY_VIRTUAL_ACCOUNT_VALIDITY_DAYS=30
+secretGenerator:
+  # 로컬 전용 자리표시 키입니다. 값이 없으면 AI Pod가 기동하지 않아 클러스터가 뜨지 않습니다.
+  # 실제 호출은 GMS가 거부해 503이 나옵니다. 운영 값은 deploy.sh가 만듭니다.
+  - name: ai-secret
+    namespace: komit
+    literals:
+      - GMS_API_KEY=local-dev-no-real-gms-key
+  - name: escrow-security
+    namespace: komit
+    literals:
+      - CLIENT_API_KEY_HMAC_SECRET=local-dev-client-api-key-hmac-secret-32-bytes
+      - SENSITIVE_DATA_HMAC_SECRET=local-dev-sensitive-data-hmac-secret-32-bytes
+      - FIELD_ENCRYPTION_KEY_BASE64=ZGV2LW9ubHktMzItYnl0ZS1hZXMta2V5LTAwMDAwMDA=
+      - OPERATOR_CLIENT_API_KEY=local-dev-operator-client-api-key-32-bytes
+      - ESCROW_BOOTSTRAP_CLIENT_API_KEY=komit-backend-client-api-key-dev-only
+      - ESCROW_CLIENT_ONE_WON_AUTH_MESSAGE=KOMIT
+      - ESCROW_ADMIN_PASSWORD_HASH={noop}admin
+      - SSAFY_FINANCE_API_KEY=disabled-local-api-key
+      - SSAFY_ESCROW_USER_KEY=disabled-local-escrow-user-key
+      - SSAFY_ESCROW_ACCOUNT_NO=0010000000000000
+      - SSAFY_FEE_ACCOUNT_NO=0010000000000001
+  # 로컬 개발 전용 MinIO 자격. 운영 값은 deploy.sh가 별도 Secret으로 만듭니다.
+  - name: service-storage
+    namespace: komit
+    literals:
+      - STORAGE_ACCESS_KEY=minioadmin
+      - STORAGE_SECRET_KEY=minioadmin

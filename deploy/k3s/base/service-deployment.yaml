@@ -1,0 +1,160 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: service
+  namespace: komit
+  labels:
+    app.kubernetes.io/name: service
+    app.kubernetes.io/part-of: komit
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: service
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: service
+        app.kubernetes.io/part-of: komit
+    spec:
+      # 뒤에서 돌던 세션 요약이 끝나기를 150초까지 기다린다 (application.yml
+      # spring.task.execution.shutdown). 그보다 길어야 k3s 가 중간에 끊지 않는다.
+      terminationGracePeriodSeconds: 160
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: service
+      containers:
+        - name: service
+          image: komit-service:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: spring-common
+            # APP_PUBLIC_BASE_URL. 운영은 deploy.sh가 GitLab 변수로, 로컬은 local/apps가 만듭니다.
+            - configMapRef:
+                name: service-config
+            # KOMIT_USER_JWT_SECRET, KAKAO_TOKEN_ENCRYPTION_KEY, KAKAO_CLIENT_ID, KAKAO_CLIENT_SECRET.
+            # 운영은 deploy.sh가 GitLab 변수로, 로컬은 local/database/secrets.yaml이 만듭니다.
+            - secretRef:
+                name: service-auth
+            # MinIO/S3 호환 저장소 자격. 저장소 배포와 Service 연결 주소는 환경별 설정이 소유합니다.
+            - secretRef:
+                name: service-storage
+            # 통화 중계 공유 비밀 (R-CON-19). 중계 서버를 두지 않은 환경에는 없으므로
+            # optional 입니다 — 로컬 k3s 가 그렇습니다. 주소(TURN_URLS)가 있는데 비밀이
+            # 없으면 service 가 기동하면서 죽습니다. 조용히 중계 없이 뜨지 않습니다.
+            - secretRef:
+                name: service-turn
+                optional: true
+          env:
+            # 일반 트랜잭션은 Primary(-rw), readOnly 트랜잭션은 Standby(-ro)로 접속합니다.
+            - name: DB_URL
+              value: jdbc:postgresql://service-db-rw:5432/service
+            - name: DB_READ_URL
+              value: jdbc:postgresql://service-db-ro:5432/service
+            - name: DB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: service-db-app
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: service-db-app
+                  key: password
+            # Redis는 Sentinel에 현재 Primary 주소를 물어 접속합니다. Sentinel과 Redis 비밀번호는 같은 Secret입니다.
+            - name: REDIS_SENTINEL_NODES
+              value: service-redis-sentinel:26379
+            - name: REDIS_SENTINEL_MASTER
+              value: mymaster
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: service-redis-auth
+                  key: password
+            # MongoDB는 service 전용 readWrite 계정으로 접속합니다. root 계정은 DB 초기화에만 사용합니다.
+            - name: MONGODB_HOST
+              value: service-mongodb
+            - name: MONGODB_PORT
+              value: "27017"
+            - name: MONGODB_DATABASE
+              value: service
+            - name: MONGODB_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: service-mongodb-auth
+                  key: username
+            - name: MONGODB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: service-mongodb-auth
+                  key: password
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 5"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

@@ -1,0 +1,289 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://komit.site/schema/komit-result.schema.json",
+  "title": "Komit 검사 결과 파일",
+  "description": "의뢰인의 AI 코딩 도구가 만들어 Komit에 올리는 파일. 필드 이름은 서버의 결함·설문 모델을 따른다. 규칙은 docs/RULES.md 1절 사전점검을 본다.",
+  "type": "object",
+  "required": [
+    "diagnosisId",
+    "scanVersion",
+    "scannedAt",
+    "readinessScore",
+    "techCategories",
+    "issues",
+    "questions",
+    "scannedScope",
+    "unscannedScope"
+  ],
+  "additionalProperties": false,
+
+  "properties": {
+    "diagnosisId": {
+      "description": "검사 파일의 진단 번호를 그대로 옮긴 값. 서버가 검사 지시문과 결과 파일의 짝을 맞춘다. (R-SCAN-03)",
+      "type": "integer",
+      "minimum": 1,
+      "examples": [31]
+    },
+
+    "scanVersion": {
+      "description": "이 결과를 만든 검사 지시문의 판. 검사 파일에 적힌 값을 그대로 옮긴다. 서버가 지난 판을 걸러낸다. (R-SCAN-04)",
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "examples": ["1.0.0"]
+    },
+
+    "scannedAt": {
+      "description": "검사를 실행한 시각.",
+      "type": "string",
+      "format": "date-time",
+      "examples": ["2026-08-17T09:12:00+09:00"]
+    },
+
+    "readinessScore": {
+      "description": "런칭 준비도. 100점에서 문제별 감점을 뺀 값이다. 감점표는 docs/RULES.md를 따른다. 같은 결과는 언제 계산해도 같은 값이어야 한다. (R-SCAN-10)",
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "examples": [38]
+    },
+
+    "techCategories": {
+      "description": "코드에서 확인한 기술. 확인하지 못했으면 빈 배열이다. 화면에 칩으로 붙는다.",
+      "type": "array",
+      "items": { "type": "string", "minLength": 1, "maxLength": 40 },
+      "maxItems": 12,
+      "examples": [["Next.js", "Supabase"]]
+    },
+
+    "issues": {
+      "description": "찾아낸 문제. 위치를 댈 수 없는 문제는 넣지 않는다. (R-SCAN-12)",
+      "type": "array",
+      "items": { "$ref": "#/$defs/issue" }
+    },
+
+    "questions": {
+      "description": "코드만으로 판정할 수 없어 의뢰인에게 물어야 하는 것. 서버가 마지막 설문의 문항으로 옮긴다. 예산·기한처럼 코드와 무관한 것은 Komit이 고정 문항으로 두므로 여기에 넣지 않는다. (R-SCAN-14)",
+      "type": "array",
+      "maxItems": 5,
+      "items": { "$ref": "#/$defs/question" }
+    },
+
+    "scannedScope": {
+      "description": "실제로 확인한 영역. 의뢰인이 무엇을 본 검사인지 알 수 있게 한다.",
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1, "maxLength": 200 },
+      "examples": [["app/ 아래 라우트 42개", "환경변수 파일과 사용처", "결제 처리 경로"]]
+    },
+
+    "unscannedScope": {
+      "description": "확인하지 못한 영역과 그 이유. 코드 밖에 있는 설정이나 운영 중인 상태는 여기에 적는다. 추측으로 문제를 만들지 않는다. (R-SCAN-11)",
+      "type": "array",
+      "items": { "$ref": "#/$defs/unscannedItem" }
+    },
+
+    "dependencyAudit": {
+      "description": "의존성 검사 도구를 돌린 결과. 판단하지 않고 출력을 그대로 담는다. 도구를 돌릴 수 없었으면 넣지 않는다. (R-SCAN-13)",
+      "$ref": "#/$defs/dependencyAudit"
+    }
+  },
+
+  "$defs": {
+    "issue": {
+      "type": "object",
+      "required": ["title", "location", "category", "severity", "isInput", "fingerprint"],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "description": "문제를 한 문장으로. 비개발자가 읽을 말로 쓴다. 이 문장이 그대로 요구사항이 되므로 무엇을 해야 하는지가 드러나야 한다.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60,
+          "examples": ["관리자 API에 인증 추가", "누구나 회원정보를 볼 수 있습니다"]
+        },
+
+        "detail": {
+          "description": "한 줄 부연. 무엇이 문제인지 또는 어떤 일이 생길 수 있는지를 적는다. 기술 용어를 쓰지 않는다.",
+          "type": ["string", "null"],
+          "maxLength": 200,
+          "examples": ["로그인한 사람이면 남의 주문 내역까지 열람 가능합니다"]
+        },
+
+        "location": {
+          "description": "문제가 있는 위치. 파일 경로와 줄 번호를 붙여 적는다. 위치를 댈 수 없으면 이 문제를 올리지 않는다. (R-SCAN-12)",
+          "type": "string",
+          "pattern": "^[^:]+:\\d+$",
+          "examples": ["app/api/checkout/route.ts:47"]
+        },
+
+        "codeSnippet": {
+          "description": "화면에 보여줄 코드 조각. 진단서가 문제 줄 앞뒤를 함께 보여준다. 서버 모델에 아직 자리가 없어 논의 중인 항목이다.",
+          "$ref": "#/$defs/codeSnippet"
+        },
+
+        "category": {
+          "description": "문제 분류. 여덟 가지를 벗어나지 않는다. 서버는 이 값을 공통코드로 옮긴다. (R-SCAN-07)",
+          "enum": [
+            "COMPLIANCE",
+            "SECURITY",
+            "PAYMENT",
+            "DATA",
+            "COST",
+            "HANDOVER",
+            "AI_RESIDUE",
+            "ETC"
+          ]
+        },
+
+        "securityGroup": {
+          "description": "보안 문제일 때만 적는다. 어느 갈래인지 나눠 두면 나중에 갈래별로 정확도를 잴 수 있다.",
+          "enum": [
+            "ACCESS_CONTROL",
+            "SECRET",
+            "INPUT",
+            "AUTH_SESSION",
+            "CONFIG",
+            "PII_ENCRYPTION"
+          ]
+        },
+
+        "severity": {
+          "description": "위험도. 실제 사용자나 실제 금전에 지금 피해가 가면 HIGH, 출시 전에 고쳐야 하면 MEDIUM, 미루어도 되면 LOW다. (R-SCAN-09)",
+          "enum": ["LOW", "MEDIUM", "HIGH"]
+        },
+
+        "isInput": {
+          "description": "의뢰인이 설문에 적은 증상과 이어지는 문제인지. 진단서는 참인 것을 맨 위에 따로 보여준다. (R-SCAN-08)",
+          "type": "boolean"
+        },
+
+        "fingerprint": {
+          "description": "재진단 회차를 넘어 같은 문제를 알아보기 위한 값. 분류와 문제 유형, 대상을 조합하며 줄 번호는 넣지 않는다. 서버가 회차의 같은 문제를 잇는 기준으로 쓴다. (R-SCAN-20)",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "examples": ["SECURITY/ACCESS_CONTROL/missing-auth/app/api/admin"]
+        }
+      }
+    },
+
+    "codeSnippet": {
+      "type": "object",
+      "required": ["startLine", "lines", "highlightLine"],
+      "additionalProperties": false,
+      "properties": {
+        "startLine": {
+          "description": "첫 줄의 실제 줄 번호.",
+          "type": "integer",
+          "minimum": 1,
+          "examples": [46]
+        },
+        "lines": {
+          "description": "보여줄 줄들. 문제 줄 앞뒤로 한두 줄을 함께 담는다.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 9,
+          "items": { "type": "string", "maxLength": 200 },
+          "examples": [
+            [
+              "const amount = req.body.amount",
+              "const res = pay(amount)",
+              "return Response.json(res)"
+            ]
+          ]
+        },
+        "highlightLine": {
+          "description": "문제가 있는 줄의 실제 줄 번호. location의 줄 번호와 같아야 한다.",
+          "type": "integer",
+          "minimum": 1,
+          "examples": [47]
+        }
+      }
+    },
+
+    "question": {
+      "type": "object",
+      "required": ["content", "answerType", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "content": {
+          "description": "물을 내용. 비개발자가 답할 수 있는 말로 쓴다.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "examples": ["실제 결제를 받을 계획인가요?"]
+        },
+        "answerType": {
+          "description": "답을 받는 방식. SINGLE은 하나 고르기, MULTI는 여럿 고르기, TEXT는 적기다. 되도록 고르게 한다. (R-SCAN-15)",
+          "enum": ["SINGLE", "MULTI", "TEXT"]
+        },
+        "options": {
+          "description": "고르게 할 보기. SINGLE과 MULTI는 반드시 담고, TEXT는 담지 않는다.",
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 6,
+          "items": { "type": "string", "minLength": 1, "maxLength": 40 },
+          "examples": [["네", "아니요"]]
+        },
+        "reason": {
+          "description": "어떤 발견 때문에 묻는지. 근거를 댈 수 없는 문항은 만들지 않는다. (R-SCAN-16)",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "examples": ["결제 처리 코드를 찾았다. 실제 결제를 받는지에 따라 전자상거래법 적용 여부가 달라진다."]
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "answerType": { "enum": ["SINGLE", "MULTI"] } } },
+          "then": { "required": ["options"] }
+        },
+        {
+          "if": { "properties": { "answerType": { "const": "TEXT" } } },
+          "then": { "not": { "required": ["options"] } }
+        }
+      ]
+    },
+
+    "unscannedItem": {
+      "type": "object",
+      "required": ["scope", "reason"],
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "description": "확인하지 못한 영역.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "examples": ["데이터베이스의 행 수준 보안 설정"]
+        },
+        "reason": {
+          "description": "확인하지 못한 이유.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "examples": ["코드가 아니라 서비스 콘솔에 있는 설정이라 이 검사로는 볼 수 없다."]
+        }
+      }
+    },
+
+    "dependencyAudit": {
+      "type": "object",
+      "required": ["command", "output"],
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "description": "실제로 돌린 명령.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200,
+          "examples": ["npm audit --json"]
+        },
+        "output": {
+          "description": "명령의 출력 원문. 요약하거나 고쳐 쓰지 않는다. (R-SCAN-13)",
+          "type": "string"
+        }
+      }
+    }
+  }
+}

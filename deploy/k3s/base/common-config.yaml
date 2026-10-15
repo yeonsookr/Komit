@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: spring-common
+  namespace: komit
+data:
+  SPRING_PROFILES_ACTIVE: prod
+  APP_INSTANCE_ROLE: WRITER
+

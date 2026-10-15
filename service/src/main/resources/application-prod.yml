@@ -1,0 +1,67 @@
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  mongodb:
+    host: ${MONGODB_HOST}
+    port: ${MONGODB_PORT:27017}
+    database: ${MONGODB_DATABASE:service}
+    username: ${MONGODB_USERNAME}
+    password: ${MONGODB_PASSWORD}
+  data:
+    redis:
+      # Sentinel에 현재 Primary 주소를 물어 접속합니다. failover 후에도 Lettuce가 새 Primary로 다시 붙습니다.
+      sentinel:
+        master: ${REDIS_SENTINEL_MASTER}
+        nodes: ${REDIS_SENTINEL_NODES}
+        password: ${REDIS_PASSWORD}
+      password: ${REDIS_PASSWORD}
+
+app:
+  datasource:
+    read-url: ${DB_READ_URL}
+  storage:
+    internal-endpoint: ${STORAGE_INTERNAL_ENDPOINT}
+    public-endpoint: ${STORAGE_PUBLIC_ENDPOINT}
+    access-key: ${STORAGE_ACCESS_KEY}
+    secret-key: ${STORAGE_SECRET_KEY}
+  auth:
+    user-jwt-secret: ${KOMIT_USER_JWT_SECRET}
+    kakao-token-encryption-key: ${KAKAO_TOKEN_ENCRYPTION_KEY}
+  account:
+    encryption-key: ${ACCOUNT_DATA_ENCRYPTION_KEY}
+  ai:
+    # 클러스터 안에서만 부릅니다. 브라우저도 FE 서버도 이 주소를 모릅니다.
+    base-url: ${AI_API_BASE_URL}
+    # job-contract.md 8절: 실측 전까지 코드에 박지 않고 설정으로 둡니다.
+    # 읽기 한도는 AI 서비스가 모델을 기다리는 상한보다 길어야 합니다. 먼저 끊으면
+    # AI 가 가려낸 502·503 구분이 이쪽에 닿지 못합니다.
+    connect-timeout: ${AI_CONNECT_TIMEOUT:3s}
+    read-timeout: ${AI_READ_TIMEOUT:25s}
+    # 요약만 따로 둔다. AI 가 추론 모델(gpt-5-mini)을 120초까지 기다리므로 그보다 길어야 한다.
+    summary-read-timeout: ${AI_SUMMARY_READ_TIMEOUT:150s}
+  escrow:
+    base-url: ${ESCROW_API_BASE_URL}
+    client-api-key: ${ESCROW_CLIENT_API_KEY}
+    # 지급 클라이언트만 씁니다. Escrow 는 지급 한 번에 금융망 예금주 조회·송금·수수료 이체를
+    # 차례로 끝내고 답하므로 공용 읽기 한도(5초)보다 길게 둡니다.
+    connect-timeout: ${ESCROW_CONNECT_TIMEOUT:3s}
+    read-timeout: ${ESCROW_READ_TIMEOUT:30s}
+  kakao:
+    client-id: ${KAKAO_CLIENT_ID}
+    client-secret: ${KAKAO_CLIENT_SECRET}
+    token-uri: ${KAKAO_TOKEN_URI:https://kauth.kakao.com/oauth/token}
+    user-info-uri: ${KAKAO_USER_INFO_URI:https://kapi.kakao.com/v2/user/me}
+
+server:
+  # nginx가 /service/ 접두사를 떼고 X-Forwarded-Prefix·Proto·Host로 알려 줍니다.
+  # 이 값을 반영해야 리다이렉트와 생성 URL이 https://komit.site/service/... 로 나옵니다.
+  # 헤더는 nginx가 덮어써서 보내므로 클라이언트가 위조한 값은 들어오지 않습니다.
+  forward-headers-strategy: framework
+
+springdoc:
+  swagger-ui:
+    enabled: false
+  api-docs:
+    enabled: false

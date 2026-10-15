@@ -1,0 +1,84 @@
+# mock API를 보는 `/test` 전용 FE.
+#
+# 루트의 fe는 실제 service를 보고, 이 Deployment만 별도 CI/CD 변수로 받은 mock 주소를
+# 사용합니다. `/test` basePath가 빌드에 포함된 komit-fe-test 이미지를 사용해야 합니다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fe-test
+  namespace: komit
+  labels:
+    app.kubernetes.io/name: fe-test
+    app.kubernetes.io/part-of: komit
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fe-test
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fe-test
+        app.kubernetes.io/part-of: komit
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: fe-test
+          image: komit-fe-test:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: fe-test-config
+          startupProbe:
+            tcpSocket:
+              port: http
+            failureThreshold: 30
+            periodSeconds: 2
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 10
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sh", "-c", "sleep 5"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: next-cache
+              mountPath: /app/.next/cache
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: next-cache
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

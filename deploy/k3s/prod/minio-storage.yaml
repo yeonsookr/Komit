@@ -1,0 +1,11 @@
+# 운영 파일 저장소 디스크. 프로필 사진·작업물 썸네일·경력 증빙·인계물이 쌓이는 곳이라 로컬(1Gi)보다 넉넉히 둡니다.
+# K3s 기본 local-path StorageClass는 만든 뒤 크기를 늘릴 수 없으므로, 부족해지면 새 PVC로 옮겨야 합니다.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  namespace: komit
+spec:
+  resources:
+    requests:
+      storage: 20Gi

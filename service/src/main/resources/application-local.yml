@@ -1,0 +1,80 @@
+spring:
+  config:
+    # service 디렉터리에서 로컬 실행할 때 service/.env를 읽습니다.
+    # 파일은 Git에 커밋하지 않고 .env.example을 복사해 사용합니다.
+    import: optional:file:.env[.properties]
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/service}
+    username: ${DB_USERNAME:service}
+    password: ${DB_PASSWORD:service}
+  mongodb:
+    host: ${MONGODB_HOST:localhost}
+    port: ${MONGODB_PORT:27017}
+    database: ${MONGODB_DATABASE:service}
+    username: ${MONGODB_USERNAME:service}
+    password: ${MONGODB_PASSWORD:service}
+  data:
+    redis:
+      # 로컬은 단일 Redis에 바로 붙습니다. 운영의 Sentinel 접속은 application-prod.yml 에 있습니다.
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+  jpa:
+    properties:
+      hibernate:
+        format_sql: true
+
+app:
+  instance-role: ${APP_INSTANCE_ROLE:WRITER}
+  public-base-url: ${APP_PUBLIC_BASE_URL:http://localhost:8080}
+  storage:
+    internal-endpoint: ${STORAGE_INTERNAL_ENDPOINT:http://localhost:9000}
+    public-endpoint: ${STORAGE_PUBLIC_ENDPOINT:http://localhost:9000}
+    access-key: ${STORAGE_ACCESS_KEY:minioadmin}
+    secret-key: ${STORAGE_SECRET_KEY:minioadmin}
+  auth:
+    # 개발 전용 값입니다. 운영 프로필에는 기본값이 없습니다.
+    user-jwt-secret: ${KOMIT_USER_JWT_SECRET:komit-user-jwt-secret-dev-only-change-me}
+    kakao-token-encryption-key: ${KAKAO_TOKEN_ENCRYPTION_KEY:ZGV2LW9ubHkta2FrYW8tdG9rZW4ta2V5LTMyYnl0ZXM=}
+  account:
+    encryption-key: ${ACCOUNT_DATA_ENCRYPTION_KEY:AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8=}
+  ai:
+    # ai/worker/README.md 의 로컬 실행 포트입니다. 안 띄우면 확인 문장 요청이 503 이 됩니다.
+    base-url: ${AI_API_BASE_URL:http://localhost:8000}
+    connect-timeout: ${AI_CONNECT_TIMEOUT:3s}
+    read-timeout: ${AI_READ_TIMEOUT:25s}
+    # 요약만 따로 둔다. AI 가 추론 모델(gpt-5-mini)을 120초까지 기다리므로 그보다 길어야 한다.
+    summary-read-timeout: ${AI_SUMMARY_READ_TIMEOUT:150s}
+  escrow:
+    base-url: ${ESCROW_API_BASE_URL:http://localhost:8081}
+    client-api-key: ${ESCROW_CLIENT_API_KEY:komit-backend-client-api-key-dev-only}
+    # 지급 클라이언트만 씁니다. Escrow 는 지급 한 번에 금융망 예금주 조회·송금·수수료 이체를
+    # 차례로 끝내고 답하므로 공용 읽기 한도(5초)보다 길게 둡니다.
+    connect-timeout: ${ESCROW_CONNECT_TIMEOUT:3s}
+    read-timeout: ${ESCROW_READ_TIMEOUT:30s}
+  turn:
+    # `deploy/local/docker-compose.yml` 의 coturn 을 가리킵니다. 그것이 STUN 도 겸하므로
+    # 로컬에서도 외부 STUN 을 쓰지 않습니다.
+    #
+    # coturn 을 띄우지 않았다면 이 값들을 비워 두세요. 그러면 ICE 목록이 비어
+    # 직접 연결만 쓰게 되는데, 같은 기계나 같은 랜에서는 그래도 통화가 붙습니다.
+    stun-urls: stun:localhost:3478
+    turn-urls:
+      - turn:localhost:3478?transport=udp
+      - turn:localhost:3478?transport=tcp
+    # 개발 전용 값입니다. `deploy/local/coturn/turnserver.conf` 와 같아야 합니다.
+    shared-secret: local-only-not-a-real-secret
+  realtime:
+    # 로컬은 프론트(3000)와 서버(8080)의 출처가 달라 열어 줍니다.
+    allowed-origins:
+      - http://localhost:3000
+  kakao:
+    client-id: ${KAKAO_CLIENT_ID:kakao-client-id-dev-only}
+    client-secret: ${KAKAO_CLIENT_SECRET:kakao-client-secret-dev-only}
+    token-uri: ${KAKAO_TOKEN_URI:https://kauth.kakao.com/oauth/token}
+    user-info-uri: ${KAKAO_USER_INFO_URI:https://kapi.kakao.com/v2/user/me}
+
+logging:
+  level:
+    com.a501: DEBUG
+    org.hibernate.SQL: DEBUG

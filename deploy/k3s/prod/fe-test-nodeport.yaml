@@ -1,0 +1,13 @@
+# 호스트 nginx 컨테이너가 172.17.0.1:30083으로 `/test` 요청을 프록시합니다.
+apiVersion: v1
+kind: Service
+metadata:
+  name: fe-test
+  namespace: komit
+spec:
+  type: NodePort
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+      nodePort: 30083

@@ -1,0 +1,205 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://komit.example.com/schemas/ai-evaluation-cases.schema.json",
+  "title": "Komit AI evaluation cases",
+  "type": "object",
+  "required": ["cases"],
+  "additionalProperties": false,
+  "properties": {
+    "cases": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/case" }
+    }
+  },
+  "$defs": {
+    "case": {
+      "type": "object",
+      "required": ["caseId", "task", "status", "split", "source", "input", "expected"],
+      "additionalProperties": false,
+      "properties": {
+        "caseId": { "type": "string", "minLength": 1 },
+        "task": { "enum": ["qa_suggestion", "transcription", "summary"] },
+        "status": { "enum": ["candidate", "approved"] },
+        "split": { "enum": ["development", "regression"] },
+        "source": {
+          "type": "object",
+          "required": ["kind", "reference", "usageTerms", "anonymized"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "enum": ["synthetic", "team_document", "external", "consented_consultation"] },
+            "reference": { "type": "string", "minLength": 1 },
+            "usageTerms": { "type": "string", "minLength": 1 },
+            "anonymized": { "type": "boolean" }
+          }
+        },
+        "approvedBy": { "type": "string", "minLength": 1 },
+        "approvedAt": { "type": "string", "format": "date-time" },
+        "input": { "type": "object" },
+        "expected": { "type": "object" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "approved" } } },
+          "then": { "required": ["approvedBy", "approvedAt"] },
+          "else": { "not": { "anyOf": [{ "required": ["approvedBy"] }, { "required": ["approvedAt"] }] } }
+        },
+        {
+          "if": { "properties": { "task": { "const": "qa_suggestion" } } },
+          "then": {
+            "properties": {
+              "input": { "$ref": "#/$defs/qaInput" },
+              "expected": { "$ref": "#/$defs/qaExpected" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "task": { "const": "transcription" } } },
+          "then": {
+            "properties": {
+              "input": { "$ref": "#/$defs/sttInput" },
+              "expected": { "$ref": "#/$defs/sttExpected" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "task": { "const": "summary" } } },
+          "then": {
+            "properties": {
+              "input": { "$ref": "#/$defs/summaryInput" },
+              "expected": { "$ref": "#/$defs/summaryExpected" }
+            }
+          }
+        }
+      ]
+    },
+    "qaInput": {
+      "type": "object",
+      "required": ["issueId", "requirement"],
+      "additionalProperties": false,
+      "properties": {
+        "issueId": { "type": "integer", "minimum": 1 },
+        "requirement": { "type": "string", "minLength": 1 }
+      }
+    },
+    "qaExpected": {
+      "type": "object",
+      "required": ["testCases", "reviewNote"],
+      "additionalProperties": false,
+      "properties": {
+        "testCases": {
+          "type": "array", "minItems": 3, "maxItems": 3,
+          "items": { "type": "string", "minLength": 1, "maxLength": 500 },
+          "uniqueItems": true
+        },
+        "reviewNote": { "type": "string" }
+      }
+    },
+    "sttInput": {
+      "type": "object",
+      "required": ["language", "audio"],
+      "additionalProperties": false,
+      "properties": {
+        "language": { "const": "ko" },
+        "audio": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "object", "required": ["path", "sha256"],
+              "additionalProperties": false,
+              "properties": {
+                "path": { "type": "string", "minLength": 1 },
+                "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "sttExpected": {
+      "type": "object",
+      "required": ["rawText", "reviewNote"],
+      "additionalProperties": false,
+      "properties": {
+        "rawText": { "type": "string", "minLength": 1 },
+        "reviewNote": { "type": "string" }
+      }
+    },
+    "summaryInput": {
+      "type": "object",
+      "required": ["utterances"],
+      "additionalProperties": false,
+      "properties": {
+        "requirements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["issueId", "title"],
+            "additionalProperties": false,
+            "properties": {
+              "issueId": { "type": "integer", "minimum": 1 },
+              "title": { "type": "string", "minLength": 1 }
+            }
+          }
+        },
+        "utterances": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["utteranceIndex", "speaker", "rawText"],
+            "additionalProperties": false,
+            "properties": {
+              "utteranceIndex": { "type": "integer", "minimum": 0 },
+              "speaker": { "enum": ["CLIENT", "DEVELOPER"] },
+              "startMs": { "type": "integer", "minimum": 0 },
+              "endMs": { "type": "integer", "minimum": 0 },
+              "rawText": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "summaryExpected": {
+      "type": "object",
+      "required": ["discussed", "decided", "nextActions", "changes", "reviewNote"],
+      "additionalProperties": false,
+      "properties": {
+        "discussed": { "type": "array", "items": { "$ref": "#/$defs/summaryItem" } },
+        "decided": { "type": "array", "items": { "$ref": "#/$defs/summaryItem" } },
+        "nextActions": { "type": "array", "items": { "$ref": "#/$defs/summaryItem" } },
+        "changes": { "type": "array", "items": { "$ref": "#/$defs/changeItem" } },
+        "reviewNote": { "type": "string" }
+      }
+    },
+    "summaryItem": {
+      "type": "object",
+      "required": ["title", "detail", "evidenceUtteranceIndexes", "reviewRequired"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "detail": { "type": ["string", "null"] },
+        "evidenceUtteranceIndexes": { "type": "array", "items": { "type": "integer", "minimum": 0 }, "uniqueItems": true },
+        "reviewRequired": { "type": "boolean" }
+      }
+    },
+    "changeItem": {
+      "type": "object",
+      "required": ["title", "detail", "evidenceUtteranceIndexes", "reviewRequired", "kind", "issueId"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "detail": { "type": ["string", "null"] },
+        "evidenceUtteranceIndexes": { "type": "array", "items": { "type": "integer", "minimum": 0 }, "uniqueItems": true },
+        "reviewRequired": { "type": "boolean" },
+        "kind": { "enum": ["UPDATE", "ADD"] },
+        "issueId": { "type": ["integer", "null"] }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "kind": { "const": "UPDATE" } } },
+          "then": { "properties": { "issueId": { "type": "integer", "minimum": 1 } } },
+          "else": { "properties": { "issueId": { "type": "null" } } }
+        }
+      ]
+    }
+  }
+}

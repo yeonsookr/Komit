@@ -1,0 +1,127 @@
+/* =========================================================
+   Komit Design Tokens
+   화면 67장 픽셀 샘플링 기준으로 추출한 값입니다.
+   컴포넌트는 항상 이 변수만 참조하고, hex 를 직접 쓰지 않습니다.
+   ========================================================= */
+
+:root {
+  /* ---- Brand ---- */
+  --k-primary: #6d34e2;          /* 주 보라 (버튼, 링크, 활성) */
+  --k-primary-hover: #5f2bd0;
+  --k-primary-active: #5224bd;
+  --k-primary-soft: #f2f0ff;     /* 연보라 배경 (선택 카드, 활성 nav, 내 말풍선) */
+  --k-primary-soft-hover: #f7f6fe;
+  --k-primary-border: #d0c1f8;   /* 연보라 테두리 */
+  --k-on-primary: #ffffff;
+
+  /* ---- Ink (먹색) — 텍스트 기본색이자 2번째 solid 버튼 색 ---- */
+  --k-ink: #111019;
+  --k-ink-hover: #26252f;
+  --k-on-ink: #ffffff;
+
+  /* ---- Kakao — 로그인 버튼 전용. 카카오가 정한 색이라 다른 곳에 쓰지 않습니다 ----
+     카카오 디자인 가이드의 노랑과 불투명도 85% 검정입니다. 연동할 때 공식 에셋으로
+     심볼을 바꾸면서 값도 한 번 더 맞춥니다. */
+  --k-kakao: #fee500;
+  --k-kakao-hover: #f2da00;
+  --k-on-kakao: rgba(0, 0, 0, 0.85);
+
+  /* ---- Foreground (텍스트) ---- */
+  --k-fg: #111019;               /* 본문 */
+  --k-fg-secondary: #4c4b52;     /* 라벨, 보조 본문 */
+  --k-fg-muted: #5a5966;         /* 설명문 */
+  --k-fg-subtle: #88878c;        /* 메타, 캡션, 타임스탬프 */
+  --k-fg-disabled: #acacb2;      /* 비활성, placeholder */
+
+  /* ---- Surface / Background ---- */
+  --k-bg: #ffffff;               /* 페이지 기본 */
+  --k-bg-alt: #fbfbfd;           /* 관리자 로그인 등 약한 회색 페이지 */
+  --k-surface: #f3f2f8;          /* 회색 면 (섹션, 서브 블록, 세그먼트 트랙, 비활성 버튼) */
+  --k-surface-2: #f8f8fa;        /* 카드 안 더 옅은 면 */
+
+  /* ---- Border ---- */
+  --k-border: #dfdfe8;           /* 기본 테두리 (GNB 하단, 카드, 인풋) */
+  --k-border-subtle: #ececf1;    /* 행 구분선 hairline */
+
+  /* ---- Semantic ---- */
+  --k-success: #006d32;
+  --k-success-bg: #e9f7ee;
+  --k-warning: #8e4f00;
+  --k-warning-bg: #fff6e8;
+  --k-danger: #ac011a;
+  --k-danger-bg: #fdeeef;
+  --k-danger-bg-strong: #f7e5e8;
+  --k-danger-border: #d17381;
+  --k-info: #0b4fa8;             /* 수입 금액 등 파랑 */
+  --k-info-bg: #e8f0fb;
+
+  /* ---- Typography ---- */
+  /* next/font 로 주입한 변수를 먼저 쓰고, 없으면 시스템 한글 폰트로 내려갑니다.
+     (app/layout.tsx 에서 --font-sans, --font-mono 를 정의합니다.) */
+  --k-font-sans: var(--font-sans), -apple-system, BlinkMacSystemFont, system-ui,
+    "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+  --k-font-mono: var(--font-mono), ui-monospace, SFMono-Regular, Menlo, Consolas,
+    monospace;
+
+  /* ---- Radius ---- */
+  --k-radius-xs: 4px;    /* 체크박스, 작은 배지 */
+  --k-radius-sm: 6px;    /* 사각 배지, 태그 */
+  --k-radius-md: 8px;    /* 버튼, 인풋 */
+  --k-radius-lg: 10px;   /* 드롭다운, 배너, 말풍선 */
+  --k-radius-xl: 12px;   /* 카드 */
+  --k-radius-2xl: 14px;  /* 모달 */
+  --k-radius-full: 9999px;
+
+  /* ---- Shadow (전반적으로 플랫, 오버레이 요소만) ---- */
+  --k-shadow-sm: 0 1px 2px rgba(17, 16, 25, 0.06);
+  --k-shadow-md: 0 8px 24px rgba(17, 16, 25, 0.10), 0 2px 6px rgba(17, 16, 25, 0.06);
+  --k-shadow-lg: 0 20px 48px rgba(17, 16, 25, 0.16);
+
+  /* ---- Layout ---- */
+  --k-gnb-height: 56px;
+  --k-content-width: 720px;     /* 일반 서비스 화면 본문 */
+  --k-content-width-wide: 840px; /* 관리자 */
+  --k-sidebar-width: 320px;     /* 의뢰/정산 좌측 사이드바 */
+  --k-landing-width: 960px;
+
+  /* ---- Control heights ---- */
+  --k-control-sm: 32px;
+  --k-control-md: 40px;
+  --k-control-lg: 48px;
+  --k-control-xl: 56px;
+
+  /* ---- Motion ---- */
+  --k-ease: cubic-bezier(0.2, 0, 0, 1);
+  --k-duration: 150ms;
+}
+
+/* =========================================================
+   다크 모드 토큰 (docs/FRONTEND_CONVENTIONS.md 11장)
+   ---------------------------------------------------------
+   확정된 다크 팔레트가 아직 없어 값은 비워 둡니다.
+   컴포넌트는 전부 --k-* 토큰만 참조하므로, 색이 정해지면
+   아래 블록에서 같은 이름의 변수만 재정의하면 전체가 따라옵니다.
+   - prefers-color-scheme: 최초 진입 시 시스템 설정
+   - [data-theme="dark"]: 사용자가 직접 고른 값
+   ========================================================= */
+
+/*
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --k-bg: ;
+    --k-bg-alt: ;
+    --k-surface: ;
+    --k-surface-2: ;
+    --k-fg: ;
+    --k-fg-secondary: ;
+    --k-fg-muted: ;
+    --k-fg-subtle: ;
+    --k-fg-disabled: ;
+    --k-border: ;
+    --k-border-subtle: ;
+  }
+}
+
+:root[data-theme="dark"] {
+}
+*/

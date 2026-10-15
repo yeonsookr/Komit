@@ -1,0 +1,307 @@
+import Link from "next/link";
+import { Card, CardHeader, KeyValueRow, Money } from "@/components/common";
+import { buttonClass } from "@/components/buttons/buttonStyles";
+import { EmptyState } from "@/components/feedback";
+import {
+  billableMilestones,
+  hasSigned,
+  isSignedByAnyone,
+  isSignedByBoth,
+  isConsultingDraft,
+  isDevelopmentDraft,
+  lastCounterpartMessage,
+  totalWorkDays,
+} from "@/lib/contract";
+import { formatDateTimeLabel, formatDayWithWeekday } from "@/lib/format";
+import { ROUTES } from "@/lib/routes";
+import type { Contract } from "@/types/contract";
+import { ConsultingContractDetail } from "./ConsultingContractDetail";
+import { MilestoneList } from "./MilestoneList";
+import { SignContractButton } from "./SignContractButton";
+
+export interface ContractDetailProps {
+  roomId: number;
+  /** 방 이름. 서명판 부제에 들어갑니다. */
+  roomTitle: string;
+  /** 상대 이름. 누가 보낸 계약서인지 적는 데 씁니다. */
+  counterpartName: string;
+  /** 아직 쓰지 않았으면 null. */
+  contract: Contract | null;
+  /** 내가 이 방에 개발자로 들어갔는지. 아래 버튼이 갈립니다. */
+  received: boolean;
+  /** 내 식별자. 이미 서명했으면 서명 버튼을 접습니다. */
+  myUserId: number;
+}
+
+/**
+ * ContractDetail — 계약서 탭.
+ *
+ * 의뢰인과 개발자가 같은 본문을 보고 아래 버튼만 갈립니다.
+ *   의뢰인 — 서명하고 예치하기
+ *   개발자 — 수정하기 (서명 전에만. R-CON-02) · 서명하고 계약하기
+ *
+ * **양쪽이 서명해야 계약이 성립합니다** (R-CON-01). 어느 쪽이든 서명 버튼을
+ * 누르면 같은 서명판(`5_서명판`)이 열립니다.
+ *
+ * 계약서가 아직 없으면 개발자에게만 작성 버튼을 보입니다. 계약서는 개발자가
+ * 범위·금액·기한을 제안하는 것이기 때문입니다.
+ */
+export function ContractDetail({
+  roomId,
+  roomTitle,
+  counterpartName,
+  contract,
+  received,
+  myUserId,
+}: Readonly<ContractDetailProps>) {
+  if (contract === null) {
+    return (
+      <EmptyState
+        title="아직 계약서가 없습니다"
+        description={
+          received
+            ? "맡을 범위와 금액, 기한을 정해 계약서를 보내주세요."
+            : "개발자가 범위와 금액, 기한을 정리해 보내면 여기에 붙습니다."
+        }
+        action={
+          received ? (
+            <Link
+              href={ROUTES.roomContractNew(roomId)}
+              className={buttonClass()}
+            >
+              계약서 작성하기
+            </Link>
+          ) : undefined
+        }
+      />
+    );
+  }
+
+  // AI version 1 은 금액·일정이 비어 있어 서명할 것이 아닙니다. 개발자가 채워 보내야 계약서가 됩니다.
+  if (isConsultingDraft(contract) || isDevelopmentDraft(contract)) {
+    return (
+      <EmptyState
+        title="계약서 초안을 작성하고 있습니다"
+        description={
+          received
+            ? "AI가 정리한 상담 내용을 확인하고 일정과 금액을 채워주세요."
+            : "개발자가 상담 내용을 확인하고 일정과 금액을 정하고 있습니다."
+        }
+        action={
+          received ? (
+            <Link href={ROUTES.roomContractNew(roomId)} className={buttonClass()}>
+              계약서 작성 계속하기
+            </Link>
+          ) : undefined
+        }
+      />
+    );
+  }
+
+  const development = contract.development;
+  const signed = isSignedByBoth(contract);
+  const locked = isSignedByAnyone(contract);
+
+  // 컨설팅은 세션 하나가 계약의 전부라 읽는 방식이 다릅니다. 그쪽 화면에 넘깁니다.
+  if (development === null) {
+    return (
+      <ConsultingContractDetail
+        roomId={roomId}
+        roomTitle={roomTitle}
+        counterpartName={counterpartName}
+        contract={contract}
+        received={received}
+        myUserId={myUserId}
+      />
+    );
+  }
+
+  // 머리 줄은 금액이 붙는 작업만 셉니다. 인계 작업은 0 원이라 합계에 들어가지 않습니다.
+  const billable = billableMilestones(development.milestones);
+  const days = totalWorkDays(development.milestones);
+  const mine = hasSigned(contract, myUserId);
+  const amount = development.totalAmount.toLocaleString("ko-KR");
+  const note = lastCounterpartMessage(contract, received);
+  // 서명한 계약서의 항목과 체결 뒤 더한 항목을 나눠 적습니다.
+  const contractualDeliverables = development.deliverables.filter((item) => item.isContractual);
+  const addedDeliverables = development.deliverables.filter((item) => !item.isContractual);
+
+  return (
+    <section className="mt-8">
+      <header>
+        <h2 className="text-xl font-bold text-fg">계약서</h2>
+        <p className="mt-1 text-[13px] text-fg-subtle">
+          {/* 계약서는 개발자가 씁니다. 내가 개발자면 내가 보낸 것입니다. */}
+          {received ? "내가" : `${counterpartName} 개발자가`}{" "}
+          {formatDateTimeLabel(contract.updatedAt)}에 보냄 ·{" "}
+          {signed
+            ? "양쪽이 서명해 계약이 성립했습니다"
+            : "아직 서명하지 않았습니다"}
+        </p>
+      </header>
+
+      <div className="mt-6">
+        <CardHeader
+          title="작업과 확인 문장"
+          action={
+            <span className="text-[13px] text-fg-subtle">
+              <span className="font-mono tabular-nums">{billable.length}</span>
+              건 · 합계{" "}
+              <Money
+                value={development.totalAmount}
+                className="text-fg-secondary"
+              />
+              {days > 0 && (
+                <>
+                  {" · "}
+                  <span className="font-mono tabular-nums">{days}</span>일
+                </>
+              )}
+            </span>
+          }
+        />
+        <div className="mt-3">
+          <MilestoneList
+            milestones={development.milestones}
+            showPeriod={!signed}
+          />
+        </div>
+        <p className="mt-3 text-[13px] text-fg-subtle">
+          작업{" "}
+          <span className="font-mono tabular-nums">
+            {development.milestones.length}
+          </span>
+          건을 모두 통과하면 대금이 한 번에 나갑니다.
+        </p>
+      </div>
+
+      <div className="mt-10">
+        <CardHeader title="계약 조건" />
+        <Card className="mt-3" padding="none">
+          <div className="divide-y divide-line-subtle">
+            {/* 서명하면 이 날짜로 묶입니다. 예치 전에 보이지 않으면 안 됩니다. */}
+            <KeyValueRow
+              label="착수일"
+              value={
+                development.startDate === null
+                  ? "정하지 않음"
+                  : formatDayWithWeekday(development.startDate)
+              }
+              className="px-4 py-3.5 sm:px-5"
+            />
+            <KeyValueRow
+              label="납기일"
+              value={
+                development.dueDate === null
+                  ? "정하지 않음"
+                  : formatDayWithWeekday(development.dueDate)
+              }
+              className="px-4 py-3.5 sm:px-5"
+            />
+            <KeyValueRow
+              label="하자보수"
+              value={`완료 후 ${development.freeRepairDays}일`}
+              className="px-4 py-3.5 sm:px-5"
+            />
+            <KeyValueRow
+              label="인계물"
+              value={
+                contractualDeliverables.length === 0 ? (
+                  "없음"
+                ) : (
+                  <span className="flex flex-col gap-1">
+                    {contractualDeliverables.map((item) => (
+                      <span key={item.deliverableId}>{item.title}</span>
+                    ))}
+                  </span>
+                )
+              }
+              className="px-4 py-3.5 sm:px-5"
+            />
+            {/* 체결 뒤 개발자가 더한 항목. 서명한 계약서의 범위·금액·확인 문장은 그대로입니다 (R-QA-06). */}
+            {addedDeliverables.length > 0 && (
+              <KeyValueRow
+                label="계약 뒤 추가한 인계물"
+                value={
+                  <span className="flex flex-col gap-1">
+                    {addedDeliverables.map((item) => (
+                      <span key={item.deliverableId}>{item.title}</span>
+                    ))}
+                    <span className="text-[13px] text-fg-subtle">
+                      계약 범위와 금액은 바뀌지 않습니다.
+                    </span>
+                  </span>
+                }
+                className="px-4 py-3.5 sm:px-5"
+              />
+            )}
+            {/* 의뢰인은 아래 버튼에 금액이 적혀 있어 개발자에게만 적습니다. */}
+            {received && (
+              <KeyValueRow
+                label="예치"
+                value={`수락하면 ${amount}원 전액을 먼저 예치합니다`}
+                className="px-4 py-3.5 sm:px-5"
+              />
+            )}
+          </div>
+        </Card>
+      </div>
+
+      {note && (
+        <div className="mt-10">
+          <CardHeader
+            title={`${received ? counterpartName : `${counterpartName} 개발자`}가 남긴 말`}
+            action={
+              <span className="text-[13px] text-fg-subtle">
+                계약서와 함께 왔습니다 · {formatDateTimeLabel(note.createdAt)}
+              </span>
+            }
+          />
+          <Card variant="surface" className="mt-3">
+            <p className="text-sm leading-6 text-fg-muted">{note.content}</p>
+          </Card>
+        </div>
+      )}
+
+      {!signed && (
+        <div className="mt-10">
+          <p className="text-[13px] text-fg-subtle">
+            {locked
+              ? "서명한 계약서는 더 이상 수정할 수 없습니다."
+              : "서명하면 계약서는 더 이상 수정할 수 없습니다."}
+          </p>
+          <div className="mt-3 flex flex-wrap justify-end gap-2">
+            {received && !locked && (
+              <Link
+                href={ROUTES.roomContractEdit(roomId)}
+                className={buttonClass({ variant: "outline", size: "lg" })}
+              >
+                수정하기
+              </Link>
+            )}
+            {mine ? (
+              <p className="self-center text-[13px] text-fg-subtle">
+                서명했습니다. {counterpartName}님이 서명하면 계약이 성립합니다.
+              </p>
+            ) : (
+              <SignContractButton
+                roomId={roomId}
+                contractId={contract.contractId}
+                subject={`개발 계약서 · ${roomTitle} · ${amount}원`}
+                label={
+                  received
+                    ? "서명하고 계약하기"
+                    : `서명하고 ${amount}원 예치하기`
+                }
+                confirmLabel={
+                  received ? "서명하고 계약" : `서명하고 ${amount}원 예치`
+                }
+                depositNext={!received}
+              />
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}

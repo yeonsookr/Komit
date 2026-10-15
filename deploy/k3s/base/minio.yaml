@@ -1,0 +1,193 @@
+# 파일 저장소 MinIO. 로컬과 운영이 같은 매니페스트를 쓰고, overlay가 NodePort(30090)와 디스크 크기만 덧씌웁니다.
+# service Pod는 minio.komit.svc.cluster.local:9000(STORAGE_INTERNAL_ENDPOINT)으로 붙습니다.
+# 브라우저가 여는 프리사인 URL의 호스트(STORAGE_PUBLIC_ENDPOINT)는 운영에서는 nginx가 받는 file.komit.site,
+# 로컬에서는 docker-compose가 NodePort 30090을 매핑한 localhost:9000입니다.
+# S3 서명 규격상 하위 경로(komit.site/file/ 같은 형태)로는 서비스할 수 없어 별도 호스트를 씁니다.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minio-data
+  namespace: komit
+  labels:
+    app.kubernetes.io/name: minio
+    app.kubernetes.io/part-of: komit
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minio
+  namespace: komit
+  labels:
+    app.kubernetes.io/name: minio
+    app.kubernetes.io/part-of: komit
+spec:
+  # 단일 디스크 단일 노드입니다. PVC가 ReadWriteOnce라 복제본을 늘릴 수 없고, 교체할 때는 내렸다 올립니다.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: minio
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: minio
+        app.kubernetes.io/part-of: komit
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: minio
+          # MinIO가 2026년 9월 quay.io·Docker Hub 공개 이미지를 내려 팀 Docker Hub 계정에 둔 사본을 씁니다.
+          # 테스트(FileStorageIntegrationTest)와 로컬 compose도 같은 태그를 봅니다.
+          image: komit2026/minio:RELEASE.2025-09-07T16-13-09Z
+          args: ["server", "/data", "--console-address", ":9001"]
+          ports:
+            - name: s3
+              containerPort: 9000
+            # 콘솔은 Service로 열지 않습니다. 필요하면 kubectl port-forward로 봅니다.
+            - name: console
+              containerPort: 9001
+          env:
+            # service가 쓰는 자격(service-storage)을 그대로 루트 계정으로 씁니다.
+            # MinIO 규칙상 사용자 이름은 3자 이상, 비밀번호는 8자 이상이어야 기동합니다.
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: service-storage
+                  key: STORAGE_ACCESS_KEY
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: service-storage
+                  key: STORAGE_SECRET_KEY
+            - name: HOME
+              value: /tmp
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: s3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: s3
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: "500m"
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: minio-data
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio
+  namespace: komit
+  labels:
+    app.kubernetes.io/name: minio
+    app.kubernetes.io/part-of: komit
+spec:
+  selector:
+    app.kubernetes.io/name: minio
+  ports:
+    - name: s3
+      port: 9000
+      targetPort: s3
+---
+# 버킷과 임시 객체 만료 규칙을 만듭니다. service는 버킷이 있다고 가정하고 기동합니다.
+# service-config의 이름 해시가 바뀌면 이 Job의 template도 바뀌어 다시 apply할 수 없으므로,
+# 배포 스크립트가 apply 전에 지난 Job을 지웁니다. 버킷은 --ignore-existing이라 몇 번 돌아도 안전합니다.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: minio-init
+  namespace: komit
+  labels:
+    app.kubernetes.io/name: minio-init
+    app.kubernetes.io/part-of: komit
+spec:
+  backoffLimit: 20
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: minio-init
+        app.kubernetes.io/part-of: komit
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: mc
+          image: komit2026/mc:RELEASE.2025-08-13T08-35-41Z
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD"
+              mc mb --ignore-existing "local/$STORAGE_BUCKET"
+              # 완료되지 않은 임시 객체(pending/)는 R-FILE-03의 업로드 기한이 지나면 쓸모가 없어 하루 뒤 자동으로 지웁니다.
+              case "$(mc ilm rule ls "local/$STORAGE_BUCKET" 2>/dev/null)" in
+                *pending/*) ;;
+                *) mc ilm rule add --expire-days 1 --prefix pending/ "local/$STORAGE_BUCKET" ;;
+              esac
+          env:
+            - name: MC_CONFIG_DIR
+              value: /tmp/.mc
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: service-storage
+                  key: STORAGE_ACCESS_KEY
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: service-storage
+                  key: STORAGE_SECRET_KEY
+            - name: STORAGE_BUCKET
+              valueFrom:
+                configMapKeyRef:
+                  name: service-config
+                  key: STORAGE_BUCKET
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

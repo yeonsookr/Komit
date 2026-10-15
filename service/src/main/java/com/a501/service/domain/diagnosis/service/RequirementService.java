@@ -1,0 +1,192 @@
+package com.a501.service.domain.diagnosis.service;
+
+import com.a501.service.common.exception.BusinessException;
+import com.a501.service.common.exception.CommonErrorCode;
+import com.a501.service.domain.code.service.CodeQueryService;
+import com.a501.service.domain.diagnosis.DiagnosisErrorCode;
+import com.a501.service.domain.diagnosis.IssueCategory;
+import com.a501.service.domain.diagnosis.IssueSeverity;
+import com.a501.service.domain.diagnosis.dto.request.CreateIssueRequest;
+import com.a501.service.domain.diagnosis.dto.request.WriteRequirementsRequest.WriteQaCriterion;
+import com.a501.service.domain.diagnosis.dto.request.WriteRequirementsRequest.WriteRequirement;
+import com.a501.service.domain.diagnosis.dto.response.IssueListResponse;
+import com.a501.service.domain.diagnosis.dto.response.IssueResponse;
+import com.a501.service.domain.diagnosis.entity.Inspection;
+import com.a501.service.domain.diagnosis.entity.Issue;
+import com.a501.service.domain.diagnosis.entity.QaCriterion;
+import com.a501.service.domain.diagnosis.repository.DiagnosisRepository;
+import com.a501.service.domain.diagnosis.repository.InspectionRepository;
+import com.a501.service.domain.diagnosis.repository.IssueRepository;
+import com.a501.service.domain.diagnosis.repository.QaCriterionRepository;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * 요청서를 다듬는다.
+ *
+ * <p>요청서는 따로 저장되는 문서가 아니라 이 회차의 요구사항을 모아 부르는 이름이다. 저장하면 그 자리에서 최신 내용이 되고 따로 보내는 절차가 없다.
+ */
+@Slf4j
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class RequirementService {
+    private final DiagnosisRepository diagnosisRepository;
+    private final CodeQueryService codeQueryService;
+    private final InspectionRepository inspectionRepository;
+    private final IssueRepository issueRepository;
+    private final QaCriterionRepository qaCriterionRepository;
+    private final IssueQueryService issueQueryService;
+
+    /** 검사가 찾지 못했지만 고치고 싶은 것을 직접 적어 넣는다. 검사에서 나온 결함과 같은 목록에 미해결로 들어간다. */
+    @Transactional
+    public IssueResponse addIssue(
+            Integer diagnosisId, Short diagnosisVersion, CreateIssueRequest request) {
+        Inspection inspection = requireInspection(diagnosisId, diagnosisVersion);
+        Issue saved = issueRepository.save(Issue.writtenBySelf(
+                inspection.getId(),
+                request.title(),
+                request.detail(),
+                request.categoryCodeId(),
+                request.severity().name()));
+        return issueQueryService.toResponses(List.of(saved)).getFirst();
+    }
+
+    /**
+     * 프로젝트 요청서에 요구사항을 하나 더한다. 컨설팅 요약에서 의뢰인이 고른 새 요구사항이 쓴다.
+     *
+     * <p>진단의 현재 회차에 붙인다. 요청서가 그 회차를 읽기 때문이다. 요청에 분류와 심각도가 없어 「기타」와
+     * `보통`으로 둔다.
+     *
+     * @return 만든 요구사항 id
+     * @throws BusinessException {@link DiagnosisErrorCode#INSPECTION_NOT_DONE} 현재 회차에 검사가 없을 때
+     */
+    @Transactional
+    public Integer addToRequest(Integer projectId, String title, String detail) {
+        Inspection inspection = diagnosisRepository
+                .findByProjectIdAndDeletedFalse(projectId)
+                .flatMap(diagnosis -> inspectionRepository.findByDiagnosisIdAndDiagnosisVersionAndDeletedFalse(
+                        diagnosis.getId(), diagnosis.getVersion()))
+                .orElseThrow(() -> new BusinessException(DiagnosisErrorCode.INSPECTION_NOT_DONE));
+        Issue issue = Issue.writtenBySelf(
+                inspection.getId(), title, detail, etcCategoryId(), IssueSeverity.MEDIUM.name());
+        issue.putIntoRequirements();
+        return issueRepository.save(issue).getId();
+    }
+
+    /**
+     * 요청서를 통째로 받아 보낸 내용으로 맞춘다. 보낸 목록에 없는 기존 요구사항은 뺀 것으로 보고, 요구사항 안에서 보낸 목록에 없는 확인 문장도 지운 것으로 본다.
+     *
+     * @throws BusinessException {@link DiagnosisErrorCode#ISSUE_STATUS_CONFLICT} 계약에 들어간 요구사항을 빼려 할 때
+     */
+    @Transactional
+    public IssueListResponse write(
+            Integer diagnosisId, Short diagnosisVersion, List<WriteRequirement> requirements) {
+        Inspection inspection = requireInspection(diagnosisId, diagnosisVersion);
+        Map<Integer, Issue> existing = issueRepository
+                .findByInspectionIdAndDeletedFalseOrderByIdAsc(inspection.getId())
+                .stream()
+                .collect(Collectors.toMap(Issue::getId, issue -> issue));
+
+        LocalDateTime now = LocalDateTime.now();
+        List<Issue> kept = new ArrayList<>();
+        for (WriteRequirement requirement : requirements) {
+            kept.add(upsert(inspection.getId(), requirement, existing, now));
+        }
+
+        Set<Integer> keptIds = kept.stream().map(Issue::getId).collect(Collectors.toSet());
+        for (Issue issue : existing.values()) {
+            if (keptIds.contains(issue.getId())) {
+                continue;
+            }
+            // 계약서에 적힌 작업이 사라지면 안 된다. 그런 줄을 빼고 보내면 막는다.
+            if (issue.isContracted()) {
+                throw new BusinessException(DiagnosisErrorCode.ISSUE_STATUS_CONFLICT);
+            }
+            // 요청서에서만 빼고 결함 자체는 남긴다. 지우면 요구사항 선택 화면에서도 사라져
+            // 다시 고를 수 없다. 직접 해결한 것은 그 상태를 지킨다.
+            if (!issue.isResolved()) {
+                issue.reopen();
+            }
+        }
+
+        List<IssueResponse> content = issueQueryService.toResponses(kept);
+        return new IssueListResponse(content, 1, content.size(), content.size(), 1);
+    }
+
+    private Issue upsert(
+            Integer inspectionId,
+            WriteRequirement requirement,
+            Map<Integer, Issue> existing,
+            LocalDateTime now) {
+        Issue issue = requirement.issueId() == null ? null : existing.get(requirement.issueId());
+        if (issue == null) {
+            issue = issueRepository.save(Issue.writtenBySelf(
+                    inspectionId,
+                    requirement.title(),
+                    requirement.detail(),
+                    requirement.categoryCodeId(),
+                    requirement.severity().name()));
+        } else {
+            issue.rewrite(
+                    requirement.title(),
+                    requirement.detail(),
+                    requirement.categoryCodeId(),
+                    requirement.severity().name());
+        }
+        // 요청서에 담긴 것과 아직 고르지 않은 것을 갈라야 화면이 요청서 본문을 그릴 수 있다.
+        issue.putIntoRequirements();
+        writeCriteria(issue.getId(), requirement.qaCriteria(), now);
+        return issue;
+    }
+
+    private void writeCriteria(Integer issueId, List<WriteQaCriterion> wanted, LocalDateTime now) {
+        Map<Integer, QaCriterion> existing = new HashMap<>();
+        qaCriterionRepository
+                .findByIssueIdInAndDeletedFalseOrderByIdAsc(List.of(issueId))
+                .forEach(criterion -> existing.put(criterion.getId(), criterion));
+
+        Set<Integer> keptIds = new java.util.HashSet<>();
+        for (WriteQaCriterion criterion : wanted) {
+            QaCriterion kept = criterion.qaCriterionId() == null
+                    ? null
+                    : existing.get(criterion.qaCriterionId());
+            if (kept == null) {
+                kept = qaCriterionRepository.save(QaCriterion.of(issueId, criterion.testCase()));
+            } else {
+                kept.rewrite(criterion.testCase());
+            }
+            keptIds.add(kept.getId());
+        }
+        existing.values().stream()
+                .filter(criterion -> !keptIds.contains(criterion.getId()))
+                .forEach(criterion -> criterion.dropFromRequirements(now));
+    }
+
+    private Inspection requireInspection(Integer diagnosisId, Short diagnosisVersion) {
+        return inspectionRepository
+                .findByDiagnosisIdAndDiagnosisVersionAndDeletedFalse(diagnosisId, diagnosisVersion)
+                // 검사 전에는 요구사항을 붙일 검사가 없다. 화면은 검사 뒤에만 이 자리에 온다.
+                .orElseThrow(() -> new BusinessException(DiagnosisErrorCode.INSPECTION_NOT_DONE));
+    }
+
+    /** 「기타」는 시드가 넣는 코드다. 없으면 서버 설정이 잘못된 것이라 요청 탓으로 돌리지 않는다. */
+    private Integer etcCategoryId() {
+        String etc = IssueCategory.ETC.codeName();
+        Integer id = codeQueryService.findCodeIdsByName(IssueCategory.GROUP, List.of(etc)).get(etc);
+        if (id == null) {
+            log.error("요구사항 분류 코드에 {} 가 없다. 시드(data.sql)를 확인한다", etc);
+            throw new BusinessException(CommonErrorCode.INTERNAL_ERROR);
+        }
+        return id;
+    }
+}
